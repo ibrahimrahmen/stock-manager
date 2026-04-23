@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Paiement</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0f0f0d;--surface:#1a1a17;--surface2:#222220;
+      --border:rgba(255,255,255,0.07);--text:#f0ede6;--muted:#8a887f;--hint:#4a4843;
+      --green:#4ade9a;--green-dim:rgba(74,222,154,0.12);--green-border:rgba(74,222,154,0.25);
+      --red:#f87171;--red-dim:rgba(248,113,113,0.12);--red-border:rgba(248,113,113,0.25);
+      --amber:#f5a623;--amber-dim:rgba(245,166,35,0.12);--amber-border:rgba(245,166,35,0.25);
+      --blue:#60a5fa;--blue-dim:rgba(96,165,250,0.12);
+      --purple:#a78bfa;--purple-dim:rgba(167,139,250,0.12);
+      --radius:14px;--radius-sm:8px;
+    }
+    body{background:var(--bg);font-family:system-ui,sans-serif;color:var(--text);min-height:100vh;}
+    .layout{display:grid;grid-template-columns:1fr 320px;min-height:100vh;}
+    .left{padding:28px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;}
+    .right{background:var(--surface);border-left:0.5px solid var(--border);padding:24px 16px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;}
+
+    .topbar{display:flex;align-items:center;gap:12px;}
+    .back{font-size:13px;color:var(--muted);text-decoration:none;}
+    .back:hover{color:var(--text);}
+    h1{font-size:18px;font-weight:500;}
+
+    .scan-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:20px;}
+    .scan-wrap{display:flex;gap:8px;}
+    .scan-input{flex:1;background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;font-size:15px;font-family:monospace;color:var(--text);outline:none;}
+    .scan-input:focus{border-color:rgba(255,255,255,0.2);}
+    .scan-btn{background:var(--amber);color:#000;border:none;border-radius:var(--radius-sm);padding:10px 20px;font-size:13px;font-weight:500;cursor:pointer;}
+    .scan-btn:hover{opacity:.85;}
+    .feedback{border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;margin-top:12px;display:flex;align-items:center;gap:8px;}
+    .feedback.idle{background:var(--surface2);color:var(--muted);}
+    .feedback.ok{background:var(--green-dim);color:var(--green);}
+    .feedback.err{background:var(--red-dim);color:var(--red);}
+    .feedback.warn{background:var(--amber-dim);color:var(--amber);}
+    .dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0;}
+
+    /* ORDER REVIEW PANEL */
+    .order-panel{background:var(--surface);border:0.5px solid var(--amber-border);border-radius:var(--radius);overflow:hidden;display:none;}
+    .order-panel.visible{display:block;animation:slideIn .2s ease;}
+    @keyframes slideIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+    .order-header{padding:16px 20px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:12px;}
+    .order-bc{font-family:monospace;font-size:13px;color:var(--muted);}
+    .order-status-badge{font-size:11px;padding:3px 10px;border-radius:10px;background:var(--amber-dim);color:var(--amber);margin-left:auto;}
+
+    .items-list{padding:12px;}
+    .item-row{display:flex;align-items:center;gap:12px;padding:10px;border-radius:var(--radius-sm);margin-bottom:6px;border:0.5px solid var(--border);background:var(--surface2);transition:border-color .15s,background .15s;}
+    .item-row.accepted{border-color:var(--green-border);background:rgba(74,222,154,0.06);}
+    .item-row.refused{border-color:var(--red-border);background:rgba(248,113,113,0.06);opacity:.6;}
+    .item-img{width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;}
+    .item-img-ph{width:44px;height:44px;border-radius:8px;background:var(--hint);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);flex-shrink:0;}
+    .item-name{font-size:13px;font-weight:500;}
+    .item-sub{font-size:11px;color:var(--muted);}
+    .item-price{font-size:13px;font-weight:500;margin-left:auto;white-space:nowrap;}
+    .item-size{font-size:11px;background:var(--blue-dim);color:var(--blue);padding:2px 7px;border-radius:10px;}
+    .toggle-btn{width:28px;height:28px;border-radius:50%;border:0.5px solid var(--border);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted);transition:all .15s;flex-shrink:0;}
+    .toggle-btn:hover{background:var(--surface);}
+    .toggle-btn.accepted{background:var(--green-dim);border-color:var(--green-border);color:var(--green);}
+    .toggle-btn.refused{background:var(--red-dim);border-color:var(--red-border);color:var(--red);}
+
+    .price-editor{padding:16px 20px;border-top:0.5px solid var(--border);}
+    .price-row{display:flex;align-items:center;gap:10px;margin-bottom:10px;}
+    .price-label{font-size:13px;color:var(--muted);flex:1;}
+    .price-val{font-size:15px;font-weight:500;color:var(--text);text-align:right;}
+    .price-val.green{color:var(--green);}
+    .price-input{background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;font-size:14px;color:var(--text);width:130px;text-align:right;outline:none;font-family:monospace;}
+    .price-input:focus{border-color:rgba(255,255,255,.2);}
+
+    .confirm-btn{width:100%;padding:12px;background:var(--green);color:#000;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:500;cursor:pointer;margin-top:8px;}
+    .confirm-btn:hover{opacity:.9;}
+    .confirm-btn:disabled{opacity:.4;cursor:default;}
+
+    /* RIGHT PANEL */
+    .right h2{font-size:14px;font-weight:500;}
+    .stat{background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center;}
+    .stat-val{font-size:22px;font-weight:500;}
+    .stat-val.amber{color:var(--amber);}
+    .stat-val.red{color:var(--red);}
+    .stat-label{font-size:11px;color:var(--muted);margin-top:3px;}
+    .recent-list{display:flex;flex-direction:column;gap:6px;}
+    .recent-item{background:var(--surface2);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;}
+    .recent-bc{font-family:monospace;color:var(--muted);font-size:11px;}
+    .recent-amount{font-weight:500;color:var(--green);}
+    .section-title{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);}
+
+    /* SUCCESS STATE */
+    .success-panel{background:var(--green-dim);border:0.5px solid var(--green-border);border-radius:var(--radius);padding:20px;display:none;text-align:center;}
+    .success-panel.visible{display:block;animation:slideIn .2s ease;}
+    .success-icon{font-size:32px;margin-bottom:8px;}
+    .success-title{font-size:16px;font-weight:500;color:var(--green);margin-bottom:4px;}
+    .success-sub{font-size:13px;color:var(--muted);}
+    .pending-warn{background:var(--amber-dim);border:0.5px solid var(--amber-border);border-radius:var(--radius-sm);padding:10px 14px;font-size:13px;color:var(--amber);margin-top:10px;display:none;}
+  </style>
+</head>
+<body>
+<div class="layout">
+  <div class="left">
+    <div class="topbar">
+      <a href="{% url 'dashboard' %}" class="back">← Dashboard</a>
+      <h1>Scan paiement</h1>
+    </div>
+
+    <div class="scan-card">
+      <div class="scan-wrap">
+        <input class="scan-input" id="scan-input" placeholder="Scanner le bordereau de paiement..." autofocus autocomplete="off">
+        <button class="scan-btn" onclick="doScan()">Valider</button>
+      </div>
+      <div class="feedback idle" id="feedback">
+        <div class="dot"></div>
+        <span id="feedback-msg">Scanner le bordereau de la compagnie de livraison...</span>
+      </div>
+    </div>
+
+    <!-- ORDER REVIEW PANEL -->
+    <div class="order-panel" id="order-panel">
+      <div class="order-header">
+        <div>
+          <div style="font-size:14px;font-weight:500;" id="panel-title">Ordre</div>
+          <div class="order-bc" id="panel-bc"></div>
+        </div>
+        <div class="order-status-badge" id="panel-date"></div>
+      </div>
+
+      <div class="items-list" id="items-list"></div>
+
+      <div class="price-editor">
+        <div class="price-row">
+          <span class="price-label">Produits acceptés</span>
+          <span class="price-val" id="products-total">0.000 TND</span>
+        </div>
+        <div class="price-row">
+          <span class="price-label">Frais livraison</span>
+          <span class="price-val">7.000 TND</span>
+        </div>
+        <div class="price-row" style="border-top:0.5px solid var(--border);padding-top:10px;margin-top:4px;">
+          <span class="price-label" style="color:var(--text);font-weight:500;">Montant à collecter</span>
+          <span class="price-val green" id="expected-total">0.000 TND</span>
+        </div>
+        <div class="price-row">
+          <span class="price-label">Montant collecté</span>
+          <input class="price-input" type="number" id="amount-input" step="0.001" min="0" placeholder="0.000">
+        </div>
+        <button class="confirm-btn" id="confirm-btn" onclick="confirmPayment()">Confirmer le paiement</button>
+      </div>
+    </div>
+
+    <!-- SUCCESS -->
+    <div class="success-panel" id="success-panel">
+      <div class="success-icon">✓</div>
+      <div class="success-title" id="success-title">Paiement confirmé</div>
+      <div class="success-sub" id="success-sub"></div>
+      <div class="pending-warn" id="pending-warn"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="right">
+    <h2>Session</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div class="stat">
+        <div class="stat-val amber" id="session-count">0</div>
+        <div class="stat-label">payés</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val red" id="pending-count">0</div>
+        <div class="stat-label">retours en attente</div>
+      </div>
+    </div>
+    <div class="section-title">Récents</div>
+    <div class="recent-list" id="recent-list">
+      <div style="font-size:12px;color:var(--muted);">Aucun paiement cette session.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentOrder = null;
+  let itemStates = {};  // barcode → 'accepted' | 'refused'
+  let sessionCount = 0;
+  let totalPendingReturns = 0;
+
+  document.getElementById('scan-input').addEventListener('keydown', e => { if(e.key==='Enter') doScan(); });
+
+  async function doScan() {
+    const input = document.getElementById('scan-input');
+    const barcode = input.value.trim();
+    input.value = ''; input.focus();
+    if (!barcode) return;
+
+    const body = { barcode };
+    if (currentOrder) body.pending_order_id = currentOrder.id;
+
+    try {
+      const res = await fetch("{% url 'api_scan_payment' %}", {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      handleResult(data);
+    } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); }
+  }
+
+  function handleResult(data) {
+    if (data.status === 'error') {
+      showErrPopup(data.message);
+      return;
+    }
+    if (data.type === 'payment_review') {
+      // If previous order was auto-confirmed, increment session count
+      if (data.auto_confirmed_order) {
+        sessionCount++;
+        document.getElementById('session-count').textContent = sessionCount;
+        addRecent({bordereau_barcode: data.auto_confirmed_order}, 0, 0);
+        setFeedback('warn', `Ordre ${data.auto_confirmed_order} confirmé automatiquement. Nouvel ordre : ${data.order.bordereau_barcode}`);
+      } else {
+        setFeedback('ok', `Ordre trouvé : ${data.order.bordereau_barcode} — ${data.order.unit_count} unité(s)`);
+      }
+      showOrderPanel(data.order, data.items);
+    }
+  }
+
+  function showOrderPanel(order, items) {
+    currentOrder = order;
+    itemStates = {};
+    document.getElementById('success-panel').classList.remove('visible');
+
+    document.getElementById('panel-title').textContent = `Ordre #${order.id}`;
+    document.getElementById('panel-bc').textContent = order.bordereau_barcode;
+    document.getElementById('panel-date').textContent = order.opened_at;
+
+    const list = document.getElementById('items-list');
+    list.innerHTML = '';
+
+    items.forEach(item => {
+      // auto_refused = returned or returned → locked, cannot be sold
+      // can_be_sold = shipped → toggle available
+      const autoRefused = item.auto_refused === true;
+      const canBePaid = item.can_be_paid === true;
+      itemStates[item.barcode] = autoRefused ? 'refused' : 'accepted';
+
+      const row = document.createElement('div');
+      row.className = `item-row ${itemStates[item.barcode]}`;
+      row.id = `row-${item.barcode}`;
+
+      const imgHtml = item.image_url
+        ? `<img class="item-img" src="${item.image_url}" alt="">`
+        : `<div class="item-img-ph">${item.color_label.slice(0,2)}</div>`;
+
+      // Status label for locked items
+      const statusLabel = item.status === 'returned'
+        ? 'Retourné'
+        : item.status === 'returned'
+        ? 'Retourné'
+        : null;
+
+      const actionEl = autoRefused
+        ? `<span style="font-size:10px;background:var(--red-dim);color:var(--red);padding:3px 9px;border-radius:8px;flex-shrink:0;">${statusLabel} — non vendable</span>`
+        : `<button class="toggle-btn accepted" id="btn-${item.barcode}" data-barcode="${item.barcode}" data-price="${item.sell_price}">✓</button>`;
+
+      row.innerHTML = `
+        ${imgHtml}
+        <div style="flex:1;min-width:0;${autoRefused ? 'opacity:.5;' : ''}">
+          <div class="item-name">${item.product_name}</div>
+          <div class="item-sub">${item.color_label} · ${item.barcode}</div>
+        </div>
+        <span class="item-size">${item.size}</span>
+        <span class="item-price"${autoRefused ? ' style="text-decoration:line-through;opacity:.4;"' : ''}>${parseFloat(item.sell_price).toFixed(3)} TND</span>
+        ${actionEl}
+      `;
+
+      if (!autoRefused) {
+        row.querySelector('.toggle-btn').addEventListener('click', function(){
+          toggleItem(this.dataset.barcode, parseFloat(this.dataset.price));
+        });
+      }
+      list.appendChild(row);
+    });
+
+    updateTotals(items);
+    document.getElementById('order-panel').classList.add('visible');
+  }
+
+  function toggleItem(barcode, price) {
+    const current = itemStates[barcode];
+    const newState = current === 'accepted' ? 'refused' : 'accepted';
+    itemStates[barcode] = newState;
+
+    const row = document.getElementById(`row-${barcode}`);
+    const btn = document.getElementById(`btn-${barcode}`);
+    row.className = `item-row ${newState}`;
+    btn.className = `toggle-btn ${newState}`;
+    btn.textContent = newState === 'accepted' ? '✓' : '✗';
+
+    recalcTotals();
+  }
+
+  function recalcTotals() {
+    let total = 0;
+    document.querySelectorAll('.item-row').forEach(row => {
+      const barcode = row.id.replace('row-', '');
+      if (itemStates[barcode] === 'accepted') {
+        const priceEl = row.querySelector('.item-price');
+        total += parseFloat(priceEl.textContent);
+      }
+    });
+    document.getElementById('products-total').textContent = total.toFixed(3) + ' TND';
+    const grand = total + 7;
+    document.getElementById('expected-total').textContent = grand.toFixed(3) + ' TND';
+    document.getElementById('amount-input').value = grand.toFixed(3);
+  }
+
+  function updateTotals(items) {
+    const total = items.reduce((s, i) => s + parseFloat(i.sell_price), 0);
+    document.getElementById('products-total').textContent = total.toFixed(3) + ' TND';
+    document.getElementById('expected-total').textContent = (total + 7).toFixed(3) + ' TND';
+    document.getElementById('amount-input').value = (total + 7).toFixed(3);
+  }
+
+  async function confirmPayment() {
+    if (!currentOrder) return;
+    const btn = document.getElementById('confirm-btn');
+    btn.disabled = true;
+
+    const sold = Object.entries(itemStates).filter(([,v]) => v==='accepted').map(([k]) => k);
+    const refused = Object.entries(itemStates).filter(([,v]) => v==='refused').map(([k]) => k);
+    const amount = parseFloat(document.getElementById('amount-input').value) || 0;
+
+    try {
+      const res = await fetch("{% url 'api_confirm_payment' %}", {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          order_id: currentOrder.id,
+          sold_barcodes: sold,
+          refused_barcodes: refused,
+          amount_collected: amount,
+        }),
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        sessionCount++;
+        totalPendingReturns += data.returneds;
+        document.getElementById('session-count').textContent = sessionCount;
+        document.getElementById('pending-count').textContent = totalPendingReturns;
+
+        addRecent(currentOrder, amount, data.returneds);
+
+        document.getElementById('order-panel').classList.remove('visible');
+        document.getElementById('success-title').textContent = `Paiement confirmé — ${amount.toFixed(3)} TND`;
+        document.getElementById('success-sub').textContent = `${sold.length} unité(s) payée(s)${refused.length > 0 ? `, ${refused.length} en attente de retour physique` : ''}.`;
+
+        const warn = document.getElementById('pending-warn');
+        if (refused.length > 0) {
+          warn.style.display = 'block';
+          warn.textContent = `⚠ ${refused.length} unité(s) encore chez le transporteur — scannez-les dans "Retour / échange" quand vous les recevez physiquement.`;
+        } else { warn.style.display = 'none'; }
+
+        document.getElementById('success-panel').classList.add('visible');
+        setFeedback('ok', data.message);
+        currentOrder = null;
+        itemStates = {};
+      } else {
+        showErrPopup(data.message);
+        btn.disabled = false;
+      }
+    } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); btn.disabled = false; }
+  }
+
+  function addRecent(order, amount, pendingCount) {
+    const list = document.getElementById('recent-list');
+    const item = document.createElement('div');
+    item.className = 'recent-item';
+    item.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+        <span style="font-weight:500;">${order.bordereau_barcode}</span>
+        <span class="recent-amount">${amount.toFixed(3)} TND</span>
+      </div>
+      <div class="recent-bc">${pendingCount > 0 ? pendingCount+' retour(s) en attente' : 'Payé intégralement'}</div>
+    `;
+    if (list.firstChild && list.firstChild.textContent.includes('Aucun')) list.innerHTML = '';
+    list.prepend(item);
+  }
+
+  function setFeedback(type, msg) {
+    const f = document.getElementById('feedback');
+    f.className = 'feedback ' + type;
+    document.getElementById('feedback-msg').textContent = msg;
+  }
+</script>
+{% include "inventory/partials/error_popup.html" %}
+</body>
+</html>

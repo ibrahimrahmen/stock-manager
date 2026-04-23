@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Revenu net</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0e0e0c;--surface:#161614;--surface2:#1e1e1b;
+      --border:rgba(255,255,255,0.06);--text:#f0ede6;--muted:#7a7870;--hint:#3a3a36;
+      --green:#3dba8a;--green-dim:rgba(61,186,138,0.1);
+      --amber:#e8a020;--amber-dim:rgba(232,160,32,0.1);
+      --red:#e05050;--red-dim:rgba(224,80,80,0.1);
+      --blue:#5090e0;--blue-dim:rgba(80,144,224,0.1);
+      --radius:16px;--radius-sm:10px;
+    }
+    body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+    nav{display:flex;align-items:center;gap:16px;padding:18px 32px;border-bottom:0.5px solid var(--border);}
+    nav a{font-size:13px;color:var(--muted);text-decoration:none;}
+    nav a:hover{color:var(--text);}
+    .nav-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:600;}
+    .admin-badge{font-size:11px;background:var(--green-dim);color:var(--green);border:0.5px solid rgba(61,186,138,0.2);border-radius:20px;padding:4px 10px;margin-left:auto;}
+
+    .page{max-width:860px;margin:0 auto;padding:40px 24px;}
+    .page-title{font-family:'Syne',sans-serif;font-size:32px;font-weight:700;letter-spacing:-.02em;margin-bottom:6px;}
+    .page-sub{font-size:14px;color:var(--muted);margin-bottom:40px;}
+
+    /* BIG NET REVENUE CARD */
+    .hero-card{background:var(--surface);border:0.5px solid var(--border);border-radius:20px;padding:36px;margin-bottom:24px;text-align:center;}
+    .hero-label{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:12px;}
+    .hero-amount{font-family:'Syne',sans-serif;font-size:56px;font-weight:700;color:var(--green);letter-spacing:-.03em;margin-bottom:4px;}
+    .hero-amount.negative{color:var(--red);}
+    .hero-currency{font-size:20px;color:var(--muted);}
+
+    /* BREAKDOWN GRID */
+    .breakdown{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;}
+    .bcard{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:20px;}
+    .bcard-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;}
+    .bcard-val{font-size:24px;font-weight:500;}
+    .bcard-val.green{color:var(--green);}
+    .bcard-val.red{color:var(--red);}
+    .bcard-val.amber{color:var(--amber);}
+    .bcard-sub{font-size:12px;color:var(--hint);margin-top:4px;}
+
+    /* FORMULA */
+    .formula{background:var(--surface2);border-radius:var(--radius-sm);padding:16px 20px;margin-bottom:24px;font-size:13px;color:var(--muted);line-height:1.8;}
+    .formula span{color:var(--text);font-weight:500;}
+    .formula .minus{color:var(--red);}
+    .formula .equals{color:var(--green);font-weight:600;font-size:15px;}
+
+    /* SECTION */
+    .section-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px;margin-top:28px;}
+
+    table{width:100%;border-collapse:collapse;background:var(--surface);border-radius:var(--radius);border:0.5px solid var(--border);overflow:hidden;}
+    th{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:10px 14px;border-bottom:0.5px solid var(--border);}
+    td{font-size:13px;padding:10px 14px;border-bottom:0.5px solid var(--border);}
+    tr:last-child td{border-bottom:none;}
+    tr:hover td{background:var(--surface2);}
+    .mono{font-family:monospace;font-size:12px;}
+    .g{color:var(--green);}
+    .r{color:var(--red);}
+    .a{color:var(--amber);}
+    .order-link{color:var(--blue);text-decoration:none;}
+    .order-link:hover{text-decoration:underline;}
+  </style>
+</head>
+<body>
+<nav>
+  <a href="{% url 'dashboard' %}">← Dashboard</a>
+  <span class="nav-title">Revenu net</span>
+  <span class="admin-badge">Admin uniquement</span>
+</nav>
+
+<div class="page">
+
+  <!-- DATE FILTER -->
+  <form method="get" style="display:flex;align-items:center;gap:10px;margin-bottom:32px;flex-wrap:wrap;">
+    <div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:8px 14px;">
+      <label style="font-size:12px;color:var(--muted);white-space:nowrap;">Du</label>
+      <input type="date" name="date_from" value="{{ date_from }}" style="background:transparent;border:none;color:var(--text);font-size:13px;outline:none;cursor:pointer;">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:8px 14px;">
+      <label style="font-size:12px;color:var(--muted);white-space:nowrap;">Au</label>
+      <input type="date" name="date_to" value="{{ date_to }}" style="background:transparent;border:none;color:var(--text);font-size:13px;outline:none;cursor:pointer;">
+    </div>
+    <button type="submit" style="padding:8px 20px;background:var(--text);color:#000;border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;">Filtrer</button>
+    <a href="{% url 'revenue' %}" style="font-size:13px;color:var(--muted);text-decoration:none;">Tout afficher</a>
+    {% if date_from or date_to %}
+    <span style="font-size:12px;color:var(--amber);background:var(--amber-dim);padding:4px 10px;border-radius:20px;">Période filtrée</span>
+    {% endif %}
+  </form>
+
+  <div class="page-title">{{ net_revenue|floatformat:3 }} TND</div>
+  <div class="page-sub">Revenu net{% if date_from or date_to %} · période filtrée{% else %} total{% endif %} — prix vente - prix achat - frais retours</div>
+
+  <div class="formula">
+    <span>{{ total_sell|floatformat:3 }} TND</span> (ventes)
+    <span class="minus"> − {{ total_buy|floatformat:3 }} TND</span> (achats)
+    <span class="minus"> − {{ return_fees|floatformat:3 }} TND</span> ({{ total_returns }} retour(s) × 1 TND)
+    <span class="equals"> = {{ net_revenue|floatformat:3 }} TND</span>
+  </div>
+
+  <div class="breakdown">
+    <div class="bcard">
+      <div class="bcard-label">Revenus ventes</div>
+      <div class="bcard-val green">{{ total_sell|floatformat:3 }} TND</div>
+      <div class="bcard-sub">{{ total_paid_units }} unité(s) payée(s)</div>
+    </div>
+    <div class="bcard">
+      <div class="bcard-label">Coût d'achat</div>
+      <div class="bcard-val red">{{ total_buy|floatformat:3 }} TND</div>
+      <div class="bcard-sub">Prix achat × unités vendues</div>
+    </div>
+    <div class="bcard">
+      <div class="bcard-label">Marge brute</div>
+      <div class="bcard-val {% if gross_margin >= 0 %}green{% else %}red{% endif %}">{{ gross_margin|floatformat:3 }} TND</div>
+      <div class="bcard-sub">{{ margin_pct|floatformat:1 }}% de marge</div>
+    </div>
+    <div class="bcard">
+      <div class="bcard-label">Frais retours</div>
+      <div class="bcard-val amber">{{ return_fees|floatformat:3 }} TND</div>
+      <div class="bcard-sub">{{ total_returns }} retour(s) × 1 TND</div>
+    </div>
+  </div>
+
+  <!-- ORDERS BREAKDOWN -->
+  <div class="section-title">Détail par ordre payé</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Bordereau</th>
+        <th>Payé le</th>
+        <th>Unités payées</th>
+        <th>Retours</th>
+        <th>Ventes</th>
+        <th>Achats</th>
+        <th>Net</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in order_rows %}
+      <tr>
+        <td><a href="{% url 'order_detail' row.order.pk %}" class="order-link mono">{{ row.order.bordereau_barcode }}</a></td>
+        <td style="color:var(--muted);font-size:12px;">{{ row.order.paid_at|date:"d/m/Y" }}</td>
+        <td>{{ row.paid_count }}</td>
+        <td class="{% if row.return_count > 0 %}a{% endif %}">{{ row.return_count }}</td>
+        <td class="g">{{ row.sell_total|floatformat:3 }}</td>
+        <td class="r">{{ row.buy_total|floatformat:3 }}</td>
+        <td class="{% if row.net >= 0 %}g{% else %}r{% endif %}">{{ row.net|floatformat:3 }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Aucun ordre payé pour le moment.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+</body>
+</html>

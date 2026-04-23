@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ordre {{ order.bordereau_barcode }}</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#f5f4f0;--surface:#fff;--border:rgba(0,0,0,0.09);
+      --text:#1a1a18;--muted:#73726c;--hint:#b0afa8;
+      --green:#1a9e6e;--green-bg:#e8f7f1;
+      --red:#d94f4e;--red-bg:#fdeaea;
+      --amber:#b87414;--amber-bg:#fef3dc;
+      --blue:#1a5fa8;--blue-bg:#e8f0fb;
+      --purple:#6d4fc2;--purple-bg:#f0ecfc;
+      --radius:14px;--radius-sm:8px;
+    }
+    body{background:var(--bg);font-family:system-ui,sans-serif;color:var(--text);min-height:100vh;}
+    .page{max-width:900px;margin:0 auto;padding:28px 24px;}
+    .topbar{display:flex;align-items:center;gap:12px;margin-bottom:28px;}
+    .back{font-size:13px;color:var(--muted);text-decoration:none;}
+    .back:hover{color:var(--text);}
+    h1{font-size:19px;font-weight:500;}
+    .status-badge{font-size:11px;padding:4px 12px;border-radius:20px;}
+    .s-open{background:var(--green-bg);color:var(--green);}
+    .s-closed{background:#eee;color:var(--muted);}
+    .s-paid{background:var(--purple-bg);color:var(--purple);}
+
+    .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:24px;}
+    .info-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:14px;}
+    .info-label{font-size:11px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em;}
+    .info-val{font-size:14px;font-weight:500;}
+    .info-val.green{color:var(--green);}
+    .info-val.purple{color:var(--purple);}
+    .info-val.mono{font-family:monospace;font-size:12px;}
+
+    .section-title{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px;}
+
+    /* PAYMENT BOX */
+    .payment-box{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:24px;}
+    .pay-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:8px 0;border-bottom:0.5px solid var(--border);}
+    .pay-row:last-child{border-bottom:none;padding-top:12px;}
+    .pay-label{color:var(--muted);}
+    .pay-val{font-weight:500;}
+    .pay-val.green{color:var(--green);}
+    .pay-val.red{color:var(--red);}
+    .pay-val.strike{text-decoration:line-through;color:var(--hint);font-weight:400;}
+
+    .change-btn{padding:5px 12px;background:transparent;color:var(--blue);border:0.5px solid var(--blue);border-radius:var(--radius-sm);font-size:12px;cursor:pointer;transition:all .15s;}
+    .change-btn:hover{background:var(--blue-bg);}
+
+    .edit-row{display:none;align-items:center;gap:8px;padding:10px 0;border-bottom:0.5px solid var(--border);}
+    .edit-row.visible{display:flex;}
+    .amount-input{border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;font-size:14px;color:var(--text);width:150px;text-align:right;outline:none;font-family:monospace;background:var(--bg);}
+    .amount-input:focus{border-color:var(--text);}
+    .save-btn{padding:6px 14px;background:var(--text);color:#fff;border:none;border-radius:var(--radius-sm);font-size:12px;cursor:pointer;}
+    .save-btn:hover{opacity:.85;}
+    .cancel-btn{padding:6px 10px;background:transparent;border:0.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;cursor:pointer;color:var(--muted);}
+
+    .reconcile-note{font-size:12px;color:var(--amber);background:var(--amber-bg);border-radius:var(--radius-sm);padding:8px 12px;margin-top:10px;display:none;}
+    .save-ok{font-size:12px;color:var(--green);margin-left:4px;display:none;}
+
+    /* ITEMS */
+    .items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:10px;margin-bottom:28px;}
+    .item-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;position:relative;}
+    .item-card.returned{opacity:.5;border-style:dashed;}
+    .item-card.pending{border-color:var(--red);border-style:dashed;}
+    .item-img{width:100%;height:100px;object-fit:cover;display:block;}
+    .item-img-ph{width:100%;height:100px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted);background:#e8e7e2;}
+    .item-body{padding:9px;}
+    .item-name{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .item-color{font-size:11px;color:var(--muted);margin-bottom:5px;}
+    .item-row{display:flex;justify-content:space-between;align-items:center;}
+    .item-price{font-size:12px;font-weight:500;}
+    .item-size{font-size:10px;background:var(--blue-bg);color:var(--blue);padding:2px 6px;border-radius:8px;}
+    .item-bc{font-size:9px;color:var(--hint);font-family:monospace;margin-top:3px;}
+    .item-status{font-size:10px;padding:2px 7px;border-radius:8px;margin-top:4px;display:inline-block;}
+    .ss-shipped{background:var(--amber-bg);color:var(--amber);}
+    .ss-paid{background:var(--green-bg);color:var(--green);}
+    .ss-returned{background:var(--red-bg);color:var(--red);}
+    .ss-returned{background:#eee;color:var(--muted);}
+    .ss-shipped{background:var(--blue-bg);color:var(--blue);}
+    .returned-ribbon{position:absolute;top:6px;left:6px;background:var(--red-bg);color:var(--red);font-size:9px;padding:2px 6px;border-radius:6px;font-weight:500;}
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="topbar">
+    <a href="{% url 'dashboard' %}" class="back">← Dashboard</a>
+    <h1>Ordre {{ order.bordereau_barcode }}</h1>
+    <span class="status-badge s-{{ order.status }}">
+      {% if order.status == 'open' %}Ouvert{% elif order.status == 'closed' %}Fermé{% else %}Payé{% endif %}
+    </span>
+  </div>
+
+  <div class="info-grid">
+    <div class="info-card">
+      <div class="info-label">Bordereau</div>
+      <div class="info-val mono">{{ order.bordereau_barcode }}</div>
+    </div>
+    <div class="info-card">
+      <div class="info-label">Ouvert le</div>
+      <div class="info-val">{{ order.opened_at|date:"d/m/Y à H:i" }}</div>
+    </div>
+    <div class="info-card">
+      <div class="info-label">Fermé le</div>
+      <div class="info-val">{{ order.closed_at|date:"d/m/Y à H:i"|default:"—" }}</div>
+    </div>
+    <div class="info-card">
+      <div class="info-label">Unités</div>
+      <div class="info-val green">{{ order.unit_count }}</div>
+    </div>
+    {% if order.paid_at %}
+    <div class="info-card">
+      <div class="info-label">Payé le</div>
+      <div class="info-val purple">{{ order.paid_at|date:"d/m/Y à H:i" }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if order.status != 'open' %}
+  <div class="section-title">Paiement</div>
+  <div class="payment-box">
+
+    {% for item in items %}
+    <div class="pay-row">
+      <span class="pay-label">
+        {{ item.unit.variant.product.name }} {{ item.unit.variant.color_label }} — {{ item.unit.size }}
+      </span>
+      <span class="pay-val {% if item.display_status == 'returned' or item.display_status == 'returned' %}strike{% endif %}">
+        {{ item.unit.variant.product.sell_price|floatformat:3 }} TND
+        {% if item.display_status == 'returned' %}<span style="font-size:10px;color:var(--red);margin-left:4px;">Retourné</span>{% endif %}
+        
+      </span>
+    </div>
+    {% endfor %}
+
+    <div class="pay-row">
+      <span class="pay-label">Frais livraison</span>
+      <span class="pay-val">7.000 TND</span>
+    </div>
+
+    <div class="pay-row" style="border-bottom:0.5px solid var(--border);">
+      <span class="pay-label" style="color:var(--text);font-weight:500;">Total calculé</span>
+      <span class="pay-val green" id="calculated-total">{{ calculated_total|floatformat:3 }} TND</span>
+    </div>
+
+
+    <div class="pay-row">
+      <span class="pay-label" style="color:var(--text);font-weight:500;">Montant collecté</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="pay-val green" id="display-amount">{{ order.amount_collected|floatformat:3|default:"0.000" }} TND</span>
+        <button class="change-btn" onclick="showEdit()">Modifier</button>
+        <span class="save-ok" id="save-ok">✓ Sauvegardé</span>
+      </div>
+    </div>
+
+    <div class="edit-row" id="edit-row">
+      <input class="amount-input" type="number" id="amount-input"
+        value="{{ order.amount_collected|floatformat:3|default:'0.000' }}"
+        step="0.001" min="0">
+      <button class="save-btn" onclick="saveAmount()">Enregistrer</button>
+      <button class="cancel-btn" onclick="hideEdit()">Annuler</button>
+    </div>
+
+    <div class="reconcile-note" id="reconcile-note"></div>
+  </div>
+  {% endif %}
+
+  <div class="section-title">{{ items|length }} unité(s)</div>
+  <div class="items-grid">
+    {% for item in items %}
+    <div class="item-card {% if item.unit.status == 'returned' %}returned{% elif item.unit.status == 'returned' %}pending{% endif %}">
+      {% if item.display_status == 'returned' %}<div class="returned-ribbon">Retourné</div>{% endif %}
+      {% if item.display_status == 'returned' %}<div class="returned-ribbon">Retourné</div>{% endif %}
+      {% if item.unit.variant.image %}
+        <img class="item-img" src="{{ item.unit.variant.image.url }}" alt="">
+      {% else %}
+        <div class="item-img-ph">{{ item.unit.variant.color_label }}</div>
+      {% endif %}
+      <div class="item-body">
+        <div class="item-name">{{ item.unit.variant.product.name }}</div>
+        <div class="item-color">{{ item.unit.variant.color_label }}</div>
+        <div class="item-row">
+          <span class="item-price">{{ item.unit.variant.product.sell_price|floatformat:3 }} TND</span>
+          <span class="item-size">{{ item.unit.size }}</span>
+        </div>
+        <div class="item-bc">{{ item.unit.barcode }}</div>
+        <span class="item-status ss-{{ item.display_status }}">{{ item.display_status_label }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+  function showEdit() {
+    document.getElementById('edit-row').classList.add('visible');
+    document.getElementById('amount-input').focus();
+  }
+  function hideEdit() {
+    document.getElementById('edit-row').classList.remove('visible');
+  }
+  async function saveAmount() {
+    var amount = parseFloat(document.getElementById('amount-input').value) || 0;
+    try {
+      var res = await fetch("{% url 'api_update_order_amount' order.pk %}", {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({amount_collected: amount}),
+      });
+      var data = await res.json();
+      if (data.status === 'ok') {
+        document.getElementById('display-amount').textContent = amount.toFixed(3) + ' TND';
+        hideEdit();
+        var ok = document.getElementById('save-ok');
+        ok.style.display = 'inline';
+        setTimeout(() => ok.style.display = 'none', 2500);
+        if (data.note) {
+          var note = document.getElementById('reconcile-note');
+          note.style.display = 'block';
+          note.textContent = data.note;
+        }
+      }
+    } catch(e) { alert('Erreur réseau.'); }
+  }
+</script>
+</body>
+</html>

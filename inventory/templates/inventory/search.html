@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recherche</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#f5f4f0;--surface:#fff;--border:rgba(0,0,0,0.09);
+      --text:#1a1a18;--muted:#73726c;--hint:#b0afa8;
+      --green:#1a9e6e;--green-bg:#e8f7f1;
+      --red:#d94f4e;--red-bg:#fdeaea;
+      --amber:#b87414;--amber-bg:#fef3dc;
+      --blue:#1a5fa8;--blue-bg:#e8f0fb;
+      --purple:#6d4fc2;--purple-bg:#f0ecfc;
+      --radius:14px;--radius-sm:8px;
+    }
+    body{background:var(--bg);font-family:system-ui,sans-serif;color:var(--text);min-height:100vh;}
+    nav{display:flex;align-items:center;gap:12px;padding:16px 28px;background:var(--surface);border-bottom:0.5px solid var(--border);}
+    nav a{font-size:13px;color:var(--muted);text-decoration:none;}
+    nav a:hover{color:var(--text);}
+    nav h1{font-size:15px;font-weight:500;}
+
+    .hero{display:flex;flex-direction:column;align-items:center;padding:48px 24px 24px;gap:16px;}
+    .hero-title{font-size:18px;font-weight:500;}
+    .hero-sub{font-size:13px;color:var(--muted);}
+
+    .search-wrap{display:flex;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden;width:100%;max-width:560px;transition:border-color .2s;}
+    .search-wrap:focus-within{border-color:var(--text);}
+    .search-icon{padding:0 16px;color:var(--hint);}
+    .search-icon svg{display:block;width:20px;height:20px;}
+    .search-input{flex:1;border:none;outline:none;font-size:16px;color:var(--text);padding:15px 0;background:transparent;}
+    .search-input::placeholder{color:var(--hint);}
+    .search-btn{background:var(--text);color:#fff;border:none;padding:0 22px;font-size:13px;font-weight:500;cursor:pointer;height:52px;}
+    .search-btn:hover{opacity:.85;}
+
+    .hint-chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}
+    .hint-chip{font-size:12px;background:var(--surface);border:0.5px solid var(--border);border-radius:20px;padding:5px 12px;color:var(--muted);cursor:pointer;}
+    .hint-chip:hover{color:var(--text);border-color:var(--text);}
+
+    .results{max-width:720px;margin:0 auto;padding:0 24px 40px;}
+
+    /* UNIT RESULT */
+    .result-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px;}
+    .result-header{display:flex;align-items:center;gap:14px;padding:16px;}
+    .result-img{width:64px;height:64px;border-radius:10px;object-fit:cover;flex-shrink:0;}
+    .result-img-ph{width:64px;height:64px;border-radius:10px;background:#e8e7e2;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);flex-shrink:0;}
+    .result-title{font-size:15px;font-weight:500;}
+    .result-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+    .result-bc{font-size:11px;font-family:monospace;color:var(--hint);margin-top:2px;}
+    .result-status{margin-left:auto;font-size:11px;padding:4px 10px;border-radius:10px;flex-shrink:0;}
+    .rs-in_stock{background:var(--green-bg);color:var(--green);}
+    .rs-in_order{background:var(--blue-bg);color:var(--blue);}
+    .rs-shipped{background:var(--amber-bg);color:var(--amber);}
+    .rs-sold{background:#eee;color:var(--muted);}
+    .rs-pending_return{background:var(--red-bg);color:var(--red);}
+    .rs-returned{background:#eee;color:var(--hint);}
+
+    .result-body{border-top:0.5px solid var(--border);padding:14px 16px;}
+    .detail-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:0.5px solid var(--border);}
+    .detail-row:last-child{border-bottom:none;}
+    .detail-label{color:var(--muted);}
+    .detail-val{font-weight:500;}
+    .detail-link{color:var(--blue);text-decoration:none;font-weight:500;}
+    .detail-link:hover{text-decoration:underline;}
+
+    /* ORDER RESULT */
+    .order-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);margin-bottom:16px;}
+    .order-header{display:flex;align-items:center;gap:12px;padding:16px;border-bottom:0.5px solid var(--border);}
+    .order-title{font-size:15px;font-weight:500;font-family:monospace;}
+    .order-badge{font-size:11px;padding:3px 10px;border-radius:10px;}
+    .ob-open{background:var(--green-bg);color:var(--green);}
+    .ob-closed{background:#eee;color:var(--muted);}
+    .ob-paid{background:var(--purple-bg);color:var(--purple);}
+    .order-link{margin-left:auto;font-size:12px;color:var(--blue);text-decoration:none;}
+    .order-link:hover{text-decoration:underline;}
+    .order-items{display:flex;flex-wrap:wrap;gap:8px;padding:14px 16px;}
+    .order-item-chip{display:flex;align-items:center;gap:6px;background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;font-size:12px;}
+    .chip-img{width:28px;height:28px;border-radius:4px;object-fit:cover;}
+    .chip-ph{width:28px;height:28px;border-radius:4px;background:#e8e7e2;display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted);}
+
+    .no-result{text-align:center;padding:48px;color:var(--hint);font-size:14px;}
+    .no-result svg{display:block;margin:0 auto 12px;opacity:.25;width:40px;height:40px;}
+
+    .searching{text-align:center;padding:32px;color:var(--muted);font-size:13px;}
+  </style>
+</head>
+<body>
+<nav>
+  <a href="{% url 'dashboard' %}">← Dashboard</a>
+  <h1>Recherche</h1>
+</nav>
+
+<div class="hero">
+  <div class="hero-title">Rechercher une unité ou un ordre</div>
+  <div class="hero-sub">Entrez un barcode produit, un bordereau, ou un nom de produit</div>
+
+  <div class="search-wrap">
+    <span class="search-icon">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/>
+      </svg>
+    </span>
+    <input class="search-input" id="search-input" placeholder="RLF-RED-40-001 ou 123456789012 ou Ralph..." autofocus autocomplete="off">
+    <button class="search-btn" onclick="doSearch()">Rechercher</button>
+  </div>
+
+  <div class="hint-chips">
+    <span class="hint-chip" onclick="fillSearch('barcode')">Barcode unité</span>
+    <span class="hint-chip" onclick="fillSearch('bordereau')">Bordereau</span>
+    <span class="hint-chip" onclick="fillSearch('product')">Nom produit</span>
+  </div>
+</div>
+
+<div class="results" id="results"></div>
+
+<script>
+  var input = document.getElementById('search-input');
+  input.addEventListener('keydown', e => { if(e.key==='Enter') doSearch(); });
+
+  // Pre-fill from URL param
+  var params = new URLSearchParams(window.location.search);
+  var q = params.get('q');
+  if (q) { input.value = q; doSearch(); }
+
+  function fillSearch(type) {
+    var hints = {barcode:'RLF-RED-40-001', bordereau:'123456789012', product:'Ralph'};
+    input.value = hints[type] || '';
+    input.focus();
+  }
+
+  async function doSearch() {
+    var query = input.value.trim();
+    if (!query) return;
+    var results = document.getElementById('results');
+    results.innerHTML = '<div class="searching">Recherche en cours...</div>';
+
+    try {
+      var res = await fetch("{% url 'api_search' %}?q=" + encodeURIComponent(query));
+      var data = await res.json();
+      renderResults(data, query);
+    } catch(e) {
+      results.innerHTML = '<div class="no-result">Erreur réseau.</div>';
+    }
+  }
+
+  function renderResults(data, query) {
+    var results = document.getElementById('results');
+    if (!data.units.length && !data.orders.length) {
+      results.innerHTML = '<div class="no-result"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>Aucun résultat pour "' + query + '"</div>';
+      return;
+    }
+    var html = '';
+
+    data.units.forEach(unit => {
+      var imgHtml = unit.image_url
+        ? '<img class="result-img" src="'+unit.image_url+'" alt="">'
+        : '<div class="result-img-ph">'+unit.color_label.slice(0,2)+'</div>';
+      html += '<div class="result-card">';
+      html += '<div class="result-header">' + imgHtml;
+      html += '<div><div class="result-title">'+unit.product_name+' — '+unit.color_label+'</div>';
+      html += '<div class="result-sub">Taille '+unit.size+' · '+unit.sell_price+' TND</div>';
+      html += '<div class="result-bc">'+unit.barcode+'</div></div>';
+      html += '<span class="result-status rs-'+unit.status+'">'+unit.status_label+'</span></div>';
+      html += '<div class="result-body">';
+      html += '<div class="detail-row"><span class="detail-label">Statut</span><span class="detail-val">'+unit.status_label+'</span></div>';
+      if (unit.order_bordereau) {
+        html += '<div class="detail-row"><span class="detail-label">Ordre</span><a class="detail-link" href="/orders/'+unit.order_id+'/">'+unit.order_bordereau+'</a></div>';
+      }
+      html += '<div class="detail-row"><span class="detail-label">Reçu le</span><span class="detail-val">'+unit.created_at+'</span></div>';
+      html += '</div></div>';
+    });
+
+    data.orders.forEach(order => {
+      var badgeClass = 'ob-'+order.status;
+      var statusLabel = {open:'Ouvert',closed:'Fermé',paid:'Payé'}[order.status] || order.status;
+      html += '<div class="order-card">';
+      html += '<div class="order-header">';
+      html += '<div><div class="order-title">'+order.bordereau_barcode+'</div>';
+      html += '<div style="font-size:12px;color:var(--muted);margin-top:2px;">'+order.opened_at+' · '+order.unit_count+' unité(s)</div></div>';
+      html += '<span class="order-badge '+badgeClass+'">'+statusLabel+'</span>';
+      html += '<a class="order-link" href="/orders/'+order.id+'/">Voir le détail →</a></div>';
+      if (order.items.length) {
+        html += '<div class="order-items">';
+        order.items.forEach(item => {
+          var chipImg = item.image_url
+            ? '<img class="chip-img" src="'+item.image_url+'" alt="">'
+            : '<div class="chip-ph">'+item.color_label.slice(0,2)+'</div>';
+          html += '<div class="order-item-chip">'+chipImg+'<span>'+item.product_name+' '+item.color_label+' — '+item.size+'</span></div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+
+    results.innerHTML = html;
+  }
+</script>
+</body>
+</html>

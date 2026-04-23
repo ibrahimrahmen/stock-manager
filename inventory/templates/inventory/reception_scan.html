@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Réception stock</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#f5f4f0;--surface:#fff;--border:rgba(0,0,0,0.09);
+      --text:#1a1a18;--muted:#73726c;--hint:#b0afa8;
+      --green:#1a9e6e;--green-bg:#e8f7f1;--green-border:#a3dfc5;
+      --red:#d94f4e;--red-bg:#fdeaea;
+      --amber:#b87414;--amber-bg:#fef3dc;
+      --blue:#1a5fa8;--blue-bg:#e8f0fb;
+      --radius:16px;--radius-sm:10px;
+    }
+    body{background:var(--bg);font-family:system-ui,sans-serif;color:var(--text);min-height:100vh;display:flex;flex-direction:column;}
+    nav{display:flex;align-items:center;gap:12px;padding:16px 28px;background:var(--surface);border-bottom:0.5px solid var(--border);}
+    nav a{font-size:13px;color:var(--muted);text-decoration:none;}
+    nav a:hover{color:var(--text);}
+    nav h1{font-size:15px;font-weight:500;}
+    .nav-pill{font-size:12px;padding:5px 14px;border-radius:20px;border:0.5px solid var(--border);color:var(--muted);text-decoration:none;}
+    .nav-pill.active{background:var(--text);color:#fff;border-color:var(--text);}
+    nav .spacer{flex:1;}
+
+    .hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;gap:20px;}
+    .hero-title{font-size:15px;font-weight:500;}
+    .hero-sub{font-size:13px;color:var(--muted);text-align:center;}
+    .hint-format{font-size:12px;background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:8px 16px;color:var(--muted);font-family:monospace;}
+
+    .scan-field{display:flex;align-items:center;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden;width:100%;max-width:520px;transition:border-color .2s;}
+    .scan-field:focus-within{border-color:var(--text);}
+    .scan-field.flash-ok{border-color:var(--green);}
+    .scan-field.flash-err{border-color:var(--red);}
+    .scan-icon{padding:0 16px;color:var(--hint);}
+    .scan-icon svg{display:block;width:22px;height:22px;}
+    .scan-input{flex:1;border:none;outline:none;font-size:17px;font-family:monospace;color:var(--text);padding:16px 0;background:transparent;}
+    .scan-input::placeholder{color:var(--hint);font-size:15px;font-family:system-ui;}
+    .scan-submit{background:var(--text);color:#fff;border:none;padding:0 22px;font-size:13px;font-weight:500;cursor:pointer;height:56px;}
+    .scan-submit:hover{opacity:.85;}
+
+    .feedback-bar{font-size:13px;padding:10px 18px;border-radius:var(--radius-sm);min-width:300px;text-align:center;}
+    .feedback-bar.idle{color:var(--hint);}
+    .feedback-bar.ok{background:var(--green-bg);color:var(--green);}
+    .feedback-bar.err{background:var(--red-bg);color:var(--red);}
+
+    .session-count{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);background:var(--surface);border:0.5px solid var(--border);border-radius:20px;padding:7px 16px;}
+    .count-num{font-size:15px;font-weight:500;color:var(--green);}
+
+    /* POPUP */
+    .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:100;align-items:center;justify-content:center;padding:20px;}
+    .overlay.visible{display:flex;}
+    .popup{background:var(--surface);border-radius:var(--radius);width:100%;max-width:400px;overflow:hidden;animation:popIn .18s ease;}
+    @keyframes popIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+    .popup-img{width:100%;height:180px;object-fit:cover;display:block;}
+    .popup-img-ph{width:100%;height:180px;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted);background:#e8e7e2;}
+    .popup-body{padding:20px;}
+    .popup-name{font-size:18px;font-weight:500;margin-bottom:4px;}
+    .popup-color{font-size:13px;color:var(--muted);margin-bottom:14px;}
+    .popup-tags{display:flex;gap:8px;margin-bottom:14px;}
+    .tag{font-size:12px;padding:4px 12px;border-radius:20px;}
+    .tag-size{background:var(--blue-bg);color:var(--blue);}
+    .tag-ok{background:var(--green-bg);color:var(--green);}
+    .popup-bc{font-size:11px;font-family:monospace;color:var(--hint);}
+    .popup-close{display:block;width:100%;margin-top:16px;padding:10px;background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;color:var(--muted);cursor:pointer;text-align:center;}
+    .popup-close:hover{background:var(--surface);color:var(--text);}
+  </style>
+</head>
+<body>
+<nav>
+  <a href="{% url 'dashboard' %}">← Dashboard</a>
+  <h1>Réception stock</h1>
+  <div class="spacer"></div>
+  <a href="{% url 'shipping_scan' %}" class="nav-pill">Expédition</a>
+</nav>
+
+<div class="hero">
+  <div class="session-count">
+    Reçus cette session : <span class="count-num" id="session-count">0</span>
+  </div>
+  <div class="hero-title">Scanner une unité pour l'ajouter au stock</div>
+  <div class="hint-format">Format : RLF-RED-40-001</div>
+
+  <div class="scan-field" id="scan-field">
+    <span class="scan-icon">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z"/>
+      </svg>
+    </span>
+    <input class="scan-input" id="scan-input" placeholder="Scanner le barcode produit..." autofocus autocomplete="off">
+    <button class="scan-submit" onclick="doScan()">OK</button>
+  </div>
+
+  <div class="feedback-bar idle" id="feedback">Prêt à recevoir du stock...</div>
+</div>
+
+<!-- POPUP -->
+<div class="overlay" id="overlay" onclick="closePopup()">
+  <div class="popup" onclick="event.stopPropagation()">
+    <div id="popup-img-wrap"></div>
+    <div class="popup-body">
+      <div class="popup-name" id="popup-name"></div>
+      <div class="popup-color" id="popup-color"></div>
+      <div class="popup-tags">
+        <span class="tag tag-size" id="popup-size"></span>
+        <span class="tag tag-ok">Ajouté au stock</span>
+      </div>
+      <div class="popup-bc" id="popup-bc"></div>
+      <button class="popup-close" onclick="closePopup()">Fermer et continuer →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  var sessionCount = 0;
+  var autoCloseTimer = null;
+
+  var input = document.getElementById('scan-input');
+  if (input) input.addEventListener('keydown', e => { if(e.key==='Enter') doScan(); });
+
+  async function doScan() {
+    var barcode = input.value.trim();
+    input.value = ''; input.focus();
+    if (!barcode) return;
+    if (autoCloseTimer) { clearTimeout(autoCloseTimer); closePopup(); }
+    try {
+      var res = await fetch("{% url 'api_scan_reception' %}", {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({barcode}),
+      });
+      var data = await res.json();
+      if (data.status === 'error') {
+        showErrPopup(data.message);
+        flashField('err');
+      } else {
+        setFeedback('ok', data.message);
+        flashField('ok');
+        sessionCount++;
+        document.getElementById('session-count').textContent = sessionCount;
+        showPopup(data.unit);
+      }
+    } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); }
+  }
+
+  function showPopup(unit) {
+    var imgWrap = document.getElementById('popup-img-wrap');
+    imgWrap.innerHTML = unit.image_url
+      ? '<img class="popup-img" src="'+unit.image_url+'" alt="">'
+      : '<div class="popup-img-ph">'+unit.color_label+'</div>';
+    document.getElementById('popup-name').textContent = unit.product_name;
+    document.getElementById('popup-color').textContent = unit.color_label + ' — ' + parseFloat(unit.sell_price).toFixed(3) + ' TND';
+    document.getElementById('popup-size').textContent = 'Taille ' + unit.size;
+    document.getElementById('popup-bc').textContent = unit.barcode;
+    document.getElementById('overlay').classList.add('visible');
+    autoCloseTimer = setTimeout(closePopup, 3000);
+  }
+
+  function closePopup() {
+    document.getElementById('overlay').classList.remove('visible');
+    if (autoCloseTimer) { clearTimeout(autoCloseTimer); autoCloseTimer = null; }
+    input.focus();
+  }
+
+  function setFeedback(type, msg) {
+    var f = document.getElementById('feedback');
+    f.className = 'feedback-bar ' + type;
+    f.textContent = msg;
+  }
+
+  function flashField(type) {
+    var f = document.getElementById('scan-field');
+    f.classList.remove('flash-ok','flash-err');
+    void f.offsetWidth;
+    f.classList.add('flash-' + type);
+    setTimeout(() => f.classList.remove('flash-ok','flash-err'), 600);
+  }
+</script>
+{% include "inventory/partials/error_popup.html" %}
+</body>
+</html>

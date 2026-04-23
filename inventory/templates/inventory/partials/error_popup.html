@@ -1,0 +1,27 @@
+<div id="err-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:380px;width:100%;text-align:center;animation:errPop .18s ease;">
+    <div style="width:52px;height:52px;border-radius:50%;background:#fdeaea;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+      <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="#d94f4e" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+    </div>
+    <div id="err-title" style="font-size:16px;font-weight:600;color:#1a1a18;margin-bottom:8px;">Scan refusé</div>
+    <div id="err-msg" style="font-size:14px;color:#73726c;line-height:1.6;margin-bottom:24px;"></div>
+    <button onclick="closeErrPopup()" style="width:100%;padding:12px;background:#1a1a18;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;">OK, compris</button>
+  </div>
+</div>
+<style>
+@keyframes errPop{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+</style>
+<script>
+function showErrPopup(message, title) {
+  document.getElementById('err-title').textContent = title || 'Scan refusé';
+  document.getElementById('err-msg').textContent = message;
+  var ov = document.getElementById('err-overlay');
+  ov.style.display = 'flex';
+}
+function closeErrPopup() {
+  document.getElementById('err-overlay').style.display = 'none';
+  var inp = document.getElementById('modal-scan-input') || document.getElementById('scan-input');
+  if (inp) inp.focus();
+}
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeErrPopup(); });
+</script>

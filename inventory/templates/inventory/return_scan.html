@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Retour / échange</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#f5f4f0;--surface:#fff;--border:rgba(0,0,0,0.09);
+      --text:#1a1a18;--muted:#73726c;--hint:#b0afa8;
+      --green:#1a9e6e;--green-bg:#e8f7f1;--green-border:#a3dfc5;
+      --red:#d94f4e;--red-bg:#fdeaea;--red-border:#f5b5b5;
+      --amber:#b87414;--amber-bg:#fef3dc;
+      --blue:#1a5fa8;--blue-bg:#e8f0fb;
+      --radius:14px;--radius-sm:8px;
+    }
+    body{background:var(--bg);font-family:system-ui,sans-serif;color:var(--text);min-height:100vh;display:flex;flex-direction:column;}
+    nav{display:flex;align-items:center;gap:12px;padding:16px 28px;background:var(--surface);border-bottom:0.5px solid var(--border);}
+    nav a{font-size:13px;color:var(--muted);text-decoration:none;}
+    nav a:hover{color:var(--text);}
+    nav h1{font-size:15px;font-weight:500;}
+
+    .hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;gap:16px;}
+    .hero-sub{font-size:13px;color:var(--muted);text-align:center;}
+
+    .scan-field{display:flex;align-items:center;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden;width:100%;max-width:520px;transition:border-color .2s;}
+    .scan-field:focus-within{border-color:var(--text);}
+    .scan-field.flash-ok{border-color:var(--green);}
+    .scan-field.flash-err{border-color:var(--red);}
+    .scan-icon{padding:0 16px;color:var(--hint);}
+    .scan-icon svg{display:block;width:22px;height:22px;}
+    .scan-input{flex:1;border:none;outline:none;font-size:17px;font-family:monospace;color:var(--text);padding:16px 0;background:transparent;}
+    .scan-input::placeholder{color:var(--hint);font-size:15px;font-family:system-ui;}
+    .scan-submit{background:var(--text);color:#fff;border:none;padding:0 22px;font-size:13px;font-weight:500;cursor:pointer;height:56px;}
+    .scan-submit:hover{opacity:.85;}
+
+    .feedback-bar{font-size:13px;padding:10px 18px;border-radius:var(--radius-sm);min-width:300px;text-align:center;}
+    .feedback-bar.idle{color:var(--hint);}
+    .feedback-bar.ok{background:var(--green-bg);color:var(--green);}
+    .feedback-bar.err{background:var(--red-bg);color:var(--red);}
+    .feedback-bar.warn{background:var(--amber-bg);color:var(--amber);}
+
+    /* RESULT POPUP — single unit */
+    .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:100;align-items:center;justify-content:center;padding:20px;}
+    .overlay.visible{display:flex;}
+
+    .popup{background:var(--surface);border-radius:var(--radius);width:100%;max-width:400px;overflow:hidden;animation:popIn .18s ease;}
+    @keyframes popIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+    .popup-img{width:100%;height:180px;object-fit:cover;display:block;}
+    .popup-img-ph{width:100%;height:180px;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted);background:#e8e7e2;}
+    .popup-body{padding:20px;}
+    .popup-name{font-size:17px;font-weight:500;margin-bottom:4px;}
+    .popup-color{font-size:13px;color:var(--muted);margin-bottom:14px;}
+    .popup-tags{display:flex;gap:8px;margin-bottom:16px;}
+    .tag{font-size:12px;padding:4px 12px;border-radius:20px;}
+    .tag-size{background:var(--blue-bg);color:var(--blue);}
+    .tag-returned{background:var(--red-bg);color:var(--red);}
+    .popup-bc{font-size:11px;font-family:monospace;color:var(--hint);margin-bottom:16px;}
+    .popup-reconcile{font-size:12px;background:var(--amber-bg);color:var(--amber);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:16px;display:none;}
+    .popup-close{display:block;width:100%;padding:10px;background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;color:var(--muted);cursor:pointer;text-align:center;}
+    .popup-close:hover{background:var(--surface);color:var(--text);}
+
+    /* MULTI-UNIT POPUP — order with multiple products */
+    .multi-popup{background:var(--surface);border-radius:var(--radius);width:100%;max-width:560px;overflow:hidden;animation:popIn .18s ease;}
+    .multi-head{padding:16px 20px;border-bottom:0.5px solid var(--border);}
+    .multi-title{font-size:15px;font-weight:500;}
+    .multi-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+    .multi-items{padding:12px 16px;max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;}
+    .multi-item{display:flex;align-items:center;gap:12px;padding:10px;border-radius:var(--radius-sm);border:0.5px solid var(--border);background:var(--bg);cursor:pointer;transition:all .15s;}
+    .multi-item:hover{border-color:var(--red-border);background:var(--red-bg);}
+    .multi-item.selected{border-color:var(--red-border);background:var(--red-bg);}
+    .multi-item.already-returned{opacity:.45;cursor:default;pointer-events:none;}
+    .multi-img{width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0;}
+    .multi-img-ph{width:44px;height:44px;border-radius:8px;background:#e8e7e2;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);flex-shrink:0;}
+    .multi-name{font-size:13px;font-weight:500;}
+    .multi-sub2{font-size:11px;color:var(--muted);}
+    .multi-size{margin-left:auto;font-size:11px;background:var(--blue-bg);color:var(--blue);padding:2px 8px;border-radius:10px;flex-shrink:0;}
+    .multi-check{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;}
+    .multi-item.selected .multi-check{background:var(--red);border-color:var(--red);color:#fff;}
+    .already-tag{font-size:10px;background:#eee;color:var(--muted);padding:2px 7px;border-radius:8px;margin-left:auto;}
+    .multi-footer{padding:14px 16px;border-top:0.5px solid var(--border);display:flex;gap:8px;}
+    .btn-confirm-return{flex:1;padding:10px;background:var(--red);color:#fff;border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;}
+    .btn-confirm-return:hover{opacity:.9;}
+    .btn-confirm-return:disabled{opacity:.4;cursor:default;}
+    .btn-cancel{padding:10px 16px;background:transparent;border:0.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;color:var(--muted);cursor:pointer;}
+
+    /* HISTORY */
+    .history{max-width:520px;width:100%;margin-top:8px;}
+    .history-title{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:8px;}
+    .history-item{display:flex;align-items:center;gap:10px;background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:6px;font-size:13px;}
+    .history-name{font-weight:500;}
+    .history-bc{font-family:monospace;font-size:11px;color:var(--hint);}
+    .history-tag{margin-left:auto;font-size:11px;background:var(--red-bg);color:var(--red);padding:2px 8px;border-radius:10px;flex-shrink:0;}
+  </style>
+</head>
+<body>
+<nav>
+  <a href="{% url 'dashboard' %}">← Dashboard</a>
+  <h1>Retour / échange</h1>
+</nav>
+
+<div class="hero">
+  <div class="hero-sub">Scannez un barcode produit ou un bordereau d'ordre</div>
+
+  <div class="scan-field" id="scan-field">
+    <span class="scan-icon">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3"/>
+      </svg>
+    </span>
+    <input class="scan-input" id="scan-input" placeholder="Scanner barcode produit ou bordereau..." autofocus autocomplete="off">
+    <button class="scan-submit" onclick="doScan()">OK</button>
+  </div>
+
+  <div class="feedback-bar idle" id="feedback">En attente de scan...</div>
+
+  <div class="history" id="history" style="display:none;">
+    <div class="history-title">Retours de cette session</div>
+    <div id="history-list"></div>
+  </div>
+</div>
+
+<!-- SINGLE UNIT POPUP -->
+<div class="overlay" id="single-overlay" onclick="closeSingle()">
+  <div class="popup" onclick="event.stopPropagation()">
+    <div id="single-img-wrap"></div>
+    <div class="popup-body">
+      <div class="popup-name" id="s-name"></div>
+      <div class="popup-color" id="s-color"></div>
+      <div class="popup-tags">
+        <span class="tag tag-size" id="s-size"></span>
+        <span class="tag tag-returned">Retourné</span>
+      </div>
+      <div class="popup-bc" id="s-bc"></div>
+      <div class="popup-reconcile" id="s-reconcile"></div>
+      <button class="popup-close" onclick="closeSingle()">Fermer et continuer →</button>
+    </div>
+  </div>
+</div>
+
+<!-- MULTI UNIT POPUP -->
+<div class="overlay" id="multi-overlay">
+  <div class="multi-popup" onclick="event.stopPropagation()">
+    <div class="multi-head">
+      <div class="multi-title" id="m-title">Choisir les unités à retourner</div>
+      <div class="multi-sub" id="m-sub"></div>
+    </div>
+    <div class="multi-items" id="m-items"></div>
+    <div class="multi-footer">
+      <button class="btn-cancel" onclick="closeMulti()">Annuler</button>
+      <button class="btn-confirm-return" id="btn-confirm-multi" onclick="confirmMulti()" disabled>Confirmer le retour</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  var input = document.getElementById('scan-input');
+  if (input) input.addEventListener('keydown', e => { if(e.key==='Enter') doScan(); });
+
+  var selectedBarcodes = new Set();
+  var pendingOrderId = null;
+
+  async function doScan() {
+    var barcode = input.value.trim();
+    input.value = ''; input.focus();
+    if (!barcode) return;
+
+    try {
+      var res = await fetch("{% url 'api_scan_return' %}", {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({barcode}),
+      });
+      var data = await res.json();
+      handleResult(data);
+    } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); }
+  }
+
+  function handleResult(data) {
+    if (data.status === 'error') {
+      showErrPopup(data.message);
+      flashField('err');
+      return;
+    }
+
+    if (data.type === 'unit_returned') {
+      // Single unit returned directly
+      setFeedback('ok', data.message);
+      flashField('ok');
+      showSinglePopup(data.unit, data.reconciliation);
+      addHistory(data.unit);
+    }
+
+    if (data.type === 'order_single') {
+      // Order with 1 product — auto return
+      setFeedback('ok', data.message);
+      flashField('ok');
+      showSinglePopup(data.unit, data.reconciliation);
+      addHistory(data.unit);
+    }
+
+    if (data.type === 'order_multiple') {
+      // Order with multiple products — show selection popup
+      setFeedback('warn', `Ordre ${data.order_bordereau} — ${data.items.length} unité(s). Choisissez lesquelles retourner.`);
+      showMultiPopup(data.order_bordereau, data.order_id, data.items);
+    }
+  }
+
+  function showSinglePopup(unit, reconciliation) {
+    var wrap = document.getElementById('single-img-wrap');
+    wrap.innerHTML = unit.image_url
+      ? '<img class="popup-img" src="'+unit.image_url+'" alt="">'
+      : '<div class="popup-img-ph">'+unit.color_label+'</div>';
+    document.getElementById('s-name').textContent = unit.product_name;
+    document.getElementById('s-color').textContent = unit.color_label + ' · ' + parseFloat(unit.sell_price).toFixed(3) + ' TND';
+    document.getElementById('s-size').textContent = 'Taille ' + unit.size;
+    document.getElementById('s-bc').textContent = unit.barcode;
+    var rec = document.getElementById('s-reconcile');
+    if (reconciliation) {
+      rec.style.display = 'block';
+      rec.textContent = '⚠ Ordre ' + reconciliation.order_bordereau + ' — montant ajusté automatiquement : -' + parseFloat(reconciliation.refund_amount).toFixed(3) + ' TND (nouveau total : ' + parseFloat(reconciliation.new_order_amount).toFixed(3) + ' TND)';
+    } else {
+      rec.style.display = 'none';
+    }
+    document.getElementById('single-overlay').classList.add('visible');
+    setTimeout(closeSingle, 4000);
+  }
+
+  function closeSingle() {
+    document.getElementById('single-overlay').classList.remove('visible');
+    input.focus();
+  }
+
+  function showMultiPopup(bordereau, orderId, items) {
+    pendingOrderId = orderId;
+    selectedBarcodes.clear();
+    document.getElementById('m-title').textContent = 'Ordre ' + bordereau;
+    document.getElementById('m-sub').textContent = items.length + ' unité(s) — sélectionnez celles à retourner';
+    var list = document.getElementById('m-items');
+    list.innerHTML = '';
+    items.forEach(item => {
+      var div = document.createElement('div');
+      var alreadyReturned = item.status === 'returned';
+      div.className = 'multi-item' + (alreadyReturned ? ' already-returned' : '');
+      div.dataset.barcode = item.barcode;
+      var imgHtml = item.image_url
+        ? '<img class="multi-img" src="'+item.image_url+'" alt="">'
+        : '<div class="multi-img-ph">'+item.color_label.slice(0,2)+'</div>';
+      div.innerHTML = imgHtml +
+        '<div><div class="multi-name">'+item.product_name+'</div><div class="multi-sub2">'+item.color_label+' · '+item.barcode+'</div></div>' +
+        (alreadyReturned
+          ? '<span class="already-tag">Déjà retourné</span>'
+          : '<span class="multi-size">'+item.size+'</span><div class="multi-check"></div>');
+      if (!alreadyReturned) {
+        div.addEventListener('click', function() { toggleMultiItem(this); });
+      }
+      list.appendChild(div);
+    });
+    document.getElementById('btn-confirm-multi').disabled = true;
+    document.getElementById('multi-overlay').classList.add('visible');
+  }
+
+  function toggleMultiItem(el) {
+    var barcode = el.dataset.barcode;
+    if (selectedBarcodes.has(barcode)) {
+      selectedBarcodes.delete(barcode);
+      el.classList.remove('selected');
+    } else {
+      selectedBarcodes.add(barcode);
+      el.classList.add('selected');
+    }
+    document.getElementById('btn-confirm-multi').disabled = selectedBarcodes.size === 0;
+  }
+
+  async function confirmMulti() {
+    var barcodes = Array.from(selectedBarcodes);
+    try {
+      var res = await fetch("{% url 'api_return_multiple' %}", {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({barcodes, order_id: pendingOrderId}),
+      });
+      var data = await res.json();
+      if (data.status === 'ok') {
+        closeMulti();
+        setFeedback('ok', data.message);
+        flashField('ok');
+        data.returned_units.forEach(unit => addHistory(unit));
+        if (data.reconciliation) {
+          setFeedback('warn', '⚠ ' + data.reconciliation.message);
+        }
+      } else {
+        showErrPopup(data.message);
+      }
+    } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); }
+  }
+
+  function closeMulti() {
+    document.getElementById('multi-overlay').classList.remove('visible');
+    selectedBarcodes.clear();
+    pendingOrderId = null;
+    input.focus();
+  }
+
+  function addHistory(unit) {
+    document.getElementById('history').style.display = 'block';
+    var item = document.createElement('div');
+    item.className = 'history-item';
+    item.innerHTML = '<div><div class="history-name">'+unit.product_name+' — '+unit.color_label+'</div><div class="history-bc">'+unit.barcode+'</div></div><span class="history-tag">'+unit.size+'</span>';
+    document.getElementById('history-list').prepend(item);
+  }
+
+  function setFeedback(type, msg) {
+    var f = document.getElementById('feedback');
+    f.className = 'feedback-bar ' + type;
+    f.textContent = msg;
+  }
+
+  function flashField(type) {
+    var f = document.getElementById('scan-field');
+    f.classList.remove('flash-ok', 'flash-err');
+    void f.offsetWidth;
+    f.classList.add('flash-' + type);
+    setTimeout(() => f.classList.remove('flash-ok', 'flash-err'), 600);
+  }
+</script>
+{% include "inventory/partials/error_popup.html" %}
+</body>
+</html>

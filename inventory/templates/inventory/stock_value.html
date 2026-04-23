@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Valeur du stock</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0f0f0d;--surface:#1a1a17;--surface2:#222220;
+      --border:rgba(255,255,255,0.07);--text:#f0ede6;--muted:#8a887f;--hint:#4a4843;
+      --green:#4ade9a;--green-dim:rgba(74,222,154,0.12);
+      --amber:#f5a623;--amber-dim:rgba(245,166,35,0.12);
+      --blue:#60a5fa;--blue-dim:rgba(96,165,250,0.12);
+      --purple:#a78bfa;--purple-dim:rgba(167,139,250,0.12);
+      --red:#f87171;--red-dim:rgba(248,113,113,0.12);
+      --radius:14px;--radius-sm:8px;
+    }
+    body{background:var(--bg);font-family:system-ui,sans-serif;color:var(--text);min-height:100vh;}
+    .page{max-width:960px;margin:0 auto;padding:32px 24px;}
+    .topbar{display:flex;align-items:center;gap:12px;margin-bottom:40px;}
+    .back{font-size:13px;color:var(--muted);text-decoration:none;}
+    .back:hover{color:var(--text);}
+    h1{font-size:22px;font-weight:500;}
+    .admin-badge{font-size:11px;background:var(--purple-dim);color:var(--purple);border:0.5px solid rgba(167,139,250,0.2);border-radius:20px;padding:4px 10px;margin-left:auto;}
+    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:32px;}
+    .stat{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:20px;}
+    .stat-label{font-size:12px;color:var(--muted);margin-bottom:8px;}
+    .stat-val{font-size:22px;font-weight:500;}
+    .stat-val.green{color:var(--green);}
+    .stat-val.amber{color:var(--amber);}
+    .stat-val.purple{color:var(--purple);}
+    .stat-val.red{color:var(--red);}
+    .stat-sub{font-size:11px;color:var(--hint);margin-top:4px;}
+    .section-title{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px;}
+    .info-box{background:var(--amber-dim);border:0.5px solid rgba(245,166,35,.2);border-radius:var(--radius-sm);padding:12px 16px;font-size:13px;color:var(--amber);margin-bottom:24px;}
+    table{width:100%;border-collapse:collapse;}
+    th{text-align:left;font-size:11px;font-weight:500;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:8px 12px;border-bottom:0.5px solid var(--border);}
+    td{padding:11px 12px;font-size:13px;border-bottom:0.5px solid var(--border);vertical-align:middle;}
+    tr:last-child td{border-bottom:none;}
+    tr:hover td{background:var(--surface2);}
+    .variant-thumb{width:32px;height:32px;border-radius:8px;object-fit:cover;vertical-align:middle;margin-right:10px;}
+    .variant-ph{width:32px;height:32px;border-radius:8px;background:var(--surface2);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);vertical-align:middle;margin-right:10px;}
+    .num{font-family:monospace;}
+    .green{color:var(--green);}
+    .amber{color:var(--amber);}
+    .status-pills{display:flex;gap:4px;flex-wrap:wrap;}
+    .pill{font-size:10px;padding:2px 6px;border-radius:8px;}
+    .pill-stock{background:var(--green-dim);color:var(--green);}
+    .pill-shipped{background:var(--amber-dim);color:var(--amber);}
+    .pill-pending{background:var(--red-dim);color:var(--red);}
+    .pill-order{background:var(--blue-dim);color:var(--blue);}
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="topbar">
+    <a href="{% url 'dashboard' %}" class="back">← Dashboard</a>
+    <h1>Valeur du stock</h1>
+    <div class="admin-badge">Admin uniquement</div>
+  </div>
+
+  <div class="info-box">
+    Cette vue inclut : stock physique + expédié non payé + retours en attente — tout ce qui représente votre argent engagé.
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat">
+      <div class="stat-label">Valeur d'achat totale</div>
+      <div class="stat-val amber">{{ total_buy|floatformat:3 }} TND</div>
+      <div class="stat-sub">Ce que vous avez investi</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Valeur de vente totale</div>
+      <div class="stat-val green">{{ total_sell|floatformat:3 }} TND</div>
+      <div class="stat-sub">Si tout est vendu</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Bénéfice potentiel</div>
+      <div class="stat-val purple">{{ potential_profit|floatformat:3 }} TND</div>
+      <div class="stat-sub">Marge brute totale</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Expédié non payé</div>
+      <div class="stat-val red">{{ total_sell_shipped|floatformat:3 }} TND</div>
+      <div class="stat-sub">En attente de paiement client</div>
+    </div>
+  </div>
+
+  <div class="section-title">Détail par variante</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Variante</th>
+        <th>Répartition</th>
+        <th>Total</th>
+        <th>Valeur achat</th>
+        <th>Valeur vente</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;">
+            {% if row.variant.image %}
+              <img src="{{ row.variant.image.url }}" class="variant-thumb" alt="">
+            {% else %}
+              <div class="variant-ph">{{ row.variant.color_name|slice:":2" }}</div>
+            {% endif %}
+            <div>
+              <div>{{ row.variant.product.name }}</div>
+              <div style="font-size:11px;color:var(--muted);">{{ row.variant.color_label }}</div>
+            </div>
+          </div>
+        </td>
+        <td>
+          <div class="status-pills">
+            {% if row.in_stock %}<span class="pill pill-stock">{{ row.in_stock }} en stock</span>{% endif %}
+            {% if row.shipped %}<span class="pill pill-order">{{ row.shipped }} en ordre</span>{% endif %}
+            {% if row.shipped %}<span class="pill pill-shipped">{{ row.shipped }} expédié</span>{% endif %}
+            {% if row.returned %}<span class="pill pill-stock">{{ row.returned }} retourné</span>{% endif %}
+          </div>
+        </td>
+        <td class="num">{{ row.total_units }}</td>
+        <td class="num amber">{{ row.buy_total|floatformat:3 }} TND</td>
+        <td class="num green">{{ row.sell_total|floatformat:3 }} TND</td>
+      </tr>
+      {% empty %}
+        <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">Aucun stock enregistré.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+</body>
+</html>

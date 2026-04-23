@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ product.name }}</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#f5f4f0;--surface:#fff;--border:rgba(0,0,0,0.09);
+      --text:#1a1a18;--muted:#73726c;--hint:#b0afa8;
+      --green:#1a9e6e;--green-bg:#e8f7f1;
+      --red:#d94f4e;--red-bg:#fdeaea;
+      --amber:#b87414;--amber-bg:#fef3dc;
+      --blue:#1a5fa8;--blue-bg:#e8f0fb;
+      --radius:14px;--radius-sm:8px;
+    }
+    body{background:var(--bg);font-family:system-ui,sans-serif;color:var(--text);min-height:100vh;}
+    .page{max-width:960px;margin:0 auto;padding:28px 24px;}
+    .topbar{display:flex;align-items:center;gap:12px;margin-bottom:28px;}
+    .back{font-size:13px;color:var(--muted);text-decoration:none;}
+    .back:hover{color:var(--text);}
+    h1{font-size:20px;font-weight:500;}
+    .meta{font-size:13px;color:var(--muted);margin-top:2px;}
+    .section-title{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px;margin-top:28px;}
+
+    .variants-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;}
+    .vcard{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+    .vcard-img{width:100%;height:160px;object-fit:cover;display:block;}
+    .vcard-ph{width:100%;height:160px;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted);background:#e8e7e2;font-weight:500;}
+    .vcard-body{padding:14px;}
+    .vcard-name{font-size:15px;font-weight:500;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+    .badge{font-size:10px;padding:2px 8px;border-radius:10px;}
+    .badge-ok{background:var(--green-bg);color:var(--green);}
+    .badge-low{background:var(--amber-bg);color:var(--amber);}
+    .badge-out{background:var(--red-bg);color:var(--red);}
+
+    .size-grid{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+    .size-chip{display:flex;flex-direction:column;align-items:center;background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;min-width:44px;}
+    .size-chip.has-stock{background:var(--green-bg);border-color:var(--green-border, #a3dfc5);}
+    .size-label{font-size:11px;color:var(--muted);}
+    .size-count{font-size:16px;font-weight:500;color:var(--text);}
+    .size-chip.has-stock .size-count{color:var(--green);}
+    .size-chip.has-stock .size-label{color:var(--green);}
+
+    .vcard-total{display:flex;justify-content:space-between;font-size:13px;padding-top:10px;border-top:0.5px solid var(--border);}
+    .total-label{color:var(--muted);}
+    .total-num{font-weight:500;font-size:16px;}
+    .total-num.zero{color:var(--red);}
+    .total-num.low{color:var(--amber);}
+    .total-num.ok{color:var(--green);}
+
+    /* UNITS TABLE */
+    .filter-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+    .fbtn{font-size:12px;padding:5px 12px;border-radius:20px;border:0.5px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;}
+    .fbtn.active{background:var(--text);color:#fff;border-color:var(--text);}
+    table{width:100%;border-collapse:collapse;background:var(--surface);border-radius:var(--radius);border:0.5px solid var(--border);overflow:hidden;}
+    th{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:10px 14px;border-bottom:0.5px solid var(--border);}
+    td{font-size:13px;padding:9px 14px;border-bottom:0.5px solid var(--border);}
+    tr:last-child td{border-bottom:none;}
+    tr:hover td{background:var(--bg);}
+    .ubc{font-family:monospace;font-size:12px;}
+    .ustatus{font-size:11px;padding:2px 8px;border-radius:8px;}
+    .us-in_stock{background:var(--green-bg);color:var(--green);}
+    .us-shipped{background:var(--blue-bg);color:var(--blue);}
+    .us-shipped{background:var(--amber-bg);color:var(--amber);}
+    .us-paid{background:#eee;color:var(--muted);}
+    .us-returned{background:var(--red-bg);color:var(--red);}
+    .us-returned{background:#eee;color:var(--hint);}
+    .empty-row{text-align:center;color:var(--hint);padding:24px;font-size:13px;}
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="topbar">
+    <a href="{% url 'dashboard' %}" class="back">← Dashboard</a>
+    <div>
+      <h1>{{ product.name }}</h1>
+      <div class="meta">
+        Code : {{ product.code }}
+        {% if product.category %} · {{ product.category }}{% endif %}
+        · Achat {{ product.buy_price|floatformat:3 }} TND
+        · Vente {{ product.sell_price|floatformat:3 }} TND
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">Stock par variante et taille</div>
+  <div class="variants-grid">
+    {% for variant in variants %}
+    {% with stock=variant.total_stock %}
+    <div class="vcard">
+      {% if variant.image %}
+        <img class="vcard-img" src="{{ variant.image.url }}" alt="{{ variant.color_label }}">
+      {% else %}
+        <div class="vcard-ph">{{ variant.color_label }}</div>
+      {% endif %}
+      <div class="vcard-body">
+        <div class="vcard-name">
+          {{ variant.color_label }}
+          {% if stock == 0 %}<span class="badge badge-out">Épuisé</span>
+          {% elif stock <= product.alert_threshold %}<span class="badge badge-low">Stock bas</span>
+          {% else %}<span class="badge badge-ok">En stock</span>{% endif %}
+        </div>
+        <div class="size-grid">
+          {% regroup variant.units.all by size as by_size %}
+          {% for sg in by_size %}
+          {% with in_stock_count=sg.list|length %}
+          <div class="size-chip {% if in_stock_count > 0 %}has-stock{% endif %}">
+            <span class="size-count">{{ in_stock_count }}</span>
+            <span class="size-label">{{ sg.grouper }}</span>
+          </div>
+          {% endwith %}
+          {% empty %}
+          <span style="font-size:12px;color:var(--hint);">Aucune unité</span>
+          {% endfor %}
+        </div>
+        <div class="vcard-total">
+          <span class="total-label">Total en stock</span>
+          <span class="total-num {% if stock == 0 %}zero{% elif stock <= product.alert_threshold %}low{% else %}ok{% endif %}">{{ stock }}</span>
+        </div>
+      </div>
+    </div>
+    {% endwith %}
+    {% empty %}
+    <div style="color:var(--hint);font-size:13px;">Aucune variante.</div>
+    {% endfor %}
+  </div>
+
+  <div class="section-title">Toutes les unités</div>
+  <div class="filter-bar">
+    <button class="fbtn active" onclick="filter('all',this)">Tout</button>
+    <button class="fbtn" onclick="filter('in_stock',this)">En stock</button>
+    <button class="fbtn" onclick="filter('shipped',this)">Expédié</button>
+    <button class="fbtn" onclick="filter('paid',this)">Vendu</button>
+    <button class="fbtn" onclick="filter('returned',this)">Retourné</button>
+  </div>
+  <table>
+    <thead>
+      <tr><th>Barcode</th><th>Couleur</th><th>Taille</th><th>Statut</th><th>Date réception</th></tr>
+    </thead>
+    <tbody id="units-tbody">
+      {% for variant in variants %}
+        {% for unit in variant.units.all %}
+        <tr data-status="{{ unit.status }}">
+          <td class="ubc">{{ unit.barcode }}</td>
+          <td>{{ variant.color_label }}</td>
+          <td>{{ unit.size }}</td>
+          <td><span class="ustatus us-{{ unit.status }}">{{ unit.get_status_display }}</span></td>
+          <td style="color:var(--muted);font-size:12px;">{{ unit.created_at|date:"d/m/Y" }}</td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<script>
+  function filter(status, btn) {
+    document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('#units-tbody tr').forEach(row => {
+      row.style.display = (status === 'all' || row.dataset.status === status) ? '' : 'none';
+    });
+  }
+</script>
+</body>
+</html>

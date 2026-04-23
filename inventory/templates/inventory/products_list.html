@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Produits</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0e0e0c;--surface:#161614;--surface2:#1e1e1b;
+      --border:rgba(255,255,255,0.06);--text:#f0ede6;--muted:#7a7870;--hint:#3a3a36;
+      --green:#3dba8a;--green-dim:rgba(61,186,138,0.1);
+      --amber:#e8a020;--amber-dim:rgba(232,160,32,0.1);
+      --red:#e05050;--red-dim:rgba(224,80,80,0.1);
+      --blue:#5090e0;--blue-dim:rgba(80,144,224,0.1);
+      --radius:20px;--radius-sm:10px;
+    }
+    body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+
+    nav{display:flex;align-items:center;gap:16px;padding:18px 32px;border-bottom:0.5px solid var(--border);}
+    nav a{font-size:13px;color:var(--muted);text-decoration:none;transition:color .15s;}
+    nav a:hover{color:var(--text);}
+    .nav-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:600;letter-spacing:-.01em;}
+    .nav-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+    .add-btn{font-size:12px;padding:7px 16px;border-radius:20px;background:var(--text);color:#000;border:none;cursor:pointer;font-weight:500;text-decoration:none;}
+    .add-btn:hover{opacity:.85;}
+
+    .page{padding:32px;}
+
+    .stats{display:flex;gap:12px;margin-bottom:40px;flex-wrap:wrap;}
+    .stat{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:14px 20px;min-width:130px;}
+    .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;}
+    .stat-val{font-size:24px;font-weight:500;}
+    .stat-val.g{color:var(--green);}
+    .stat-val.a{color:var(--amber);}
+
+    .section-label{font-family:'Syne',sans-serif;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:16px;}
+
+    /* PRODUCT BUBBLES */
+    .products-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;margin-bottom:48px;}
+
+    .product-bubble{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:transform .2s,border-color .2s;text-decoration:none;display:block;animation:fadeUp .3s ease both;}
+    .product-bubble:hover{transform:translateY(-4px);border-color:rgba(255,255,255,.12);}
+    .product-bubble:active{transform:translateY(-2px) scale(.98);}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+    .bubble-img{width:100%;height:160px;object-fit:cover;display:block;}
+    .bubble-ph{width:100%;height:160px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-size:28px;font-weight:700;color:var(--hint);background:var(--surface2);letter-spacing:-.02em;}
+    .bubble-body{padding:14px;}
+    .bubble-name{font-family:'Syne',sans-serif;font-size:14px;font-weight:600;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .bubble-code{font-size:11px;color:var(--muted);font-family:monospace;margin-bottom:10px;}
+    .bubble-stats{display:flex;gap:6px;flex-wrap:wrap;}
+    .bstat{font-size:11px;padding:3px 8px;border-radius:8px;}
+    .bstat-stock{background:var(--green-dim);color:var(--green);}
+    .bstat-shipped{background:var(--amber-dim);color:var(--amber);}
+    .bstat-low{background:var(--red-dim);color:var(--red);}
+    .bubble-price{font-size:13px;font-weight:500;color:var(--text);margin-top:8px;}
+
+    /* VARIANTS inside bubble (shown on hover/click) */
+    .variants-strip{display:flex;gap:6px;overflow-x:auto;padding:10px 14px;border-top:0.5px solid var(--border);scrollbar-width:none;}
+    .variants-strip::-webkit-scrollbar{display:none;}
+    .vthumb{width:40px;height:40px;border-radius:8px;object-fit:cover;flex-shrink:0;border:1.5px solid transparent;transition:border-color .15s;}
+    .vthumb-ph{width:40px;height:40px;border-radius:8px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--muted);flex-shrink:0;}
+    .vthumb:hover,.vthumb-ph:hover{border-color:var(--text);}
+
+    .empty{text-align:center;padding:80px 0;color:var(--muted);}
+    .empty-title{font-family:'Syne',sans-serif;font-size:18px;font-weight:600;margin-bottom:8px;}
+    .empty-sub{font-size:13px;margin-bottom:20px;}
+  </style>
+</head>
+<body>
+<nav>
+  <a href="{% url 'dashboard' %}">← Dashboard</a>
+  <span class="nav-title">Produits</span>
+  <div class="nav-right">
+    <a href="/admin/inventory/product/add/" class="add-btn">+ Nouveau produit</a>
+  </div>
+</nav>
+
+<div class="page">
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Produits</div><div class="stat-val">{{ products|length }}</div></div>
+    <div class="stat"><div class="stat-label">Disponibles</div><div class="stat-val g">{{ total_available }}</div></div>
+    <div class="stat"><div class="stat-label">Expédiés</div><div class="stat-val a">{{ total_shipped }}</div></div>
+    <div class="stat"><div class="stat-label">Payés</div><div class="stat-val">{{ total_paid }}</div></div>
+  </div>
+
+  {% if products %}
+  <div class="section-label">{{ products|length }} produit(s)</div>
+  <div class="products-grid">
+    {% for product in products %}
+    {% with variants=product.variants.all stock=product.total_stock %}
+    <a href="{% url 'product_detail' product.pk %}" class="product-bubble" style="animation-delay:{{ forloop.counter0|add:0 }}00ms">
+      {% with first_variant=variants.first %}
+      {% if first_variant and first_variant.image %}
+        <img class="bubble-img" src="{{ first_variant.image.url }}" alt="{{ product.name }}">
+      {% else %}
+        <div class="bubble-ph">{{ product.code }}</div>
+      {% endif %}
+      {% endwith %}
+      <div class="bubble-body">
+        <div class="bubble-name">{{ product.name }}</div>
+        <div class="bubble-code">{{ product.code }}{% if product.category %} · {{ product.category }}{% endif %}</div>
+        <div class="bubble-stats">
+          <span class="bstat {% if stock == 0 %}bstat-low{% elif stock <= product.alert_threshold %}bstat-low{% else %}bstat-stock{% endif %}">
+            {{ stock }} en stock
+          </span>
+          {% if product.variants.count > 1 %}
+          <span class="bstat bstat-shipped">{{ product.variants.count }} variantes</span>
+          {% endif %}
+        </div>
+        <div class="bubble-price">{{ product.sell_price|floatformat:3 }} TND</div>
+      </div>
+      {% if variants|length > 1 %}
+      <div class="variants-strip">
+        {% for variant in variants %}
+          {% if variant.image %}
+            <img class="vthumb" src="{{ variant.image.url }}" title="{{ variant.color_label }}">
+          {% else %}
+            <div class="vthumb-ph" title="{{ variant.color_label }}">{{ variant.color_name|slice:":2" }}</div>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
+    </a>
+    {% endwith %}
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">
+    <div class="empty-title">Aucun produit</div>
+    <div class="empty-sub">Créez votre premier produit pour commencer</div>
+    <a href="/admin/inventory/product/add/" class="add-btn">+ Créer un produit</a>
+  </div>
+  {% endif %}
+</div>
+</body>
+</html>

@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scan expédition</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#f5f4f0;--surface:#fff;--border:rgba(0,0,0,0.09);
+      --text:#1a1a18;--muted:#73726c;--hint:#b0afa8;
+      --green:#1a9e6e;--green-bg:#e8f7f1;--green-border:#a3dfc5;
+      --red:#d94f4e;--red-bg:#fdeaea;
+      --amber:#b87414;--amber-bg:#fef3dc;
+      --blue:#1a5fa8;--blue-bg:#e8f0fb;
+      --radius:16px;--radius-sm:10px;
+    }
+    body{background:var(--bg);font-family:system-ui,sans-serif;color:var(--text);min-height:100vh;display:flex;flex-direction:column;}
+
+    /* TOP NAV */
+    nav{display:flex;align-items:center;gap:12px;padding:16px 28px;background:var(--surface);border-bottom:0.5px solid var(--border);}
+    nav a{font-size:13px;color:var(--muted);text-decoration:none;}
+    nav a:hover{color:var(--text);}
+    nav h1{font-size:15px;font-weight:500;}
+    .nav-pill{font-size:12px;padding:5px 14px;border-radius:20px;border:0.5px solid var(--border);color:var(--muted);text-decoration:none;background:transparent;}
+    .nav-pill.active{background:var(--text);color:#fff;border-color:var(--text);}
+    nav .spacer{flex:1;}
+
+    /* HERO SCAN AREA */
+    .hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;gap:24px;}
+    .hero-label{font-size:14px;color:var(--muted);text-align:center;}
+
+    .scan-field{display:flex;align-items:center;gap:0;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden;width:100%;max-width:520px;transition:border-color .2s;}
+    .scan-field:focus-within{border-color:var(--text);}
+    .scan-field.flash-ok{border-color:var(--green);}
+    .scan-field.flash-err{border-color:var(--red);}
+    .scan-icon{padding:0 16px;color:var(--hint);}
+    .scan-icon svg{display:block;width:22px;height:22px;}
+    .scan-input{flex:1;border:none;outline:none;font-size:17px;font-family:monospace;color:var(--text);padding:16px 0;background:transparent;}
+    .scan-input::placeholder{color:var(--hint);font-size:15px;font-family:system-ui;}
+    .scan-submit{background:var(--text);color:#fff;border:none;padding:0 22px;font-size:13px;font-weight:500;cursor:pointer;height:56px;transition:opacity .15s;}
+    .scan-submit:hover{opacity:.85;}
+
+    .feedback-bar{font-size:13px;padding:10px 18px;border-radius:var(--radius-sm);min-width:300px;text-align:center;}
+    .feedback-bar.idle{background:transparent;color:var(--hint);}
+    .feedback-bar.ok{background:var(--green-bg);color:var(--green);}
+    .feedback-bar.err{background:var(--red-bg);color:var(--red);}
+    .feedback-bar.warn{background:var(--amber-bg);color:var(--amber);}
+
+    /* ORDER STATUS CHIP */
+    .order-chip{display:flex;align-items:center;gap:8px;background:var(--surface);border:0.5px solid var(--border);border-radius:20px;padding:7px 16px;font-size:13px;}
+    .order-chip.active{border-color:var(--green-border);background:var(--green-bg);}
+    .chip-dot{width:8px;height:8px;border-radius:50%;background:var(--hint);}
+    .chip-dot.active{background:var(--green);}
+
+    /* MODAL OVERLAY */
+    .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:100;align-items:center;justify-content:center;padding:20px;}
+    .overlay.visible{display:flex;}
+
+    /* MODAL */
+    .modal{background:var(--surface);border-radius:var(--radius);width:100%;max-width:680px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;animation:popIn .2s ease;}
+    @keyframes popIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+
+    .modal-head{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:0.5px solid var(--border);}
+    .modal-title{font-size:16px;font-weight:500;}
+    .modal-bc{font-size:12px;font-family:monospace;color:var(--muted);}
+    .modal-count{margin-left:auto;font-size:13px;color:var(--muted);}
+    .modal-close-btn{padding:6px 14px;border-radius:var(--radius-sm);border:0.5px solid var(--border);background:transparent;font-size:12px;color:var(--muted);cursor:pointer;}
+    .modal-close-btn:hover{background:var(--red-bg);color:var(--red);border-color:var(--red);}
+
+    .modal-scan{padding:12px 20px;border-bottom:0.5px solid var(--border);display:flex;gap:8px;}
+    .modal-scan-input{flex:1;border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:9px 14px;font-size:15px;font-family:monospace;color:var(--text);outline:none;background:var(--bg);}
+    .modal-scan-input:focus{border-color:var(--text);}
+
+    .modal-feedback{padding:8px 20px;font-size:12px;min-height:32px;display:flex;align-items:center;}
+    .modal-feedback.ok{color:var(--green);}
+    .modal-feedback.err{color:var(--red);}
+    .modal-feedback.idle{color:var(--hint);}
+
+    .modal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;padding:16px 20px;overflow-y:auto;flex:1;}
+
+    .pcard{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;animation:cardIn .18s ease;position:relative;}
+    .pcard.new{border-color:var(--green);background:var(--green-bg);}
+    @keyframes cardIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    .pcard-img{width:100%;height:100px;object-fit:cover;display:block;}
+    .pcard-ph{width:100%;height:100px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted);background:#e8e7e2;}
+    .pcard-body{padding:9px;}
+    .pcard-name{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .pcard-color{font-size:11px;color:var(--muted);margin-bottom:5px;}
+    .pcard-row{display:flex;justify-content:space-between;align-items:center;}
+    .pcard-price{font-size:12px;font-weight:500;}
+    .pcard-size{font-size:10px;background:var(--blue-bg);color:var(--blue);padding:2px 6px;border-radius:8px;}
+    .pcard-bc{font-size:9px;color:var(--hint);font-family:monospace;margin-top:3px;}
+    .pcard-remove{position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.9);border:0.5px solid var(--border);color:var(--red);font-size:11px;cursor:pointer;display:none;align-items:center;justify-content:center;}
+    .pcard:hover .pcard-remove{display:flex;}
+
+    .modal-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;color:var(--hint);font-size:13px;text-align:center;grid-column:1/-1;}
+    .modal-empty svg{width:36px;height:36px;margin-bottom:12px;opacity:.3;}
+
+    .modal-footer{padding:14px 20px;border-top:0.5px solid var(--border);display:flex;align-items:center;gap:10px;}
+    .total-label{font-size:13px;color:var(--muted);}
+    .total-val{font-size:15px;font-weight:500;}
+    .footer-spacer{flex:1;}
+    .btn-close-order{padding:9px 20px;background:var(--text);color:#fff;border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;}
+    .btn-close-order:hover{opacity:.85;}
+
+    /* PRICE EDIT PANEL inside modal */
+    .price-panel{display:none;padding:14px 20px;border-top:0.5px solid var(--border);background:var(--bg);}
+    .price-panel.visible{display:block;}
+    .price-row{display:flex;align-items:center;justify-content:space-between;font-size:13px;margin-bottom:8px;}
+    .price-row-label{color:var(--muted);}
+    .price-input{border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;font-size:14px;color:var(--text);width:150px;text-align:right;outline:none;font-family:monospace;background:var(--surface);}
+    .price-input:focus{border-color:var(--text);}
+    .btn-confirm{width:100%;padding:10px;background:var(--green);color:#fff;border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;margin-top:8px;}
+    .btn-confirm:hover{opacity:.9;}
+  </style>
+</head>
+<body>
+
+<nav>
+  <a href="{% url 'dashboard' %}">← Dashboard</a>
+  <h1>Scan expédition</h1>
+  <div class="spacer"></div>
+  <a href="{% url 'shipping_scan' %}?mode=reception" class="nav-pill">Ajouter stock</a>
+</nav>
+
+<div class="hero">
+  <div class="order-chip {% if open_order %}active{% endif %}" id="order-chip">
+    <div class="chip-dot {% if open_order %}active{% endif %}" id="chip-dot"></div>
+    <span id="chip-label">{% if open_order %}Ordre ouvert : {{ open_order.bordereau_barcode }}{% else %}Aucun ordre ouvert{% endif %}</span>
+  </div>
+
+  <div class="hero-label">Scannez un bordereau (12 chiffres) pour ouvrir un ordre</div>
+
+  <div class="scan-field" id="scan-field">
+    <span class="scan-icon">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z"/>
+      </svg>
+    </span>
+    <input class="scan-input" id="scan-input" placeholder="Scanner un bordereau..." autofocus autocomplete="off">
+    <button class="scan-submit" onclick="doMainScan()">OK</button>
+  </div>
+
+  <div class="feedback-bar idle" id="feedback">En attente...</div>
+</div>
+
+<!-- MODAL -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title" id="modal-title">Ordre</div>
+        <div class="modal-bc" id="modal-bc"></div>
+      </div>
+      <div class="modal-count" id="modal-count">0 unité(s)</div>
+      <button class="modal-close-btn" onclick="openPricePanel()" id="btn-modify" style="margin-right:6px;">Modifier / Fermer</button>
+    </div>
+
+    <div class="modal-scan">
+      <input class="modal-scan-input" id="modal-scan-input" placeholder="Scanner un produit..." autocomplete="off">
+    </div>
+
+    <div class="modal-feedback idle" id="modal-feedback">Scannez les produits de cet ordre...</div>
+
+    <div class="modal-grid" id="modal-grid">
+      <div class="modal-empty" id="modal-empty">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
+        Scannez des produits pour les ajouter
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <span class="total-label">Total produits</span>
+      <span class="total-val" id="modal-total">0.000 TND</span>
+      <div class="footer-spacer"></div>
+      <span style="font-size:12px;color:var(--muted);">+ 7.000 TND livraison</span>
+    </div>
+
+    <div class="price-panel" id="price-panel">
+      <div class="price-row">
+        <span class="price-row-label">Produits</span>
+        <span id="pp-products">0.000 TND</span>
+      </div>
+      <div class="price-row">
+        <span class="price-row-label">Frais livraison</span>
+        <span>7.000 TND</span>
+      </div>
+      <div class="price-row" style="font-weight:500;">
+        <span class="price-row-label" style="color:var(--text);">Montant attendu</span>
+        <input class="price-input" type="number" id="pp-amount" step="0.001" min="0">
+      </div>
+      <button class="btn-confirm" onclick="confirmClose()">Confirmer et fermer l'ordre</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  var isReceptionMode = new URLSearchParams(window.location.search).get('mode') === 'reception';
+  if (isReceptionMode) {
+    document.querySelector('h1').textContent = 'Ajouter stock (réception)';
+    document.querySelector('.scan-input').placeholder = 'Scanner barcode produit (ex: RLF-RED-40-001)...';
+    document.querySelector('.hero-label').textContent = 'Scannez les unités pour les ajouter au stock';
+  }
+  var unitCount = {{ open_order.unit_count|default:0 }};
+  var currentOrderId = {% if open_order %}{{ open_order.id }}{% else %}null{% endif %};
+  var currentOrderBC = "{% if open_order %}{{ open_order.bordereau_barcode }}{% endif %}";
+  var runningTotal = 0;
+
+  // Main scan input (bordereau)
+  var mainInput = document.getElementById('scan-input');
+  if (mainInput) mainInput.addEventListener('keydown', e => { if(e.key==='Enter') doMainScan(); });
+
+  // Modal scan input (product units)
+  var modalInput = document.getElementById('modal-scan-input');
+  if (modalInput) modalInput.addEventListener('keydown', e => { if(e.key==='Enter') doModalScan(); });
+
+  // If order already open on load, show modal
+  {% if open_order %}
+  openModal("{{ open_order.bordereau_barcode }}", {{ open_order.id }}, {{ open_order.unit_count }});
+  {% endif %}
+
+  async function doMainScan() {
+    var barcode = mainInput.value.trim();
+    mainInput.value = ''; mainInput.focus();
+    if (!barcode) return;
+    try {
+      var url = isReceptionMode ? "{% url 'api_scan_reception' %}" : "{% url 'api_scan_shipping' %}";
+      var res = await fetch(url, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({barcode}),
+      });
+      var data = await res.json();
+      if (isReceptionMode) {
+        if (data.status === 'error') { showErrPopup(data.message); flashField('err'); }
+        else { setFeedback('ok', data.message); flashField('ok'); }
+      } else {
+        handleMainResult(data);
+      }
+    } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); }
+  }
+
+  function handleMainResult(data) {
+    if (data.status === 'error') { showErrPopup(data.message); flashField('err'); return; }
+    if (data.type === 'bordereau') {
+      setFeedback('ok', data.message);
+      flashField('ok');
+      unitCount = 0;
+      runningTotal = 0;
+      currentOrderId = data.new_order.id;
+      currentOrderBC = data.new_order.bordereau_barcode;
+      // FIX 1: Always clear the grid when opening a new order
+      var grid = document.getElementById('modal-grid');
+      grid.innerHTML = '<div class="modal-empty" id="modal-empty"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>Scannez des produits pour les ajouter</div>';
+      document.getElementById('modal-total').textContent = '0.000 TND';
+      openModal(data.new_order.bordereau_barcode, data.new_order.id, 0);
+      updateChip(data.new_order.bordereau_barcode);
+    }
+  }
+
+  function openModal(bc, orderId, count) {
+    document.getElementById('modal-title').textContent = 'Ordre ' + bc;
+    document.getElementById('modal-bc').textContent = bc;
+    document.getElementById('modal-count').textContent = count + ' unité(s)';
+    document.getElementById('overlay').classList.add('visible');
+    document.getElementById('price-panel').classList.remove('visible');
+    setTimeout(() => { var mi = document.getElementById('modal-scan-input'); if(mi) mi.focus(); }, 100);
+  }
+
+  async function doModalScan() {
+    var barcode = modalInput.value.trim();
+    modalInput.value = ''; modalInput.focus();
+    if (!barcode) return;
+    try {
+      var res = await fetch("{% url 'api_scan_shipping' %}", {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({barcode}),
+      });
+      var data = await res.json();
+      if (data.status === 'error') { showErrPopup(data.message); return; }
+      if (data.type === 'unit') {
+        setModalFeedback('ok', data.message);
+        unitCount = data.order.unit_count;
+        document.getElementById('modal-count').textContent = unitCount + ' unité(s)';
+        addCard(data.unit);
+        runningTotal += parseFloat(data.unit.sell_price);
+        document.getElementById('modal-total').textContent = runningTotal.toFixed(3) + ' TND';
+      }
+      if (data.type === 'bordereau') {
+        // New bordereau scanned inside modal → close current, open new
+        document.getElementById('overlay').classList.remove('visible');
+        handleMainResult(data);
+      }
+    } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); }
+  }
+
+  function addCard(unit) {
+    var empty = document.getElementById('modal-empty');
+    if (empty) empty.remove();
+    document.querySelectorAll('.pcard.new').forEach(c => c.classList.remove('new'));
+    var card = document.createElement('div');
+    card.className = 'pcard new';
+    card.dataset.barcode = unit.barcode;
+    var imgHtml = unit.image_url
+      ? '<img class="pcard-img" src="'+unit.image_url+'" alt="">'
+      : '<div class="pcard-ph">'+unit.color_label+'</div>';
+    card.innerHTML = imgHtml +
+      '<div class="pcard-body">' +
+        '<div class="pcard-name">'+unit.product_name+'</div>' +
+        '<div class="pcard-color">'+unit.color_label+'</div>' +
+        '<div class="pcard-row">' +
+          '<span class="pcard-price">'+parseFloat(unit.sell_price).toFixed(3)+' TND</span>' +
+          '<span class="pcard-size">'+unit.size+'</span>' +
+        '</div>' +
+        '<div class="pcard-bc">'+unit.barcode+'</div>' +
+      '</div>' +
+      '<button class="pcard-remove" onclick="removeUnit(\''+unit.barcode+'\',this)">✕</button>';
+    document.getElementById('modal-grid').prepend(card);
+    setTimeout(() => card.classList.remove('new'), 1000);
+  }
+
+  async function removeUnit(barcode, btn) {
+    try {
+      var res = await fetch("{% url 'api_remove_from_order' %}", {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({barcode}),
+      });
+      var data = await res.json();
+      if (data.status === 'ok') {
+        var card = btn.closest('.pcard');
+        var price = parseFloat(card.querySelector('.pcard-price').textContent);
+        runningTotal -= price;
+        document.getElementById('modal-total').textContent = runningTotal.toFixed(3) + ' TND';
+        card.remove();
+        unitCount = data.unit_count;
+        document.getElementById('modal-count').textContent = unitCount + ' unité(s)';
+        setModalFeedback('ok', barcode + ' retiré.');
+      } else { setModalFeedback('err', data.message); }
+    } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); }
+  }
+
+  function openPricePanel() {
+    document.getElementById('pp-products').textContent = runningTotal.toFixed(3) + ' TND';
+    document.getElementById('pp-amount').value = (runningTotal + 7).toFixed(3);
+    document.getElementById('price-panel').classList.add('visible');
+  }
+
+  async function confirmClose() {
+    var amount = parseFloat(document.getElementById('pp-amount').value) || 0;
+    try {
+      var res = await fetch("{% url 'api_close_order' %}", {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({expected_amount: amount}),
+      });
+      var data = await res.json();
+      if (data.status === 'ok') {
+        document.getElementById('overlay').classList.remove('visible');
+        setFeedback('ok', 'Ordre ' + currentOrderBC + ' fermé — ' + amount.toFixed(3) + ' TND attendu.');
+        updateChip(null);
+        currentOrderId = null; currentOrderBC = ''; unitCount = 0; runningTotal = 0;
+        document.getElementById('modal-grid').innerHTML = '<div class="modal-empty" id="modal-empty"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>Scannez des produits pour les ajouter</div>';
+      } else { setModalFeedback('err', data.message); }
+    } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); }
+  }
+
+  function updateChip(bc) {
+    var chip = document.getElementById('order-chip');
+    var dot = document.getElementById('chip-dot');
+    var label = document.getElementById('chip-label');
+    if (bc) { chip.classList.add('active'); dot.classList.add('active'); label.textContent = 'Ordre ouvert : ' + bc; }
+    else { chip.classList.remove('active'); dot.classList.remove('active'); label.textContent = 'Aucun ordre ouvert'; }
+  }
+
+  function setFeedback(type, msg) {
+    var f = document.getElementById('feedback');
+    f.className = 'feedback-bar ' + type;
+    f.textContent = msg;
+  }
+
+  function setModalFeedback(type, msg) {
+    var f = document.getElementById('modal-feedback');
+    f.className = 'modal-feedback ' + type;
+    f.textContent = msg;
+  }
+
+  function flashField(type) {
+    var f = document.getElementById('scan-field');
+    f.classList.remove('flash-ok','flash-err');
+    void f.offsetWidth;
+    f.classList.add('flash-' + type);
+    setTimeout(() => f.classList.remove('flash-ok','flash-err'), 600);
+  }
+</script>
+{% include "inventory/partials/error_popup.html" %}
+</body>
+</html>
