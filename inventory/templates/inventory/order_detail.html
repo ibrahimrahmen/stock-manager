@@ -92,6 +92,19 @@
     <span class="status-badge s-{{ order.status }}">
       {% if order.status == 'open' %}Ouvert{% elif order.status == 'closed' %}Fermé{% else %}Payé{% endif %}
     </span>
+    <button onclick="checkNavex()" id="navex-btn"
+      style="margin-left:auto;padding:7px 16px;background:transparent;border:0.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:6px;">
+      🚚 Vérifier sur Navex
+    </button>
+  </div>
+
+  <!-- NAVEX STATUS BOX -->
+  <div id="navex-box" style="display:none;background:var(--blue-bg);border:0.5px solid rgba(26,95,168,0.2);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:16px;font-size:13px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+      <strong style="color:var(--blue);">🚚 Statut Navex (information seulement)</strong>
+      <span style="font-size:11px;color:var(--muted);">Ne modifie pas votre système</span>
+    </div>
+    <div id="navex-content" style="color:var(--text);"></div>
   </div>
 
   <div class="info-grid">
@@ -195,6 +208,43 @@
 </div>
 
 <script>
+  async function checkNavex() {
+    var btn = document.getElementById('navex-btn');
+    var box = document.getElementById('navex-box');
+    var content = document.getElementById('navex-content');
+    btn.textContent = '⏳ Chargement...';
+    btn.disabled = true;
+    try {
+      var res = await fetch("{% url 'api_navex_status' order.pk %}", {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: '{}'
+      });
+      var data = await res.json();
+      box.style.display = 'block';
+      if (data.status === 'ok') {
+        var navex = data.navex;
+        var html = '';
+        if (navex.status) html += '<div><strong>Statut :</strong> ' + navex.status + '</div>';
+        if (navex.status_message) html += '<div><strong>Message :</strong> ' + navex.status_message + '</div>';
+        if (navex.etat) html += '<div><strong>État :</strong> ' + navex.etat + '</div>';
+        // Show all fields from response
+        for (var key in navex) {
+          if (!['status', 'status_message', 'etat'].includes(key)) {
+            html += '<div><strong>' + key + ' :</strong> ' + JSON.stringify(navex[key]) + '</div>';
+          }
+        }
+        content.innerHTML = html || '<span style="color:var(--muted);">Aucune information disponible</span>';
+      } else {
+        content.innerHTML = '<span style="color:var(--red);">' + data.message + '</span>';
+      }
+    } catch(e) {
+      content.innerHTML = '<span style="color:var(--red);">Erreur réseau</span>';
+    }
+    btn.textContent = '🚚 Vérifier sur Navex';
+    btn.disabled = false;
+  }
+
   function showEdit() {
     document.getElementById('edit-row').classList.add('visible');
     document.getElementById('amount-input').focus();

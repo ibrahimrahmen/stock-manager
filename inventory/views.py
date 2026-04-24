@@ -754,6 +754,31 @@ def admin_panel(request):
 
 
 @login_required(login_url="/login/")
+@csrf_exempt
+@require_POST
+def api_navex_status(request, pk):
+    """Check Navex status for an order — read only, never modifies our data."""
+    import urllib.request
+    import urllib.parse
+
+    order = get_object_or_404(ShippingOrder, pk=pk)
+
+    try:
+        data = urllib.parse.urlencode({'code': order.bordereau_barcode}).encode()
+        req = urllib.request.Request(
+            'https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php',
+            data=data,
+            method='POST'
+        )
+        req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+        with urllib.request.urlopen(req, timeout=10) as response:
+            import json as json_lib
+            result = json_lib.loads(response.read().decode())
+            return JsonResponse({"status": "ok", "navex": result})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": f"Erreur Navex : {str(e)}"})
+
+
 def products_list(request):
     products = Product.objects.prefetch_related("variants__units").all()
     total_available = ProductUnit.objects.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)).count()

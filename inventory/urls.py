@@ -20,6 +20,7 @@ urlpatterns = [
     path("orders/<int:pk>/", views.order_detail, name="order_detail"),
     path("api/orders/<int:pk>/update-amount/", views.api_update_order_amount, name="api_update_order_amount"),
     path("api/orders/<int:pk>/fix-units/", views.api_fix_order_units, name="api_fix_order_units"),
+    path("api/orders/<int:pk>/navex-status/", views.api_navex_status, name="api_navex_status"),
     path("products/", views.products_list, name="products_list"),
     path("admin-panel/", views.admin_panel, name="admin_panel"),
     path("revenue/", views.revenue, name="revenue"),
