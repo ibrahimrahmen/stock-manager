@@ -101,11 +101,11 @@
     </div>
     <div class="info-card">
       <div class="info-label">Ouvert le</div>
-      <div class="info-val">{{ order.opened_at|date:"d/m/Y à H:i" }}</div>
+      <div class="info-val">{{ order.opened_at|date:"d/m/Y à H:i:s" }}</div>
     </div>
     <div class="info-card">
       <div class="info-label">Fermé le</div>
-      <div class="info-val">{{ order.closed_at|date:"d/m/Y à H:i"|default:"—" }}</div>
+      <div class="info-val">{{ order.closed_at|date:"d/m/Y à H:i:s"|default:"—" }}</div>
     </div>
     <div class="info-card">
       <div class="info-label">Unités</div>
@@ -114,7 +114,7 @@
     {% if order.paid_at %}
     <div class="info-card">
       <div class="info-label">Payé le</div>
-      <div class="info-val purple">{{ order.paid_at|date:"d/m/Y à H:i" }}</div>
+      <div class="info-val purple">{{ order.paid_at|date:"d/m/Y à H:i:s" }}</div>
     </div>
     {% endif %}
   </div>
