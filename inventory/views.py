@@ -459,6 +459,12 @@ def api_close_order(request):
     if not open_order:
         return JsonResponse({"status": "error", "message": "Aucun ordre ouvert."})
 
+    if open_order.items.count() == 0:
+        return JsonResponse({
+            "status": "error",
+            "message": f"Impossible de fermer l'ordre {open_order.bordereau_barcode} — aucune unité scannée ! Scannez au moins un produit avant de fermer."
+        })
+
     open_order.status = ShippingOrder.CLOSED
     open_order.closed_at = timezone.now()
     open_order.amount_collected = expected_amount

@@ -32,6 +32,13 @@ def _handle_bordereau(barcode: str) -> dict:
     closed_order = None
     with transaction.atomic():
         for order in ShippingOrder.objects.filter(status=ShippingOrder.OPEN):
+            # Block closing an empty order
+            if order.items.count() == 0:
+                return {
+                    "status": "error",
+                    "message": f"Impossible de fermer l'ordre {order.bordereau_barcode} — aucune unité scannée ! Scannez au moins un produit avant de fermer.",
+                    "code": "EMPTY_ORDER",
+                }
             order.status = ShippingOrder.CLOSED
             order.closed_at = timezone.now()
             order.save()
