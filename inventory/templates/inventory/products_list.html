@@ -87,8 +87,14 @@
   </div>
 
   {% if products %}
-  <div class="section-label">{{ products|length }} produit(s)</div>
-  <div class="products-grid">
+  <!-- SEARCH BAR -->
+  <div style="margin-bottom:24px;">
+    <input id="search-box" type="text" placeholder="Rechercher un produit... (ex: icy, maz, shirt)"
+      style="width:100%;max-width:500px;background:var(--surface);border:0.5px solid var(--border);border-radius:12px;padding:12px 18px;font-size:15px;color:var(--text);outline:none;font-family:'DM Sans',sans-serif;"
+      oninput="filterProducts(this.value)">
+  </div>
+  <div class="section-label" id="count-label">{{ products|length }} produit(s)</div>
+  <div class="products-grid" id="products-grid">
     {% for product in products %}
     {% with variants=product.variants.all stock=product.total_stock %}
     <a href="{% url 'product_detail' product.pk %}" class="product-bubble" style="animation-delay:{{ forloop.counter0|add:0 }}00ms">
@@ -135,5 +141,21 @@
   </div>
   {% endif %}
 </div>
+<script>
+function filterProducts(query) {
+  var q = query.toLowerCase().trim();
+  var cards = document.querySelectorAll('.product-bubble');
+  var visible = 0;
+  cards.forEach(function(card) {
+    var text = card.textContent.toLowerCase();
+    var show = !q || text.includes(q);
+    card.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  document.getElementById('count-label').textContent = visible + ' produit(s)';
+}
+// Auto-focus search
+document.getElementById('search-box').focus();
+</script>
 </body>
 </html>
