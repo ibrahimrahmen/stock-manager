@@ -87,36 +87,33 @@
 
   <div class="section-title">Stock par variante et taille</div>
   <div class="variants-grid">
-    {% for variant in variants %}
-    {% with stock=variant.total_stock %}
+    {% for vd in variants_data %}
+    {% with stock=vd.total_stock %}
     <div class="vcard">
-      {% if variant.image %}
-        <img class="vcard-img" src="{{ variant.image.url }}" alt="{{ variant.color_label }}">
+      {% if vd.variant.image %}
+        <img class="vcard-img" src="{{ vd.variant.image.url }}" alt="{{ vd.variant.color_label }}">
       {% else %}
-        <div class="vcard-ph">{{ variant.color_label }}</div>
+        <div class="vcard-ph">{{ vd.variant.color_label }}</div>
       {% endif %}
       <div class="vcard-body">
         <div class="vcard-name">
-          {{ variant.color_label }}
+          {{ vd.variant.color_label }}
           {% if stock == 0 %}<span class="badge badge-out">Épuisé</span>
           {% elif stock <= product.alert_threshold %}<span class="badge badge-low">Stock bas</span>
           {% else %}<span class="badge badge-ok">En stock</span>{% endif %}
         </div>
         <div class="size-grid">
-          {% regroup variant.units.all by size as by_size %}
-          {% for sg in by_size %}
-          {% with in_stock_count=sg.list|length %}
-          <div class="size-chip {% if in_stock_count > 0 %}has-stock{% endif %}">
-            <span class="size-count">{{ in_stock_count }}</span>
-            <span class="size-label">{{ sg.grouper }}</span>
+          {% for size, count in vd.size_map.items %}
+          <div class="size-chip {% if count > 0 %}has-stock{% endif %}">
+            <span class="size-count">{{ count }}</span>
+            <span class="size-label">{{ size }}</span>
           </div>
-          {% endwith %}
           {% empty %}
-          <span style="font-size:12px;color:var(--hint);">Aucune unité</span>
+          <span style="font-size:12px;color:var(--hint);">Aucune unité disponible</span>
           {% endfor %}
         </div>
         <div class="vcard-total">
-          <span class="total-label">Total en stock</span>
+          <span class="total-label">Total disponible</span>
           <span class="total-num {% if stock == 0 %}zero{% elif stock <= product.alert_threshold %}low{% else %}ok{% endif %}">{{ stock }}</span>
         </div>
       </div>

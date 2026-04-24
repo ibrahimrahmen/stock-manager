@@ -765,4 +765,23 @@ def products_list(request):
 def product_detail(request, pk):
     product = get_object_or_404(Product, pk=pk)
     variants = product.variants.prefetch_related("units").all()
-    return render(request, "inventory/product_detail.html", {"product": product, "variants": variants})
+
+    # Build size breakdown per variant — only available units (in_stock + returned)
+    variants_data = []
+    for variant in variants:
+        available_units = variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED))
+        size_map = {}
+        for unit in available_units:
+            size_map[unit.size] = size_map.get(unit.size, 0) + 1
+        variants_data.append({
+            "variant": variant,
+            "size_map": size_map,
+            "total_stock": variant.total_stock,
+            "all_units": variant.units.all(),
+        })
+
+    return render(request, "inventory/product_detail.html", {
+        "product": product,
+        "variants": variants,
+        "variants_data": variants_data,
+    })
