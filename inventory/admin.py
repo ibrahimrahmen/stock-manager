@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     Product, ProductVariant, ProductUnit,
-    ShippingOrder, OrderItem, StockMovement,
+    ShippingOrder, OrderItem, StockMovement, Payment,
 )
 
 
@@ -75,3 +75,13 @@ class StockMovementAdmin(admin.ModelAdmin):
     list_filter = ("movement_type",)
     search_fields = ("unit__barcode", "reference")
     readonly_fields = ("moved_at",)
+
+
+@admin.register(Payment)
+class PaymentAdmin(admin.ModelAdmin):
+    list_display = ("order", "amount_collected", "amount_expected", "created_at")
+
+@admin.register(OrderItem)
+class OrderItemAdmin(admin.ModelAdmin):
+    list_display = ("order", "unit", "scanned_at")
+    list_filter = ("order__status",)
