@@ -737,6 +737,24 @@ def revenue(request):
 
 
 @login_required(login_url="/login/")
+def navex_sync_page(request):
+    if not request.user.is_staff:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Accès réservé.")
+    return render(request, "inventory/navex_sync.html", {})
+
+
+@csrf_exempt
+@require_POST
+def api_navex_sync(request):
+    """Run Navex sync — check all shipped orders."""
+    if not request.user.is_staff:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .navex_sync import sync_shipped_orders
+    results = sync_shipped_orders()
+    return JsonResponse(results)
+
+
 def admin_panel(request):
     if not request.user.is_staff:
         from django.http import HttpResponseForbidden
@@ -775,6 +793,82 @@ def api_navex_status(request, pk):
             import json as json_lib
             result = json_lib.loads(response.read().decode())
             return JsonResponse({"status": "ok", "navex": result})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": f"Erreur Navex : {str(e)}"})
+
+
+def navex_sync(request):
+    """Sync page — shows all shipped orders with their Navex status."""
+    if not request.user.is_staff:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Accès réservé.")
+    shipped_orders = ShippingOrder.objects.filter(
+        status=ShippingOrder.CLOSED
+    ).order_by("-opened_at")
+    return render(request, "inventory/navex_sync.html", {
+        "shipped_orders": shipped_orders,
+    })
+
+
+@csrf_exempt
+def api_navex_sync(request):
+    """Call Navex API for multiple barcodes at once."""
+    import urllib.request
+    import urllib.parse
+
+    # Get all shipped/closed order barcodes
+    # Only check CLOSED orders — not yet paid in our system
+    orders = ShippingOrder.objects.filter(
+        status=ShippingOrder.CLOSED
+    ).values("id", "bordereau_barcode", "status", "amount_collected", "opened_at")
+
+    if not orders:
+        return JsonResponse({"status": "ok", "results": []})
+
+    codes = [o["bordereau_barcode"] for o in orders]
+    codes_string = ", ".join(codes)
+
+    try:
+        data = urllib.parse.urlencode({"codes": codes_string}).encode()
+        req = urllib.request.Request(
+            "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+            data=data,
+            method="POST"
+        )
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with urllib.request.urlopen(req, timeout=15) as response:
+            import json as json_lib
+            navex_data = json_lib.loads(response.read().decode())
+
+        # Build a map of code → navex result
+        navex_map = {}
+        for result in navex_data.get("results", []):
+            navex_map[result["code"]] = result
+
+        # Merge our orders with navex data
+        merged = []
+        for order in orders:
+            bc = order["bordereau_barcode"]
+            navex = navex_map.get(bc, None)
+            navex_etat = navex.get("etat", "Introuvable") if navex and navex.get("status") == 1 else "Introuvable"
+            needs_attention = navex_etat in ("Livrer Paye", "Livré", "Livrée", "Livré Payé")
+            merged.append({
+                "id": order["id"],
+                "bordereau_barcode": bc,
+                "our_status": order["status"],
+                "amount_collected": str(order["amount_collected"] or ""),
+                "navex_etat": navex_etat,
+                "navex_motif": navex.get("motif", "") if navex else "",
+                "navex_livreur": navex.get("livreur", "") if navex else "",
+                "needs_attention": needs_attention,
+                "opened_at": order["opened_at"].strftime("%d/%m/%Y %H:%M") if order["opened_at"] else "",
+            })
+
+        # Sort: needs attention first
+        merged.sort(key=lambda x: (not x["needs_attention"], x["opened_at"]))
+
+        return JsonResponse({"status": "ok", "results": merged, "total": len(merged)})
+
     except Exception as e:
         return JsonResponse({"status": "error", "message": f"Erreur Navex : {str(e)}"})
 

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sync Navex</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0e0e0c;--surface:#161614;--surface2:#1e1e1b;
+      --border:rgba(255,255,255,0.06);--text:#f0ede6;--muted:#7a7870;--hint:#3a3a36;
+      --green:#3dba8a;--green-dim:rgba(61,186,138,0.1);
+      --amber:#e8a020;--amber-dim:rgba(232,160,32,0.1);
+      --red:#e05050;--red-dim:rgba(224,80,80,0.1);
+      --blue:#5090e0;--blue-dim:rgba(80,144,224,0.1);
+      --radius:14px;--radius-sm:8px;
+    }
+    body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+    nav{display:flex;align-items:center;gap:16px;padding:18px 32px;border-bottom:0.5px solid var(--border);}
+    nav a{font-size:13px;color:var(--muted);text-decoration:none;}
+    nav a:hover{color:var(--text);}
+    .nav-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:600;}
+    .sync-btn{margin-left:auto;padding:8px 18px;background:var(--green);color:#000;border:none;border-radius:20px;font-size:13px;font-weight:500;cursor:pointer;}
+    .sync-btn:hover{opacity:.85;}
+    .sync-btn:disabled{opacity:.4;cursor:default;}
+
+    .page{max-width:1000px;margin:0 auto;padding:32px 24px;}
+    .page-title{font-family:'Syne',sans-serif;font-size:28px;font-weight:700;letter-spacing:-.02em;margin-bottom:6px;}
+    .page-sub{font-size:14px;color:var(--muted);margin-bottom:32px;}
+
+    .stats-row{display:flex;gap:12px;margin-bottom:28px;flex-wrap:wrap;}
+    .stat{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:14px 20px;min-width:130px;}
+    .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px;}
+    .stat-val{font-size:22px;font-weight:500;}
+    .stat-val.green{color:var(--green);}
+    .stat-val.amber{color:var(--amber);}
+    .stat-val.red{color:var(--red);}
+
+    .loading{text-align:center;padding:48px;color:var(--muted);font-size:14px;}
+    .loading-spinner{display:inline-block;width:20px;height:20px;border:2px solid var(--hint);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite;margin-right:8px;vertical-align:middle;}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    table{width:100%;border-collapse:collapse;background:var(--surface);border-radius:var(--radius);border:0.5px solid var(--border);overflow:hidden;}
+    th{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:10px 14px;border-bottom:0.5px solid var(--border);}
+    td{font-size:13px;padding:10px 14px;border-bottom:0.5px solid var(--border);vertical-align:middle;}
+    tr:last-child td{border-bottom:none;}
+    tr.attention td{background:rgba(232,160,32,0.05);}
+    tr:hover td{background:var(--surface2);}
+
+    .mono{font-family:monospace;font-size:12px;}
+    .order-link{color:var(--blue);text-decoration:none;}
+    .order-link:hover{text-decoration:underline;}
+
+    .navex-badge{font-size:11px;padding:3px 9px;border-radius:8px;font-weight:500;}
+    .navex-livre{background:var(--green-dim);color:var(--green);}
+    .navex-attente{background:var(--surface2);color:var(--muted);}
+    .navex-retour{background:var(--red-dim);color:var(--red);}
+    .navex-cours{background:var(--blue-dim);color:var(--blue);}
+    .navex-unknown{background:var(--surface2);color:var(--hint);}
+
+    .attention-tag{font-size:10px;background:var(--amber-dim);color:var(--amber);padding:2px 7px;border-radius:6px;margin-left:6px;}
+
+    .action-btn{font-size:12px;padding:5px 12px;border-radius:var(--radius-sm);border:0.5px solid var(--green);color:var(--green);background:transparent;cursor:pointer;}
+    .action-btn:hover{background:var(--green-dim);}
+
+    .last-sync{font-size:12px;color:var(--hint);margin-bottom:16px;}
+
+    .empty{text-align:center;padding:48px;color:var(--muted);font-size:14px;}
+  </style>
+</head>
+<body>
+<nav>
+  <a href="{% url 'dashboard' %}">← Dashboard</a>
+  <span class="nav-title">Sync Navex</span>
+  <button class="sync-btn" id="sync-btn" onclick="doSync()">🔄 Synchroniser maintenant</button>
+</nav>
+
+<div class="page">
+  <div class="page-title">Suivi Navex</div>
+  <div class="page-sub">Comparaison des ordres expédiés avec le statut Navex en temps réel</div>
+
+  <div class="stats-row" id="stats-row" style="display:none;">
+    <div class="stat"><div class="stat-label">Total suivi</div><div class="stat-val" id="stat-total">0</div></div>
+    <div class="stat"><div class="stat-label">Livré Navex</div><div class="stat-val green" id="stat-livre">0</div></div>
+    <div class="stat"><div class="stat-label">En attente</div><div class="stat-val amber" id="stat-attente">0</div></div>
+    <div class="stat"><div class="stat-label">Retourné Navex</div><div class="stat-val red" id="stat-retour">0</div></div>
+  </div>
+
+  <div class="last-sync" id="last-sync" style="display:none;"></div>
+
+  <div class="loading" id="loading">
+    <span class="loading-spinner"></span> Synchronisation en cours...
+  </div>
+
+  <div id="results-wrap" style="display:none;">
+    <table>
+      <thead>
+        <tr>
+          <th>Bordereau</th>
+          <th>Ouvert le</th>
+          <th>Notre statut</th>
+          <th>Navex dit</th>
+          <th>Motif Navex</th>
+          <th>Livreur</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="results-body"></tbody>
+    </table>
+  </div>
+
+  <div class="empty" id="empty" style="display:none;">Aucun ordre expédié à synchroniser.</div>
+</div>
+
+<script>
+  // Auto-sync on page load
+  window.addEventListener('load', doSync);
+
+  async function doSync() {
+    var btn = document.getElementById('sync-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Synchronisation...';
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('results-wrap').style.display = 'none';
+    document.getElementById('empty').style.display = 'none';
+    document.getElementById('stats-row').style.display = 'none';
+
+    try {
+      var res = await fetch("{% url 'api_navex_sync' %}", {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+      var data = await res.json();
+      renderResults(data);
+    } catch(e) {
+      document.getElementById('loading').innerHTML = '<span style="color:var(--red);">Erreur réseau — ' + e.message + '</span>';
+    }
+
+    btn.disabled = false;
+    btn.textContent = '🔄 Synchroniser maintenant';
+  }
+
+  function renderResults(data) {
+    document.getElementById('loading').style.display = 'none';
+
+    if (data.status === 'error') {
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('loading').innerHTML = '<span style="color:var(--red);">Erreur : ' + data.message + '</span>';
+      return;
+    }
+
+    var results = data.results || [];
+    if (results.length === 0) {
+      document.getElementById('empty').style.display = 'block';
+      return;
+    }
+
+    // Stats
+    var livre = results.filter(r => r.needs_attention).length;
+    var retour = results.filter(r => r.navex_etat.toLowerCase().includes('retour')).length;
+    var attente = results.filter(r => r.navex_etat === 'En attente').length;
+    document.getElementById('stat-total').textContent = results.length;
+    document.getElementById('stat-livre').textContent = livre;
+    document.getElementById('stat-attente').textContent = attente;
+    document.getElementById('stat-retour').textContent = retour;
+    document.getElementById('stats-row').style.display = 'flex';
+    document.getElementById('last-sync').style.display = 'block';
+    document.getElementById('last-sync').textContent = 'Dernière sync : ' + new Date().toLocaleTimeString('fr-FR');
+
+    var tbody = document.getElementById('results-body');
+    tbody.innerHTML = '';
+
+    results.forEach(function(r) {
+      var tr = document.createElement('tr');
+      if (r.needs_attention) tr.classList.add('attention');
+
+      var navexClass = 'navex-unknown';
+      var etat = r.navex_etat || '';
+      if (etat.toLowerCase().includes('livr')) navexClass = 'navex-livre';
+      else if (etat.toLowerCase().includes('retour')) navexClass = 'navex-retour';
+      else if (etat.toLowerCase().includes('cours')) navexClass = 'navex-cours';
+      else if (etat.toLowerCase().includes('attente')) navexClass = 'navex-attente';
+
+      var ourStatus = r.our_status === 'open' ? 'Ouvert' : r.our_status === 'closed' ? 'Fermé' : 'Payé';
+
+      var actionBtn = r.needs_attention
+        ? '<button class="action-btn" onclick="window.location.href=\'/orders/' + r.id + '/\'">→ Enregistrer paiement</button>'
+        : '—';
+
+      tr.innerHTML = 
+        '<td><a href="/orders/' + r.id + '/" class="order-link mono">' + r.bordereau_barcode + '</a>' +
+        (r.needs_attention ? '<span class="attention-tag">⚠ À traiter</span>' : '') + '</td>' +
+        '<td style="color:var(--muted);font-size:12px;">' + r.opened_at + '</td>' +
+        '<td>' + ourStatus + '</td>' +
+        '<td><span class="navex-badge ' + navexClass + '">' + (etat || 'Introuvable') + '</span></td>' +
+        '<td style="color:var(--muted);font-size:12px;">' + (r.navex_motif || '—') + '</td>' +
+        '<td style="font-size:12px;color:var(--muted);">' + (r.navex_livreur || '—') + '</td>' +
+        '<td>' + actionBtn + '</td>';
+
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('results-wrap').style.display = 'block';
+  }
+</script>
+</body>
+</html>
