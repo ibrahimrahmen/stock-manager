@@ -1,10 +1,12 @@
 import json
 from decimal import Decimal
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import render, get_object_or_404, redirect
 from django.http import JsonResponse, HttpResponseForbidden
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import login_required
 
 from .models import (
     Product, ProductVariant, ProductUnit,
@@ -17,19 +19,24 @@ from .scan_service import handle_shipping_scan, handle_stock_scan
 # SCAN PAGES
 # ---------------------------------------------------------------------------
 
+@login_required(login_url="/login/")
 def shipping_scan(request):
     open_order = ShippingOrder.objects.filter(status=ShippingOrder.OPEN).first()
     return render(request, "inventory/shipping_scan.html", {"open_order": open_order})
 
+@login_required(login_url="/login/")
 def reception_scan(request):
     return render(request, "inventory/reception_scan.html", {})
 
+@login_required(login_url="/login/")
 def return_scan(request):
     return render(request, "inventory/return_scan.html", {})
 
+@login_required(login_url="/login/")
 def payment_scan(request):
     return render(request, "inventory/payment_scan.html", {})
 
+@login_required(login_url="/login/")
 def stock_value(request):
     if not request.user.is_staff:
         return HttpResponseForbidden("Acces reserve aux administrateurs.")
@@ -130,6 +137,27 @@ def api_remove_from_order(request):
         })
     except (ProductUnit.DoesNotExist, OrderItem.DoesNotExist):
         return JsonResponse({"status": "error", "message": f"Unité {barcode} non trouvée dans cet ordre."})
+
+
+def login_view(request):
+    if request.user.is_authenticated:
+        return redirect('dashboard')
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        password = request.POST.get('password')
+        next_url = request.POST.get('next', '/')
+        user = authenticate(request, username=username, password=password)
+        if user:
+            login(request, user)
+            return redirect(next_url or 'dashboard')
+        return render(request, 'inventory/login.html', {'form': type('F', (), {'errors': True})(), 'next': next_url})
+    return render(request, 'inventory/login.html', {'next': request.GET.get('next', '/')})
+
+
+def logout_view(request):
+    logout(request)
+    return redirect('login')
+
 
 
 def _do_return_unit(unit):
@@ -487,6 +515,7 @@ def api_update_order_amount(request, pk):
     return JsonResponse({"status": "ok", "note": note})
 
 
+@login_required(login_url="/login/")
 def search(request):
     return render(request, "inventory/search.html", {})
 
@@ -582,6 +611,7 @@ def api_fix_order_units(request, pk):
 # DASHBOARD & DETAIL VIEWS
 # ---------------------------------------------------------------------------
 
+@login_required(login_url="/login/")
 def dashboard(request):
     products = Product.objects.prefetch_related("variants__units").all()
     open_order = ShippingOrder.objects.filter(status=ShippingOrder.OPEN).first()
@@ -608,6 +638,7 @@ def dashboard(request):
     })
 
 
+@login_required(login_url="/login/")
 def order_detail(request, pk):
     from decimal import Decimal
     order = get_object_or_404(ShippingOrder, pk=pk)
@@ -626,6 +657,7 @@ def order_detail(request, pk):
     })
 
 
+@login_required(login_url="/login/")
 def revenue(request):
     if not request.user.is_staff:
         from django.http import HttpResponseForbidden
@@ -698,6 +730,7 @@ def revenue(request):
     })
 
 
+@login_required(login_url="/login/")
 def admin_panel(request):
     if not request.user.is_staff:
         from django.http import HttpResponseForbidden
@@ -714,6 +747,7 @@ def admin_panel(request):
     })
 
 
+@login_required(login_url="/login/")
 def products_list(request):
     products = Product.objects.prefetch_related("variants__units").all()
     total_available = ProductUnit.objects.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)).count()
@@ -727,6 +761,7 @@ def products_list(request):
     })
 
 
+@login_required(login_url="/login/")
 def product_detail(request, pk):
     product = get_object_or_404(Product, pk=pk)
     variants = product.variants.prefetch_related("units").all()
