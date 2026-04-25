@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     Product, ProductVariant, ProductUnit,
-    ShippingOrder, OrderItem, StockMovement, Payment,
+    ShippingOrder, OrderItem, StockMovement, Payment, SizeAlert,
 )
 
 
@@ -85,3 +85,18 @@ class PaymentAdmin(admin.ModelAdmin):
 class OrderItemAdmin(admin.ModelAdmin):
     list_display = ("order", "unit", "scanned_at")
     list_filter = ("order__status",)
+
+
+@admin.register(SizeAlert)
+class SizeAlertAdmin(admin.ModelAdmin):
+    list_display = ("variant", "size", "threshold", "current_stock", "is_triggered")
+    list_filter = ("variant__product",)
+    search_fields = ("variant__product__name", "size")
+
+    def current_stock(self, obj):
+        return obj.current_stock
+    current_stock.short_description = "Stock actuel"
+
+    def is_triggered(self, obj):
+        return "⚠ OUI" if obj.is_triggered else "✓ OK"
+    is_triggered.short_description = "Alerte"

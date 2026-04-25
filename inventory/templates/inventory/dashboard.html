@@ -525,6 +525,21 @@
   </div>
   {% endif %}
 
+  {% if size_alerts %}
+  <div class="alerts-section">
+    <div class="section-title">Alertes stock par taille</div>
+    {% for sa in size_alerts %}
+    <div class="alert-row" style="background: var(--amber-bg); border-color: rgba(186,117,23,.2);">
+      <span class="alert-icon">📦</span>
+      <span>
+        <strong>{{ sa.variant.product.name }} {{ sa.variant.color_label }} — Taille {{ sa.size }}</strong>
+        — {{ sa.current_stock }} unité(s) en stock (seuil : {{ sa.threshold }})
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if overdue_orders %}
   <div class="alerts-section">
     <div class="section-title">Ordres non payés depuis +5 jours</div>

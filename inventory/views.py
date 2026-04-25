@@ -627,6 +627,10 @@ def dashboard(request):
     total_in_stock = ProductUnit.objects.filter(status=ProductUnit.IN_STOCK).count()
     total_shipped = ProductUnit.objects.filter(status=ProductUnit.SHIPPED).count()
     low_stock = [p for p in products if p.total_stock <= p.alert_threshold]
+
+    # Size alerts
+    from .models import SizeAlert
+    size_alerts = [sa for sa in SizeAlert.objects.select_related("variant__product").all() if sa.is_triggered]
     total_products = products.count()
 
     # Alerts: shipped units that belong to paid orders = waiting to come back
@@ -640,7 +644,7 @@ def dashboard(request):
         "products": products, "open_order": open_order, "recent_orders": recent_orders,
         "low_stock": low_stock, "total_in_stock": total_in_stock,
         "total_shipped": total_shipped, "orders_this_month": orders_this_month,
-        "pending_returns": waiting_return, "total_products": total_products, "overdue_orders": overdue_orders,
+        "pending_returns": waiting_return, "total_products": total_products, "size_alerts": size_alerts, "overdue_orders": overdue_orders,
     })
 
 

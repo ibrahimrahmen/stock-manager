@@ -185,6 +185,23 @@ class Payment(models.Model):
         return f"Paiement ordre {self.order.bordereau_barcode} — {self.amount_collected} TND"
 
 
+class NavexSyncLog(models.Model):
+    """Tracks Navex sync results for shipped orders."""
+    order = models.ForeignKey(ShippingOrder, on_delete=models.CASCADE, related_name="navex_logs")
+    navex_status = models.CharField(max_length=100, blank=True)
+    navex_amount = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    our_amount = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    amount_match = models.BooleanField(null=True)
+    raw_response = models.TextField(blank=True)
+    synced_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-synced_at"]
+
+    def __str__(self):
+        return f"{self.order.bordereau_barcode} — Navex: {self.navex_status} @ {self.synced_at:%Y-%m-%d %H:%M}"
+
+
 class StockMovement(models.Model):
     RECEIVED = "received"
     SHIPPED  = "shipped"
@@ -205,3 +222,29 @@ class StockMovement(models.Model):
 
     def __str__(self):
         return f"{self.unit.barcode} — {self.movement_type} @ {self.moved_at:%Y-%m-%d %H:%M}"
+
+
+class SizeAlert(models.Model):
+    """Alert threshold per variant + size combination."""
+    variant   = models.ForeignKey(ProductVariant, on_delete=models.CASCADE, related_name="size_alerts")
+    size      = models.CharField(max_length=20)
+    threshold = models.PositiveIntegerField(default=3, help_text="Alert when stock drops below this number")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("variant", "size")
+
+    def __str__(self):
+        return f"{self.variant} / {self.size} — seuil {self.threshold}"
+
+    @property
+    def current_stock(self):
+        return ProductUnit.objects.filter(
+            variant=self.variant,
+            size=self.size,
+            status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)
+        ).count()
+
+    @property
+    def is_triggered(self):
+        return self.current_stock < self.threshold
