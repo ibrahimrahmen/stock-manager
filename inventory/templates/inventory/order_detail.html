@@ -279,5 +279,155 @@
     } catch(e) { alert('Erreur réseau.'); }
   }
 </script>
+
+{% include "inventory/partials/error_popup.html" %}
+
+<!-- DELETE MODAL -->
+<div id="delete-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#fff;border-radius:14px;padding:28px;max-width:400px;width:100%;text-align:center;">
+    <div style="width:52px;height:52px;border-radius:50%;background:#fdeaea;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+      <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="#d94f4e" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+    </div>
+    <div style="font-size:16px;font-weight:600;color:#1a1a18;margin-bottom:8px;">Supprimer l'ordre</div>
+    <div style="font-size:13px;color:#73726c;margin-bottom:20px;">Toutes les unités seront remises en stock. Tapez <strong>DELETE</strong> pour confirmer.</div>
+    <input id="delete-confirm-input" type="text" placeholder="Tapez DELETE en majuscules"
+      style="width:100%;border:0.5px solid rgba(0,0,0,0.1);border-radius:8px;padding:10px 14px;font-size:14px;color:#1a1a18;background:#f5f4f0;outline:none;margin-bottom:14px;text-align:center;">
+    <div style="display:flex;gap:8px;">
+      <button onclick="closeDelete()" style="flex:1;padding:10px;background:#f5f4f0;border:0.5px solid rgba(0,0,0,0.1);border-radius:8px;font-size:13px;cursor:pointer;">Annuler</button>
+      <button onclick="confirmDelete()" style="flex:1;padding:10px;background:#d94f4e;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;">Supprimer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODIFY MODAL -->
+<div id="modify-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#fff;border-radius:14px;padding:28px;max-width:500px;width:100%;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div style="font-size:16px;font-weight:600;color:#1a1a18;">Modifier l'ordre</div>
+      <button onclick="closeModify()" style="background:none;border:none;color:#73726c;cursor:pointer;font-size:22px;line-height:1;">×</button>
+    </div>
+    <div style="font-size:13px;color:#73726c;margin-bottom:12px;">Tapez <strong>MODIFY</strong> pour activer les modifications.</div>
+    <input id="modify-confirm-input" type="text" placeholder="Tapez MODIFY en majuscules"
+      style="width:100%;border:0.5px solid rgba(0,0,0,0.1);border-radius:8px;padding:10px 14px;font-size:14px;color:#1a1a18;background:#f5f4f0;outline:none;margin-bottom:16px;text-align:center;">
+    <div id="modify-actions" style="display:none;">
+      <div style="margin-bottom:16px;">
+        <div style="font-size:11px;color:#73726c;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Ajouter une unité</div>
+        <div style="display:flex;gap:8px;">
+          <input id="add-barcode-input" type="text" placeholder="Scanner barcode..."
+            style="flex:1;border:0.5px solid rgba(0,0,0,0.1);border-radius:8px;padding:9px 12px;font-size:14px;font-family:monospace;color:#1a1a18;background:#f5f4f0;outline:none;">
+          <button onclick="addUnit()" style="padding:9px 16px;background:#1a9e6e;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;">Ajouter</button>
+        </div>
+        <div id="add-feedback" style="font-size:12px;margin-top:6px;color:#73726c;"></div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:#73726c;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Retirer une unité</div>
+        <div id="modify-items" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;">
+          {% for item in items %}
+          <div id="mitem-{{ item.unit.barcode }}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:#f5f4f0;border-radius:8px;font-size:13px;">
+            <span style="flex:1;">{{ item.unit.variant.product.name }} {{ item.unit.variant.color_label }} — {{ item.unit.size }}</span>
+            <span style="font-family:monospace;font-size:10px;color:#b0afa8;">{{ item.unit.barcode }}</span>
+            <button onclick="removeUnit('{{ item.unit.barcode }}')" style="width:24px;height:24px;border-radius:50%;background:#fdeaea;border:0.5px solid #f5b5b5;color:#d94f4e;cursor:pointer;font-size:13px;flex-shrink:0;">✕</button>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  var modifyConfirmed = false;
+
+  function openDelete() {
+    document.getElementById('delete-overlay').style.display = 'flex';
+    setTimeout(function(){ document.getElementById('delete-confirm-input').focus(); }, 100);
+  }
+  function closeDelete() {
+    document.getElementById('delete-overlay').style.display = 'none';
+    document.getElementById('delete-confirm-input').value = '';
+  }
+  async function confirmDelete() {
+    var val = document.getElementById('delete-confirm-input').value.trim();
+    if (val !== 'DELETE') { showErrPopup('Vous devez taper DELETE en majuscules exactement.'); return; }
+    try {
+      var res = await fetch("{% url 'api_delete_order' order.pk %}", {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({confirmation:'DELETE'})
+      });
+      var data = await res.json();
+      if (data.status === 'ok') { alert(data.message); window.location.href = "{% url 'dashboard' %}"; }
+      else showErrPopup(data.message);
+    } catch(e) { showErrPopup('Erreur réseau.'); }
+  }
+
+  function openModify() {
+    document.getElementById('modify-overlay').style.display = 'flex';
+    setTimeout(function(){ document.getElementById('modify-confirm-input').focus(); }, 100);
+  }
+  function closeModify() {
+    document.getElementById('modify-overlay').style.display = 'none';
+    modifyConfirmed = false;
+    document.getElementById('modify-actions').style.display = 'none';
+    document.getElementById('modify-confirm-input').value = '';
+  }
+
+  document.getElementById('modify-confirm-input').addEventListener('input', function() {
+    if (this.value.trim() === 'MODIFY') {
+      modifyConfirmed = true;
+      document.getElementById('modify-actions').style.display = 'block';
+      document.getElementById('add-barcode-input').focus();
+    } else {
+      modifyConfirmed = false;
+      document.getElementById('modify-actions').style.display = 'none';
+    }
+  });
+
+  document.getElementById('add-barcode-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') addUnit();
+  });
+
+  async function addUnit() {
+    if (!modifyConfirmed) return;
+    var barcode = document.getElementById('add-barcode-input').value.trim().toUpperCase();
+    document.getElementById('add-barcode-input').value = '';
+    if (!barcode) return;
+    try {
+      var res = await fetch("{% url 'api_order_add_unit' order.pk %}", {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({confirmation:'MODIFY', barcode})
+      });
+      var data = await res.json();
+      var fb = document.getElementById('add-feedback');
+      if (data.status === 'ok') {
+        fb.style.color = '#1a9e6e'; fb.textContent = '✓ ' + data.message;
+        var div = document.createElement('div');
+        div.id = 'mitem-' + data.unit.barcode;
+        div.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;background:#f5f4f0;border-radius:8px;font-size:13px;';
+        div.innerHTML = '<span style="flex:1;">'+data.unit.product_name+' '+data.unit.color_label+' — '+data.unit.size+'</span>' +
+          '<span style="font-family:monospace;font-size:10px;color:#b0afa8;">'+data.unit.barcode+'</span>' +
+          '<button onclick="removeUnit(''+data.unit.barcode+'')" style="width:24px;height:24px;border-radius:50%;background:#fdeaea;border:0.5px solid #f5b5b5;color:#d94f4e;cursor:pointer;font-size:13px;flex-shrink:0;">✕</button>';
+        document.getElementById('modify-items').prepend(div);
+      } else { fb.style.color = '#d94f4e'; fb.textContent = '✗ ' + data.message; }
+    } catch(e) { showErrPopup('Erreur réseau.'); }
+  }
+
+  async function removeUnit(barcode) {
+    if (!modifyConfirmed) return;
+    if (!confirm('Retirer ' + barcode + ' de l'ordre et le remettre en stock ?')) return;
+    try {
+      var res = await fetch("{% url 'api_order_remove_unit' order.pk %}", {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({confirmation:'MODIFY', barcode})
+      });
+      var data = await res.json();
+      if (data.status === 'ok') {
+        var el = document.getElementById('mitem-'+barcode);
+        if (el) el.remove();
+        document.getElementById('add-feedback').style.color = '#1a9e6e';
+        document.getElementById('add-feedback').textContent = '✓ ' + data.message;
+      } else showErrPopup(data.message);
+    } catch(e) { showErrPopup('Erreur réseau.'); }
+  }
+</script>
 </body>
 </html>
