@@ -462,7 +462,7 @@
 
   async function removeUnit(barcode) {
     if (!modifyConfirmed) return;
-    if (!confirm('Retirer ' + barcode + ' de l'ordre et le remettre en stock ?')) return;
+    if (!confirm('Retirer ' + barcode + ' de l\'ordre et le remettre en stock ?')) return;
     try {
       var res = await fetch("{% url 'api_order_remove_unit' order.pk %}", {
         method:'POST', headers:{'Content-Type':'application/json'},
