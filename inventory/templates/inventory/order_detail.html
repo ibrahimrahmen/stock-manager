@@ -92,6 +92,10 @@
     <span class="status-badge s-{{ order.status }}">
       {% if order.status == 'open' %}Ouvert{% elif order.status == 'closed' %}Fermé{% else %}Payé{% endif %}
     </span>
+    {% if order.status != 'paid' %}
+    <button onclick="openModify()" style="margin-left:auto;padding:7px 16px;background:transparent;border:0.5px solid var(--blue);color:var(--blue);border-radius:var(--radius-sm);font-size:12px;cursor:pointer;">Modifier</button>
+    <button onclick="openDelete()" style="padding:7px 16px;background:transparent;border:0.5px solid var(--red);color:var(--red);border-radius:var(--radius-sm);font-size:12px;cursor:pointer;">Supprimer</button>
+    {% endif %}
     <button onclick="checkNavex()" id="navex-btn"
       style="margin-left:auto;padding:7px 16px;background:transparent;border:0.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:6px;">
       🚚 Vérifier sur Navex

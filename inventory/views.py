@@ -613,6 +613,98 @@ def api_fix_order_units(request, pk):
     return JsonResponse({"status": "ok", "message": f"{fixed} unité(s) resynchronisée(s).", "fixed": fixed})
 
 
+@csrf_exempt
+@require_POST
+def api_delete_order(request, pk):
+    """Delete an order and return all units to in_stock."""
+    data = json.loads(request.body)
+    confirmation = data.get("confirmation", "")
+    if confirmation != "DELETE":
+        return JsonResponse({"status": "error", "message": "Confirmation incorrecte."})
+    try:
+        order = ShippingOrder.objects.get(pk=pk)
+    except ShippingOrder.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Ordre introuvable."})
+    if order.status == ShippingOrder.PAID:
+        return JsonResponse({"status": "error", "message": "Impossible de supprimer un ordre déjà payé."})
+    # Return all units to in_stock
+    for item in order.items.select_related("unit"):
+        item.unit.status = ProductUnit.IN_STOCK
+        item.unit.save()
+        StockMovement.objects.create(
+            unit=item.unit, movement_type=StockMovement.RECEIVED,
+            reference=f"SUPPRESSION ORDRE {order.bordereau_barcode}"
+        )
+    order.delete()
+    return JsonResponse({"status": "ok", "message": "Ordre supprimé, unités remises en stock."})
+
+
+@csrf_exempt
+@require_POST
+def api_order_remove_unit(request, pk):
+    """Remove a unit from an order and return it to in_stock."""
+    data = json.loads(request.body)
+    confirmation = data.get("confirmation", "")
+    barcode = data.get("barcode", "")
+    if confirmation != "MODIFY":
+        return JsonResponse({"status": "error", "message": "Confirmation incorrecte."})
+    try:
+        order = ShippingOrder.objects.get(pk=pk)
+        unit = ProductUnit.objects.get(barcode=barcode)
+        item = OrderItem.objects.get(order=order, unit=unit)
+    except (ShippingOrder.DoesNotExist, ProductUnit.DoesNotExist, OrderItem.DoesNotExist):
+        return JsonResponse({"status": "error", "message": "Unité ou ordre introuvable."})
+    if order.status == ShippingOrder.PAID:
+        return JsonResponse({"status": "error", "message": "Impossible de modifier un ordre payé."})
+    item.delete()
+    unit.status = ProductUnit.IN_STOCK
+    unit.save()
+    StockMovement.objects.create(
+        unit=unit, movement_type=StockMovement.RECEIVED,
+        reference=f"MODIFICATION ORDRE {order.bordereau_barcode}"
+    )
+    return JsonResponse({"status": "ok", "message": f"{barcode} retiré et remis en stock."})
+
+
+@csrf_exempt
+@require_POST
+def api_order_add_unit(request, pk):
+    """Add a unit to an existing order by scanning barcode."""
+    data = json.loads(request.body)
+    confirmation = data.get("confirmation", "")
+    barcode = data.get("barcode", "").strip().upper()
+    if confirmation != "MODIFY":
+        return JsonResponse({"status": "error", "message": "Confirmation incorrecte."})
+    try:
+        order = ShippingOrder.objects.get(pk=pk)
+    except ShippingOrder.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Ordre introuvable."})
+    if order.status == ShippingOrder.PAID:
+        return JsonResponse({"status": "error", "message": "Impossible de modifier un ordre payé."})
+    try:
+        unit = ProductUnit.objects.select_related("variant__product").get(barcode=barcode)
+    except ProductUnit.DoesNotExist:
+        return JsonResponse({"status": "error", "message": f"Unité introuvable : {barcode}"})
+    if unit.status not in (ProductUnit.IN_STOCK, ProductUnit.RETURNED):
+        return JsonResponse({"status": "error", "message": f"{barcode} n'est pas en stock — statut : {unit.get_status_display()}"})
+    if OrderItem.objects.filter(order=order, unit=unit).exists():
+        return JsonResponse({"status": "error", "message": f"{barcode} est déjà dans cet ordre."})
+    OrderItem.objects.create(order=order, unit=unit, status_at_scan=ProductUnit.SHIPPED)
+    unit.status = ProductUnit.SHIPPED
+    unit.save()
+    variant = unit.variant
+    return JsonResponse({
+        "status": "ok",
+        "message": f"{variant.product.name} {variant.color_label} taille {unit.size} ajouté.",
+        "unit": {
+            "barcode": unit.barcode, "size": unit.size,
+            "product_name": variant.product.name, "color_label": variant.color_label,
+            "sell_price": str(variant.product.sell_price),
+            "image_url": variant.image.url if variant.image else None,
+        }
+    })
+
+
 # ---------------------------------------------------------------------------
 # DASHBOARD & DETAIL VIEWS
 # ---------------------------------------------------------------------------
