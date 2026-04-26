@@ -18,7 +18,7 @@
     }
     body{background:var(--bg);font-family:system-ui,sans-serif;color:var(--text);min-height:100vh;}
     .page{max-width:900px;margin:0 auto;padding:28px 24px;}
-    .topbar{display:flex;align-items:center;gap:12px;margin-bottom:28px;}
+    .topbar{display:flex;align-items:center;gap:12px;margin-bottom:28px;flex-wrap:wrap;}
     .back{font-size:13px;color:var(--muted);text-decoration:none;}
     .back:hover{color:var(--text);}
     h1{font-size:19px;font-weight:500;}
@@ -26,62 +26,51 @@
     .s-open{background:var(--green-bg);color:var(--green);}
     .s-closed{background:#eee;color:var(--muted);}
     .s-paid{background:var(--purple-bg);color:var(--purple);}
-
     .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:24px;}
     .info-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:14px;}
     .info-label{font-size:11px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em;}
     .info-val{font-size:14px;font-weight:500;}
     .info-val.green{color:var(--green);}
-    .info-val.purple{color:var(--purple);}
-    .info-val.mono{font-family:monospace;font-size:12px;}
-
     .section-title{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:12px;}
-
-    /* PAYMENT BOX */
     .payment-box{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:24px;}
     .pay-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:8px 0;border-bottom:0.5px solid var(--border);}
     .pay-row:last-child{border-bottom:none;padding-top:12px;}
     .pay-label{color:var(--muted);}
     .pay-val{font-weight:500;}
     .pay-val.green{color:var(--green);}
-    .pay-val.red{color:var(--red);}
-    .pay-val.strike{text-decoration:line-through;color:var(--hint);font-weight:400;}
-
-    .change-btn{padding:5px 12px;background:transparent;color:var(--blue);border:0.5px solid var(--blue);border-radius:var(--radius-sm);font-size:12px;cursor:pointer;transition:all .15s;}
-    .change-btn:hover{background:var(--blue-bg);}
-
+    .change-btn{padding:5px 12px;background:transparent;color:var(--blue);border:0.5px solid var(--blue);border-radius:var(--radius-sm);font-size:12px;cursor:pointer;}
     .edit-row{display:none;align-items:center;gap:8px;padding:10px 0;border-bottom:0.5px solid var(--border);}
     .edit-row.visible{display:flex;}
     .amount-input{border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;font-size:14px;color:var(--text);width:150px;text-align:right;outline:none;font-family:monospace;background:var(--bg);}
-    .amount-input:focus{border-color:var(--text);}
     .save-btn{padding:6px 14px;background:var(--text);color:#fff;border:none;border-radius:var(--radius-sm);font-size:12px;cursor:pointer;}
-    .save-btn:hover{opacity:.85;}
     .cancel-btn{padding:6px 10px;background:transparent;border:0.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;cursor:pointer;color:var(--muted);}
-
     .reconcile-note{font-size:12px;color:var(--amber);background:var(--amber-bg);border-radius:var(--radius-sm);padding:8px 12px;margin-top:10px;display:none;}
     .save-ok{font-size:12px;color:var(--green);margin-left:4px;display:none;}
-
-    /* ITEMS */
     .items-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:10px;margin-bottom:28px;}
     .item-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;position:relative;}
-    .item-card.returned{opacity:.5;border-style:dashed;}
-    .item-card.pending{border-color:var(--red);border-style:dashed;}
     .item-img{width:100%;height:100px;object-fit:cover;display:block;}
     .item-img-ph{width:100%;height:100px;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--muted);background:#e8e7e2;}
     .item-body{padding:9px;}
-    .item-name{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .item-name{font-size:12px;font-weight:500;}
     .item-color{font-size:11px;color:var(--muted);margin-bottom:5px;}
     .item-row{display:flex;justify-content:space-between;align-items:center;}
     .item-price{font-size:12px;font-weight:500;}
     .item-size{font-size:10px;background:var(--blue-bg);color:var(--blue);padding:2px 6px;border-radius:8px;}
     .item-bc{font-size:9px;color:var(--hint);font-family:monospace;margin-top:3px;}
     .item-status{font-size:10px;padding:2px 7px;border-radius:8px;margin-top:4px;display:inline-block;}
-    .ss-shipped{background:var(--amber-bg);color:var(--amber);}
+    .ss-shipped{background:var(--blue-bg);color:var(--blue);}
     .ss-paid{background:var(--green-bg);color:var(--green);}
     .ss-returned{background:var(--red-bg);color:var(--red);}
-    .ss-returned{background:#eee;color:var(--muted);}
-    .ss-shipped{background:var(--blue-bg);color:var(--blue);}
-    .returned-ribbon{position:absolute;top:6px;left:6px;background:var(--red-bg);color:var(--red);font-size:9px;padding:2px 6px;border-radius:6px;font-weight:500;}
+    .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:20px;}
+    .modal{background:#fff;border-radius:14px;padding:28px;width:100%;text-align:center;}
+    .modal-title{font-size:16px;font-weight:600;margin-bottom:8px;}
+    .modal-sub{font-size:13px;color:#73726c;margin-bottom:20px;}
+    .modal-input{width:100%;border:0.5px solid #ddd;border-radius:8px;padding:10px 14px;font-size:14px;outline:none;margin-bottom:14px;text-align:center;background:#f5f4f0;}
+    .btn-danger{padding:10px 20px;background:#d94f4e;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;}
+    .btn-cancel{padding:10px 16px;background:#f5f4f0;border:0.5px solid #ddd;border-radius:8px;font-size:13px;cursor:pointer;}
+    .btn-green{padding:9px 16px;background:#1a9e6e;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;}
+    .modify-item{display:flex;align-items:center;gap:10px;padding:8px 10px;background:#f5f4f0;border-radius:8px;font-size:13px;}
+    .navex-box{background:var(--blue-bg);border:0.5px solid rgba(26,95,168,0.2);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:16px;font-size:13px;display:none;}
   </style>
 </head>
 <body>
@@ -95,102 +84,84 @@
     {% if order.status != 'paid' %}
     <button onclick="openModify()" style="margin-left:auto;padding:7px 16px;background:transparent;border:0.5px solid var(--blue);color:var(--blue);border-radius:var(--radius-sm);font-size:12px;cursor:pointer;">Modifier</button>
     <button onclick="openDelete()" style="padding:7px 16px;background:transparent;border:0.5px solid var(--red);color:var(--red);border-radius:var(--radius-sm);font-size:12px;cursor:pointer;">Supprimer</button>
+    {% else %}
+    <span style="margin-left:auto;"></span>
     {% endif %}
-    <button onclick="checkNavex()" id="navex-btn"
-      style="margin-left:auto;padding:7px 16px;background:transparent;border:0.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:6px;">
-      🚚 Vérifier sur Navex
+    <button onclick="checkNavex()" id="navex-btn" style="padding:7px 16px;background:transparent;border:0.5px solid var(--border);border-radius:var(--radius-sm);font-size:12px;color:var(--muted);cursor:pointer;">
+      Verifier sur Navex
     </button>
   </div>
 
-  <!-- NAVEX STATUS BOX -->
-  <div id="navex-box" style="display:none;background:var(--blue-bg);border:0.5px solid rgba(26,95,168,0.2);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:16px;font-size:13px;">
+  <div class="navex-box" id="navex-box">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-      <strong style="color:var(--blue);">🚚 Statut Navex (information seulement)</strong>
-      <span style="font-size:11px;color:var(--muted);">Ne modifie pas votre système</span>
+      <strong style="color:var(--blue);">Statut Navex (information seulement)</strong>
+      <span style="font-size:11px;color:var(--muted);">Ne modifie pas votre systeme</span>
     </div>
-    <div id="navex-content" style="color:var(--text);"></div>
+    <div id="navex-content"></div>
   </div>
 
   <div class="info-grid">
     <div class="info-card">
       <div class="info-label">Bordereau</div>
-      <div class="info-val mono">{{ order.bordereau_barcode }}</div>
+      <div class="info-val mono" style="font-family:monospace;font-size:12px;">{{ order.bordereau_barcode }}</div>
     </div>
     <div class="info-card">
       <div class="info-label">Ouvert le</div>
-      <div class="info-val">{{ order.opened_at|date:"d/m/Y à H:i:s" }}</div>
+      <div class="info-val">{{ order.opened_at|date:"d/m/Y a H:i:s" }}</div>
     </div>
     <div class="info-card">
-      <div class="info-label">Fermé le</div>
-      <div class="info-val">{{ order.closed_at|date:"d/m/Y à H:i:s"|default:"—" }}</div>
+      <div class="info-label">Ferme le</div>
+      <div class="info-val">{{ order.closed_at|date:"d/m/Y a H:i:s"|default:"—" }}</div>
     </div>
     <div class="info-card">
-      <div class="info-label">Unités</div>
-      <div class="info-val green">{{ order.unit_count }}</div>
+      <div class="info-label">Unites</div>
+      <div class="info-val green">{{ order.items.count }}</div>
     </div>
-    {% if order.paid_at %}
-    <div class="info-card">
-      <div class="info-label">Payé le</div>
-      <div class="info-val purple">{{ order.paid_at|date:"d/m/Y à H:i:s" }}</div>
+  </div>
+
+  <div class="section-title">Paiement</div>
+  <div class="payment-box">
+    {% for item in items %}
+    <div class="pay-row">
+      <span class="pay-label">{{ item.unit.variant.product.name }} {{ item.unit.variant.color_label }} &mdash; {{ item.unit.size }}</span>
+      <span class="pay-val">{{ item.unit.variant.product.sell_price|floatformat:3 }} TND</span>
     </div>
+    {% endfor %}
+    <div class="pay-row">
+      <span class="pay-label">Frais livraison</span>
+      <span class="pay-val">7,000 TND</span>
+    </div>
+    <div class="pay-row">
+      <span class="pay-label" style="font-weight:500;">Total calcule</span>
+      <span class="pay-val green">{{ calculated_total|floatformat:3 }} TND</span>
+    </div>
+    {% if order.status == 'paid' %}
+    <div class="pay-row">
+      <span class="pay-label" style="color:var(--text);font-weight:500;">Montant collecte</span>
+      <span class="pay-val green" id="display-amount">{{ order.amount_collected|floatformat:3 }} TND</span>
+    </div>
+    {% else %}
+    <div class="pay-row">
+      <span class="pay-label" style="color:var(--text);font-weight:500;">Montant collecte</span>
+      <span style="display:flex;align-items:center;gap:8px;">
+        <span class="pay-val green" id="display-amount">{{ order.amount_collected|floatformat:3 }} TND</span>
+        <button class="change-btn" onclick="showEdit()">Modifier</button>
+        <span class="save-ok" id="save-ok">Sauvegarde!</span>
+      </span>
+    </div>
+    <div class="edit-row" id="edit-row">
+      <input class="amount-input" id="amount-input" type="number" step="0.001" value="{{ order.amount_collected }}" min="0">
+      <button class="save-btn" onclick="saveAmount()">Sauvegarder</button>
+      <button class="cancel-btn" onclick="hideEdit()">Annuler</button>
+    </div>
+    <div class="reconcile-note" id="reconcile-note"></div>
     {% endif %}
   </div>
 
-  {% if order.status != 'open' %}
-  <div class="section-title">Paiement</div>
-  <div class="payment-box">
-
-    {% for item in items %}
-    <div class="pay-row">
-      <span class="pay-label">
-        {{ item.unit.variant.product.name }} {{ item.unit.variant.color_label }} — {{ item.unit.size }}
-      </span>
-      <span class="pay-val {% if item.display_status == 'returned' or item.display_status == 'returned' %}strike{% endif %}">
-        {{ item.unit.variant.product.sell_price|floatformat:3 }} TND
-        {% if item.display_status == 'returned' %}<span style="font-size:10px;color:var(--red);margin-left:4px;">Retourné</span>{% endif %}
-        
-      </span>
-    </div>
-    {% endfor %}
-
-    <div class="pay-row">
-      <span class="pay-label">Frais livraison</span>
-      <span class="pay-val">7.000 TND</span>
-    </div>
-
-    <div class="pay-row" style="border-bottom:0.5px solid var(--border);">
-      <span class="pay-label" style="color:var(--text);font-weight:500;">Total calculé</span>
-      <span class="pay-val green" id="calculated-total">{{ calculated_total|floatformat:3 }} TND</span>
-    </div>
-
-
-    <div class="pay-row">
-      <span class="pay-label" style="color:var(--text);font-weight:500;">Montant collecté</span>
-      <div style="display:flex;align-items:center;gap:10px;">
-        <span class="pay-val green" id="display-amount">{{ order.amount_collected|floatformat:3|default:"0.000" }} TND</span>
-        <button class="change-btn" onclick="showEdit()">Modifier</button>
-        <span class="save-ok" id="save-ok">✓ Sauvegardé</span>
-      </div>
-    </div>
-
-    <div class="edit-row" id="edit-row">
-      <input class="amount-input" type="number" id="amount-input"
-        value="{{ order.amount_collected|floatformat:3|default:'0.000' }}"
-        step="0.001" min="0">
-      <button class="save-btn" onclick="saveAmount()">Enregistrer</button>
-      <button class="cancel-btn" onclick="hideEdit()">Annuler</button>
-    </div>
-
-    <div class="reconcile-note" id="reconcile-note"></div>
-  </div>
-  {% endif %}
-
-  <div class="section-title">{{ items|length }} unité(s)</div>
+  <div class="section-title">{{ items|length }} unite(s)</div>
   <div class="items-grid">
     {% for item in items %}
-    <div class="item-card {% if item.unit.status == 'returned' %}returned{% elif item.unit.status == 'returned' %}pending{% endif %}">
-      {% if item.display_status == 'returned' %}<div class="returned-ribbon">Retourné</div>{% endif %}
-      {% if item.display_status == 'returned' %}<div class="returned-ribbon">Retourné</div>{% endif %}
+    <div class="item-card {% if item.display_status == 'returned' %}returned{% endif %}">
       {% if item.unit.variant.image %}
         <img class="item-img" src="{{ item.unit.variant.image.url }}" alt="">
       {% else %}
@@ -211,272 +182,240 @@
   </div>
 </div>
 
-<script>
-  async function checkNavex() {
-    var btn = document.getElementById('navex-btn');
-    var box = document.getElementById('navex-box');
-    var content = document.getElementById('navex-content');
-    btn.textContent = '⏳ Chargement...';
-    btn.disabled = true;
-    try {
-      var res = await fetch("{% url 'api_navex_status' order.pk %}", {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: '{}'
-      });
-      var data = await res.json();
-      box.style.display = 'block';
-      if (data.status === 'ok') {
-        var navex = data.navex;
-        var html = '';
-        if (navex.status) html += '<div><strong>Statut :</strong> ' + navex.status + '</div>';
-        if (navex.status_message) html += '<div><strong>Message :</strong> ' + navex.status_message + '</div>';
-        if (navex.etat) html += '<div><strong>État :</strong> ' + navex.etat + '</div>';
-        // Show all fields from response
-        for (var key in navex) {
-          if (!['status', 'status_message', 'etat'].includes(key)) {
-            html += '<div><strong>' + key + ' :</strong> ' + JSON.stringify(navex[key]) + '</div>';
-          }
-        }
-        content.innerHTML = html || '<span style="color:var(--muted);">Aucune information disponible</span>';
-      } else {
-        content.innerHTML = '<span style="color:var(--red);">' + data.message + '</span>';
-      }
-    } catch(e) {
-      content.innerHTML = '<span style="color:var(--red);">Erreur réseau</span>';
-    }
-    btn.textContent = '🚚 Vérifier sur Navex';
-    btn.disabled = false;
-  }
-
-  function showEdit() {
-    document.getElementById('edit-row').classList.add('visible');
-    document.getElementById('amount-input').focus();
-  }
-  function hideEdit() {
-    document.getElementById('edit-row').classList.remove('visible');
-  }
-  async function saveAmount() {
-    var amount = parseFloat(document.getElementById('amount-input').value) || 0;
-    try {
-      var res = await fetch("{% url 'api_update_order_amount' order.pk %}", {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({amount_collected: amount}),
-      });
-      var data = await res.json();
-      if (data.status === 'ok') {
-        document.getElementById('display-amount').textContent = amount.toFixed(3) + ' TND';
-        hideEdit();
-        var ok = document.getElementById('save-ok');
-        ok.style.display = 'inline';
-        setTimeout(() => ok.style.display = 'none', 2500);
-        if (data.note) {
-          var note = document.getElementById('reconcile-note');
-          note.style.display = 'block';
-          note.textContent = data.note;
-        }
-      }
-    } catch(e) { alert('Erreur réseau.'); }
-  }
-</script>
-
 <!-- ERROR POPUP -->
 <div id="err-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;align-items:center;justify-content:center;padding:20px;">
   <div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:380px;width:100%;text-align:center;">
     <div style="width:52px;height:52px;border-radius:50%;background:#fdeaea;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
       <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="#d94f4e" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
     </div>
-    <div id="err-title" style="font-size:16px;font-weight:600;color:#1a1a18;margin-bottom:8px;">Scan refusé</div>
+    <div id="err-title" style="font-size:16px;font-weight:600;color:#1a1a18;margin-bottom:8px;">Erreur</div>
     <div id="err-msg" style="font-size:14px;color:#73726c;line-height:1.6;margin-bottom:24px;"></div>
-    <button onclick="closeErrPopup()" style="width:100%;padding:12px;background:#1a1a18;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;">OK, compris</button>
+    <button onclick="closeErrPopup()" style="width:100%;padding:12px;background:#1a1a18;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;">OK</button>
   </div>
 </div>
 
 <!-- DELETE MODAL -->
-<div id="delete-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:20px;">
-  <div style="background:#fff;border-radius:14px;padding:28px;max-width:400px;width:100%;text-align:center;">
-    <div style="width:52px;height:52px;border-radius:50%;background:#fdeaea;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
-      <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="#d94f4e" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-    </div>
-    <div style="font-size:16px;font-weight:600;color:#1a1a18;margin-bottom:8px;">Supprimer l'ordre</div>
-    <div style="font-size:13px;color:#73726c;margin-bottom:20px;">Toutes les unités seront remises en stock. Tapez <strong>DELETE</strong> pour confirmer.</div>
-    <input id="delete-confirm-input" type="text" placeholder="Tapez DELETE en majuscules"
-      style="width:100%;border:0.5px solid rgba(0,0,0,0.1);border-radius:8px;padding:10px 14px;font-size:14px;color:#1a1a18;background:#f5f4f0;outline:none;margin-bottom:14px;text-align:center;">
-    <div style="display:flex;gap:8px;">
-      <button onclick="closeDelete()" style="flex:1;padding:10px;background:#f5f4f0;border:0.5px solid rgba(0,0,0,0.1);border-radius:8px;font-size:13px;cursor:pointer;">Annuler</button>
-      <button onclick="confirmDelete()" style="flex:1;padding:10px;background:#d94f4e;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;">Supprimer</button>
+<div id="delete-overlay" class="overlay">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-title">Supprimer l'ordre</div>
+    <div class="modal-sub">Toutes les unites seront remises en stock. Tapez DELETE pour confirmer.</div>
+    <input id="delete-input" class="modal-input" type="text" placeholder="DELETE">
+    <div style="display:flex;gap:8px;justify-content:center;">
+      <button class="btn-cancel" onclick="closeDelete()">Annuler</button>
+      <button class="btn-danger" onclick="confirmDelete()">Supprimer</button>
     </div>
   </div>
 </div>
 
 <!-- MODIFY MODAL -->
-<div id="modify-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:20px;">
-  <div style="background:#fff;border-radius:14px;padding:28px;max-width:500px;width:100%;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-      <div style="font-size:16px;font-weight:600;color:#1a1a18;">Modifier l'ordre</div>
-      <button onclick="closeModify()" style="background:none;border:none;color:#73726c;cursor:pointer;font-size:22px;line-height:1;">×</button>
+<div id="modify-overlay" class="overlay">
+  <div style="background:#fff;border-radius:14px;padding:24px;max-width:500px;width:100%;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div style="font-size:16px;font-weight:600;">Modifier l'ordre</div>
+      <button onclick="closeModify()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#73726c;">x</button>
     </div>
-    <div style="font-size:13px;color:#73726c;margin-bottom:12px;">Tapez <strong>MODIFY</strong> pour activer les modifications.</div>
-    <input id="modify-confirm-input" type="text" placeholder="Tapez MODIFY en majuscules"
-      style="width:100%;border:0.5px solid rgba(0,0,0,0.1);border-radius:8px;padding:10px 14px;font-size:14px;color:#1a1a18;background:#f5f4f0;outline:none;margin-bottom:16px;text-align:center;">
-    <div id="modify-actions" style="display:none;">
-      <div style="margin-bottom:16px;">
-        <div style="font-size:11px;color:#73726c;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Ajouter une unité</div>
-        <div style="display:flex;gap:8px;">
-          <input id="add-barcode-input" type="text" placeholder="Scanner barcode..."
-            style="flex:1;border:0.5px solid rgba(0,0,0,0.1);border-radius:8px;padding:9px 12px;font-size:14px;font-family:monospace;color:#1a1a18;background:#f5f4f0;outline:none;">
-          <button onclick="addUnit()" style="padding:9px 16px;background:#1a9e6e;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;">Ajouter</button>
-        </div>
-        <div id="add-feedback" style="font-size:12px;margin-top:6px;color:#73726c;"></div>
+    <div style="margin-bottom:14px;">
+      <div style="font-size:11px;color:#73726c;margin-bottom:8px;text-transform:uppercase;">Ajouter une unite</div>
+      <div style="display:flex;gap:8px;">
+        <input id="add-barcode" type="text" placeholder="Scanner barcode..." style="flex:1;border:0.5px solid #ddd;border-radius:8px;padding:9px 12px;font-size:14px;font-family:monospace;outline:none;background:#f5f4f0;">
+        <button class="btn-green" onclick="addUnit()">Ajouter</button>
       </div>
-      <div>
-        <div style="font-size:11px;color:#73726c;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Retirer une unité</div>
-        <div id="modify-items" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;">
-          {% for item in items %}
-          <div id="mitem-{{ item.unit.barcode }}" style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:#f5f4f0;border-radius:8px;font-size:13px;">
-            <span style="flex:1;">{{ item.unit.variant.product.name }} {{ item.unit.variant.color_label }} — {{ item.unit.size }}</span>
-            <span style="font-family:monospace;font-size:10px;color:#b0afa8;">{{ item.unit.barcode }}</span>
-            <button onclick="removeUnit('{{ item.unit.barcode }}')" style="width:24px;height:24px;border-radius:50%;background:#fdeaea;border:0.5px solid #f5b5b5;color:#d94f4e;cursor:pointer;font-size:13px;flex-shrink:0;">✕</button>
-          </div>
-          {% endfor %}
+      <div id="add-feedback" style="font-size:12px;margin-top:6px;color:#73726c;"></div>
+    </div>
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;color:#73726c;margin-bottom:8px;text-transform:uppercase;">Retirer une unite</div>
+      <div id="modify-items" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;">
+        {% for item in items %}
+        <div class="modify-item" id="mitem-{{ item.unit.barcode }}">
+          <span style="flex:1;">{{ item.unit.variant.product.name }} {{ item.unit.variant.color_label }} - {{ item.unit.size }}</span>
+          <span style="font-family:monospace;font-size:10px;color:#b0afa8;">{{ item.unit.barcode }}</span>
+          <button data-bc="{{ item.unit.barcode }}" onclick="removeUnit(this.dataset.bc)" style="width:24px;height:24px;border-radius:50%;background:#fdeaea;border:0.5px solid #f5b5b5;color:#d94f4e;cursor:pointer;font-size:14px;line-height:1;">x</button>
         </div>
+        {% endfor %}
       </div>
+    </div>
+    <button class="btn-green" onclick="openConfirmModify()" style="width:100%;padding:10px;">Confirmer les modifications</button>
+  </div>
+</div>
+
+<!-- CONFIRM MODIFY POPUP -->
+<div id="confirm-modify-overlay" class="overlay">
+  <div class="modal" style="max-width:380px;">
+    <div class="modal-title">Confirmer les modifications</div>
+    <div class="modal-sub">Tapez MODIFY pour valider les changements.</div>
+    <input id="modify-input" class="modal-input" type="text" placeholder="MODIFY">
+    <div style="display:flex;gap:8px;justify-content:center;">
+      <button class="btn-cancel" onclick="closeConfirmModify()">Annuler</button>
+      <button class="btn-green" onclick="confirmModify()">Valider</button>
     </div>
   </div>
 </div>
 
 <script>
-  function showErrPopup(message) {
-    document.getElementById('err-title').textContent = 'Erreur';
-    document.getElementById('err-msg').textContent = message;
-    document.getElementById('err-overlay').style.display = 'flex';
-  }
-  function closeErrPopup() {
-    document.getElementById('err-overlay').style.display = 'none';
-  }
-  document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeErrPopup(); });
+function showErrPopup(msg) {
+  document.getElementById('err-msg').textContent = msg;
+  document.getElementById('err-overlay').style.display = 'flex';
+}
+function closeErrPopup() {
+  document.getElementById('err-overlay').style.display = 'none';
+}
 
-  var modifyConfirmed = false;
+function showEdit() { document.getElementById('edit-row').classList.add('visible'); }
+function hideEdit() { document.getElementById('edit-row').classList.remove('visible'); }
 
-  function openDelete() {
-    document.getElementById('delete-overlay').style.display = 'flex';
-    setTimeout(function(){ document.getElementById('delete-confirm-input').focus(); }, 100);
-  }
-  function closeDelete() {
-    document.getElementById('delete-overlay').style.display = 'none';
-    document.getElementById('delete-confirm-input').value = '';
-  }
-  async function confirmDelete() {
-    var val = document.getElementById('delete-confirm-input').value.trim();
-    if (val !== 'DELETE') { showErrPopup('Vous devez taper DELETE en majuscules exactement.'); return; }
-    try {
-      var res = await fetch("{% url 'api_delete_order' order.pk %}", {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({confirmation:'DELETE'})
-      });
-      var data = await res.json();
-      if (data.status === 'ok') { alert(data.message); window.location.href = "{% url 'dashboard' %}"; }
-      else showErrPopup(data.message);
-    } catch(e) { showErrPopup('Erreur réseau.'); }
-  }
-
-  function openModify() {
-    document.getElementById('modify-overlay').style.display = 'flex';
-    setTimeout(function(){ document.getElementById('modify-confirm-input').focus(); }, 100);
-  }
-  function closeModify() {
-    document.getElementById('modify-overlay').style.display = 'none';
-    modifyConfirmed = false;
-    document.getElementById('modify-actions').style.display = 'none';
-    document.getElementById('modify-confirm-input').value = '';
-  }
-
-  document.getElementById('modify-confirm-input').addEventListener('input', function() {
-    if (this.value.trim() === 'MODIFY') {
-      modifyConfirmed = true;
-      document.getElementById('modify-actions').style.display = 'block';
-      document.getElementById('add-barcode-input').focus();
-    } else {
-      modifyConfirmed = false;
-      document.getElementById('modify-actions').style.display = 'none';
+async function saveAmount() {
+  var amount = parseFloat(document.getElementById('amount-input').value) || 0;
+  try {
+    var res = await fetch("{% url 'api_update_order_amount' order.pk %}", {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({amount_collected: amount})
+    });
+    var data = await res.json();
+    if (data.status === 'ok') {
+      document.getElementById('display-amount').textContent = amount.toFixed(3) + ' TND';
+      hideEdit();
+      var ok = document.getElementById('save-ok');
+      ok.style.display = 'inline';
+      setTimeout(function(){ ok.style.display = 'none'; }, 2500);
     }
-  });
+  } catch(e) { showErrPopup('Erreur reseau.'); }
+}
 
-  document.getElementById('add-barcode-input').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') addUnit();
-  });
+async function checkNavex() {
+  var btn = document.getElementById('navex-btn');
+  btn.textContent = 'Chargement...';
+  btn.disabled = true;
+  try {
+    var res = await fetch("{% url 'api_navex_status' order.pk %}", {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'
+    });
+    var data = await res.json();
+    var box = document.getElementById('navex-box');
+    var content = document.getElementById('navex-content');
+    box.style.display = 'block';
+    if (data.status === 'ok') {
+      var navex = data.navex;
+      var html = '';
+      if (navex.etat) html += '<div><strong>Etat:</strong> ' + navex.etat + '</div>';
+      if (navex.motif) html += '<div><strong>Motif:</strong> ' + navex.motif + '</div>';
+      if (navex.livreur) html += '<div><strong>Livreur:</strong> ' + navex.livreur + '</div>';
+      content.innerHTML = html || 'Aucune information.';
+    } else {
+      content.innerHTML = '<span style="color:#d94f4e;">' + (data.message || 'Erreur') + '</span>';
+    }
+  } catch(e) { showErrPopup('Erreur reseau.'); }
+  btn.textContent = 'Verifier sur Navex';
+  btn.disabled = false;
+}
 
-  async function addUnit() {
-    if (!modifyConfirmed) return;
-    var barcode = document.getElementById('add-barcode-input').value.trim().toUpperCase();
-    document.getElementById('add-barcode-input').value = '';
-    if (!barcode) return;
-    try {
-      var res = await fetch("{% url 'api_order_add_unit' order.pk %}", {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({confirmation:'MODIFY', barcode: barcode})
-      });
-      var data = await res.json();
-      var fb = document.getElementById('add-feedback');
-      if (data.status === 'ok') {
-        fb.style.color = '#1a9e6e';
-        fb.textContent = '✓ ' + data.message;
-        var div = document.createElement('div');
-        div.id = 'mitem-' + data.unit.barcode;
-        div.setAttribute('data-barcode', data.unit.barcode);
-        div.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;background:#f5f4f0;border-radius:8px;font-size:13px;';
-        var btn = document.createElement('button');
-        btn.textContent = '✕';
-        btn.style.cssText = 'width:24px;height:24px;border-radius:50%;background:#fdeaea;border:0.5px solid #f5b5b5;color:#d94f4e;cursor:pointer;font-size:13px;flex-shrink:0;';
-        btn.onclick = function() { removeUnit(data.unit.barcode); };
-        var nameSpan = document.createElement('span');
-        nameSpan.style.flex = '1';
-        nameSpan.textContent = data.unit.product_name + ' ' + data.unit.color_label + ' — ' + data.unit.size;
-        var bcSpan = document.createElement('span');
-        bcSpan.style.cssText = 'font-family:monospace;font-size:10px;color:#b0afa8;';
-        bcSpan.textContent = data.unit.barcode;
-        div.appendChild(nameSpan);
-        div.appendChild(bcSpan);
-        div.appendChild(btn);
-        document.getElementById('modify-items').prepend(div);
-      } else {
-        fb.style.color = '#d94f4e';
-        fb.textContent = '✗ ' + data.message;
-      }
-    } catch(e) { showErrPopup('Erreur réseau.'); }
-  });
-      var data = await res.json();
-      var fb = document.getElementById('add-feedback');
-      if (data.status === 'ok') {
-        fb.style.color = '#1a9e6e'; fb.textContent = '✓ ' + data.message;
-        var div = document.createElement('div');
-        div.id = 'mitem-' + data.unit.barcode;
-        div.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;background:#f5f4f0;border-radius:8px;font-size:13px;';
-        div.innerHTML = '<span style="flex:1;">'+data.unit.product_name+' '+data.unit.color_label+' — '+data.unit.size+'</span>' +
-          '<span style="font-family:monospace;font-size:10px;color:#b0afa8;">'+data.unit.barcode+'</span>' +
-          '<button onclick="removeUnit(\"' + data.unit.barcode + '\")"; style="width:24px;height:24px;border-radius:50%;background:#fdeaea;border:0.5px solid #f5b5b5;color:#d94f4e;cursor:pointer;font-size:13px;flex-shrink:0;">✕</button>';
-        document.getElementById('modify-items').prepend(div);
-      } else { fb.style.color = '#d94f4e'; fb.textContent = '✗ ' + data.message; }
-    } catch(e) { showErrPopup('Erreur réseau.'); }
-  }
+function openDelete() {
+  document.getElementById('delete-overlay').style.display = 'flex';
+  document.getElementById('delete-input').value = '';
+  setTimeout(function(){ document.getElementById('delete-input').focus(); }, 100);
+}
+function closeDelete() {
+  document.getElementById('delete-overlay').style.display = 'none';
+}
+async function confirmDelete() {
+  var val = document.getElementById('delete-input').value.trim();
+  if (val !== 'DELETE') { showErrPopup('Tapez DELETE en majuscules.'); return; }
+  try {
+    var res = await fetch("{% url 'api_delete_order' order.pk %}", {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({confirmation:'DELETE'})
+    });
+    var data = await res.json();
+    if (data.status === 'ok') { alert(data.message); window.location.href = "{% url 'dashboard' %}"; }
+    else showErrPopup(data.message);
+  } catch(e) { showErrPopup('Erreur reseau.'); }
+}
 
-  async function removeUnit(barcode) {
-    if (!modifyConfirmed) return;
-    if (!confirm("Retirer " + barcode + " de l'ordre et le remettre en stock ?")) return;
-    try {
-      var res = await fetch("{% url 'api_order_remove_unit' order.pk %}", {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({confirmation:'MODIFY', barcode})
-      });
-      var data = await res.json();
-      if (data.status === 'ok') {
-        var el = document.getElementById('mitem-'+barcode);
-        if (el) el.remove();
-        document.getElementById('add-feedback').style.color = '#1a9e6e';
-        document.getElementById('add-feedback').textContent = '✓ ' + data.message;
-      } else showErrPopup(data.message);
-    } catch(e) { showErrPopup('Erreur réseau.'); }
-  }
+var pendingChanges = [];
+
+function openModify() {
+  document.getElementById('modify-overlay').style.display = 'flex';
+  setTimeout(function(){ document.getElementById('add-barcode').focus(); }, 100);
+}
+function closeModify() {
+  document.getElementById('modify-overlay').style.display = 'none';
+  pendingChanges = [];
+}
+function openConfirmModify() {
+  document.getElementById('confirm-modify-overlay').style.display = 'flex';
+  document.getElementById('modify-input').value = '';
+  setTimeout(function(){ document.getElementById('modify-input').focus(); }, 100);
+}
+function closeConfirmModify() {
+  document.getElementById('confirm-modify-overlay').style.display = 'none';
+}
+function confirmModify() {
+  var val = document.getElementById('modify-input').value.trim();
+  if (val !== 'MODIFY') { showErrPopup('Tapez MODIFY en majuscules.'); return; }
+  closeConfirmModify();
+  closeModify();
+  var fb = document.getElementById('add-feedback');
+  if (fb) { fb.style.color = '#1a9e6e'; fb.textContent = 'Modifications confirmees.'; }
+  location.reload();
+}
+document.getElementById('add-barcode').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') addUnit();
+});
+
+async function addUnit() {
+  var barcode = document.getElementById('add-barcode').value.trim().toUpperCase();
+  document.getElementById('add-barcode').value = '';
+  if (!barcode) return;
+  try {
+    var res = await fetch("{% url 'api_order_add_unit' order.pk %}", {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({confirmation:'MODIFY', barcode: barcode})
+    });
+    var data = await res.json();
+    var fb = document.getElementById('add-feedback');
+    if (data.status === 'ok') {
+      fb.style.color = '#1a9e6e';
+      fb.textContent = data.message;
+      var div = document.createElement('div');
+      div.className = 'modify-item';
+      div.id = 'mitem-' + data.unit.barcode;
+      var s1 = document.createElement('span');
+      s1.style.flex = '1';
+      s1.textContent = data.unit.product_name + ' ' + data.unit.color_label + ' - ' + data.unit.size;
+      var s2 = document.createElement('span');
+      s2.style.cssText = 'font-family:monospace;font-size:10px;color:#b0afa8;';
+      s2.textContent = data.unit.barcode;
+      var btn = document.createElement('button');
+      btn.textContent = 'x';
+      btn.style.cssText = 'width:24px;height:24px;border-radius:50%;background:#fdeaea;border:0.5px solid #f5b5b5;color:#d94f4e;cursor:pointer;font-size:14px;line-height:1;';
+      btn.dataset.bc = data.unit.barcode;
+      btn.onclick = function() { removeUnit(this.dataset.bc); };
+      div.appendChild(s1);
+      div.appendChild(s2);
+      div.appendChild(btn);
+      document.getElementById('modify-items').prepend(div);
+    } else {
+      fb.style.color = '#d94f4e';
+      fb.textContent = data.message;
+    }
+  } catch(e) { showErrPopup('Erreur reseau.'); }
+}
+
+async function removeUnit(barcode) {
+  if (!window.confirm('Retirer ' + barcode + ' ?')) return;
+  try {
+    var res = await fetch("{% url 'api_order_remove_unit' order.pk %}", {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({confirmation:'MODIFY', barcode: barcode})
+    });
+    var data = await res.json();
+    if (data.status === 'ok') {
+      var el = document.getElementById('mitem-' + barcode);
+      if (el) el.remove();
+      document.getElementById('add-feedback').style.color = '#1a9e6e';
+      document.getElementById('add-feedback').textContent = data.message;
+    } else { showErrPopup(data.message); }
+  } catch(e) { showErrPopup('Erreur reseau.'); }
+}
 </script>
 </body>
 </html>
