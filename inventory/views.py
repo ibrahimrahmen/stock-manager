@@ -893,6 +893,40 @@ def api_navex_status(request, pk):
         return JsonResponse({"status": "error", "message": f"Erreur Navex : {str(e)}"})
 
 
+@csrf_exempt
+@require_POST
+def api_confirm_payment_from_navex(request, pk):
+    """Confirm payment for an order using Navex price."""
+    import urllib.request, urllib.parse
+    data = json.loads(request.body)
+    amount = Decimal(str(data.get("amount", "0")))
+
+    try:
+        order = ShippingOrder.objects.get(pk=pk)
+    except ShippingOrder.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Ordre introuvable."})
+
+    if order.status == ShippingOrder.PAID:
+        return JsonResponse({"status": "error", "message": "Ordre deja paye."})
+
+    with transaction.atomic():
+        order.status = ShippingOrder.PAID
+        order.paid_at = timezone.now()
+        order.amount_collected = amount
+        order.save()
+        for item in order.items.select_related("unit"):
+            if item.unit.status == ProductUnit.SHIPPED:
+                item.unit.status = ProductUnit.PAID
+                item.unit.save()
+                OrderItem.objects.filter(pk=item.pk).update(status_at_payment=ProductUnit.PAID)
+                StockMovement.objects.create(
+                    unit=item.unit, movement_type=StockMovement.PAID,
+                    reference=order.bordereau_barcode,
+                )
+
+    return JsonResponse({"status": "ok", "message": f"Ordre {order.bordereau_barcode} marque comme paye — {amount} TND."})
+
+
 def navex_sync(request):
     """Sync page — shows all shipped orders with their Navex status."""
     if not request.user.is_staff:
@@ -949,13 +983,25 @@ def api_navex_sync(request):
             navex_etat = navex.get("etat", "Introuvable") if navex and navex.get("status") == 1 else "Introuvable"
             needs_attention = navex_etat in ("Livrer Paye", "Livré", "Livrée", "Livré Payé")
             is_anomaly = navex_etat in ("Retourné", "Retourne", "Annulé", "Annule")
-            # Get price from Navex (include_prix=1)
-            navex_prix = None
-            if navex:
-                for key in ["prix", "price", "montant", "amount", "prix_livraison", "prix_colis"]:
-                    if navex.get(key):
-                        navex_prix = navex.get(key)
-                        break
+            # Get price from Navex (include_prix=1) - field is "prix"
+            navex_prix = navex.get("prix") if navex else None
+            # Calculate our expected total
+            try:
+                order_obj = ShippingOrder.objects.get(pk=order["id"])
+                our_total = sum(
+                    item.unit.variant.product.sell_price
+                    for item in order_obj.items.select_related("unit__variant__product")
+                ) + Decimal("7")
+            except Exception:
+                our_total = None
+
+            price_match = None
+            if navex_prix and our_total:
+                try:
+                    price_match = abs(Decimal(str(navex_prix)) - our_total) < Decimal("0.1")
+                except Exception:
+                    price_match = None
+
             merged.append({
                 "id": order["id"],
                 "bordereau_barcode": bc,
@@ -965,7 +1011,8 @@ def api_navex_sync(request):
                 "navex_motif": navex.get("motif", "") if navex else "",
                 "navex_livreur": navex.get("livreur", "") if navex else "",
                 "navex_prix": str(navex_prix) if navex_prix else None,
-                "navex_raw": navex,  # full response for debugging
+                "our_total": str(our_total) if our_total else None,
+                "price_match": price_match,
                 "needs_attention": needs_attention,
                 "is_anomaly": is_anomaly,
                 "opened_at": order["opened_at"].strftime("%d/%m/%Y %H:%M") if order["opened_at"] else "",
