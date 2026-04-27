@@ -26,6 +26,7 @@ urlpatterns = [
     path("api/orders/<int:pk>/navex-status/", views.api_navex_status, name="api_navex_status"),
     path("navex-sync/", views.navex_sync, name="navex_sync"),
     path("api/navex-sync/", views.api_navex_sync, name="api_navex_sync"),
+    path("api/navex-attente/", views.api_navex_en_attente, name="api_navex_attente"),
     path("api/orders/<int:pk>/confirm-navex/", views.api_confirm_payment_from_navex, name="api_confirm_payment_from_navex"),
     path("products/", views.products_list, name="products_list"),
     path("admin-panel/", views.admin_panel, name="admin_panel"),

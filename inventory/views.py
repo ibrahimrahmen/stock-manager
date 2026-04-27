@@ -928,6 +928,74 @@ def api_confirm_payment_from_navex(request, pk):
     return JsonResponse({"status": "ok", "message": f"Ordre {order.bordereau_barcode} marque comme paye — {amount} TND."})
 
 
+@csrf_exempt
+def api_navex_en_attente(request):
+    """Get all en attente orders from Navex and try to match with our products."""
+    import urllib.request, urllib.parse
+
+    try:
+        data = urllib.parse.urlencode({"getattente": "1"}).encode()
+        req = urllib.request.Request(
+            "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+            data=data, method="POST"
+        )
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            import json as json_lib
+            navex_data = json_lib.loads(resp.read().decode())
+
+        colis_list = navex_data.get("colis", [])
+
+        # Only skip orders that are already CLOSED or PAID — open orders still count as pending
+        our_barcodes = set(ShippingOrder.objects.filter(
+            status__in=(ShippingOrder.CLOSED, ShippingOrder.PAID)
+        ).values_list("bordereau_barcode", flat=True))
+
+        result = []
+        for colis in colis_list:
+            code_barre = colis.get("code_barre", "")
+            designation = colis.get("designation", "")
+            prix = colis.get("prix", "")
+
+            # Skip if already scanned in our system
+            if code_barre in our_barcodes:
+                continue
+
+            # Try to match product by name from designation
+            matched_products = []
+            products = Product.objects.prefetch_related("variants").all()
+            for product in products:
+                if product.name.lower() in designation.lower() or any(
+                    word.lower() in designation.lower()
+                    for word in product.name.split()
+                    if len(word) > 2
+                ):
+                    first_variant = product.variants.first()
+                    matched_products.append({
+                        "id": product.id,
+                        "name": product.name,
+                        "code": product.code,
+                        "image_url": first_variant.image.url if first_variant and first_variant.image else None,
+                    })
+
+            result.append({
+                "code_barre": code_barre,
+                "designation": designation,
+                "prix": prix,
+                "matched_products": matched_products,
+                "recognized": len(matched_products) > 0,
+            })
+
+        return JsonResponse({
+            "status": "ok",
+            "total": len(result),
+            "colis": result,
+        })
+
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)})
+
+
 def navex_sync(request):
     """Sync page — shows all shipped orders with their Navex status."""
     if not request.user.is_staff:
