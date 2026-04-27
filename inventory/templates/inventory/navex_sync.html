@@ -88,12 +88,14 @@
       <span class="section-title">💰 À payer</span>
       <span class="section-count count-green" id="count-payer">0</span>
       <span style="font-size:12px;color:var(--muted);">Navex dit Livrer Payé — confirmez le paiement</span>
+      <button id="pay-all-btn" onclick="payAll()" style="margin-left:auto;padding:7px 18px;background:var(--green);color:#000;border:none;border-radius:20px;font-size:13px;font-weight:500;cursor:pointer;">✓ Payer tout</button>
     </div>
     <table>
       <thead>
         <tr>
           <th>Bordereau</th>
           <th>Ouvert le</th>
+          <th>Unités</th>
           <th>Notre total</th>
           <th>Navex prix</th>
           <th>Livreur</th>
@@ -206,7 +208,8 @@
       document.getElementById('section-payer').style.display = 'block';
       var tbody = document.getElementById('tbody-payer');
       tbody.innerHTML = '';
-      payer.forEach(function(r) {
+      allPayerOrders = payer;
+    payer.forEach(function(r) {
         var match = r.price_match;
         var ourTotal = r.our_total ? parseFloat(r.our_total).toFixed(3) + ' TND' : '—';
         var navexPrix = r.navex_prix ? parseFloat(r.navex_prix).toFixed(3) + ' TND' : '—';
@@ -219,6 +222,7 @@
         tr.innerHTML =
           '<td><a href="/orders/' + r.id + '/" class="order-link">' + r.bordereau_barcode + '</a></td>' +
           '<td style="color:var(--muted);font-size:12px;">' + r.opened_at + '</td>' +
+          '<td style="text-align:center;font-weight:500;">' + (r.unit_count || '—') + '</td>' +
           '<td>' + ourTotal + '</td>' +
           '<td>' + priceHtml + '</td>' +
           '<td style="font-size:12px;color:var(--muted);">' + (r.navex_livreur || '—') + '</td>' +
@@ -277,6 +281,32 @@
     document.getElementById('confirm-overlay').style.display = 'none';
     currentOrderId = null;
     currentNavexPrice = null;
+  }
+
+  var allPayerOrders = [];
+
+  async function payAll() {
+    if (allPayerOrders.length === 0) return;
+    if (!window.confirm("Confirmer le paiement de " + allPayerOrders.length + " ordre(s) au prix Navex ?")) return;
+    var btn = document.getElementById('pay-all-btn');
+    btn.disabled = true;
+    btn.textContent = 'En cours...';
+    var errors = [];
+    for (var i = 0; i < allPayerOrders.length; i++) {
+      var order = allPayerOrders[i];
+      try {
+        var res = await fetch('/api/orders/' + order.id + '/confirm-navex/', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({amount: order.navex_prix})
+        });
+        var data = await res.json();
+        if (data.status !== 'ok') errors.push(order.bordereau_barcode);
+      } catch(e) { errors.push(order.bordereau_barcode); }
+    }
+    if (errors.length > 0) alert('Erreurs sur : ' + errors.join(', '));
+    btn.disabled = false;
+    btn.textContent = '✓ Payer tout';
+    doSync();
   }
 
   async function doConfirmPayment() {

@@ -986,15 +986,18 @@ def api_navex_sync(request):
             is_anomaly = navex_etat in ("Retourné", "Retourne", "Annulé", "Annule")
             # Get price from Navex (include_prix=1) - field is "prix"
             navex_prix = navex.get("prix") if navex else None
-            # Calculate our expected total
+            # Calculate our expected total and unit count
             try:
                 order_obj = ShippingOrder.objects.get(pk=order["id"])
+                order_items = list(order_obj.items.select_related("unit__variant__product"))
                 our_total = sum(
                     item.unit.variant.product.sell_price
-                    for item in order_obj.items.select_related("unit__variant__product")
+                    for item in order_items
                 ) + Decimal("7")
+                unit_count = len(order_items)
             except Exception:
                 our_total = None
+                unit_count = 0
 
             price_match = None
             if navex_prix and our_total:
@@ -1013,6 +1016,7 @@ def api_navex_sync(request):
                 "navex_livreur": navex.get("livreur", "") if navex else "",
                 "navex_prix": str(navex_prix) if navex_prix else None,
                 "our_total": str(our_total) if our_total else None,
+                "unit_count": unit_count,
                 "price_match": price_match,
                 "needs_attention": needs_attention,
                 "is_anomaly": is_anomaly,
