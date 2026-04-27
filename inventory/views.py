@@ -878,7 +878,7 @@ def api_navex_status(request, pk):
     order = get_object_or_404(ShippingOrder, pk=pk)
 
     try:
-        data = urllib.parse.urlencode({'code': order.bordereau_barcode}).encode()
+        data = urllib.parse.urlencode({'code': order.bordereau_barcode, 'include_prix': '1'}).encode()
         req = urllib.request.Request(
             'https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php',
             data=data,
@@ -925,7 +925,7 @@ def api_navex_sync(request):
     codes_string = ", ".join(codes)
 
     try:
-        data = urllib.parse.urlencode({"codes": codes_string}).encode()
+        data = urllib.parse.urlencode({"codes": codes_string, "include_prix": "1"}).encode()
         req = urllib.request.Request(
             "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
             data=data,
@@ -948,6 +948,14 @@ def api_navex_sync(request):
             navex = navex_map.get(bc, None)
             navex_etat = navex.get("etat", "Introuvable") if navex and navex.get("status") == 1 else "Introuvable"
             needs_attention = navex_etat in ("Livrer Paye", "Livré", "Livrée", "Livré Payé")
+            is_anomaly = navex_etat in ("Retourné", "Retourne", "Annulé", "Annule")
+            # Get price from Navex (include_prix=1)
+            navex_prix = None
+            if navex:
+                for key in ["prix", "price", "montant", "amount", "prix_livraison", "prix_colis"]:
+                    if navex.get(key):
+                        navex_prix = navex.get(key)
+                        break
             merged.append({
                 "id": order["id"],
                 "bordereau_barcode": bc,
@@ -956,7 +964,10 @@ def api_navex_sync(request):
                 "navex_etat": navex_etat,
                 "navex_motif": navex.get("motif", "") if navex else "",
                 "navex_livreur": navex.get("livreur", "") if navex else "",
+                "navex_prix": str(navex_prix) if navex_prix else None,
+                "navex_raw": navex,  # full response for debugging
                 "needs_attention": needs_attention,
+                "is_anomaly": is_anomaly,
                 "opened_at": order["opened_at"].strftime("%d/%m/%Y %H:%M") if order["opened_at"] else "",
             })
 
