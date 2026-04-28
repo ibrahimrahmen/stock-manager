@@ -125,6 +125,11 @@
   .pred-color{font-size:9px;color:#73726c;padding:0 6px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .pred-check{position:absolute;inset:0;background:rgba(26,158,110,0.88);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .3s;}
   .pred-check.show{opacity:1;animation:checkPop .4s ease both;}
+  .pred-wrong{position:absolute;inset:0;background:rgba(217,79,78,0.88);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .3s;}
+  .pred-wrong.show{opacity:1;animation:checkPop .3s ease both;}
+  .pred-wrong svg{width:44px;height:44px;stroke:#fff;stroke-width:3;}
+  .pred-card.wrong{border-color:#d94f4e;}
+  .pred-check.show{opacity:1;animation:checkPop .4s ease both;}
   .pred-check svg{width:44px;height:44px;stroke:#fff;stroke-width:3;}
 
   /* NAVEX COUNTER */
@@ -527,24 +532,58 @@
         '<div class="pred-color">' + (p.color_matched || '') + '</div>' +
         '<div class="pred-check" id="pred-check-' + idx + '">' +
           '<svg fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>' +
+        '</div>' +
+        '<div class="pred-wrong" id="pred-wrong-' + idx + '">' +
+          '<svg fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>' +
         '</div>';
       grid.appendChild(card);
     });
   }
 
-  function checkPrediction(productName) {
-    // When a unit is scanned, check off the matching prediction card
-    if (!predictionProducts.length) return;
+  function checkPrediction(productName, colorLabel) {
+    if (!predictionProducts.length || !productName) return;
+    var scannedName = productName.toLowerCase().replace(/[#0-9]/g, '').trim();
+    var scannedColor = (colorLabel || '').toLowerCase();
+    var foundMatch = false;
+
     predictionProducts.forEach(function(p, idx) {
-      if (productName && p.name && productName.toLowerCase().includes(p.name.toLowerCase().split(' ')[0])) {
+      var card = document.getElementById('pred-' + idx);
+      if (!card || card.classList.contains('checked') || card.classList.contains('wrong')) return;
+
+      var expectedName = p.name.toLowerCase().replace(/[#0-9]/g, '').trim();
+      var expectedColor = (p.color_matched || '').toLowerCase();
+
+      // Check name match
+      var scannedWords = scannedName.split(' ').filter(function(w){ return w.length > 2; });
+      var nameMatch = scannedWords.some(function(w){ return expectedName.includes(w); });
+
+      // Check color match
+      var colorMatch = !expectedColor || !scannedColor || scannedColor.includes(expectedColor) || expectedColor.includes(scannedColor);
+
+      if (nameMatch && colorMatch && !foundMatch) {
+        // Correct match — green check
+        foundMatch = true;
+        card.classList.add('checked');
         var checkEl = document.getElementById('pred-check-' + idx);
-        var card = document.getElementById('pred-' + idx);
-        if (checkEl && card && !card.classList.contains('checked')) {
-          card.classList.add('checked');
-          checkEl.classList.add('show');
-        }
+        if (checkEl) checkEl.classList.add('show');
       }
     });
+
+    // If no match found — red X on first unchecked card
+    if (!foundMatch) {
+      predictionProducts.forEach(function(p, idx) {
+        var card = document.getElementById('pred-' + idx);
+        if (!card || card.classList.contains('checked') || card.classList.contains('wrong')) return;
+        card.classList.add('wrong');
+        var wrongEl = document.getElementById('pred-wrong-' + idx);
+        if (wrongEl) wrongEl.classList.add('show');
+        setTimeout(function(){ 
+          card.classList.remove('wrong'); 
+          if (wrongEl) wrongEl.classList.remove('show');
+        }, 2000);
+        return; // only first unchecked
+      });
+    }
   }
 
   function toggleAttenteDrawer() {
@@ -654,7 +693,7 @@
     }
     if (data.type === 'unit' && data.unit) {
       animateUnitCard(data.unit.barcode);
-      checkPrediction(data.unit.product_name);
+      checkPrediction(data.unit.product_name, data.unit.color_label);
     }
   };
 </script>
