@@ -115,7 +115,7 @@
     .btn-confirm:hover{opacity:.9;}
   
   /* PREDICTION PANEL */
-  .prediction-panel{max-width:520px;width:100%;margin-top:12px;}
+  .prediction-panel{width:100%;}
   .prediction-grid{display:flex;flex-wrap:wrap;gap:10px;}
   .pred-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;width:110px;position:relative;transition:all .2s;}
   .pred-card.checked{border-color:#1a9e6e;background:#e8f7f1;}
@@ -181,10 +181,6 @@
     <div id="navex-designation" style="font-weight:500;"></div>
     <div id="navex-price-display" style="color:#1a9e6e;font-size:15px;font-weight:600;margin-top:2px;"></div>
   </div>
-  <div class="prediction-panel" id="prediction-panel" style="display:none;">
-    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Produits attendus dans cet ordre</div>
-    <div class="prediction-grid" id="prediction-grid"></div>
-  </div>
   <div id="unrecognized-box" class="unrecognized-box" style="display:none;max-width:520px;width:100%;" onclick="openLinkModal()">
     ⚠ Produit non reconnu dans notre système — <strong>Cliquez pour lier</strong>
     <div id="unrecognized-designation" style="font-size:12px;margin-top:2px;color:#73726c;"></div>
@@ -227,6 +223,10 @@
       </div>
     </div>
 
+    <div class="prediction-panel" id="prediction-panel" style="display:none;padding:12px 20px;border-top:0.5px solid var(--border);">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Produits attendus dans cet ordre</div>
+      <div class="prediction-grid" id="prediction-grid"></div>
+    </div>
     <div class="modal-footer">
       <span class="total-label">Total produits</span>
       <span class="total-val" id="modal-total">0.000 TND</span>
