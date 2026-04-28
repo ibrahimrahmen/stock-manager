@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>À vérifier</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0e0e0c;--surface:#161614;--surface2:#1e1e1b;
+      --border:rgba(255,255,255,0.06);--text:#f0ede6;--muted:#7a7870;
+      --green:#3dba8a;--green-dim:rgba(61,186,138,0.1);
+      --amber:#e8a020;--amber-dim:rgba(232,160,32,0.12);
+      --red:#e05050;--red-dim:rgba(224,80,80,0.1);
+      --radius:14px;--radius-sm:8px;
+    }
+    body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+    nav{display:flex;align-items:center;gap:16px;padding:18px 32px;border-bottom:0.5px solid var(--border);}
+    nav a{font-size:13px;color:var(--muted);text-decoration:none;}
+    nav a:hover{color:var(--text);}
+    .nav-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:600;}
+    .page{max-width:1000px;margin:0 auto;padding:32px 24px;}
+
+    .stats{display:flex;gap:12px;margin-bottom:32px;}
+    .stat{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:14px 20px;}
+    .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px;}
+    .stat-val{font-size:22px;font-weight:500;}
+    .stat-val.red{color:var(--red);}
+    .stat-val.green{color:var(--green);}
+
+    table{width:100%;border-collapse:collapse;background:var(--surface);border-radius:var(--radius);border:0.5px solid var(--border);overflow:hidden;}
+    th{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:10px 14px;border-bottom:0.5px solid var(--border);}
+    td{font-size:13px;padding:10px 14px;border-bottom:0.5px solid var(--border);vertical-align:middle;}
+    tr:last-child td{border-bottom:none;}
+    tr.treated td{opacity:.5;}
+    .order-link{color:#5090e0;text-decoration:none;font-family:monospace;font-size:12px;}
+    .order-link:hover{text-decoration:underline;}
+
+    .hours-badge{font-size:11px;padding:3px 9px;border-radius:8px;background:var(--amber-dim);color:var(--amber);}
+    .hours-badge.late{background:var(--red-dim);color:var(--red);}
+
+    .btn-traiter{padding:7px 16px;background:var(--red-dim);color:var(--red);border:0.5px solid rgba(224,80,80,0.3);border-radius:var(--radius-sm);font-size:12px;font-weight:500;cursor:pointer;transition:all .2s;min-width:90px;}
+    .btn-traiter:hover{background:var(--red);color:#fff;}
+    .btn-traiter.done{background:var(--green-dim);color:var(--green);border-color:rgba(61,186,138,0.3);}
+    .btn-traiter.done:hover{background:var(--green);color:#000;}
+
+    .empty{text-align:center;padding:60px;color:var(--muted);}
+    .empty-icon{font-size:40px;margin-bottom:12px;}
+  </style>
+</head>
+<body>
+<nav>
+  <a href="{% url 'dashboard' %}">← Dashboard</a>
+  <span class="nav-title">À vérifier</span>
+  <span style="font-size:12px;color:var(--muted);margin-left:8px;">Ordres expédiés sans livraison depuis +24h (+48h samedi)</span>
+</nav>
+
+<div class="page">
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">Total</div>
+      <div class="stat-val">{{ orders|length }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">À traiter</div>
+      <div class="stat-val red">{{ untreated_count }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Traités</div>
+      <div class="stat-val green">{{ treated_count }}</div>
+    </div>
+  </div>
+
+  {% if orders %}
+  <table>
+    <thead>
+      <tr>
+        <th>Bordereau</th>
+        <th>Expédié le</th>
+        <th>Délai</th>
+        <th>Unités</th>
+        <th>Montant</th>
+        <th style="text-align:right;">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in orders %}
+      <tr class="{% if row.verification.treated %}treated{% endif %}" id="row-{{ row.order.pk }}">
+        <td><a href="{% url 'order_detail' row.order.pk %}" class="order-link">{{ row.order.bordereau_barcode }}</a></td>
+        <td style="color:var(--muted);font-size:12px;">{{ row.order.closed_at|date:"d/m/Y à H:i" }}</td>
+        <td>
+          <span class="hours-badge {% if row.hours_since > 48 %}late{% endif %}">
+            {{ row.hours_since|floatformat:0 }}h / {{ row.limit_hours }}h max
+          </span>
+        </td>
+        <td>{{ row.order.items.count }}</td>
+        <td style="color:var(--green);">{{ row.order.amount_collected|default:"—" }} {% if row.order.amount_collected %}TND{% endif %}</td>
+        <td style="text-align:right;">
+          <button
+            id="btn-{{ row.order.pk }}"
+            class="btn-traiter {% if row.verification.treated %}done{% endif %}"
+            onclick="toggleTreated({{ row.order.pk }})">
+            {% if row.verification.treated %}✓ Traité{% else %}Traiter{% endif %}
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">
+    <div class="empty-icon">✅</div>
+    <div style="font-size:16px;font-weight:500;margin-bottom:6px;">Tout est en ordre !</div>
+    <div style="font-size:13px;">Aucun ordre en retard de livraison.</div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+async function toggleTreated(orderId) {
+  var btn = document.getElementById('btn-' + orderId);
+  var row = document.getElementById('row-' + orderId);
+  btn.disabled = true;
+  try {
+    var res = await fetch('/api/orders/' + orderId + '/mark-treated/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: '{}'
+    });
+    var data = await res.json();
+    if (data.status === 'ok') {
+      if (data.treated) {
+        btn.textContent = '✓ Traité';
+        btn.classList.add('done');
+        row.classList.add('treated');
+      } else {
+        btn.textContent = 'Traiter';
+        btn.classList.remove('done');
+        row.classList.remove('treated');
+      }
+    }
+  } catch(e) { alert('Erreur réseau.'); }
+  btn.disabled = false;
+}
+</script>
+</body>
+</html>

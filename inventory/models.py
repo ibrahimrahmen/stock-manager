@@ -248,3 +248,14 @@ class SizeAlert(models.Model):
     @property
     def is_triggered(self):
         return self.current_stock < self.threshold
+
+
+class OrderVerification(models.Model):
+    """Tracks orders that need verification — shipped too long without delivery."""
+    order = models.OneToOneField(ShippingOrder, on_delete=models.CASCADE, related_name="verification")
+    created_at = models.DateTimeField(auto_now_add=True)
+    treated = models.BooleanField(default=False)
+    treated_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Verification {self.order.bordereau_barcode} — {'Traité' if self.treated else 'En attente'}"

@@ -420,6 +420,18 @@
     </a>
     {% endif %}
 
+    <!-- À VÉRIFIER — staff only -->
+    <a href="{% url 'a_verifier' %}" class="bubble bubble-return" style="border-color:rgba(224,80,80,0.2);">
+      <div class="bubble-icon" style="background:rgba(224,80,80,0.1);">
+        <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg" style="stroke:#e05050;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+      </div>
+      <div>
+        <div class="bubble-title">À vérifier</div>
+        <div class="bubble-sub">Ordres en retard de livraison</div>
+      </div>
+      <div class="bubble-arrow">→</div>
+    </a>
+
     <!-- NAVEX SYNC — staff only -->
     <a href="{% url 'navex_sync' %}" class="bubble bubble-stock" style="border-color:rgba(80,144,224,0.2);">
       <div class="bubble-icon" style="background:rgba(80,144,224,0.1);">

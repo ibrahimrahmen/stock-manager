@@ -1021,6 +1021,61 @@ def api_navex_en_attente(request):
         return JsonResponse({"status": "error", "message": str(e)})
 
 
+def a_verifier(request):
+    if not request.user.is_staff:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden()
+
+    from datetime import timedelta
+    now = timezone.now()
+
+    # Get all closed orders that exceed time limit
+    closed_orders = ShippingOrder.objects.filter(
+        status=ShippingOrder.CLOSED
+    ).select_related("verification").order_by("closed_at")
+
+    orders_to_verify = []
+    for order in closed_orders:
+        if not order.closed_at:
+            continue
+        # Saturday = 5
+        closed_weekday = order.closed_at.weekday()
+        limit_hours = 48 if closed_weekday == 5 else 24
+        hours_since = (now - order.closed_at).total_seconds() / 3600
+        if hours_since >= limit_hours:
+            # Create verification record if not exists
+            verification, _ = OrderVerification.objects.get_or_create(order=order)
+            orders_to_verify.append({
+                "order": order,
+                "verification": verification,
+                "hours_since": round(hours_since, 1),
+                "limit_hours": limit_hours,
+            })
+
+    treated_count = sum(1 for o in orders_to_verify if o["verification"].treated)
+    untreated_count = len(orders_to_verify) - treated_count
+
+    return render(request, "inventory/a_verifier.html", {
+        "orders": orders_to_verify,
+        "treated_count": treated_count,
+        "untreated_count": untreated_count,
+    })
+
+
+@csrf_exempt
+@require_POST
+def api_mark_treated(request, pk):
+    try:
+        order = ShippingOrder.objects.get(pk=pk)
+        verification, _ = OrderVerification.objects.get_or_create(order=order)
+        verification.treated = not verification.treated
+        verification.treated_at = timezone.now() if verification.treated else None
+        verification.save()
+        return JsonResponse({"status": "ok", "treated": verification.treated})
+    except ShippingOrder.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Ordre introuvable."})
+
+
 def navex_sync(request):
     """Sync page — shows all shipped orders with their Navex status."""
     if not request.user.is_staff:
@@ -1077,6 +1132,17 @@ def api_navex_sync(request):
             navex_etat = navex.get("etat", "Introuvable") if navex and navex.get("status") == 1 else "Introuvable"
             needs_attention = navex_etat in ("Livrer Paye", "Livré", "Livrée", "Livré Payé")
             is_anomaly = navex_etat in ("Retourné", "Retourne", "Annulé", "Annule")
+
+            # Check if order is closed for more than 24h and not yet delivered
+            if not needs_attention and not is_anomaly:
+                try:
+                    order_obj = ShippingOrder.objects.get(pk=order["id"])
+                    if order_obj.closed_at:
+                        hours_since_close = (timezone.now() - order_obj.closed_at).total_seconds() / 3600
+                        if hours_since_close > 24:
+                            is_anomaly = True
+                except Exception:
+                    pass
             # Get price from Navex (include_prix=1) - field is "prix"
             navex_prix = navex.get("prix") if navex else None
             # Calculate our expected total and unit count
@@ -1099,6 +1165,15 @@ def api_navex_sync(request):
                 except Exception:
                     price_match = None
 
+            # Calculate hours since close for display
+            hours_late = None
+            try:
+                order_obj2 = ShippingOrder.objects.get(pk=order["id"])
+                if order_obj2.closed_at:
+                    hours_late = round((timezone.now() - order_obj2.closed_at).total_seconds() / 3600, 1)
+            except Exception:
+                pass
+
             merged.append({
                 "id": order["id"],
                 "bordereau_barcode": bc,
@@ -1113,6 +1188,7 @@ def api_navex_sync(request):
                 "price_match": price_match,
                 "needs_attention": needs_attention,
                 "is_anomaly": is_anomaly,
+                "hours_late": hours_late,
                 "opened_at": order["opened_at"].strftime("%d/%m/%Y %H:%M") if order["opened_at"] else "",
             })
 
