@@ -961,21 +961,47 @@ def api_navex_en_attente(request):
             if code_barre in our_barcodes:
                 continue
 
-            # Try to match product by name from designation — strict matching
+            # Color translation FR → EN
+            COLOR_MAP = {
+                "noir": "black", "blanc": "white", "bleu": "blue",
+                "gris": "grey", "rouge": "red", "vert": "green",
+                "rose": "pink", "jaune": "yellow", "orange": "orange",
+                "marron": "brown", "beige": "beige", "violet": "purple",
+            }
+
+            # Try to match product + color variant from designation
             matched_products = []
             designation_lower = designation.lower()
+
+            # Detect colors mentioned in designation
+            mentioned_colors_en = []
+            for fr, en in COLOR_MAP.items():
+                if fr in designation_lower:
+                    mentioned_colors_en.append(en)
+
             products = Product.objects.prefetch_related("variants").all()
             for product in products:
                 product_name_lower = product.name.lower()
-                # Only match if the full product name appears in designation
-                if product_name_lower in designation_lower:
-                    first_variant = product.variants.first()
-                    matched_products.append({
-                        "id": product.id,
-                        "name": product.name,
-                        "code": product.code,
-                        "image_url": first_variant.image.url if first_variant and first_variant.image else None,
-                    })
+                if product_name_lower not in designation_lower:
+                    continue
+                # Find best matching variant by color
+                best_variant = None
+                for color_en in mentioned_colors_en:
+                    for variant in product.variants.all():
+                        if color_en.lower() in variant.color_name.lower() or color_en.lower() in variant.color_label.lower():
+                            best_variant = variant
+                            break
+                    if best_variant:
+                        break
+                if not best_variant:
+                    best_variant = product.variants.first()
+                matched_products.append({
+                    "id": product.id,
+                    "name": product.name,
+                    "code": product.code,
+                    "color_matched": best_variant.color_label if best_variant else "",
+                    "image_url": best_variant.image.url if best_variant and best_variant.image else None,
+                })
 
             result.append({
                 "code_barre": code_barre,

@@ -114,6 +114,19 @@
     .btn-confirm{width:100%;padding:10px;background:var(--green);color:#fff;border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;margin-top:8px;}
     .btn-confirm:hover{opacity:.9;}
   
+  /* PREDICTION PANEL */
+  .prediction-panel{max-width:520px;width:100%;margin-top:12px;}
+  .prediction-grid{display:flex;flex-wrap:wrap;gap:10px;}
+  .pred-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;width:110px;position:relative;transition:all .2s;}
+  .pred-card.checked{border-color:#1a9e6e;background:#e8f7f1;}
+  .pred-img{width:110px;height:110px;object-fit:cover;display:block;}
+  .pred-ph{width:110px;height:110px;background:#e8e7e2;display:flex;align-items:center;justify-content:center;font-size:11px;color:#73726c;}
+  .pred-name{font-size:10px;font-weight:500;padding:5px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pred-color{font-size:9px;color:#73726c;padding:0 6px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .pred-check{position:absolute;inset:0;background:rgba(26,158,110,0.88);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .3s;}
+  .pred-check.show{opacity:1;animation:checkPop .4s ease both;}
+  .pred-check svg{width:44px;height:44px;stroke:#fff;stroke-width:3;}
+
   /* NAVEX COUNTER */
   .navex-counter{background:rgba(26,158,110,0.15);border:0.5px solid rgba(26,158,110,0.3);border-radius:20px;padding:5px 14px;font-size:12px;color:#1a9e6e;font-weight:500;}
   .navex-counter.loading{color:var(--hint);background:var(--surface2);border-color:var(--hint);}
@@ -167,6 +180,10 @@
     <div style="font-size:11px;color:#1a9e6e;margin-bottom:4px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;">Navex</div>
     <div id="navex-designation" style="font-weight:500;"></div>
     <div id="navex-price-display" style="color:#1a9e6e;font-size:15px;font-weight:600;margin-top:2px;"></div>
+  </div>
+  <div class="prediction-panel" id="prediction-panel" style="display:none;">
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">Produits attendus dans cet ordre</div>
+    <div class="prediction-grid" id="prediction-grid"></div>
   </div>
   <div id="unrecognized-box" class="unrecognized-box" style="display:none;max-width:520px;width:100%;" onclick="openLinkModal()">
     ⚠ Produit non reconnu dans notre système — <strong>Cliquez pour lier</strong>
@@ -471,30 +488,8 @@
     document.getElementById('navex-designation').textContent = colis.designation || '';
     document.getElementById('navex-price-display').textContent = colis.prix ? parseFloat(colis.prix).toFixed(3) + ' TND' : '';
 
-    // Show matched product images
-    var existingImgs = infoBox.querySelector('.matched-imgs');
-    if (existingImgs) existingImgs.remove();
-    if (colis.matched_products && colis.matched_products.length > 0) {
-      var imgsDiv = document.createElement('div');
-      imgsDiv.className = 'matched-imgs';
-      imgsDiv.style.cssText = 'display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;';
-      colis.matched_products.forEach(function(p) {
-        var item = document.createElement('div');
-        item.style.cssText = 'display:flex;align-items:center;gap:6px;background:rgba(0,0,0,0.04);border-radius:8px;padding:4px 8px;';
-        if (p.image_url) {
-          var img = document.createElement('img');
-          img.src = p.image_url;
-          img.style.cssText = 'width:32px;height:32px;border-radius:6px;object-fit:cover;';
-          item.appendChild(img);
-        }
-        var name = document.createElement('span');
-        name.style.cssText = 'font-size:12px;font-weight:500;';
-        name.textContent = p.name;
-        item.appendChild(name);
-        imgsDiv.appendChild(item);
-      });
-      infoBox.appendChild(imgsDiv);
-    }
+    // Show prediction cards
+    buildPredictionCards(colis);
 
     if (!colis.recognized) {
       unrecBox.style.display = 'block';
@@ -507,6 +502,49 @@
     delete navexMap[barcode];
     updateNavexCounter();
     renderAttenteList();
+  }
+
+  var predictionProducts = [];
+
+  function buildPredictionCards(colis) {
+    var panel = document.getElementById('prediction-panel');
+    var grid = document.getElementById('prediction-grid');
+    if (!panel || !grid) return;
+    predictionProducts = colis.matched_products || [];
+    if (predictionProducts.length === 0) { panel.style.display = 'none'; return; }
+    grid.innerHTML = '';
+    panel.style.display = 'block';
+    predictionProducts.forEach(function(p, idx) {
+      var card = document.createElement('div');
+      card.className = 'pred-card';
+      card.id = 'pred-' + idx;
+      card.dataset.productId = p.id;
+      var imgHtml = p.image_url
+        ? '<img class="pred-img" src="' + p.image_url + '" alt="">'
+        : '<div class="pred-ph">' + p.name.slice(0,3) + '</div>';
+      card.innerHTML = imgHtml +
+        '<div class="pred-name">' + p.name + '</div>' +
+        '<div class="pred-color">' + (p.color_matched || '') + '</div>' +
+        '<div class="pred-check" id="pred-check-' + idx + '">' +
+          '<svg fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>' +
+        '</div>';
+      grid.appendChild(card);
+    });
+  }
+
+  function checkPrediction(productName) {
+    // When a unit is scanned, check off the matching prediction card
+    if (!predictionProducts.length) return;
+    predictionProducts.forEach(function(p, idx) {
+      if (productName && p.name && productName.toLowerCase().includes(p.name.toLowerCase().split(' ')[0])) {
+        var checkEl = document.getElementById('pred-check-' + idx);
+        var card = document.getElementById('pred-' + idx);
+        if (checkEl && card && !card.classList.contains('checked')) {
+          card.classList.add('checked');
+          checkEl.classList.add('show');
+        }
+      }
+    });
   }
 
   function toggleAttenteDrawer() {
@@ -616,6 +654,7 @@
     }
     if (data.type === 'unit' && data.unit) {
       animateUnitCard(data.unit.barcode);
+      checkPrediction(data.unit.product_name);
     }
   };
 </script>
