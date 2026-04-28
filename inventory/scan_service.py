@@ -29,7 +29,7 @@ def handle_shipping_scan(barcode: str) -> dict:
 
 
 def _get_navex_info(barcode: str):
-    """Fetch full info from Navex getattente for a given barcode."""
+    """Fetch full info from Navex getattente — short timeout, never blocks scan."""
     try:
         import urllib.request, urllib.parse
         data = urllib.parse.urlencode({"getattente": "1"}).encode()
@@ -38,7 +38,7 @@ def _get_navex_info(barcode: str):
             data=data, method="POST"
         )
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=3) as resp:  # 3s max — never blocks
             import json as j
             navex = j.loads(resp.read().decode())
         for colis in navex.get("colis", []):
@@ -52,7 +52,7 @@ def _get_navex_info(barcode: str):
                     "ville": colis.get("ville", "") or colis.get("city", ""),
                 }
     except Exception:
-        pass
+        pass  # Never fail — scan works even without Navex
     return {}
 
 
