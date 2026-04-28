@@ -96,6 +96,12 @@ class ShippingOrder(models.Model):
     amount_collected     = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True,
                                                help_text="Actual amount collected from client")
     notes                = models.TextField(blank=True)
+    # Client info from Navex
+    client_name       = models.CharField(max_length=200, blank=True, default="")
+    client_phone      = models.CharField(max_length=50, blank=True, default="")
+    client_address    = models.CharField(max_length=500, blank=True, default="")
+    client_ville      = models.CharField(max_length=100, blank=True, default="")
+    navex_designation = models.CharField(max_length=500, blank=True, default="")
 
     def __str__(self):
         return f"Ordre {self.bordereau_barcode} ({self.status})"
