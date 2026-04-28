@@ -142,9 +142,18 @@
   <a href="{% url 'dashboard' %}">← Dashboard</a>
   <h1>Scan expédition</h1>
   <div class="spacer"></div>
-  <div id="navex-counter" class="navex-counter loading">⏳ Navex...</div>
+  <div id="navex-counter" class="navex-counter loading" onclick="toggleAttenteDrawer()" style="cursor:pointer;">⏳ Navex...</div>
   <a href="{% url 'shipping_scan' %}?mode=reception" class="nav-pill">Ajouter stock</a>
 </nav>
+
+<!-- NAVEX EN ATTENTE DRAWER -->
+<div id="attente-drawer" style="display:none;background:#fff;border-bottom:0.5px solid rgba(0,0,0,0.09);padding:16px 24px;max-height:320px;overflow-y:auto;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+    <div style="font-size:13px;font-weight:500;color:#1a1a18;">Ordres en attente Navex</div>
+    <button onclick="toggleAttenteDrawer()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#73726c;">×</button>
+  </div>
+  <div id="attente-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+</div>
 
 <div class="hero">
   <div class="order-chip {% if open_order %}active{% endif %}" id="order-chip">
@@ -461,16 +470,106 @@
     infoBox.style.display = 'block';
     document.getElementById('navex-designation').textContent = colis.designation || '';
     document.getElementById('navex-price-display').textContent = colis.prix ? parseFloat(colis.prix).toFixed(3) + ' TND' : '';
+
+    // Show matched product images
+    var existingImgs = infoBox.querySelector('.matched-imgs');
+    if (existingImgs) existingImgs.remove();
+    if (colis.matched_products && colis.matched_products.length > 0) {
+      var imgsDiv = document.createElement('div');
+      imgsDiv.className = 'matched-imgs';
+      imgsDiv.style.cssText = 'display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;';
+      colis.matched_products.forEach(function(p) {
+        var item = document.createElement('div');
+        item.style.cssText = 'display:flex;align-items:center;gap:6px;background:rgba(0,0,0,0.04);border-radius:8px;padding:4px 8px;';
+        if (p.image_url) {
+          var img = document.createElement('img');
+          img.src = p.image_url;
+          img.style.cssText = 'width:32px;height:32px;border-radius:6px;object-fit:cover;';
+          item.appendChild(img);
+        }
+        var name = document.createElement('span');
+        name.style.cssText = 'font-size:12px;font-weight:500;';
+        name.textContent = p.name;
+        item.appendChild(name);
+        imgsDiv.appendChild(item);
+      });
+      infoBox.appendChild(imgsDiv);
+    }
+
     if (!colis.recognized) {
       unrecBox.style.display = 'block';
       document.getElementById('unrecognized-designation').textContent = colis.designation;
     } else {
       unrecBox.style.display = 'none';
     }
-    // Remove from attente list
+    // Remove from attente list and update drawer
     navexAttente = navexAttente.filter(function(c){ return c.code_barre !== barcode; });
     delete navexMap[barcode];
     updateNavexCounter();
+    renderAttenteList();
+  }
+
+  function toggleAttenteDrawer() {
+    var drawer = document.getElementById('attente-drawer');
+    if (drawer.style.display === 'none') {
+      drawer.style.display = 'block';
+      renderAttenteList();
+    } else {
+      drawer.style.display = 'none';
+    }
+  }
+
+  function renderAttenteList() {
+    var list = document.getElementById('attente-list');
+    if (!list) return;
+    list.innerHTML = '';
+    if (navexAttente.length === 0) {
+      list.innerHTML = '<div style="font-size:13px;color:#73726c;padding:8px;">Tous les ordres ont été scannés !</div>';
+      return;
+    }
+    navexAttente.forEach(function(colis) {
+      var div = document.createElement('div');
+      div.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f5f4f0;border-radius:10px;font-size:13px;';
+
+      // Product images
+      var imgsDiv = document.createElement('div');
+      imgsDiv.style.cssText = 'display:flex;gap:4px;flex-shrink:0;';
+      if (colis.matched_products && colis.matched_products.length > 0) {
+        colis.matched_products.slice(0,3).forEach(function(p) {
+          if (p.image_url) {
+            var img = document.createElement('img');
+            img.src = p.image_url;
+            img.style.cssText = 'width:36px;height:36px;border-radius:6px;object-fit:cover;';
+            imgsDiv.appendChild(img);
+          }
+        });
+      } else {
+        var ph = document.createElement('div');
+        ph.style.cssText = 'width:36px;height:36px;border-radius:6px;background:#e8e7e2;display:flex;align-items:center;justify-content:center;font-size:10px;color:#73726c;';
+        ph.textContent = '?';
+        imgsDiv.appendChild(ph);
+      }
+      div.appendChild(imgsDiv);
+
+      var info = document.createElement('div');
+      info.style.flex = '1';
+      var desig = document.createElement('div');
+      desig.style.cssText = 'font-weight:500;font-size:12px;';
+      desig.textContent = colis.designation || colis.code_barre;
+      var prix = document.createElement('div');
+      prix.style.cssText = 'color:#1a9e6e;font-size:12px;margin-top:2px;';
+      prix.textContent = colis.prix ? parseFloat(colis.prix).toFixed(3) + ' TND' : '';
+      info.appendChild(desig);
+      info.appendChild(prix);
+      div.appendChild(info);
+
+      var bc = document.createElement('span');
+      bc.style.cssText = 'font-family:monospace;font-size:10px;color:#b0afa8;flex-shrink:0;';
+      bc.textContent = colis.code_barre;
+      div.appendChild(bc);
+
+      list.appendChild(div);
+    });
   }
 
   function hideNavexOrderInfo() {
