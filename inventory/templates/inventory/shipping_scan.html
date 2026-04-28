@@ -541,48 +541,48 @@
   }
 
   function checkPrediction(productName, colorLabel) {
-    if (!predictionProducts.length || !productName) return;
-    var scannedName = productName.toLowerCase().replace(/[#0-9]/g, '').trim();
+    if (!predictionProducts || !predictionProducts.length || !productName) return;
+    var scannedName = productName.toLowerCase().replace(/[^a-z ]/g, '').trim();
     var scannedColor = (colorLabel || '').toLowerCase();
-    var foundMatch = false;
+    var foundMatchIdx = -1;
 
-    predictionProducts.forEach(function(p, idx) {
-      var card = document.getElementById('pred-' + idx);
-      if (!card || card.classList.contains('checked') || card.classList.contains('wrong')) return;
+    for (var i = 0; i < predictionProducts.length; i++) {
+      var p = predictionProducts[i];
+      var card = document.getElementById('pred-' + i);
+      if (!card || card.classList.contains('checked')) continue;
 
-      var expectedName = p.name.toLowerCase().replace(/[#0-9]/g, '').trim();
+      var expectedName = p.name.toLowerCase().replace(/[^a-z ]/g, '').trim();
       var expectedColor = (p.color_matched || '').toLowerCase();
 
-      // Check name match
       var scannedWords = scannedName.split(' ').filter(function(w){ return w.length > 2; });
-      var nameMatch = scannedWords.some(function(w){ return expectedName.includes(w); });
+      var nameMatch = scannedWords.some(function(w){ return expectedName.indexOf(w) !== -1; });
+      var colorMatch = !expectedColor || !scannedColor || scannedColor.indexOf(expectedColor) !== -1 || expectedColor.indexOf(scannedColor) !== -1;
 
-      // Check color match
-      var colorMatch = !expectedColor || !scannedColor || scannedColor.includes(expectedColor) || expectedColor.includes(scannedColor);
-
-      if (nameMatch && colorMatch && !foundMatch) {
-        // Correct match — green check
-        foundMatch = true;
-        card.classList.add('checked');
-        var checkEl = document.getElementById('pred-check-' + idx);
-        if (checkEl) checkEl.classList.add('show');
+      if (nameMatch && colorMatch) {
+        foundMatchIdx = i;
+        break;
       }
-    });
+    }
 
-    // If no match found — red X on first unchecked card
-    if (!foundMatch) {
-      predictionProducts.forEach(function(p, idx) {
-        var card = document.getElementById('pred-' + idx);
-        if (!card || card.classList.contains('checked') || card.classList.contains('wrong')) return;
-        card.classList.add('wrong');
-        var wrongEl = document.getElementById('pred-wrong-' + idx);
-        if (wrongEl) wrongEl.classList.add('show');
-        setTimeout(function(){ 
-          card.classList.remove('wrong'); 
-          if (wrongEl) wrongEl.classList.remove('show');
-        }, 2000);
-        return; // only first unchecked
-      });
+    if (foundMatchIdx >= 0) {
+      var card = document.getElementById('pred-' + foundMatchIdx);
+      var checkEl = document.getElementById('pred-check-' + foundMatchIdx);
+      if (card) card.classList.add('checked');
+      if (checkEl) { checkEl.style.opacity = '1'; checkEl.style.animation = 'checkPop .4s ease both'; }
+    } else {
+      // Red X on first unchecked
+      for (var j = 0; j < predictionProducts.length; j++) {
+        var c = document.getElementById('pred-' + j);
+        if (!c || c.classList.contains('checked')) continue;
+        var wrongEl = document.getElementById('pred-wrong-' + j);
+        c.classList.add('wrong');
+        if (wrongEl) { wrongEl.style.opacity = '1'; wrongEl.style.animation = 'checkPop .3s ease both'; }
+        setTimeout(function(card2, we){ 
+          card2.classList.remove('wrong');
+          if (we) { we.style.opacity = '0'; }
+        }.bind(null, c, wrongEl), 2000);
+        break;
+      }
     }
   }
 
