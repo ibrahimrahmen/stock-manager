@@ -961,15 +961,14 @@ def api_navex_en_attente(request):
             if code_barre in our_barcodes:
                 continue
 
-            # Try to match product by name from designation
+            # Try to match product by name from designation — strict matching
             matched_products = []
+            designation_lower = designation.lower()
             products = Product.objects.prefetch_related("variants").all()
             for product in products:
-                if product.name.lower() in designation.lower() or any(
-                    word.lower() in designation.lower()
-                    for word in product.name.split()
-                    if len(word) > 2
-                ):
+                product_name_lower = product.name.lower()
+                # Only match if the full product name appears in designation
+                if product_name_lower in designation_lower:
                     first_variant = product.variants.first()
                     matched_products.append({
                         "id": product.id,
