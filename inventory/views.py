@@ -1073,8 +1073,15 @@ def a_verifier(request):
     except Exception:
         pass
 
+    # Filter out orders that Navex says are delivered
+    DELIVERED_STATES = ("Livrer", "Livrer Paye", "Livré", "Livré Payé", "Livree")
+    filtered_orders = []
     for o in orders_to_verify:
-        o["navex_etat"] = navex_map.get(o["order"].bordereau_barcode, "Inconnu")
+        etat = navex_map.get(o["order"].bordereau_barcode, "Inconnu")
+        o["navex_etat"] = etat
+        if etat not in DELIVERED_STATES:
+            filtered_orders.append(o)
+    orders_to_verify = filtered_orders
 
     treated_count = sum(1 for o in orders_to_verify if o["verification"].treated)
     untreated_count = len(orders_to_verify) - treated_count
