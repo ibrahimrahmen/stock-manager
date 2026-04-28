@@ -11,7 +11,7 @@ from django.contrib.auth.decorators import login_required
 
 from .models import (
     Product, ProductVariant, ProductUnit,
-    ShippingOrder, OrderItem, StockMovement, Payment,
+    ShippingOrder, OrderItem, StockMovement, Payment, SizeAlert, OrderVerification,
 )
 from .scan_service import handle_shipping_scan, handle_stock_scan
 
@@ -1021,29 +1021,25 @@ def api_navex_en_attente(request):
         return JsonResponse({"status": "error", "message": str(e)})
 
 
+@login_required(login_url="/login/")
 def a_verifier(request):
     if not request.user.is_staff:
         from django.http import HttpResponseForbidden
         return HttpResponseForbidden()
 
-    from datetime import timedelta
     now = timezone.now()
-
-    # Get all closed orders that exceed time limit
     closed_orders = ShippingOrder.objects.filter(
         status=ShippingOrder.CLOSED
-    ).select_related("verification").order_by("closed_at")
+    ).order_by("closed_at")
 
     orders_to_verify = []
     for order in closed_orders:
         if not order.closed_at:
             continue
-        # Saturday = 5
         closed_weekday = order.closed_at.weekday()
         limit_hours = 48 if closed_weekday == 5 else 24
         hours_since = (now - order.closed_at).total_seconds() / 3600
         if hours_since >= limit_hours:
-            # Create verification record if not exists
             verification, _ = OrderVerification.objects.get_or_create(order=order)
             orders_to_verify.append({
                 "order": order,
@@ -1051,6 +1047,31 @@ def a_verifier(request):
                 "hours_since": round(hours_since, 1),
                 "limit_hours": limit_hours,
             })
+
+    # Fetch Navex status for all orders at once
+    navex_map = {}
+    try:
+        import urllib.request, urllib.parse
+        codes = [o["order"].bordereau_barcode for o in orders_to_verify]
+        if codes:
+            codes_string = ", ".join(codes)
+            data = urllib.parse.urlencode({"codes": codes_string, "include_prix": "1"}).encode()
+            req = urllib.request.Request(
+                "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+                data=data, method="POST"
+            )
+            req.add_header("Content-Type", "application/x-www-form-urlencoded")
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                import json as json_lib
+                navex_data = json_lib.loads(resp.read().decode())
+            for result in navex_data.get("results", []):
+                if result.get("status") == 1:
+                    navex_map[result["code"]] = result.get("etat", "")
+    except Exception:
+        pass
+
+    for o in orders_to_verify:
+        o["navex_etat"] = navex_map.get(o["order"].bordereau_barcode, "Inconnu")
 
     treated_count = sum(1 for o in orders_to_verify if o["verification"].treated)
     untreated_count = len(orders_to_verify) - treated_count

@@ -94,6 +94,13 @@
             {{ row.hours_since|floatformat:0 }}h / {{ row.limit_hours }}h max
           </span>
         </td>
+        <td>
+          {% if row.navex_etat == "En attente" %}<span style="font-size:11px;padding:3px 8px;border-radius:8px;background:rgba(80,144,224,0.1);color:#5090e0;">{{ row.navex_etat }}</span>
+          {% elif row.navex_etat == "En cours" or row.navex_etat == "Livrer" %}<span style="font-size:11px;padding:3px 8px;border-radius:8px;background:rgba(232,160,32,0.12);color:#e8a020;">{{ row.navex_etat }}</span>
+          {% elif "Livr" in row.navex_etat %}<span style="font-size:11px;padding:3px 8px;border-radius:8px;background:rgba(61,186,138,0.1);color:#3dba8a;">{{ row.navex_etat }}</span>
+          {% elif "Retour" in row.navex_etat %}<span style="font-size:11px;padding:3px 8px;border-radius:8px;background:rgba(224,80,80,0.1);color:#e05050;">{{ row.navex_etat }}</span>
+          {% else %}<span style="font-size:11px;color:var(--muted);">{{ row.navex_etat }}</span>{% endif %}
+        </td>
         <td>{{ row.order.items.count }}</td>
         <td style="color:var(--green);">{{ row.order.amount_collected|default:"—" }} {% if row.order.amount_collected %}TND{% endif %}</td>
         <td style="text-align:right;">
