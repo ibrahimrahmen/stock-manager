@@ -89,6 +89,12 @@
       {% for row in orders %}
       <tr class="{% if row.verification.treated %}treated{% endif %}" id="row-{{ row.order.pk }}">
         <td><a href="{% url 'order_detail' row.order.pk %}" class="order-link">{{ row.order.bordereau_barcode }}</a></td>
+        <td>
+          {% if row.order.client_name %}<div style="font-size:12px;font-weight:500;">{{ row.order.client_name }}</div>{% endif %}
+          {% if row.order.client_phone %}<div style="font-size:12px;color:#5090e0;">📞 {{ row.order.client_phone }}</div>{% endif %}
+          {% if row.order.client_ville %}<div style="font-size:11px;color:var(--muted);">{{ row.order.client_ville }}</div>{% endif %}
+          {% if not row.order.client_name and not row.order.client_phone %}<span style="color:var(--muted);font-size:12px;">—</span>{% endif %}
+        </td>
         <td style="color:var(--muted);font-size:12px;">{{ row.order.closed_at|date:"d/m/Y à H:i" }}</td>
         <td>
           <span class="hours-badge {% if row.hours_since > 48 %}late{% endif %}">

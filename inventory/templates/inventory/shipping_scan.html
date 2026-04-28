@@ -492,6 +492,9 @@
     infoBox.style.display = 'block';
     document.getElementById('navex-designation').textContent = colis.designation || '';
     document.getElementById('navex-price-display').textContent = colis.prix ? parseFloat(colis.prix).toFixed(3) + ' TND' : '';
+    document.getElementById('navex-client-name').textContent = colis.nom || '';
+    document.getElementById('navex-client-phone').textContent = colis.tel ? '📞 ' + colis.tel : '';
+    document.getElementById('navex-client-ville').textContent = colis.ville || '';
 
     // Show prediction cards
     buildPredictionCards(colis);

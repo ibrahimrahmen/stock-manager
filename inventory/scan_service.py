@@ -28,6 +28,34 @@ def handle_shipping_scan(barcode: str) -> dict:
     return _handle_unit_scan(barcode)
 
 
+def _get_navex_info(barcode: str):
+    """Fetch full info from Navex getattente for a given barcode."""
+    try:
+        import urllib.request, urllib.parse
+        data = urllib.parse.urlencode({"getattente": "1"}).encode()
+        req = urllib.request.Request(
+            "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+            data=data, method="POST"
+        )
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            import json as j
+            navex = j.loads(resp.read().decode())
+        for colis in navex.get("colis", []):
+            if colis.get("code_barre") == barcode:
+                return {
+                    "prix": colis.get("prix"),
+                    "designation": colis.get("designation", ""),
+                    "nom": colis.get("nom", "") or colis.get("client_nom", "") or colis.get("name", ""),
+                    "tel": colis.get("tel", "") or colis.get("phone", "") or colis.get("telephone", ""),
+                    "adresse": colis.get("adresse", "") or colis.get("address", ""),
+                    "ville": colis.get("ville", "") or colis.get("city", ""),
+                }
+    except Exception:
+        pass
+    return {}
+
+
 def _handle_bordereau(barcode: str) -> dict:
     closed_order = None
     with transaction.atomic():
@@ -56,11 +84,30 @@ def _handle_bordereau(barcode: str) -> dict:
         if ShippingOrder.objects.filter(bordereau_barcode=barcode).exists():
             return {"status": "error", "message": f"Ce bordereau ({barcode}) a déjà été utilisé.", "code": "BORDEREAU_DUPLICATE"}
 
-        new_order = ShippingOrder.objects.create(bordereau_barcode=barcode, status=ShippingOrder.OPEN)
+        navex_info = _get_navex_info(barcode)
+        new_order = ShippingOrder.objects.create(
+            bordereau_barcode=barcode,
+            status=ShippingOrder.OPEN,
+            amount_collected=navex_info.get("prix") if navex_info else None,
+            client_name=navex_info.get("nom", ""),
+            client_phone=navex_info.get("tel", ""),
+            client_address=navex_info.get("adresse", ""),
+            client_ville=navex_info.get("ville", ""),
+            navex_designation=navex_info.get("designation", ""),
+        )
 
+    navex_info = navex_info if navex_info else {}
     response = {
         "status": "ok", "type": "bordereau",
-        "new_order": {"id": new_order.id, "bordereau_barcode": new_order.bordereau_barcode},
+        "new_order": {
+            "id": new_order.id,
+            "bordereau_barcode": new_order.bordereau_barcode,
+            "navex_price": navex_info.get("prix"),
+            "navex_designation": navex_info.get("designation", ""),
+            "client_name": navex_info.get("nom", ""),
+            "client_phone": navex_info.get("tel", ""),
+            "client_ville": navex_info.get("ville", ""),
+        },
     }
     if closed_order:
         response["closed_order"] = {"id": closed_order.id, "bordereau_barcode": closed_order.bordereau_barcode, "unit_count": closed_order.unit_count}

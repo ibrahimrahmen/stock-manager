@@ -1007,6 +1007,9 @@ def api_navex_en_attente(request):
                 "code_barre": code_barre,
                 "designation": designation,
                 "prix": prix,
+                "nom": colis.get("nom", "") or colis.get("client_nom", "") or colis.get("name", ""),
+                "tel": colis.get("tel", "") or colis.get("phone", "") or colis.get("telephone", ""),
+                "ville": colis.get("ville", "") or colis.get("city", ""),
                 "matched_products": matched_products,
                 "recognized": len(matched_products) > 0,
             })
