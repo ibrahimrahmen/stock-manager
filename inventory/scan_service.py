@@ -97,6 +97,42 @@ def _handle_bordereau(barcode: str) -> dict:
         )
 
     navex_info = navex_info if navex_info else {}
+
+    # Match products from designation
+    matched_products = []
+    designation = navex_info.get("designation", "")
+    if designation:
+        try:
+            from .models import Product, ProductVariant
+            COLOR_MAP = {
+                "noir": "black", "blanc": "white", "bleu": "blue",
+                "gris": "grey", "rouge": "red", "vert": "green",
+                "rose": "pink", "jaune": "yellow", "orange": "orange",
+            }
+            designation_lower = designation.lower()
+            mentioned_colors_en = [en for fr, en in COLOR_MAP.items() if fr in designation_lower]
+            for product in Product.objects.prefetch_related("variants").all():
+                if product.name.lower() in designation_lower:
+                    best_variant = None
+                    for color_en in mentioned_colors_en:
+                        for variant in product.variants.all():
+                            if color_en.lower() in variant.color_name.lower():
+                                best_variant = variant
+                                break
+                        if best_variant:
+                            break
+                    if not best_variant:
+                        best_variant = product.variants.first()
+                    matched_products.append({
+                        "id": product.id,
+                        "name": product.name,
+                        "code": product.code,
+                        "color_matched": best_variant.color_label if best_variant else "",
+                        "image_url": best_variant.image.url if best_variant and best_variant.image else None,
+                    })
+        except Exception:
+            pass
+
     response = {
         "status": "ok", "type": "bordereau",
         "new_order": {
@@ -107,6 +143,7 @@ def _handle_bordereau(barcode: str) -> dict:
             "client_name": navex_info.get("nom", ""),
             "client_phone": navex_info.get("tel", ""),
             "client_ville": navex_info.get("ville", ""),
+            "matched_products": matched_products,
         },
     }
     if closed_order:

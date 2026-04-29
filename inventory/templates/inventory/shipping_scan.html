@@ -527,8 +527,9 @@
       card.className = 'pred-card';
       card.id = 'pred-' + idx;
       card.dataset.productId = p.id;
-      var imgHtml = p.image_url
-        ? '<img class="pred-img" src="' + p.image_url + '" alt="">'
+      var imgSrc = p.image_url ? (p.image_url.startsWith('http') ? p.image_url : window.location.origin + p.image_url) : null;
+      var imgHtml = imgSrc
+        ? '<img class="pred-img" src="' + imgSrc + '" alt="">'
         : '<div class="pred-ph">' + p.name.slice(0,3) + '</div>';
       card.innerHTML = imgHtml +
         '<div class="pred-name">' + p.name + '</div>' +
@@ -618,7 +619,7 @@
         colis.matched_products.slice(0,3).forEach(function(p) {
           if (p.image_url) {
             var img = document.createElement('img');
-            img.src = p.image_url;
+            img.src = p.image_url.startsWith('http') ? p.image_url : window.location.origin + p.image_url;
             img.style.cssText = 'width:36px;height:36px;border-radius:6px;object-fit:cover;';
             imgsDiv.appendChild(img);
           }
@@ -685,6 +686,19 @@
   handleMainResult = function(data) {
     _origHandleMainResult(data);
     if (data.type === 'bordereau' && data.new_order) {
+      // First try from navexMap, fallback to data from scan response
+      if (!navexMap[data.new_order.bordereau_barcode] && data.new_order.navex_designation) {
+        navexMap[data.new_order.bordereau_barcode] = {
+          code_barre: data.new_order.bordereau_barcode,
+          designation: data.new_order.navex_designation,
+          prix: data.new_order.navex_price,
+          nom: data.new_order.client_name,
+          tel: data.new_order.client_phone,
+          ville: data.new_order.client_ville,
+          matched_products: data.new_order.matched_products || [],
+          recognized: true,
+        };
+      }
       showNavexOrderInfo(data.new_order.bordereau_barcode);
       // Animate order transition
       var panel = document.getElementById('order-panel');
