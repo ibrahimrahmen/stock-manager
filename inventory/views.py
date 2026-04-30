@@ -1093,13 +1093,38 @@ def api_save_navex_info(request, pk):
 
 
 def api_get_order_amount(request, pk):
-    """Get saved amount_collected for an order."""
+    """Get amount for an order — from DB or fetch from Navex."""
     try:
         order = ShippingOrder.objects.get(pk=pk)
-        return JsonResponse({
-            "status": "ok",
-            "amount_collected": str(order.amount_collected) if order.amount_collected else None,
-        })
+        # If we have it saved, return it
+        if order.amount_collected:
+            return JsonResponse({
+                "status": "ok",
+                "amount_collected": str(order.amount_collected),
+            })
+        # Otherwise fetch from Navex single status API
+        try:
+            import urllib.request, urllib.parse
+            data = urllib.parse.urlencode({
+                "code": order.bordereau_barcode,
+                "include_prix": "1"
+            }).encode()
+            req = urllib.request.Request(
+                "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+                data=data, method="POST"
+            )
+            req.add_header("Content-Type", "application/x-www-form-urlencoded")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                import json as json_lib
+                navex_data = json_lib.loads(resp.read().decode())
+            prix = navex_data.get("prix")
+            if prix:
+                # Save it
+                ShippingOrder.objects.filter(pk=pk).update(amount_collected=prix)
+                return JsonResponse({"status": "ok", "amount_collected": str(prix)})
+        except Exception:
+            pass
+        return JsonResponse({"status": "ok", "amount_collected": None})
     except ShippingOrder.DoesNotExist:
         return JsonResponse({"status": "error"})
 
