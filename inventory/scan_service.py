@@ -56,15 +56,54 @@ def _get_navex_info(barcode: str):
     return {}
 
 
+def _get_matched_products(designation: str) -> list:
+    """Match products from a Navex designation string."""
+    if not designation:
+        return []
+    try:
+        from .models import Product
+        COLOR_MAP = {
+            "noir": "black", "blanc": "white", "bleu": "blue",
+            "gris": "grey", "rouge": "red", "vert": "green",
+            "rose": "pink", "jaune": "yellow", "orange": "orange",
+        }
+        d_lower = designation.lower()
+        mentioned_colors = [en for fr, en in COLOR_MAP.items() if fr in d_lower]
+        matched = []
+        for product in Product.objects.prefetch_related("variants").all():
+            if product.name.lower() in d_lower:
+                best = None
+                for c in mentioned_colors:
+                    for v in product.variants.all():
+                        if c.lower() in v.color_name.lower():
+                            best = v
+                            break
+                    if best:
+                        break
+                if not best:
+                    best = product.variants.first()
+                matched.append({
+                    "id": product.id,
+                    "name": product.name,
+                    "code": product.code,
+                    "color_matched": best.color_label if best else "",
+                    "image_url": best.image.url if best and best.image else None,
+                })
+        return matched
+    except Exception:
+        return []
+
+
 def _handle_bordereau(barcode: str) -> dict:
     closed_order = None
+
     with transaction.atomic():
+        # Close any open order first
         for order in ShippingOrder.objects.filter(status=ShippingOrder.OPEN):
-            # Block closing an empty order
             if order.items.count() == 0:
                 return {
                     "status": "error",
-                    "message": f"Impossible de fermer l'ordre {order.bordereau_barcode} — aucune unité scannée ! Scannez au moins un produit avant de fermer.",
+                    "message": f"Impossible de fermer l'ordre {order.bordereau_barcode} — aucune unité scannée !",
                     "code": "EMPTY_ORDER",
                 }
             order.status = ShippingOrder.CLOSED
@@ -81,56 +120,34 @@ def _handle_bordereau(barcode: str) -> dict:
                 )
             closed_order = order
 
-        if ShippingOrder.objects.filter(bordereau_barcode=barcode).exists():
-            # If order is still OPEN, just return it as if we opened it
+        # Check if this bordereau already exists
+        existing = ShippingOrder.objects.filter(bordereau_barcode=barcode).first()
+        if existing:
             if existing.status == ShippingOrder.OPEN:
-                navex_info2 = {}
-                try:
-                    navex_info2 = _get_navex_info(barcode)
-                except Exception:
-                    pass
-                matched_products2 = []
-                designation2 = navex_info2.get("designation", "") or existing.navex_designation
-                if designation2:
-                    try:
-                        from .models import Product
-                        COLOR_MAP = {"noir":"black","blanc":"white","bleu":"blue","gris":"grey","rouge":"red","vert":"green","rose":"pink"}
-                        d_lower = designation2.lower()
-                        mentioned_colors = [en for fr,en in COLOR_MAP.items() if fr in d_lower]
-                        for product in Product.objects.prefetch_related("variants").all():
-                            if product.name.lower() in d_lower:
-                                best = None
-                                for c in mentioned_colors:
-                                    for v in product.variants.all():
-                                        if c.lower() in v.color_name.lower():
-                                            best = v; break
-                                    if best: break
-                                if not best:
-                                    best = product.variants.first()
-                                matched_products2.append({
-                                    "id": product.id, "name": product.name, "code": product.code,
-                                    "color_matched": best.color_label if best else "",
-                                    "image_url": best.image.url if best and best.image else None,
-                                })
-                    except Exception:
-                        pass
+                # Already open — return it with prediction data
+                matched_products = _get_matched_products(existing.navex_designation or "")
                 return {
                     "status": "ok", "type": "bordereau",
                     "message": f"Ordre {barcode} déjà ouvert.",
                     "new_order": {
                         "id": existing.id,
                         "bordereau_barcode": existing.bordereau_barcode,
-                        "navex_price": str(existing.amount_collected) if existing.amount_collected else navex_info2.get("prix"),
-                        "navex_designation": existing.navex_designation or navex_info2.get("designation",""),
-                        "client_name": existing.client_name or navex_info2.get("nom",""),
-                        "client_phone": existing.client_phone or navex_info2.get("tel",""),
-                        "client_ville": existing.client_ville or navex_info2.get("ville",""),
-                        "matched_products": matched_products2,
+                        "navex_price": str(existing.amount_collected) if existing.amount_collected else None,
+                        "navex_designation": existing.navex_designation,
+                        "client_name": existing.client_name,
+                        "client_phone": existing.client_phone,
+                        "client_ville": existing.client_ville,
+                        "matched_products": matched_products,
                     },
+                    "closed_order": {"id": closed_order.id, "bordereau_barcode": closed_order.bordereau_barcode} if closed_order else None,
                 }
-            return {"status": "error", "message": f"Ce bordereau ({barcode}) a déjà été utilisé.", "code": "BORDEREAU_DUPLICATE"}
+            else:
+                return {"status": "error", "message": f"Ce bordereau ({barcode}) a déjà été utilisé.", "code": "BORDEREAU_DUPLICATE"}
 
+        # Fetch Navex info for new order
         navex_info = _get_navex_info(barcode)
+        matched_products = _get_matched_products(navex_info.get("designation", ""))
+
         new_order = ShippingOrder.objects.create(
             bordereau_barcode=barcode,
             status=ShippingOrder.OPEN,
@@ -142,45 +159,9 @@ def _handle_bordereau(barcode: str) -> dict:
             navex_designation=navex_info.get("designation", ""),
         )
 
-    navex_info = navex_info if navex_info else {}
-
-    # Match products from designation
-    matched_products = []
-    designation = navex_info.get("designation", "")
-    if designation:
-        try:
-            from .models import Product, ProductVariant
-            COLOR_MAP = {
-                "noir": "black", "blanc": "white", "bleu": "blue",
-                "gris": "grey", "rouge": "red", "vert": "green",
-                "rose": "pink", "jaune": "yellow", "orange": "orange",
-            }
-            designation_lower = designation.lower()
-            mentioned_colors_en = [en for fr, en in COLOR_MAP.items() if fr in designation_lower]
-            for product in Product.objects.prefetch_related("variants").all():
-                if product.name.lower() in designation_lower:
-                    best_variant = None
-                    for color_en in mentioned_colors_en:
-                        for variant in product.variants.all():
-                            if color_en.lower() in variant.color_name.lower():
-                                best_variant = variant
-                                break
-                        if best_variant:
-                            break
-                    if not best_variant:
-                        best_variant = product.variants.first()
-                    matched_products.append({
-                        "id": product.id,
-                        "name": product.name,
-                        "code": product.code,
-                        "color_matched": best_variant.color_label if best_variant else "",
-                        "image_url": best_variant.image.url if best_variant and best_variant.image else None,
-                    })
-        except Exception:
-            pass
-
     response = {
         "status": "ok", "type": "bordereau",
+        "message": f"Ordre {new_order.bordereau_barcode} ouvert.",
         "new_order": {
             "id": new_order.id,
             "bordereau_barcode": new_order.bordereau_barcode,
@@ -191,12 +172,8 @@ def _handle_bordereau(barcode: str) -> dict:
             "client_ville": navex_info.get("ville", ""),
             "matched_products": matched_products,
         },
+        "closed_order": {"id": closed_order.id, "bordereau_barcode": closed_order.bordereau_barcode} if closed_order else None,
     }
-    if closed_order:
-        response["closed_order"] = {"id": closed_order.id, "bordereau_barcode": closed_order.bordereau_barcode, "unit_count": closed_order.unit_count}
-        response["message"] = f"Ordre {closed_order.bordereau_barcode} fermé ({closed_order.unit_count} unité(s)). Nouvel ordre : {barcode}"
-    else:
-        response["message"] = f"Nouvel ordre ouvert : {barcode}"
     return response
 
 
