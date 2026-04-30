@@ -82,6 +82,52 @@ def _handle_bordereau(barcode: str) -> dict:
             closed_order = order
 
         if ShippingOrder.objects.filter(bordereau_barcode=barcode).exists():
+            # If order is still OPEN, just return it as if we opened it
+            if existing.status == ShippingOrder.OPEN:
+                navex_info2 = {}
+                try:
+                    navex_info2 = _get_navex_info(barcode)
+                except Exception:
+                    pass
+                matched_products2 = []
+                designation2 = navex_info2.get("designation", "") or existing.navex_designation
+                if designation2:
+                    try:
+                        from .models import Product
+                        COLOR_MAP = {"noir":"black","blanc":"white","bleu":"blue","gris":"grey","rouge":"red","vert":"green","rose":"pink"}
+                        d_lower = designation2.lower()
+                        mentioned_colors = [en for fr,en in COLOR_MAP.items() if fr in d_lower]
+                        for product in Product.objects.prefetch_related("variants").all():
+                            if product.name.lower() in d_lower:
+                                best = None
+                                for c in mentioned_colors:
+                                    for v in product.variants.all():
+                                        if c.lower() in v.color_name.lower():
+                                            best = v; break
+                                    if best: break
+                                if not best:
+                                    best = product.variants.first()
+                                matched_products2.append({
+                                    "id": product.id, "name": product.name, "code": product.code,
+                                    "color_matched": best.color_label if best else "",
+                                    "image_url": best.image.url if best and best.image else None,
+                                })
+                    except Exception:
+                        pass
+                return {
+                    "status": "ok", "type": "bordereau",
+                    "message": f"Ordre {barcode} déjà ouvert.",
+                    "new_order": {
+                        "id": existing.id,
+                        "bordereau_barcode": existing.bordereau_barcode,
+                        "navex_price": str(existing.amount_collected) if existing.amount_collected else navex_info2.get("prix"),
+                        "navex_designation": existing.navex_designation or navex_info2.get("designation",""),
+                        "client_name": existing.client_name or navex_info2.get("nom",""),
+                        "client_phone": existing.client_phone or navex_info2.get("tel",""),
+                        "client_ville": existing.client_ville or navex_info2.get("ville",""),
+                        "matched_products": matched_products2,
+                    },
+                }
             return {"status": "error", "message": f"Ce bordereau ({barcode}) a déjà été utilisé.", "code": "BORDEREAU_DUPLICATE"}
 
         navex_info = _get_navex_info(barcode)
