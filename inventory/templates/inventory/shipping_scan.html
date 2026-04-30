@@ -166,7 +166,7 @@
 </nav>
 
 <!-- NAVEX ERROR BAR -->
-<div id="navex-error-bar" style="display:none;background:#fdeaea;border-bottom:0.5px solid rgba(224,80,80,0.2);padding:10px 24px;align-items:center;gap:12px;font-size:13px;color:#d94f4e;">
+<div id="navex-error-bar" style="display:none;background:#fdeaea;border-bottom:0.5px solid rgba(224,80,80,0.2);padding:10px 24px;align-items:center;gap:12px;font-size:13px;color:#d94f4e;position:fixed;top:0;left:0;right:0;z-index:99999;pointer-events:all;">
   <span>⚠ Navex indisponible — les prédictions de produits ne sont pas disponibles.</span>
   <button onclick="loadNavexAttente()" style="padding:5px 14px;background:#d94f4e;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;">Réessayer</button>
   <button onclick="document.getElementById('navex-error-bar').style.display='none'" style="padding:5px 14px;background:transparent;border:0.5px solid #d94f4e;color:#d94f4e;border-radius:8px;font-size:12px;cursor:pointer;">Continuer sans Navex</button>
@@ -429,14 +429,17 @@
   }
 
   async function openPricePanelWithNavex() {
-    // Try to get saved amount_collected from DB for this order
-    try {
-      var res = await fetch("/api/orders/" + currentOrderId + "/amount/", {method:'GET'});
-      var data = await res.json();
-      if (data.amount_collected) {
-        currentNavexPrice = parseFloat(data.amount_collected);
-      }
-    } catch(e) {}
+    // If we already have the price from navexMap, use it directly
+    if (!currentNavexPrice && currentOrderId) {
+      // Try DB / Navex API as fallback
+      try {
+        var res = await fetch("/api/orders/" + currentOrderId + "/amount/", {method:'GET'});
+        var data = await res.json();
+        if (data.amount_collected) {
+          currentNavexPrice = parseFloat(data.amount_collected);
+        }
+      } catch(e) {}
+    }
     openPricePanel();
   }
 
@@ -504,6 +507,10 @@
         navexAttente.forEach(function(c){ navexMap[c.code_barre] = c; });
         updateNavexCounter();
         document.getElementById('navex-error-bar').style.display = 'none';
+        // Update price for currently open order if found in new navexMap
+        if (currentOrderBC && navexMap[currentOrderBC] && navexMap[currentOrderBC].prix) {
+          currentNavexPrice = parseFloat(navexMap[currentOrderBC].prix);
+        }
       } else { throw new Error(); }
     } catch(e) {
       if (counter) {
@@ -736,10 +743,10 @@
     if (data.type === 'bordereau' && data.new_order) {
       // Use navexMap already loaded from getattente
       showNavexOrderInfo(data.new_order.bordereau_barcode);
-      // Store navex price for this order
+      // Store navex price for this order from navexMap (already loaded)
       var colis = navexMap[data.new_order.bordereau_barcode];
-      if (colis) {
-        currentNavexPrice = parseFloat(colis.prix) || null;
+      if (colis && colis.prix) {
+        currentNavexPrice = parseFloat(colis.prix);
       } else {
         currentNavexPrice = null;
       }
