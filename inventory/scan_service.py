@@ -57,7 +57,8 @@ def _get_navex_info(barcode: str):
 
 
 def _get_matched_products(designation: str) -> list:
-    """Match products from a Navex designation string."""
+    """Match products from a Navex designation string.
+    Creates one card per product+color combination mentioned."""
     if not designation:
         return []
     try:
@@ -68,27 +69,55 @@ def _get_matched_products(designation: str) -> list:
             "rose": "pink", "jaune": "yellow", "orange": "orange",
         }
         d_lower = designation.lower()
-        mentioned_colors = [en for fr, en in COLOR_MAP.items() if fr in d_lower]
         matched = []
+
         for product in Product.objects.prefetch_related("variants").all():
-            if product.name.lower() in d_lower:
-                best = None
-                for c in mentioned_colors:
-                    for v in product.variants.all():
-                        if c.lower() in v.color_name.lower():
-                            best = v
+            if product.name.lower() not in d_lower:
+                continue
+
+            # Find ALL colors mentioned alongside this product name
+            # Split designation by comma to get individual items
+            items = [part.strip() for part in designation.split(",")]
+            product_items = [item for item in items if product.name.lower() in item.lower()]
+
+            if not product_items:
+                # Fallback: use all mentioned colors
+                product_items = [designation]
+
+            seen_colors = set()
+            for item in product_items:
+                item_lower = item.lower()
+                # Find color in this item
+                matched_color_en = None
+                matched_variant = None
+                for fr, en in COLOR_MAP.items():
+                    if fr in item_lower:
+                        # Find variant with this color
+                        for v in product.variants.all():
+                            if en.lower() in v.color_name.lower():
+                                matched_color_en = en
+                                matched_variant = v
+                                break
+                        if matched_variant:
                             break
-                    if best:
-                        break
-                if not best:
-                    best = product.variants.first()
+
+                if not matched_variant:
+                    matched_variant = product.variants.first()
+                    matched_color_en = matched_variant.color_name if matched_variant else ""
+
+                color_key = matched_color_en or ""
+                if color_key in seen_colors:
+                    continue
+                seen_colors.add(color_key)
+
                 matched.append({
                     "id": product.id,
                     "name": product.name,
                     "code": product.code,
-                    "color_matched": best.color_label if best else "",
-                    "image_url": best.image.url if best and best.image else None,
+                    "color_matched": matched_variant.color_label if matched_variant else "",
+                    "image_url": matched_variant.image.url if matched_variant and matched_variant.image else None,
                 })
+
         return matched
     except Exception:
         return []

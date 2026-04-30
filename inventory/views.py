@@ -961,25 +961,8 @@ def api_navex_en_attente(request):
             if code_barre in our_barcodes:
                 continue
 
-            # Color translation FR → EN
-            COLOR_MAP = {
-                "noir": "black", "blanc": "white", "bleu": "blue",
-                "gris": "grey", "rouge": "red", "vert": "green",
-                "rose": "pink", "jaune": "yellow", "orange": "orange",
-                "marron": "brown", "beige": "beige", "violet": "purple",
-            }
-
-            # Try to match product + color variant from designation
-            matched_products = []
-            designation_lower = designation.lower()
-
-            # Detect colors mentioned in designation
-            mentioned_colors_en = []
-            for fr, en in COLOR_MAP.items():
-                if fr in designation_lower:
-                    mentioned_colors_en.append(en)
-
             products = Product.objects.prefetch_related("variants").all()
+            designation_lower = designation.lower()
             for product in products:
                 product_name_lower = product.name.lower()
                 if product_name_lower not in designation_lower:
