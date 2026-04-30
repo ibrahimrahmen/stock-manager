@@ -144,22 +144,36 @@ def _handle_bordereau(barcode: str) -> dict:
             else:
                 return {"status": "error", "message": f"Ce bordereau ({barcode}) a déjà été utilisé.", "code": "BORDEREAU_DUPLICATE"}
 
-        # Fetch Navex info for new order
-        navex_info = _get_navex_info(barcode)
-        matched_products = _get_matched_products(navex_info.get("designation", ""))
-
+        # Create order immediately — no Navex call here to avoid blocking
         new_order = ShippingOrder.objects.create(
             bordereau_barcode=barcode,
             status=ShippingOrder.OPEN,
-            amount_collected=navex_info.get("prix") if navex_info else None,
-            client_name=navex_info.get("nom", ""),
-            client_phone=navex_info.get("tel", ""),
-            client_address=navex_info.get("adresse", ""),
-            client_ville=navex_info.get("ville", ""),
-            navex_designation=navex_info.get("designation", ""),
         )
 
-    response = {
+    # Fetch Navex info in background thread — never blocks the scan response
+    import threading
+    def _update_navex_info(order_pk, bc):
+        try:
+            info = _get_navex_info(bc)
+            if info:
+                ShippingOrder.objects.filter(pk=order_pk).update(
+                    amount_collected=info.get("prix") or None,
+                    client_name=info.get("nom", ""),
+                    client_phone=info.get("tel", ""),
+                    client_address=info.get("adresse", ""),
+                    client_ville=info.get("ville", ""),
+                    navex_designation=info.get("designation", ""),
+                )
+        except Exception:
+            pass
+
+    threading.Thread(target=_update_navex_info, args=(new_order.pk, barcode), daemon=True).start()
+
+    # Get navex info from attente cache for immediate prediction display
+    navex_info = navexMap_cache.get(barcode, {})
+    matched_products = _get_matched_products(navex_info.get("designation", ""))
+
+    return {
         "status": "ok", "type": "bordereau",
         "message": f"Ordre {new_order.bordereau_barcode} ouvert.",
         "new_order": {
@@ -174,7 +188,10 @@ def _handle_bordereau(barcode: str) -> dict:
         },
         "closed_order": {"id": closed_order.id, "bordereau_barcode": closed_order.bordereau_barcode} if closed_order else None,
     }
-    return response
+
+
+# Simple in-memory cache of navex attente — populated by api_navex_en_attente view
+navexMap_cache = {}
 
 
 def _handle_unit_scan(barcode: str) -> dict:

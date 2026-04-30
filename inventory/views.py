@@ -1014,6 +1014,10 @@ def api_navex_en_attente(request):
                 "recognized": len(matched_products) > 0,
             })
 
+        # Populate scan_service cache for instant prediction on scan
+        from . import scan_service
+        scan_service.navexMap_cache = {c["code_barre"]: c for c in result}
+
         return JsonResponse({
             "status": "ok",
             "total": len(result),
