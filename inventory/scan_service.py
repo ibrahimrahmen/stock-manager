@@ -65,7 +65,7 @@ def _get_matched_products(designation: str) -> list:
         from .models import Product
         COLOR_MAP = {
             "noir": "black", "blanc": "white", "bleu": "blue",
-            "gris": "grey", "rouge": "red", "vert": "green",
+            "gris": "gray", "grey": "gray", "rouge": "red", "vert": "green",
             "rose": "pink", "jaune": "yellow", "orange": "orange",
             "beige": "beige", "marron": "brown",
         }
@@ -98,8 +98,11 @@ def _get_matched_products(designation: str) -> list:
             matched_variant = None
             for fr, en in COLOR_MAP.items():
                 if fr in item_lower:
-                    for v in matched_product.variants.all():
-                        if en.lower() in v.color_name.lower():
+                    for v in matched_product.variants.order_by("color_name"):
+                        vcn = v.color_name.lower()
+                        # Handle grey/gray variants
+                        en_check = "gray" if en == "grey" else en
+                        if en_check in vcn or en in vcn:
                             matched_variant = v
                             break
                     if matched_variant:
