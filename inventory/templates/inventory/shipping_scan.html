@@ -299,7 +299,7 @@
       } else {
         handleMainResult(data);
       }
-    } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); }
+    } catch(e) { showErrPopup('Erreur scan: ' + e.message); }
   }
 
   function handleMainResult(data) {
@@ -353,7 +353,7 @@
         document.getElementById('overlay').classList.remove('visible');
         handleMainResult(data);
       }
-    } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); }
+    } catch(e) { showErrPopup('Erreur: ' + e.message); }
   }
 
   function addCard(unit) {
