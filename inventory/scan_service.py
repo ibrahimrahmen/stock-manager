@@ -124,20 +124,12 @@ def _handle_bordereau(barcode: str) -> dict:
         existing = ShippingOrder.objects.filter(bordereau_barcode=barcode).first()
         if existing:
             if existing.status == ShippingOrder.OPEN:
-                # Already open — return it with prediction data
-                matched_products = _get_matched_products(existing.navex_designation or "")
                 return {
                     "status": "ok", "type": "bordereau",
                     "message": f"Ordre {barcode} déjà ouvert.",
                     "new_order": {
                         "id": existing.id,
                         "bordereau_barcode": existing.bordereau_barcode,
-                        "navex_price": str(existing.amount_collected) if existing.amount_collected else None,
-                        "navex_designation": existing.navex_designation,
-                        "client_name": existing.client_name,
-                        "client_phone": existing.client_phone,
-                        "client_ville": existing.client_ville,
-                        "matched_products": matched_products,
                     },
                     "closed_order": {"id": closed_order.id, "bordereau_barcode": closed_order.bordereau_barcode} if closed_order else None,
                 }
@@ -150,48 +142,15 @@ def _handle_bordereau(barcode: str) -> dict:
             status=ShippingOrder.OPEN,
         )
 
-    # Fetch Navex info in background thread — never blocks the scan response
-    import threading
-    def _update_navex_info(order_pk, bc):
-        try:
-            info = _get_navex_info(bc)
-            if info:
-                ShippingOrder.objects.filter(pk=order_pk).update(
-                    amount_collected=info.get("prix") or None,
-                    client_name=info.get("nom", ""),
-                    client_phone=info.get("tel", ""),
-                    client_address=info.get("adresse", ""),
-                    client_ville=info.get("ville", ""),
-                    navex_designation=info.get("designation", ""),
-                )
-        except Exception:
-            pass
-
-    threading.Thread(target=_update_navex_info, args=(new_order.pk, barcode), daemon=True).start()
-
-    # Get navex info from attente cache for immediate prediction display
-    navex_info = navexMap_cache.get(barcode, {})
-    matched_products = _get_matched_products(navex_info.get("designation", ""))
-
     return {
         "status": "ok", "type": "bordereau",
         "message": f"Ordre {new_order.bordereau_barcode} ouvert.",
         "new_order": {
             "id": new_order.id,
             "bordereau_barcode": new_order.bordereau_barcode,
-            "navex_price": navex_info.get("prix"),
-            "navex_designation": navex_info.get("designation", ""),
-            "client_name": navex_info.get("nom", ""),
-            "client_phone": navex_info.get("tel", ""),
-            "client_ville": navex_info.get("ville", ""),
-            "matched_products": matched_products,
         },
         "closed_order": {"id": closed_order.id, "bordereau_barcode": closed_order.bordereau_barcode} if closed_order else None,
     }
-
-
-# Simple in-memory cache of navex attente — populated by api_navex_en_attente view
-navexMap_cache = {}
 
 
 def _handle_unit_scan(barcode: str) -> dict:

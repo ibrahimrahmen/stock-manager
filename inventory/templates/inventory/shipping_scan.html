@@ -686,20 +686,23 @@
   handleMainResult = function(data) {
     _origHandleMainResult(data);
     if (data.type === 'bordereau' && data.new_order) {
-      // First try from navexMap, fallback to data from scan response
-      if (!navexMap[data.new_order.bordereau_barcode] && data.new_order.navex_designation) {
-        navexMap[data.new_order.bordereau_barcode] = {
-          code_barre: data.new_order.bordereau_barcode,
-          designation: data.new_order.navex_designation,
-          prix: data.new_order.navex_price,
-          nom: data.new_order.client_name,
-          tel: data.new_order.client_phone,
-          ville: data.new_order.client_ville,
-          matched_products: data.new_order.matched_products || [],
-          recognized: true,
-        };
-      }
+      // Use navexMap already loaded from getattente
       showNavexOrderInfo(data.new_order.bordereau_barcode);
+      // Save navex info to DB in background (fire and forget)
+      var colis = navexMap[data.new_order.bordereau_barcode];
+      if (colis && data.new_order.id) {
+        fetch('/api/orders/' + data.new_order.id + '/save-navex/', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            prix: colis.prix,
+            nom: colis.nom || '',
+            tel: colis.tel || '',
+            ville: colis.ville || '',
+            designation: colis.designation || '',
+          })
+        }).catch(function(){});
+      }
       // Animate order transition
       var panel = document.getElementById('order-panel');
       if (panel) {

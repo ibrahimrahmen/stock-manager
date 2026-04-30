@@ -1111,6 +1111,25 @@ def api_mark_treated(request, pk):
         return JsonResponse({"status": "error", "message": "Ordre introuvable."})
 
 
+@csrf_exempt
+@require_POST
+def api_save_navex_info(request, pk):
+    """Save Navex info to an order — called from JS after scan."""
+    try:
+        data = json.loads(request.body)
+        ShippingOrder.objects.filter(pk=pk).update(
+            amount_collected=data.get("prix") or None,
+            client_name=data.get("nom", ""),
+            client_phone=data.get("tel", ""),
+            client_address=data.get("adresse", ""),
+            client_ville=data.get("ville", ""),
+            navex_designation=data.get("designation", ""),
+        )
+        return JsonResponse({"status": "ok"})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)})
+
+
 def navex_sync(request):
     """Sync page — shows all shipped orders with their Navex status."""
     if not request.user.is_staff:

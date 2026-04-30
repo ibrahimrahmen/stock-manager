@@ -28,6 +28,7 @@ urlpatterns = [
     path("a-verifier/", views.a_verifier, name="a_verifier"),
     path("api/orders/<int:pk>/mark-treated/", views.api_mark_treated, name="api_mark_treated"),
     path("api/navex-sync/", views.api_navex_sync, name="api_navex_sync"),
+    path("api/orders/<int:pk>/save-navex/", views.api_save_navex_info, name="api_save_navex_info"),
     path("api/navex-attente/", views.api_navex_en_attente, name="api_navex_attente"),
     path("api/orders/<int:pk>/confirm-navex/", views.api_confirm_payment_from_navex, name="api_confirm_payment_from_navex"),
     path("products/", views.products_list, name="products_list"),
