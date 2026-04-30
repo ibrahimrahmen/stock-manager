@@ -58,7 +58,7 @@ def _get_navex_info(barcode: str):
 
 def _get_matched_products(designation: str) -> list:
     """Match products from a Navex designation string.
-    Creates one card per product+color combination mentioned."""
+    Creates one card per product+color item in the designation."""
     if not designation:
         return []
     try:
@@ -67,56 +67,60 @@ def _get_matched_products(designation: str) -> list:
             "noir": "black", "blanc": "white", "bleu": "blue",
             "gris": "grey", "rouge": "red", "vert": "green",
             "rose": "pink", "jaune": "yellow", "orange": "orange",
+            "beige": "beige", "marron": "brown",
         }
-        d_lower = designation.lower()
-        matched = []
 
-        for product in Product.objects.prefetch_related("variants").all():
-            if product.name.lower() not in d_lower:
+        # Split by comma — each part is one item e.g. "Pull Camo #0326 noir (M)"
+        items = [part.strip() for part in designation.split(",")]
+        # Remove the shop prefix (e.g. "92023 Barats.tn | Pull Camo...")
+        cleaned_items = []
+        for item in items:
+            if "|" in item:
+                item = item.split("|", 1)[1].strip()
+            cleaned_items.append(item)
+
+        products = list(Product.objects.prefetch_related("variants").all())
+        matched = []
+        seen = set()  # avoid duplicates
+
+        for item in cleaned_items:
+            item_lower = item.lower()
+            # Find which product this item refers to
+            matched_product = None
+            for product in products:
+                if product.name.lower() in item_lower:
+                    matched_product = product
+                    break
+            if not matched_product:
                 continue
 
-            # Find ALL colors mentioned alongside this product name
-            # Split designation by comma to get individual items
-            items = [part.strip() for part in designation.split(",")]
-            product_items = [item for item in items if product.name.lower() in item.lower()]
-
-            if not product_items:
-                # Fallback: use all mentioned colors
-                product_items = [designation]
-
-            seen_colors = set()
-            for item in product_items:
-                item_lower = item.lower()
-                # Find color in this item
-                matched_color_en = None
-                matched_variant = None
-                for fr, en in COLOR_MAP.items():
-                    if fr in item_lower:
-                        # Find variant with this color
-                        for v in product.variants.all():
-                            if en.lower() in v.color_name.lower():
-                                matched_color_en = en
-                                matched_variant = v
-                                break
-                        if matched_variant:
+            # Find color in this item
+            matched_variant = None
+            for fr, en in COLOR_MAP.items():
+                if fr in item_lower:
+                    for v in matched_product.variants.all():
+                        if en.lower() in v.color_name.lower():
+                            matched_variant = v
                             break
+                    if matched_variant:
+                        break
 
-                if not matched_variant:
-                    matched_variant = product.variants.first()
-                    matched_color_en = matched_variant.color_name if matched_variant else ""
+            if not matched_variant:
+                matched_variant = matched_product.variants.first()
 
-                color_key = matched_color_en or ""
-                if color_key in seen_colors:
-                    continue
-                seen_colors.add(color_key)
+            # Deduplicate by product+color
+            key = (matched_product.id, matched_variant.color_name if matched_variant else "")
+            if key in seen:
+                continue
+            seen.add(key)
 
-                matched.append({
-                    "id": product.id,
-                    "name": product.name,
-                    "code": product.code,
-                    "color_matched": matched_variant.color_label if matched_variant else "",
-                    "image_url": matched_variant.image.url if matched_variant and matched_variant.image else None,
-                })
+            matched.append({
+                "id": matched_product.id,
+                "name": matched_product.name,
+                "code": matched_product.code,
+                "color_matched": matched_variant.color_label if matched_variant else "",
+                "image_url": matched_variant.image.url if matched_variant and matched_variant.image else None,
+            })
 
         return matched
     except Exception:
