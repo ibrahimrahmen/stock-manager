@@ -418,7 +418,13 @@
 
   function openPricePanel() {
     document.getElementById('pp-products').textContent = runningTotal.toFixed(3) + ' TND';
-    document.getElementById('pp-amount').value = (runningTotal + 7).toFixed(3);
+    // Use Navex price if available, otherwise our calculated price
+    var defaultAmount = currentNavexPrice ? currentNavexPrice.toFixed(3) : (runningTotal + 7).toFixed(3);
+    document.getElementById('pp-amount').value = defaultAmount;
+    if (currentNavexPrice) {
+      var navexHint = document.getElementById('pp-navex-hint');
+      if (navexHint) navexHint.style.display = 'block';
+    }
     document.getElementById('price-panel').classList.add('visible');
   }
 
@@ -434,7 +440,9 @@
         document.getElementById('overlay').classList.remove('visible');
         setFeedback('ok', 'Ordre ' + currentOrderBC + ' fermé — ' + amount.toFixed(3) + ' TND attendu.');
         updateChip(null);
-        currentOrderId = null; currentOrderBC = ''; unitCount = 0; runningTotal = 0;
+        currentOrderId = null; currentOrderBC = ''; unitCount = 0; runningTotal = 0; currentNavexPrice = null;
+        var navexHint = document.getElementById('pp-navex-hint');
+        if (navexHint) navexHint.style.display = 'none';
         document.getElementById('modal-grid').innerHTML = '<div class="modal-empty" id="modal-empty"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>Scannez des produits pour les ajouter</div>';
       } else { setModalFeedback('err', data.message); }
     } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); }
@@ -536,6 +544,7 @@
   }
 
   var predictionProducts = [];
+  var currentNavexPrice = null;
 
   function buildPredictionCards(colis) {
     var panel = document.getElementById('prediction-panel');
@@ -715,8 +724,14 @@
     if (data.type === 'bordereau' && data.new_order) {
       // Use navexMap already loaded from getattente
       showNavexOrderInfo(data.new_order.bordereau_barcode);
-      // Save navex info to DB in background (fire and forget)
+      // Store navex price for this order
       var colis = navexMap[data.new_order.bordereau_barcode];
+      if (colis) {
+        currentNavexPrice = parseFloat(colis.prix) || null;
+      } else {
+        currentNavexPrice = null;
+      }
+      // Save navex info to DB in background (fire and forget)
       if (colis && data.new_order.id) {
         fetch('/api/orders/' + data.new_order.id + '/save-navex/', {
           method: 'POST',
