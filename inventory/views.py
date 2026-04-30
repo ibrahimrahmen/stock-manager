@@ -961,30 +961,9 @@ def api_navex_en_attente(request):
             if code_barre in our_barcodes:
                 continue
 
-            products = Product.objects.prefetch_related("variants").all()
-            designation_lower = designation.lower()
-            for product in products:
-                product_name_lower = product.name.lower()
-                if product_name_lower not in designation_lower:
-                    continue
-                # Find best matching variant by color
-                best_variant = None
-                for color_en in mentioned_colors_en:
-                    for variant in product.variants.all():
-                        if color_en.lower() in variant.color_name.lower() or color_en.lower() in variant.color_label.lower():
-                            best_variant = variant
-                            break
-                    if best_variant:
-                        break
-                if not best_variant:
-                    best_variant = product.variants.first()
-                matched_products.append({
-                    "id": product.id,
-                    "name": product.name,
-                    "code": product.code,
-                    "color_matched": best_variant.color_label if best_variant else "",
-                    "image_url": best_variant.image.url if best_variant and best_variant.image else None,
-                })
+            # Use scan_service helper for consistent matching
+            from .scan_service import _get_matched_products
+            matched_products = _get_matched_products(designation)
 
             result.append({
                 "code_barre": code_barre,
