@@ -81,8 +81,6 @@ def _get_matched_products(designation: str) -> list:
 
         products = list(Product.objects.prefetch_related("variants").all())
         matched = []
-        seen = set()  # avoid duplicates
-
         for item in cleaned_items:
             item_lower = item.lower()
             # Find which product this item refers to
@@ -110,12 +108,6 @@ def _get_matched_products(designation: str) -> list:
 
             if not matched_variant:
                 matched_variant = matched_product.variants.first()
-
-            # Deduplicate by product+color
-            key = (matched_product.id, matched_variant.color_name if matched_variant else "")
-            if key in seen:
-                continue
-            seen.add(key)
 
             matched.append({
                 "id": matched_product.id,
