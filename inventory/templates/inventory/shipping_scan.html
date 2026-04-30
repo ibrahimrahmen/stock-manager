@@ -132,6 +132,7 @@
   .pred-check.show{opacity:1;animation:checkPop .4s ease both;}
   .pred-check svg{width:44px;height:44px;stroke:#fff;stroke-width:3;}
 
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
   /* NAVEX COUNTER */
   .navex-counter{background:rgba(26,158,110,0.15);border:0.5px solid rgba(26,158,110,0.3);border-radius:20px;padding:5px 14px;font-size:12px;color:#1a9e6e;font-weight:500;}
   .navex-counter.loading{color:var(--hint);background:var(--surface2);border-color:var(--hint);}
@@ -163,6 +164,13 @@
   <div id="navex-counter" class="navex-counter loading" onclick="toggleAttenteDrawer()" style="cursor:pointer;">⏳ Navex...</div>
   <a href="{% url 'shipping_scan' %}?mode=reception" class="nav-pill">Ajouter stock</a>
 </nav>
+
+<!-- NAVEX ERROR BAR -->
+<div id="navex-error-bar" style="display:none;background:#fdeaea;border-bottom:0.5px solid rgba(224,80,80,0.2);padding:10px 24px;align-items:center;gap:12px;font-size:13px;color:#d94f4e;">
+  <span>⚠ Navex indisponible — les prédictions de produits ne sont pas disponibles.</span>
+  <button onclick="loadNavexAttente()" style="padding:5px 14px;background:#d94f4e;color:#fff;border:none;border-radius:8px;font-size:12px;cursor:pointer;">Réessayer</button>
+  <button onclick="document.getElementById('navex-error-bar').style.display='none'" style="padding:5px 14px;background:transparent;border:0.5px solid #d94f4e;color:#d94f4e;border-radius:8px;font-size:12px;cursor:pointer;">Continuer sans Navex</button>
+</div>
 
 <!-- NAVEX EN ATTENTE DRAWER -->
 <div id="attente-drawer" style="display:none;background:#fff;border-bottom:0.5px solid rgba(0,0,0,0.09);padding:16px 24px;max-height:320px;overflow-y:auto;">
@@ -459,6 +467,8 @@
   var navexMap = {};
 
   async function loadNavexAttente() {
+    var counter = document.getElementById('navex-counter');
+    if (counter) { counter.textContent = '⏳ Navex...'; counter.style.cssText = ''; }
     try {
       var res = await fetch("{% url 'api_navex_attente' %}", {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
       var data = await res.json();
@@ -467,10 +477,16 @@
         navexMap = {};
         navexAttente.forEach(function(c){ navexMap[c.code_barre] = c; });
         updateNavexCounter();
-      }
+        document.getElementById('navex-error-bar').style.display = 'none';
+      } else { throw new Error(); }
     } catch(e) {
-      var c = document.getElementById('navex-counter');
-      if (c) c.textContent = 'Navex indisponible';
+      if (counter) {
+        counter.textContent = '⚠ Navex';
+        counter.style.color = '#e05050';
+        counter.style.background = 'rgba(224,80,80,0.15)';
+        counter.style.borderColor = 'rgba(224,80,80,0.4)';
+      }
+      document.getElementById('navex-error-bar').style.display = 'flex';
     }
   }
 
