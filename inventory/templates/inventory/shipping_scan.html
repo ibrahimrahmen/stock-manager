@@ -320,6 +320,12 @@
       runningTotal = 0;
       currentOrderId = data.new_order.id;
       currentOrderBC = data.new_order.bordereau_barcode;
+      // Clear prediction panel when opening new order
+      predictionProducts = [];
+      var predPanel = document.getElementById('prediction-panel');
+      if (predPanel) predPanel.style.display = 'none';
+      var predGrid = document.getElementById('prediction-grid');
+      if (predGrid) predGrid.innerHTML = '';
       // FIX 1: Always clear the grid when opening a new order
       var grid = document.getElementById('modal-grid');
       grid.innerHTML = '<div class="modal-empty" id="modal-empty"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>Scannez des produits pour les ajouter</div>';
@@ -633,7 +639,7 @@
       var imgsDiv = document.createElement('div');
       imgsDiv.style.cssText = 'display:flex;gap:4px;flex-shrink:0;';
       if (colis.matched_products && colis.matched_products.length > 0) {
-        colis.matched_products.slice(0,3).forEach(function(p) {
+        colis.matched_products.forEach(function(p) {
           if (p.image_url) {
             var img = document.createElement('img');
             img.src = p.image_url.startsWith('http') ? p.image_url : window.location.origin + p.image_url;
