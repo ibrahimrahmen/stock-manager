@@ -96,21 +96,17 @@ def _get_matched_products(designation: str) -> list:
             matched_variant = None
             for fr, en in COLOR_MAP.items():
                 if fr in item_lower:
-                    # Check all variants for exact color match
+                    # Match using color_label (e.g. "BLACK", "WHITE", "BLUE")
                     all_variants = list(matched_product.variants.all())
+                    en_norm = en.lower().strip()
+                    if en_norm == "grey": en_norm = "gray"
                     for v in all_variants:
-                        vcn = v.color_name.lower().strip()
-                        en_norm = en.lower().strip()
-                        if en_norm == "grey": en_norm = "gray"
-                        if vcn == en_norm:  # exact match first
+                        if v.color_label.lower().strip() == en_norm:
                             matched_variant = v
                             break
                     if not matched_variant:
                         for v in all_variants:
-                            vcn = v.color_name.lower().strip()
-                            en_norm = en.lower().strip()
-                            if en_norm == "grey": en_norm = "gray"
-                            if en_norm in vcn:  # partial match
+                            if en_norm in v.color_label.lower():
                                 matched_variant = v
                                 break
                     if matched_variant:
