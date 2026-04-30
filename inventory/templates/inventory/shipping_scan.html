@@ -695,8 +695,12 @@
     });
   }
 
-  // Load on page open
+  // Load on page open and when tab gets focus
   window.addEventListener('load', loadNavexAttente);
+  window.addEventListener('focus', function() {
+    // Reload silently when user switches back to tab
+    loadNavexAttente();
+  });
 
   // Hook into bordereau scan result
   var _origHandleMainResult = handleMainResult;
