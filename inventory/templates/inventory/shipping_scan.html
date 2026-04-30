@@ -221,7 +221,7 @@
         <div class="modal-bc" id="modal-bc"></div>
       </div>
       <div class="modal-count" id="modal-count">0 unité(s)</div>
-      <button class="modal-close-btn" onclick="openPricePanel()" id="btn-modify" style="margin-right:6px;">Modifier / Fermer</button>
+      <button class="modal-close-btn" onclick="openPricePanelWithNavex()" id="btn-modify" style="margin-right:6px;">Modifier / Fermer</button>
     </div>
 
     <div class="modal-scan">
@@ -426,6 +426,18 @@
       if (navexHint) navexHint.style.display = 'block';
     }
     document.getElementById('price-panel').classList.add('visible');
+  }
+
+  async function openPricePanelWithNavex() {
+    // Try to get saved amount_collected from DB for this order
+    try {
+      var res = await fetch("/api/orders/" + currentOrderId + "/amount/", {method:'GET'});
+      var data = await res.json();
+      if (data.amount_collected) {
+        currentNavexPrice = parseFloat(data.amount_collected);
+      }
+    } catch(e) {}
+    openPricePanel();
   }
 
   async function confirmClose() {

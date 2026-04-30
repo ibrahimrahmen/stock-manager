@@ -1092,6 +1092,18 @@ def api_save_navex_info(request, pk):
         return JsonResponse({"status": "error", "message": str(e)})
 
 
+def api_get_order_amount(request, pk):
+    """Get saved amount_collected for an order."""
+    try:
+        order = ShippingOrder.objects.get(pk=pk)
+        return JsonResponse({
+            "status": "ok",
+            "amount_collected": str(order.amount_collected) if order.amount_collected else None,
+        })
+    except ShippingOrder.DoesNotExist:
+        return JsonResponse({"status": "error"})
+
+
 def navex_sync(request):
     """Sync page — shows all shipped orders with their Navex status."""
     if not request.user.is_staff:
