@@ -73,15 +73,31 @@ class ProductUnit(models.Model):
 
 
 class ShippingOrder(models.Model):
-    OPEN   = "open"
-    CLOSED = "closed"
-    PAID   = "paid"
+    OPEN             = "open"
+    CLOSED           = "closed"
+    PAID             = "paid"
+    PARTIAL_PAID     = "partial_paid"
+    RETURNED         = "returned"
+    PARTIAL_RETURNED = "partial_returned"
+    LIVRE            = "livre"
+    PARTIAL_LIVRE    = "partial_livre"
 
     STATUS_CHOICES = [
-        (OPEN,   "Ouvert"),
-        (CLOSED, "Fermé"),
-        (PAID,   "Payé"),
+        (OPEN,             "Ouvert"),
+        (CLOSED,           "Fermé"),
+        (PAID,             "Payé"),
+        (PARTIAL_PAID,     "Partiellement payé"),
+        (RETURNED,         "Retourné"),
+        (PARTIAL_RETURNED, "Partiellement retourné"),
+        (LIVRE,            "Livré"),
+        (PARTIAL_LIVRE,    "Partiellement livré"),
     ]
+
+    # Groups for business logic
+    PAID_STATUSES    = (PAID, PARTIAL_PAID)
+    LIVRE_STATUSES   = (LIVRE, PARTIAL_LIVRE)
+    RETURNED_STATUSES = (RETURNED, PARTIAL_RETURNED)
+    CLOSED_STATUSES  = (CLOSED, PAID, PARTIAL_PAID, RETURNED, PARTIAL_RETURNED, LIVRE, PARTIAL_LIVRE)
 
     SHIPPING_FEE = 7  # TND fixed shipping fee charged to client
 

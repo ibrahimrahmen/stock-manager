@@ -179,6 +179,11 @@
 
   function handleResult(data) {
     if (data.status === 'error') {
+      // Unknown bordereau → offer to create return order
+      if (data.code === 'ORDER_NOT_FOUND') {
+        openCreateReturnModal(data.barcode);
+        return;
+      }
       showErrPopup(data.message);
       flashField('err');
       return;

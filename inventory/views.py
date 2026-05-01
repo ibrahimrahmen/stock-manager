@@ -190,6 +190,9 @@ def _do_return_unit(unit):
     if order_item:
         order_item.status_at_payment = ProductUnit.RETURNED
         order_item.save(update_fields=["status_at_payment"])
+    # Update order status based on remaining units
+    if order_item and order_item.order:
+        _update_order_return_status(order_item.order)
     unit_data = {
         "barcode": unit.barcode, "size": unit.size,
         "product_name": variant.product.name, "color_label": variant.color_label,
@@ -201,6 +204,27 @@ def _do_return_unit(unit):
 
 @csrf_exempt
 @require_POST
+def _update_order_return_status(order):
+    """Update order status after a unit return."""
+    items = list(order.items.select_related("unit").all())
+    if not items:
+        return
+    statuses = [item.unit.status for item in items]
+    all_returned = all(s == ProductUnit.RETURNED for s in statuses)
+    any_returned = any(s == ProductUnit.RETURNED for s in statuses)
+
+    if order.status in (ShippingOrder.PAID, ShippingOrder.PARTIAL_PAID):
+        order.status = ShippingOrder.PARTIAL_PAID if not all_returned else ShippingOrder.RETURNED
+    elif order.status in (ShippingOrder.LIVRE, ShippingOrder.PARTIAL_LIVRE):
+        order.status = ShippingOrder.PARTIAL_LIVRE if not all_returned else ShippingOrder.RETURNED
+    elif order.status == ShippingOrder.CLOSED:
+        if all_returned:
+            order.status = ShippingOrder.RETURNED
+        elif any_returned:
+            order.status = ShippingOrder.PARTIAL_RETURNED
+    order.save(update_fields=["status"])
+
+
 def api_scan_return(request):
     from .barcode_parser import is_bordereau_barcode
     data = json.loads(request.body)
@@ -212,7 +236,7 @@ def api_scan_return(request):
         try:
             order = ShippingOrder.objects.prefetch_related("items__unit__variant__product").get(bordereau_barcode=barcode)
         except ShippingOrder.DoesNotExist:
-            return JsonResponse({"status": "error", "message": f"Aucun ordre trouvé pour : {barcode}"})
+            return JsonResponse({"status": "error", "message": f"Aucun ordre trouvé pour : {barcode}", "code": "ORDER_NOT_FOUND", "barcode": barcode})
         items = order.items.select_related("unit__variant__product")
         returnable = [i for i in items if i.unit.status in (ProductUnit.SHIPPED, ProductUnit.PAID)]
         if not returnable:
@@ -998,7 +1022,7 @@ def a_verifier(request):
 
     now = timezone.now()
     closed_orders = ShippingOrder.objects.filter(
-        status=ShippingOrder.CLOSED
+        status__in=(ShippingOrder.CLOSED, ShippingOrder.PARTIAL_RETURNED)
     ).order_by("closed_at")
 
     orders_to_verify = []
@@ -1040,7 +1064,7 @@ def a_verifier(request):
         pass
 
     # Filter out orders that Navex says are delivered
-    DELIVERED_STATES = ("Livrer", "Livrer Paye", "Livré", "Livré Payé", "Livree")
+    DELIVERED_STATES = ("Livrer", "Livrer Paye", "Livré", "Livré Payé", "Livree", "Retourné", "Retour recu", "Rtn client/agence")
     filtered_orders = []
     for o in orders_to_verify:
         etat = navex_map.get(o["order"].bordereau_barcode, "Inconnu")
@@ -1127,6 +1151,108 @@ def api_get_order_amount(request, pk):
         return JsonResponse({"status": "ok", "amount_collected": None})
     except ShippingOrder.DoesNotExist:
         return JsonResponse({"status": "error"})
+
+
+@csrf_exempt
+@require_POST  
+def api_create_return_order(request):
+    """Create a new return order from an unknown barcode scanned in retour section."""
+    data = json.loads(request.body)
+    barcode = data.get("barcode", "").strip().upper()
+    if not barcode:
+        return JsonResponse({"status": "error", "message": "Barcode manquant."})
+    
+    # Check it doesn't already exist
+    if ShippingOrder.objects.filter(bordereau_barcode=barcode).exists():
+        return JsonResponse({"status": "error", "message": "Ce bordereau existe déjà."})
+    
+    order = ShippingOrder.objects.create(
+        bordereau_barcode=barcode,
+        status=ShippingOrder.OPEN,
+        notes="Ordre retour",
+    )
+    return JsonResponse({
+        "status": "ok",
+        "order": {"id": order.id, "bordereau_barcode": order.bordereau_barcode},
+        "message": f"Ordre retour {barcode} créé.",
+    })
+
+
+@csrf_exempt
+@require_POST
+def api_return_unit_to_order(request, pk):
+    """Move a unit from its original order to a return order."""
+    data = json.loads(request.body)
+    barcode = data.get("barcode", "").strip().upper()
+    
+    try:
+        return_order = ShippingOrder.objects.get(pk=pk)
+    except ShippingOrder.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Ordre retour introuvable."})
+    
+    try:
+        unit = ProductUnit.objects.select_related("variant__product").get(barcode=barcode)
+    except ProductUnit.DoesNotExist:
+        return JsonResponse({"status": "error", "message": f"Unité {barcode} introuvable."})
+    
+    if unit.status not in (ProductUnit.SHIPPED, ProductUnit.PAID):
+        return JsonResponse({"status": "error", "message": f"Cette unité ne peut pas être retournée (statut: {unit.status})."})
+    
+    # Find original order
+    original_item = unit.order_items.select_related("order").order_by("-scanned_at").first()
+    original_order = original_item.order if original_item else None
+    
+    with transaction.atomic():
+        # Create item in return order
+        OrderItem.objects.get_or_create(
+            order=return_order,
+            unit=unit,
+            defaults={"status_at_scan": unit.status}
+        )
+        
+        # Mark unit as returned
+        unit.status = ProductUnit.RETURNED
+        unit.save()
+        StockMovement.objects.create(
+            unit=unit, movement_type=StockMovement.RETURNED,
+            reference=return_order.bordereau_barcode
+        )
+        
+        # Update original order status and amount
+        if original_order:
+            if original_item:
+                original_item.status_at_payment = ProductUnit.RETURNED
+                original_item.save(update_fields=["status_at_payment"])
+            
+            # Deduct from original order amount if it was paid at full price
+            if original_order.amount_collected:
+                unit_price = unit.variant.product.sell_price
+                new_amount = max(original_order.amount_collected - unit_price, Decimal("0"))
+                original_order.amount_collected = new_amount
+            
+            _update_order_return_status(original_order)
+        
+        # Update return order status
+        return_items = return_order.items.select_related("unit").all()
+        return_statuses = [i.unit.status for i in return_items]
+        if return_statuses and all(s == ProductUnit.RETURNED for s in return_statuses):
+            return_order.status = ShippingOrder.RETURNED
+        else:
+            return_order.status = ShippingOrder.PARTIAL_RETURNED
+        return_order.save(update_fields=["status"])
+    
+    return JsonResponse({
+        "status": "ok",
+        "message": f"{unit.variant.product.name} {unit.variant.color_label} — {unit.size} retourné.",
+        "unit": {
+            "barcode": unit.barcode,
+            "product_name": unit.variant.product.name,
+            "color_label": unit.variant.color_label,
+            "size": unit.size,
+            "image_url": unit.variant.image.url if unit.variant.image else None,
+        },
+        "original_order": original_order.bordereau_barcode if original_order else None,
+    })
 
 
 def navex_sync(request):

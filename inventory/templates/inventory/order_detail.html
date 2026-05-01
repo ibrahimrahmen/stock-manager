@@ -26,6 +26,11 @@
     .s-open{background:var(--green-bg);color:var(--green);}
     .s-closed{background:#eee;color:var(--muted);}
     .s-paid{background:var(--purple-bg);color:var(--purple);}
+    .s-returned{background:var(--red-bg);color:var(--red);}
+    .s-partial_returned{background:var(--amber-bg);color:var(--amber);}
+    .s-partial_paid{background:var(--blue-bg);color:var(--blue);}
+    .s-livre{background:var(--green-bg);color:var(--green);}
+    .s-partial_livre{background:var(--green-bg);color:var(--green);}
     .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:24px;}
     .info-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:14px;}
     .info-label{font-size:11px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em;}
@@ -79,7 +84,15 @@
     <a href="{% url 'dashboard' %}" class="back">← Dashboard</a>
     <h1>Ordre {{ order.bordereau_barcode }}</h1>
     <span class="status-badge s-{{ order.status }}">
-      {% if order.status == 'open' %}Ouvert{% elif order.status == 'closed' %}Fermé{% else %}Payé{% endif %}
+      {% if order.status == 'open' %}Ouvert
+      {% elif order.status == 'closed' %}Fermé
+      {% elif order.status == 'paid' %}Payé
+      {% elif order.status == 'partial_paid' %}Partiellement payé
+      {% elif order.status == 'returned' %}Retourné
+      {% elif order.status == 'partial_returned' %}Partiellement retourné
+      {% elif order.status == 'livre' %}Livré
+      {% elif order.status == 'partial_livre' %}Partiellement livré
+      {% endif %}
     </span>
     {% if order.status != 'paid' %}
     <button onclick="openModify()" style="margin-left:auto;padding:7px 16px;background:transparent;border:0.5px solid var(--blue);color:var(--blue);border-radius:var(--radius-sm);font-size:12px;cursor:pointer;">Modifier</button>
