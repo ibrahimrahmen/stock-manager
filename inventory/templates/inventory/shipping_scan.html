@@ -291,10 +291,14 @@
   openModal("{{ open_order.bordereau_barcode }}", {{ open_order.id }}, {{ open_order.unit_count }});
   {% endif %}
 
-  async function doMainScan() {
-    var barcode = mainInput.value.trim();
-    mainInput.value = ''; mainInput.focus();
-    if (!barcode) return;
+  // Reception scan queue
+  var receptionQueue = [];
+  var receptionProcessing = false;
+
+  async function processReceptionQueue() {
+    if (receptionProcessing || receptionQueue.length === 0) return;
+    receptionProcessing = true;
+    var barcode = receptionQueue.shift();
     try {
       var url = isReceptionMode ? "{% url 'api_scan_reception' %}" : "{% url 'api_scan_shipping' %}";
       var res = await fetch(url, {
@@ -309,6 +313,16 @@
         handleMainResult(data);
       }
     } catch(e) { showErrPopup('Erreur scan: ' + e.message); }
+    receptionProcessing = false;
+    processReceptionQueue();
+  }
+
+  async function doMainScan() {
+    var barcode = mainInput.value.trim();
+    mainInput.value = ''; mainInput.focus();
+    if (!barcode) return;
+    receptionQueue.push(barcode);
+    processReceptionQueue();
   }
 
   function handleMainResult(data) {
@@ -344,31 +358,45 @@
     setTimeout(() => { var mi = document.getElementById('modal-scan-input'); if(mi) mi.focus(); }, 100);
   }
 
-  async function doModalScan() {
-    var barcode = modalInput.value.trim();
-    modalInput.value = ''; modalInput.focus();
-    if (!barcode) return;
+  // SCAN QUEUE — prevents lost scans when scanning fast
+  var scanQueue = [];
+  var scanProcessing = false;
+
+  async function processQueue() {
+    if (scanProcessing || scanQueue.length === 0) return;
+    scanProcessing = true;
+    var barcode = scanQueue.shift();
     try {
       var res = await fetch("{% url 'api_scan_shipping' %}", {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({barcode}),
       });
       var data = await res.json();
-      if (data.status === 'error') { showErrPopup(data.message); return; }
-      if (data.type === 'unit') {
+      if (data.status === 'error') { showErrPopup(data.message); }
+      else if (data.type === 'unit') {
         setModalFeedback('ok', data.message);
         unitCount = data.order.unit_count;
         document.getElementById('modal-count').textContent = unitCount + ' unité(s)';
         addCard(data.unit);
         runningTotal += parseFloat(data.unit.sell_price);
         document.getElementById('modal-total').textContent = runningTotal.toFixed(3) + ' TND';
-      }
-      if (data.type === 'bordereau') {
-        // New bordereau scanned inside modal → close current, open new
+        animateUnitCard(data.unit.barcode);
+        checkPrediction(data.unit.product_name, data.unit.color_label);
+      } else if (data.type === 'bordereau') {
         document.getElementById('overlay').classList.remove('visible');
         handleMainResult(data);
       }
     } catch(e) { showErrPopup('Erreur: ' + e.message); }
+    scanProcessing = false;
+    processQueue(); // process next in queue
+  }
+
+  async function doModalScan() {
+    var barcode = modalInput.value.trim();
+    modalInput.value = ''; modalInput.focus();
+    if (!barcode) return;
+    scanQueue.push(barcode);
+    processQueue();
   }
 
   function addCard(unit) {
