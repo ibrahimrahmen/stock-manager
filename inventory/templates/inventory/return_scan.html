@@ -158,6 +158,11 @@
   var input = document.getElementById('scan-input');
   if (input) input.addEventListener('keydown', e => { if(e.key==='Enter') doScan(); });
 
+  function getCookie(name) {
+    var v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+    return v ? v[2] : null;
+  }
+
   var selectedBarcodes = new Set();
   var pendingOrderId = null;
 
