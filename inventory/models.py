@@ -105,7 +105,7 @@ class ShippingOrder(models.Model):
     payment_barcode      = models.CharField(max_length=255, blank=True, null=True, unique=True,
                                             help_text="Barcode from shipping company payment slip")
     shipping_company     = models.CharField(max_length=100, blank=True)
-    status               = models.CharField(max_length=10, choices=STATUS_CHOICES, default=OPEN)
+    status               = models.CharField(max_length=20, choices=STATUS_CHOICES, default=OPEN)
     opened_at            = models.DateTimeField(auto_now_add=True)
     closed_at            = models.DateTimeField(null=True, blank=True)
     paid_at              = models.DateTimeField(null=True, blank=True)
