@@ -1034,6 +1034,12 @@ def a_verifier(request):
         hours_since = (now - order.closed_at).total_seconds() / 3600
         if hours_since >= limit_hours:
             verification, _ = OrderVerification.objects.get_or_create(order=order)
+            # Reset treated if it was treated on a previous day
+            if verification.treated and verification.treated_at:
+                if verification.treated_at.date() < now.date():
+                    verification.treated = False
+                    verification.treated_at = None
+                    verification.save(update_fields=["treated", "treated_at"])
             orders_to_verify.append({
                 "order": order,
                 "verification": verification,
