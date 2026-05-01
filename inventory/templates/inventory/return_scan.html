@@ -335,7 +335,117 @@
     f.classList.add('flash-' + type);
     setTimeout(() => f.classList.remove('flash-ok', 'flash-err'), 600);
   }
+
+  // RETURN ORDER FLOW
+  var returnOrderId = null;
+  var returnOrderBC = null;
+  var pendingUnknownBC = null;
+
+  function openCreateReturnModal(barcode) {
+    pendingUnknownBC = barcode;
+    document.getElementById('crm-barcode').textContent = barcode;
+    document.getElementById('create-return-modal').style.display = 'flex';
+  }
+
+  function closeCreateReturnModal() {
+    document.getElementById('create-return-modal').style.display = 'none';
+    pendingUnknownBC = null;
+  }
+
+  async function confirmCreateReturn() {
+    if (!pendingUnknownBC) return;
+    try {
+      var res = await fetch('/api/create-return-order/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
+        body: JSON.stringify({barcode: pendingUnknownBC})
+      });
+      var data = await res.json();
+      if (data.status === 'ok') {
+        returnOrderId = data.order.id;
+        returnOrderBC = data.order.bordereau_barcode;
+        closeCreateReturnModal();
+        document.getElementById('return-order-panel').style.display = 'block';
+        document.getElementById('return-order-bc').textContent = returnOrderBC;
+        document.getElementById('return-order-items').innerHTML = '';
+        document.getElementById('return-scan-input').focus();
+        setFeedback('ok', 'Ordre retour ' + returnOrderBC + ' créé — scannez les unités à retourner.');
+      } else {
+        setFeedback('err', data.message);
+      }
+    } catch(e) { setFeedback('err', 'Erreur réseau.'); }
+  }
+
+  async function scanReturnUnit(barcode) {
+    if (!returnOrderId) return;
+    try {
+      var res = await fetch('/api/orders/' + returnOrderId + '/return-unit/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
+        body: JSON.stringify({barcode: barcode})
+      });
+      var data = await res.json();
+      if (data.status === 'ok') {
+        setFeedback('ok', data.message + (data.original_order ? ' — depuis ordre ' + data.original_order : ''));
+        var card = document.createElement('div');
+        card.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 12px;background:#e8f7f1;border-radius:8px;font-size:13px;margin-bottom:6px;';
+        var u = data.unit;
+        if (u.image_url) {
+          var img = document.createElement('img');
+          img.src = u.image_url.startsWith('http') ? u.image_url : window.location.origin + u.image_url;
+          img.style.cssText = 'width:36px;height:36px;border-radius:6px;object-fit:cover;';
+          card.appendChild(img);
+        }
+        var txt = document.createElement('span');
+        txt.textContent = u.product_name + ' ' + u.color_label + ' — ' + u.size + ' (' + u.barcode + ')';
+        card.appendChild(txt);
+        document.getElementById('return-order-items').appendChild(card);
+      } else {
+        setFeedback('err', data.message);
+      }
+    } catch(e) { setFeedback('err', 'Erreur réseau.'); }
+  }
+
+  function closeReturnOrder() {
+    returnOrderId = null;
+    returnOrderBC = null;
+    document.getElementById('return-order-panel').style.display = 'none';
+    setFeedback('idle', 'En attente de scan...');
+  }
 </script>
+
+<!-- CREATE RETURN ORDER MODAL -->
+<div id="create-return-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:#fff;border-radius:14px;padding:28px;max-width:400px;width:100%;text-align:center;">
+    <div style="font-size:32px;margin-bottom:12px;">📦</div>
+    <div style="font-size:16px;font-weight:600;margin-bottom:8px;">Bordereau inconnu</div>
+    <div style="font-size:13px;color:#73726c;margin-bottom:6px;">Ce bordereau n'existe pas dans votre système.</div>
+    <div style="font-family:monospace;font-size:14px;font-weight:500;background:#f5f4f0;border-radius:8px;padding:8px;margin-bottom:16px;" id="crm-barcode"></div>
+    <div style="font-size:13px;color:#73726c;margin-bottom:20px;">Voulez-vous créer un ordre retour pour ce bordereau ?</div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="closeCreateReturnModal()" style="flex:1;padding:10px;background:#f5f4f0;border:0.5px solid #ddd;border-radius:8px;font-size:13px;cursor:pointer;">Annuler</button>
+      <button onclick="confirmCreateReturn()" style="flex:1;padding:10px;background:#1a9e6e;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;">Créer ordre retour</button>
+    </div>
+  </div>
+</div>
+
+<!-- RETURN ORDER PANEL -->
+<div id="return-order-panel" style="display:none;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:0.5px solid rgba(0,0,0,0.1);padding:16px 24px;z-index:100;box-shadow:0 -4px 20px rgba(0,0,0,0.1);">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+    <div>
+      <div style="font-size:12px;color:#73726c;text-transform:uppercase;letter-spacing:.05em;">Ordre retour ouvert</div>
+      <div style="font-family:monospace;font-size:14px;font-weight:500;" id="return-order-bc"></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input id="return-scan-input" type="text" placeholder="Scanner unité à retourner..."
+        style="border:0.5px solid #ddd;border-radius:8px;padding:8px 12px;font-size:14px;font-family:monospace;width:280px;outline:none;"
+        onkeydown="if(event.key==='Enter'){scanReturnUnit(this.value.trim().toUpperCase());this.value='';}">
+      <button onclick="closeReturnOrder()" style="padding:8px 16px;background:#fdeaea;color:#d94f4e;border:0.5px solid #f5b5b5;border-radius:8px;font-size:12px;cursor:pointer;">Fermer ordre</button>
+    </div>
+  </div>
+  <div id="return-order-items" style="max-height:150px;overflow-y:auto;"></div>
+</div>
+
 {% include "inventory/partials/error_popup.html" %}
 </body>
 </html>
