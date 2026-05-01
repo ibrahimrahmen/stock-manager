@@ -169,7 +169,7 @@
     try {
       var res = await fetch("{% url 'api_scan_return' %}", {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
         body: JSON.stringify({barcode}),
       });
       var data = await res.json();
@@ -282,6 +282,7 @@
     var barcodes = Array.from(selectedBarcodes);
     try {
       var res = await fetch("{% url 'api_return_multiple' %}", {
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({barcodes, order_id: pendingOrderId}),
