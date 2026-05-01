@@ -1030,7 +1030,7 @@ def a_verifier(request):
         if not order.closed_at:
             continue
         closed_weekday = order.closed_at.weekday()
-        limit_hours = 48 if closed_weekday == 5 else 24
+        limit_hours = 58 if closed_weekday == 5 else 34
         hours_since = (now - order.closed_at).total_seconds() / 3600
         if hours_since >= limit_hours:
             verification, _ = OrderVerification.objects.get_or_create(order=order)
