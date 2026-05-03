@@ -43,11 +43,18 @@
     .product-bubble{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:transform .2s,border-color .2s;text-decoration:none;display:block;animation:fadeUp .3s ease both;}
     .product-bubble:hover{transform:translateY(-4px);border-color:rgba(255,255,255,.12);}
     .product-bubble:active{transform:translateY(-2px) scale(.98);}
-    .product-bubble.alert-low{border-color:rgba(217,79,78,0.4);}
-    @keyframes pulse-red{0%,100%{box-shadow:0 0 0 0 rgba(217,79,78,0.4)}50%{box-shadow:0 0 0 6px rgba(217,79,78,0)}}
-    .product-bubble.alert-low{animation:fadeUp .3s ease both, pulse-red 1.8s ease-in-out 0.3s infinite;}
-    @keyframes blink-badge{0%,100%{opacity:1}50%{opacity:0.3}}
-    .bstat-low.blink{animation:blink-badge 1.2s ease-in-out infinite;}
+    .product-bubble.alert-low{border-color:rgba(217,79,78,0.6) !important;}
+    @keyframes pulse-red{0%,100%{border-color:rgba(217,79,78,0.3)}50%{border-color:rgba(217,79,78,1);box-shadow:0 0 12px rgba(217,79,78,0.4)}}
+    .product-bubble.alert-low{animation:fadeUp .3s ease both, pulse-red 1.2s ease-in-out 0.3s infinite !important;}
+    @keyframes blink-badge{0%,100%{opacity:1}50%{opacity:0.15}}
+    .bstat-low.blink{animation:blink-badge 1s ease-in-out infinite;}
+    /* SIZE ALERT BADGES on image */
+    .img-wrap{position:relative;}
+    .size-alerts{position:absolute;top:6px;right:6px;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;max-width:80%;}
+    @keyframes blink-size{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.2;transform:scale(0.9)}}
+    .size-alert-badge{font-size:11px;font-weight:700;padding:2px 6px;border-radius:6px;animation:blink-size 1s ease-in-out infinite;}
+    .size-alert-badge.low{background:rgba(184,116,20,0.95);color:#fff;}
+    .size-alert-badge.zero{background:rgba(217,79,78,0.95);color:#fff;}
     @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 
     .bubble-img{width:100%;height:160px;object-fit:cover;display:block;}
@@ -100,21 +107,29 @@
   </div>
   <div class="section-label" id="count-label">{{ products|length }} produit(s)</div>
   <div class="products-grid" id="products-grid">
-    {% for product in products %}
+    {% for pd in products_data %}{% with product=pd.product stock=pd.stock variants=pd.variants %}
     {% with variants=product.variants.all stock=product.total_stock %}
-    <a href="{% url 'product_detail' product.pk %}" class="product-bubble {% if stock <= product.alert_threshold %}alert-low{% endif %}" style="animation-delay:{{ forloop.counter0|add:0 }}00ms">
+    <a href="{% url 'product_detail' product.pk %}" class="product-bubble {% if pd.is_low %}alert-low{% endif %}" style="animation-delay:{{ forloop.counter0|add:0 }}00ms">
       {% with first_variant=variants.first %}
-      {% if first_variant and first_variant.image %}
-        <img class="bubble-img" src="{{ first_variant.image.url }}" alt="{{ product.name }}">
-      {% else %}
-        <div class="bubble-ph">{{ product.code }}</div>
-      {% endif %}
+      <div class="img-wrap">
+        {% if first_variant and first_variant.image %}
+          <img class="bubble-img" src="{{ first_variant.image.url }}" alt="{{ product.name }}">
+        {% else %}
+          <div class="bubble-ph">{{ product.code }}</div>
+        {% endif %}
+        {% if pd.low_sizes or pd.zero_sizes %}
+        <div class="size-alerts">
+          {% for size in pd.zero_sizes %}<span class="size-alert-badge zero">{{ size }}</span>{% endfor %}
+          {% for size in pd.low_sizes %}<span class="size-alert-badge low">{{ size }}</span>{% endfor %}
+        </div>
+        {% endif %}
+      </div>
       {% endwith %}
       <div class="bubble-body">
         <div class="bubble-name">{{ product.name }}</div>
         <div class="bubble-code">{{ product.code }}{% if product.category %} · {{ product.category }}{% endif %}</div>
         <div class="bubble-stats">
-          <span class="bstat {% if stock == 0 %}bstat-low blink{% elif stock <= product.alert_threshold %}bstat-low blink{% else %}bstat-stock{% endif %}">
+          <span class="bstat {% if pd.is_low or stock == 0 %}bstat-low blink{% else %}bstat-stock{% endif %}">
             {{ stock }} en stock
           </span>
           {% if product.variants.count > 1 %}
@@ -136,7 +151,7 @@
       {% endif %}
     </a>
     {% endwith %}
-    {% endfor %}
+    {% endwith %}{% endfor %}
   </div>
   {% else %}
   <div class="empty">

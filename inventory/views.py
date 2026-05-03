@@ -1391,7 +1391,30 @@ def products_list(request):
     total_available = ProductUnit.objects.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)).count()
     total_shipped = ProductUnit.objects.filter(status=ProductUnit.SHIPPED).count()
     total_paid = ProductUnit.objects.filter(status=ProductUnit.PAID).count()
+
+    # Calculate low stock sizes per product
+    products_data = []
+    for product in products:
+        stock = sum(v.total_stock for v in product.variants.all())
+        # Get size breakdown across all variants
+        size_map = {}
+        for variant in product.variants.all():
+            for unit in variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)):
+                size_map[unit.size] = size_map.get(unit.size, 0) + 1
+        # Find low sizes (less than 3 units)
+        low_sizes = [size for size, count in size_map.items() if count <= 3 and count > 0]
+        zero_sizes = [size for size, count in size_map.items() if count == 0]
+        products_data.append({
+            "product": product,
+            "stock": stock,
+            "low_sizes": low_sizes,
+            "zero_sizes": zero_sizes,
+            "is_low": stock <= product.alert_threshold,
+            "variants": product.variants.all(),
+        })
+
     return render(request, "inventory/products_list.html", {
+        "products_data": products_data,
         "products": products,
         "total_available": total_available,
         "total_shipped": total_shipped,
