@@ -65,16 +65,16 @@
     /* CHARTS */
     .charts-row{display:none;gap:16px;flex-wrap:wrap;margin:14px 0;}
     .charts-row.show{display:flex;}
-    .chart-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:16px 20px;display:flex;align-items:center;gap:20px;}
-    .chart-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;}
-    .pie-wrap{position:relative;width:100px;height:100px;flex-shrink:0;}
-    .pie-wrap svg{width:100px;height:100px;}
+    .chart-card{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:18px 22px;display:flex;align-items:center;gap:24px;}
+    .chart-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px;}
+    .pie-wrap{position:relative;width:150px;height:150px;flex-shrink:0;}
+    .pie-wrap svg{width:150px;height:150px;}
     .pie-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
-    .pie-total{font-size:16px;font-weight:700;}
-    .pie-sub{font-size:9px;color:var(--muted);}
-    .legend{display:flex;flex-direction:column;gap:5px;min-width:100px;}
+    .pie-total{font-size:22px;font-weight:700;}
+    .pie-sub{font-size:10px;color:var(--muted);}
+    .legend{display:flex;flex-direction:column;gap:7px;min-width:110px;}
     .li{display:flex;align-items:center;gap:6px;font-size:12px;}
-    .ld{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+    .ld{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
     .lp{margin-left:auto;color:var(--muted);font-size:11px;white-space:nowrap;}
 
     /* TABLE */
@@ -102,7 +102,8 @@
   </div>
 
   <div class="sec">Stock par variante et taille</div>
-  <div class="variants-grid">
+  <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;">
+  <div class="variants-grid" style="flex:1;min-width:240px;">
     {% for vd in variants_data %}
     <div class="vcard">
       {% if vd.variant.image %}<img class="vcard-img" src="{{ vd.variant.image.url }}" alt="">
@@ -130,6 +131,10 @@
     {% endfor %}
   </div>
 
+  </div><!-- charts beside variants -->
+  <div id="charts-beside" style="display:none;flex-direction:column;gap:14px;flex-shrink:0;"></div>
+  </div><!-- end flex wrapper -->
+
   <!-- UNITS SECTION -->
   <div class="units-header">
     <div class="filter-bar">
@@ -156,8 +161,8 @@
     </div>
   </div>
 
-  <!-- CHARTS -->
-  <div class="charts-row" id="charts-row"></div>
+  <!-- CHARTS (below filters, hidden - charts shown beside variants instead) -->
+  <div class="charts-row" id="charts-row" style="display:none;"></div>
 
   <!-- TABLE -->
   <table>
@@ -226,17 +231,17 @@ function applyAll() {
 }
 
 function renderCharts(rows) {
-  var cr = document.getElementById('charts-row');
-  cr.innerHTML = '';
-  if (curFilter === 'all' || curFilter === 'in_stock') { cr.classList.remove('show'); return; }
-  cr.classList.add('show');
+  var cb = document.getElementById('charts-beside');
+  cb.innerHTML = '';
+  if (curFilter === 'all' || curFilter === 'in_stock') { cb.style.display = 'none'; return; }
+  cb.style.display = 'flex';
   var bySize = {}, byColor = {};
   rows.forEach(r => {
     bySize[r.dataset.size] = (bySize[r.dataset.size]||0)+1;
     byColor[r.dataset.color] = (byColor[r.dataset.color]||0)+1;
   });
-  cr.appendChild(makeChart('Par taille', bySize, rows.length));
-  cr.appendChild(makeChart('Par couleur', byColor, rows.length));
+  cb.appendChild(makeChart('Par taille', bySize, rows.length));
+  cb.appendChild(makeChart('Par couleur', byColor, rows.length));
 }
 
 function makeChart(title, data, total) {
@@ -247,14 +252,14 @@ function makeChart(title, data, total) {
     return card;
   }
   var entries = Object.entries(data).sort((a,b)=>b[1]-a[1]);
-  var R = 40, cx = 50, cy = 50, C = 2*Math.PI*R;
-  var svgParts = ['<svg viewBox="0 0 100 100" width="100" height="100">'];
+  var R = 55, cx = 75, cy = 75, C = 2*Math.PI*R;
+  var svgParts = ['<svg viewBox="0 0 150 150" width="150" height="150">'];
   // Background circle
-  svgParts.push('<circle cx="50" cy="50" r="40" fill="none" stroke="#f0ede6" stroke-width="18"/>');
+  svgParts.push('<circle cx="75" cy="75" r="55" fill="none" stroke="#f0ede6" stroke-width="22"/>');
   var offset = 0;
   entries.forEach(([k,v],i) => {
     var dash = (v/total)*C, gap = C-dash;
-    svgParts.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="none" stroke="'+COLORS[i%COLORS.length]+'" stroke-width="18" stroke-dasharray="'+dash+' '+gap+'" stroke-dashoffset="'+(-offset)+'" transform="rotate(-90 50 50)"/>');
+    svgParts.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="none" stroke="'+COLORS[i%COLORS.length]+'" stroke-width="22" stroke-dasharray="'+dash+' '+gap+'" stroke-dashoffset="'+(-offset)+'" transform="rotate(-90 75 75)"/>');
     offset += dash;
   });
   svgParts.push('</svg>');
