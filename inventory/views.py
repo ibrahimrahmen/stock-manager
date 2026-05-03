@@ -1419,24 +1419,40 @@ def products_list(request):
     total_shipped = ProductUnit.objects.filter(status=ProductUnit.SHIPPED).count()
     total_paid = ProductUnit.objects.filter(status=ProductUnit.PAID).count()
 
+    # Get all size alerts
+    size_alerts = {}
+    for alert in SizeAlert.objects.select_related("variant").all():
+        key = (alert.variant_id, alert.size)
+        size_alerts[key] = alert.threshold
+
     # Calculate low stock sizes per product
     products_data = []
     for product in products:
         stock = sum(v.total_stock for v in product.variants.all())
-        # Get size breakdown across all variants
-        size_map = {}
-        for variant in product.variants.all():
-            for unit in variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)):
-                size_map[unit.size] = size_map.get(unit.size, 0) + 1
-        # Find low sizes (less than 3 units)
-        low_sizes = [size for size, count in size_map.items() if count <= 3 and count > 0]
-        zero_sizes = [size for size, count in size_map.items() if count == 0]
+        is_low = stock <= product.alert_threshold
+
+        # Find low/zero sizes using SizeAlert thresholds
+        low_sizes = []
+        zero_sizes = []
+        if not is_low:  # only show size alerts if product total is not already low
+            for variant in product.variants.all():
+                size_map = {}
+                for unit in variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)):
+                    size_map[unit.size] = size_map.get(unit.size, 0) + 1
+                for size, count in size_map.items():
+                    threshold = size_alerts.get((variant.pk, size), None)
+                    if threshold is not None:
+                        if count == 0 and size not in zero_sizes:
+                            zero_sizes.append(size)
+                        elif count <= threshold and size not in low_sizes:
+                            low_sizes.append(size)
+
         products_data.append({
             "product": product,
             "stock": stock,
             "low_sizes": low_sizes,
             "zero_sizes": zero_sizes,
-            "is_low": stock <= product.alert_threshold,
+            "is_low": is_low,
             "variants": product.variants.all(),
         })
 
