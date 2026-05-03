@@ -1434,8 +1434,7 @@ def products_list(request):
         # Find low/zero sizes using SizeAlert thresholds
         low_sizes = []
         zero_sizes = []
-        if not is_low:  # only show size alerts if product total is not already low
-            for variant in product.variants.all():
+        for variant in product.variants.all():
                 size_map = {}
                 for unit in variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)):
                     size_map[unit.size] = size_map.get(unit.size, 0) + 1
@@ -1444,7 +1443,7 @@ def products_list(request):
                     if threshold is not None:
                         if count == 0 and size not in zero_sizes:
                             zero_sizes.append(size)
-                        elif count <= threshold and size not in low_sizes:
+                        elif count <= threshold and size not in low_sizes and size not in zero_sizes:
                             low_sizes.append(size)
 
         products_data.append({
