@@ -43,6 +43,11 @@
     .product-bubble{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:transform .2s,border-color .2s;text-decoration:none;display:block;animation:fadeUp .3s ease both;}
     .product-bubble:hover{transform:translateY(-4px);border-color:rgba(255,255,255,.12);}
     .product-bubble:active{transform:translateY(-2px) scale(.98);}
+    .product-bubble.alert-low{border-color:rgba(217,79,78,0.4);}
+    @keyframes pulse-red{0%,100%{box-shadow:0 0 0 0 rgba(217,79,78,0.4)}50%{box-shadow:0 0 0 6px rgba(217,79,78,0)}}
+    .product-bubble.alert-low{animation:fadeUp .3s ease both, pulse-red 1.8s ease-in-out 0.3s infinite;}
+    @keyframes blink-badge{0%,100%{opacity:1}50%{opacity:0.3}}
+    .bstat-low.blink{animation:blink-badge 1.2s ease-in-out infinite;}
     @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 
     .bubble-img{width:100%;height:160px;object-fit:cover;display:block;}
@@ -97,7 +102,7 @@
   <div class="products-grid" id="products-grid">
     {% for product in products %}
     {% with variants=product.variants.all stock=product.total_stock %}
-    <a href="{% url 'product_detail' product.pk %}" class="product-bubble" style="animation-delay:{{ forloop.counter0|add:0 }}00ms">
+    <a href="{% url 'product_detail' product.pk %}" class="product-bubble {% if stock <= product.alert_threshold %}alert-low{% endif %}" style="animation-delay:{{ forloop.counter0|add:0 }}00ms">
       {% with first_variant=variants.first %}
       {% if first_variant and first_variant.image %}
         <img class="bubble-img" src="{{ first_variant.image.url }}" alt="{{ product.name }}">
@@ -109,7 +114,7 @@
         <div class="bubble-name">{{ product.name }}</div>
         <div class="bubble-code">{{ product.code }}{% if product.category %} · {{ product.category }}{% endif %}</div>
         <div class="bubble-stats">
-          <span class="bstat {% if stock == 0 %}bstat-low{% elif stock <= product.alert_threshold %}bstat-low{% else %}bstat-stock{% endif %}">
+          <span class="bstat {% if stock == 0 %}bstat-low blink{% elif stock <= product.alert_threshold %}bstat-low blink{% else %}bstat-stock{% endif %}">
             {{ stock }} en stock
           </span>
           {% if product.variants.count > 1 %}
