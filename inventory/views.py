@@ -1261,6 +1261,33 @@ def api_return_unit_to_order(request, pk):
     })
 
 
+@csrf_exempt
+@require_POST
+def api_set_size_alert(request, variant_pk, size):
+    """Set alert threshold for a variant+size combination."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Admin uniquement."})
+    data = json.loads(request.body)
+    threshold = int(data.get("threshold", 3))
+    alert, created = SizeAlert.objects.get_or_create(
+        variant_id=variant_pk, size=size,
+        defaults={"threshold": threshold}
+    )
+    if not created:
+        alert.threshold = threshold
+        alert.save()
+    return JsonResponse({"status": "ok", "threshold": alert.threshold})
+
+@csrf_exempt
+def api_get_size_alert(request, variant_pk, size):
+    """Get current alert threshold for a variant+size."""
+    try:
+        alert = SizeAlert.objects.get(variant_id=variant_pk, size=size)
+        return JsonResponse({"status": "ok", "threshold": alert.threshold})
+    except SizeAlert.DoesNotExist:
+        return JsonResponse({"status": "ok", "threshold": None})
+
+
 def navex_sync(request):
     """Sync page — shows all shipped orders with their Navex status."""
     if not request.user.is_staff:

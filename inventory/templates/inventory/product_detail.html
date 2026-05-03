@@ -38,6 +38,8 @@
     .size-chip.has{background:var(--green-bg);border-color:#a3dfc5;}
     .size-chip.has .sz-n,.size-chip.has .sz-l{color:var(--green);}
     .sz-n{font-size:16px;font-weight:500;}
+    .size-chip.clickable{cursor:pointer;transition:all .15s;}
+    .size-chip.clickable:hover{transform:scale(1.08);box-shadow:0 2px 8px rgba(0,0,0,0.1);}
     .sz-l{font-size:11px;color:var(--muted);}
     .vcard-total{display:flex;justify-content:space-between;font-size:13px;padding-top:10px;border-top:0.5px solid var(--border);}
     .tn{font-weight:500;font-size:16px;}
@@ -116,7 +118,9 @@
         </div>
         <div class="size-grid">
           {% for size, count in vd.size_map.items %}
-          <div class="size-chip {% if count > 0 %}has{% endif %}">
+          <div class="size-chip {% if count > 0 %}has{% endif %} {% if request.user.is_superuser %}clickable{% endif %}"
+            {% if request.user.is_superuser %}onclick="openSizeAlert({{ vd.variant.pk }}, '{{ size }}', {{ count }})"{% endif %}
+            title="{% if request.user.is_superuser %}Cliquer pour configurer l'alerte{% endif %}">
             <span class="sz-n">{{ count }}</span>
             <span class="sz-l">{{ size }}</span>
           </div>
@@ -180,6 +184,64 @@
     </tbody>
   </table>
 </div>
+
+<!-- SIZE ALERT MODAL -->
+<div id="sa-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;padding:28px;max-width:360px;width:90%;text-align:center;">
+    <div style="font-size:20px;font-weight:600;margin-bottom:6px;">Alerte de stock</div>
+    <div id="sa-info" style="font-size:13px;color:#73726c;margin-bottom:20px;"></div>
+    <div style="margin-bottom:20px;">
+      <div style="font-size:12px;color:#73726c;margin-bottom:8px;">Alerter quand le stock descend en dessous de :</div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:12px;">
+        <button onclick="saAdj(-1)" style="width:36px;height:36px;border-radius:50%;border:0.5px solid #ddd;background:#f5f4f0;font-size:18px;cursor:pointer;">−</button>
+        <span id="sa-val" style="font-size:28px;font-weight:700;min-width:40px;text-align:center;">3</span>
+        <button onclick="saAdj(1)" style="width:36px;height:36px;border-radius:50%;border:0.5px solid #ddd;background:#f5f4f0;font-size:18px;cursor:pointer;">+</button>
+      </div>
+      <div style="font-size:11px;color:#b0afa8;margin-top:6px;">unités</div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="closeSA()" style="flex:1;padding:10px;background:#f5f4f0;border:0.5px solid #ddd;border-radius:8px;font-size:13px;cursor:pointer;">Annuler</button>
+      <button onclick="saveSA()" style="flex:1;padding:10px;background:#1a1a18;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;">Sauvegarder</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var saVariantPk = null, saSize = null, saCount = 0, saThreshold = 3;
+
+async function openSizeAlert(variantPk, size, count) {
+  saVariantPk = variantPk; saSize = size; saCount = count;
+  document.getElementById('sa-info').textContent = 'Taille ' + size + ' — ' + count + ' unités en stock';
+  // Fetch current threshold
+  try {
+    var res = await fetch('/api/variants/' + variantPk + '/size-alert/' + encodeURIComponent(size) + '/get/');
+    var data = await res.json();
+    saThreshold = data.threshold || 3;
+  } catch(e) { saThreshold = 3; }
+  document.getElementById('sa-val').textContent = saThreshold;
+  document.getElementById('sa-overlay').style.display = 'flex';
+}
+
+function closeSA() { document.getElementById('sa-overlay').style.display = 'none'; }
+
+function saAdj(delta) {
+  saThreshold = Math.max(0, saThreshold + delta);
+  document.getElementById('sa-val').textContent = saThreshold;
+}
+
+async function saveSA() {
+  try {
+    var res = await fetch('/api/variants/' + saVariantPk + '/size-alert/' + encodeURIComponent(saSize) + '/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({threshold: saThreshold})
+    });
+    var data = await res.json();
+    if (data.status === 'ok') { closeSA(); location.reload(); }
+    else alert(data.message);
+  } catch(e) { alert('Erreur réseau.'); }
+}
+</script>
 
 <script>
 var curFilter = 'all';
