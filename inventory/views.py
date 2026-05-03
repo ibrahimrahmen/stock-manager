@@ -1472,9 +1472,12 @@ def product_detail(request, pk):
     # Build size breakdown per variant — only available units (in_stock + returned)
     variants_data = []
     for variant in variants:
-        available_units = variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED))
+        # Get ALL sizes that ever existed for this variant (including 0 stock)
+        all_sizes = list(variant.units.values_list("size", flat=True).distinct())
         size_map = {}
-        for unit in available_units:
+        for size in all_sizes:
+            size_map[size] = 0
+        for unit in variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)):
             size_map[unit.size] = size_map.get(unit.size, 0) + 1
         variants_data.append({
             "variant": variant,
