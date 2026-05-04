@@ -1,5 +1,7 @@
-Django>=4.2,<5.0
+Django==6.0.4
 Pillow>=10.0
-resend
-dj-database-url
+gunicorn
+whitenoise
 psycopg2-binary
+dj-database-url
+resend
