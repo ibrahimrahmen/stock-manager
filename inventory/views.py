@@ -1317,6 +1317,74 @@ def api_get_scan_session(request):
     })
 
 
+@login_required(login_url="/login/")
+def api_recheck_session(request):
+    """Recheck today's correct orders against Navex on page load."""
+    import urllib.request, urllib.parse
+    today = timezone.now().date()
+    correct_logs = ScanSessionLog.objects.filter(session_date=today, is_correct=True)
+    
+    if not correct_logs.exists():
+        return JsonResponse({"status": "ok", "moved": []})
+
+    barcodes = [log.bordereau_barcode for log in correct_logs]
+    
+    # Fetch current Navex status for all orders
+    navex_status = {}
+    navex_prix = {}
+    try:
+        codes_string = ", ".join(barcodes)
+        data = urllib.parse.urlencode({"codes": codes_string, "include_prix": "1"}).encode()
+        req = urllib.request.Request(
+            "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+            data=data, method="POST"
+        )
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            import json as json_lib
+            navex_data = json_lib.loads(resp.read().decode())
+        for result in navex_data.get("results", []):
+            if result.get("status") == 1:
+                navex_status[result["code"]] = result.get("etat", "")
+                navex_prix[result["code"]] = result.get("prix")
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Navex indisponible."})
+
+    moved = []
+    for log in correct_logs:
+        bc = log.bordereau_barcode
+        etat = navex_status.get(bc, "INTROUVABLE")
+        prix_navex = navex_prix.get(bc)
+        reasons = []
+
+        # Check 1: Order no longer exists on Navex
+        if etat == "INTROUVABLE":
+            reasons.append("Introuvable sur Navex — possible annulation")
+
+        # Check 2: Cancelled on Navex
+        if etat in ("Annulé", "Annule", "Annulée"):
+            reasons.append("Annulé sur Navex")
+
+        # Check 3: Price mismatch
+        if prix_navex:
+            try:
+                order = ShippingOrder.objects.get(bordereau_barcode=bc)
+                if order.amount_collected:
+                    diff = abs(float(prix_navex) - float(order.amount_collected))
+                    if diff > 0.1:
+                        reasons.append(f"Prix différent — Navex: {prix_navex} TND / Notre: {order.amount_collected} TND")
+            except ShippingOrder.DoesNotExist:
+                pass
+
+        if reasons:
+            log.is_correct = False
+            log.reason = " | ".join(reasons)
+            log.save(update_fields=["is_correct", "reason"])
+            moved.append(bc)
+
+    return JsonResponse({"status": "ok", "moved": moved})
+
+
 def navex_sync(request):
     """Sync page — shows all shipped orders with their Navex status."""
     if not request.user.is_staff:

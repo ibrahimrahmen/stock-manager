@@ -866,6 +866,17 @@
     } catch(e) {}
   }
 
+  async function recheckSession() {
+    try {
+      var res = await fetch('/api/scan-session/recheck/');
+      var data = await res.json();
+      if (data.status === 'ok' && data.moved && data.moved.length > 0) {
+        // Reload session to reflect changes
+        await loadSession();
+      }
+    } catch(e) {}
+  }
+
   function clearSession() {
     if (!confirm('Vider la liste de la session ?')) return;
     // Just reload — can't delete from DB but resets visually
@@ -892,7 +903,7 @@
   var _scannedUnitsInOrder = [];
 
   // Load on page open and when tab gets focus
-  window.addEventListener('load', function() { loadNavexAttente(); loadSession(); });
+  window.addEventListener('load', function() { loadNavexAttente(); loadSession().then(recheckSession); });
   window.addEventListener('focus', function() {
     // Reload silently when user switches back to tab
     loadNavexAttente();
