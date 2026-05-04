@@ -1329,106 +1329,143 @@ def api_get_scan_session(request):
 
 @login_required(login_url="/login/")
 def api_recheck_session(request):
-    """Recheck today's correct orders against Navex on page load."""
+    """Full reconciliation: walk every order closed today, fetch Navex info,
+    rebuild the ScanSessionLog rows. Creates missing rows, updates existing
+    ones — re-derives is_correct from Navex designation vs scanned products.
+    """
     import urllib.request, urllib.parse
     today = timezone.now().date()
-    correct_logs = ScanSessionLog.objects.filter(session_date=today, is_correct=True)
-    
-    if not correct_logs.exists():
-        return JsonResponse({"status": "ok", "moved": []})
 
-    barcodes = [log.bordereau_barcode for log in correct_logs]
-    
-    # Fetch current Navex status for all orders
-    navex_status = {}
+    # All orders closed today (any status that comes after CLOSED counts)
+    todays_orders = list(
+        ShippingOrder.objects
+        .filter(closed_at__date=today, status__in=ShippingOrder.CLOSED_STATUSES)
+        .prefetch_related("items__unit__variant__product")
+    )
+
+    if not todays_orders:
+        return JsonResponse({"status": "ok", "checked": 0, "created": 0, "updated": 0})
+
+    barcodes = [o.bordereau_barcode for o in todays_orders]
+
+    # Bulk-fetch Navex status + prix
+    navex_etat = {}
     navex_prix = {}
     try:
         codes_string = ", ".join(barcodes)
         data = urllib.parse.urlencode({"codes": codes_string, "include_prix": "1"}).encode()
-        req = urllib.request.Request(
-            NAVEX_API_URL,
-            data=data, method="POST"
-        )
+        req = urllib.request.Request(NAVEX_API_URL, data=data, method="POST")
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
         with urllib.request.urlopen(req, timeout=15) as resp:
-            import json as json_lib
-            navex_data = json_lib.loads(resp.read().decode())
+            navex_data = json.loads(resp.read().decode())
         for result in navex_data.get("results", []):
             if result.get("status") == 1:
-                navex_status[result["code"]] = result.get("etat", "")
+                navex_etat[result["code"]] = result.get("etat", "")
                 navex_prix[result["code"]] = result.get("prix")
     except Exception:
         return JsonResponse({"status": "error", "message": "Navex indisponible."})
 
-    moved = []
-    for log in correct_logs:
-        bc = log.bordereau_barcode
-        etat = navex_status.get(bc, "INTROUVABLE")
+    # Bulk-fetch designations from getattente (those in en-attente still have it)
+    navex_designation = {}
+    try:
+        data = urllib.parse.urlencode({"getattente": "1"}).encode()
+        req = urllib.request.Request(NAVEX_API_URL, data=data, method="POST")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            attente = json.loads(resp.read().decode())
+        for colis in attente.get("colis", []):
+            navex_designation[colis.get("code_barre", "")] = colis.get("designation", "")
+    except Exception:
+        # Designation lookup is best-effort — skip if Navex burps
+        pass
+
+    all_products = list(Product.objects.all())
+    created = 0
+    updated = 0
+
+    for order in todays_orders:
+        bc = order.bordereau_barcode
+        etat = navex_etat.get(bc, "INTROUVABLE")
         prix_navex = navex_prix.get(bc)
+        # Prefer designation we already saved on the order, fall back to Navex en-attente
+        designation = order.navex_designation or navex_designation.get(bc, "")
+
+        scanned_names = list(
+            order.items.values_list("unit__variant__product__name", flat=True)
+        )
+        scanned_lower = [n.lower() for n in scanned_names if n]
+
         reasons = []
 
-        # Check 1: Order no longer exists on Navex
         if etat == "INTROUVABLE":
             reasons.append("Introuvable sur Navex — possible annulation")
-
-        # Check 2: Cancelled on Navex
-        if etat in ("Annulé", "Annule", "Annulée"):
+        elif etat in ("Annulé", "Annule", "Annulée"):
             reasons.append("Annulé sur Navex")
 
-        # Check 3: Price mismatch + designation vs scanned products
-        try:
-            order = ShippingOrder.objects.get(bordereau_barcode=bc)
-            
-            # Price check
-            if prix_navex and order.amount_collected:
+        # Price mismatch (only meaningful when we have both sides)
+        if prix_navex and order.amount_collected:
+            try:
                 diff = abs(float(prix_navex) - float(order.amount_collected))
                 if diff > 0.1:
-                    reasons.append(f"Prix différent — Navex: {prix_navex} TND / Notre: {order.amount_collected} TND")
+                    reasons.append(
+                        f"Prix différent — Navex: {prix_navex} TND / Notre: {order.amount_collected} TND"
+                    )
+            except (TypeError, ValueError):
+                pass
 
-            # Designation vs scanned products check
-            designation = log.designation
-            if designation:
-                # Get scanned product names
-                scanned_names = list(
-                    order.items.select_related("unit__variant__product")
-                    .values_list("unit__variant__product__name", flat=True)
-                )
-                scanned_lower = [n.lower() for n in scanned_names]
-                
-                # Get expected products from designation (split by comma)
-                items_in_desig = [part.strip() for part in designation.split(",")]
-                if "|" in items_in_desig[0]:
-                    items_in_desig[0] = items_in_desig[0].split("|", 1)[1].strip()
-                
-                # Find all product names in our DB
-                all_products = Product.objects.all()
-                expected_products = []
-                for item in items_in_desig:
-                    item_lower = item.lower()
-                    for product in all_products:
-                        if product.name.lower() in item_lower:
-                            expected_products.append(product.name.lower())
-                            break
-                
-                # Check if all expected products were scanned
-                missing = []
-                for exp in expected_products:
-                    if not any(exp.split()[0] in s for s in scanned_lower):
-                        missing.append(exp)
-                
-                if missing:
-                    reasons.append(f"Produits manquants: {', '.join(missing)}")
+        # Designation vs scanned products
+        if designation:
+            items_in_desig = [part.strip() for part in designation.split(",")]
+            if items_in_desig and "|" in items_in_desig[0]:
+                items_in_desig[0] = items_in_desig[0].split("|", 1)[1].strip()
 
-        except ShippingOrder.DoesNotExist:
-            pass
+            expected = []
+            for item in items_in_desig:
+                item_lower = item.lower()
+                for product in all_products:
+                    if product.name.lower() in item_lower:
+                        expected.append(product.name.lower())
+                        break
 
-        if reasons:
-            log.is_correct = False
-            log.reason = " | ".join(reasons)
-            log.save(update_fields=["is_correct", "reason"])
-            moved.append(bc)
+            missing = []
+            for exp in expected:
+                first_word = exp.split()[0] if exp.split() else exp
+                if not any(first_word in s for s in scanned_lower):
+                    missing.append(exp)
+            if missing:
+                reasons.append(f"Produits manquants: {', '.join(missing)}")
 
-    return JsonResponse({"status": "ok", "moved": moved})
+        is_correct = not reasons
+        reason_text = " | ".join(reasons)
+
+        # Upsert today's log row for this barcode
+        log = ScanSessionLog.objects.filter(
+            session_date=today, bordereau_barcode=bc
+        ).first()
+        if log:
+            log.designation = designation
+            log.unit_count = len(scanned_names)
+            log.is_correct = is_correct
+            log.reason = reason_text
+            log.save(update_fields=["designation", "unit_count", "is_correct", "reason"])
+            updated += 1
+        else:
+            ScanSessionLog.objects.create(
+                bordereau_barcode=bc,
+                designation=designation,
+                unit_count=len(scanned_names),
+                is_correct=is_correct,
+                reason=reason_text,
+                session_date=today,
+            )
+            created += 1
+
+    return JsonResponse({
+        "status": "ok",
+        "checked": len(todays_orders),
+        "created": created,
+        "updated": updated,
+    })
 
 
 import resend as resend_client

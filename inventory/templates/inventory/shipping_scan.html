@@ -183,7 +183,10 @@
 <div class="side-panel">
   <div class="side-panel-header">
     <span>Session du jour</span>
-    <button class="clear-btn" onclick="clearSession()">Vider</button>
+    <span style="display:flex;gap:6px;">
+      <button class="clear-btn" onclick="recheckSession()" id="recheck-btn">Recheck</button>
+      <button class="clear-btn" onclick="clearSession()">Vider</button>
+    </span>
   </div>
   <div class="side-panel-body">
     <div class="sp-section">
@@ -867,14 +870,21 @@
   }
 
   async function recheckSession() {
+    var btn = document.getElementById('recheck-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
     try {
       var res = await fetch('/api/scan-session/recheck/');
       var data = await res.json();
-      if (data.status === 'ok' && data.moved && data.moved.length > 0) {
-        // Reload session to reflect changes
+      if (data.status === 'ok') {
         await loadSession();
+        if (btn) btn.textContent = '✓ ' + (data.checked || 0);
+      } else {
+        if (btn) btn.textContent = 'Erreur';
       }
-    } catch(e) {}
+    } catch(e) {
+      if (btn) btn.textContent = 'Erreur';
+    }
+    setTimeout(function(){ if (btn) { btn.disabled = false; btn.textContent = 'Recheck'; } }, 2000);
   }
 
   function clearSession() {
@@ -903,7 +913,7 @@
   var _scannedUnitsInOrder = [];
 
   // Load on page open and when tab gets focus
-  window.addEventListener('load', function() { loadNavexAttente(); loadSession().then(recheckSession); });
+  window.addEventListener('load', function() { loadNavexAttente(); loadSession(); });
   window.addEventListener('focus', function() {
     // Reload silently when user switches back to tab
     loadNavexAttente();
