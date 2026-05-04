@@ -1365,16 +1365,52 @@ def api_recheck_session(request):
         if etat in ("Annulé", "Annule", "Annulée"):
             reasons.append("Annulé sur Navex")
 
-        # Check 3: Price mismatch
-        if prix_navex:
-            try:
-                order = ShippingOrder.objects.get(bordereau_barcode=bc)
-                if order.amount_collected:
-                    diff = abs(float(prix_navex) - float(order.amount_collected))
-                    if diff > 0.1:
-                        reasons.append(f"Prix différent — Navex: {prix_navex} TND / Notre: {order.amount_collected} TND")
-            except ShippingOrder.DoesNotExist:
-                pass
+        # Check 3: Price mismatch + designation vs scanned products
+        try:
+            order = ShippingOrder.objects.get(bordereau_barcode=bc)
+            
+            # Price check
+            if prix_navex and order.amount_collected:
+                diff = abs(float(prix_navex) - float(order.amount_collected))
+                if diff > 0.1:
+                    reasons.append(f"Prix différent — Navex: {prix_navex} TND / Notre: {order.amount_collected} TND")
+
+            # Designation vs scanned products check
+            designation = log.designation
+            if designation:
+                # Get scanned product names
+                scanned_names = list(
+                    order.items.select_related("unit__variant__product")
+                    .values_list("unit__variant__product__name", flat=True)
+                )
+                scanned_lower = [n.lower() for n in scanned_names]
+                
+                # Get expected products from designation (split by comma)
+                items_in_desig = [part.strip() for part in designation.split(",")]
+                if "|" in items_in_desig[0]:
+                    items_in_desig[0] = items_in_desig[0].split("|", 1)[1].strip()
+                
+                # Find all product names in our DB
+                all_products = Product.objects.all()
+                expected_products = []
+                for item in items_in_desig:
+                    item_lower = item.lower()
+                    for product in all_products:
+                        if product.name.lower() in item_lower:
+                            expected_products.append(product.name.lower())
+                            break
+                
+                # Check if all expected products were scanned
+                missing = []
+                for exp in expected_products:
+                    if not any(exp.split()[0] in s for s in scanned_lower):
+                        missing.append(exp)
+                
+                if missing:
+                    reasons.append(f"Produits manquants: {', '.join(missing)}")
+
+        except ShippingOrder.DoesNotExist:
+            pass
 
         if reasons:
             log.is_correct = False
