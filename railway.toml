@@ -1,0 +1,10 @@
+[deploy]
+startCommand = "python manage.py migrate && python manage.py ensure_superuser && python manage.py collectstatic --noinput && gunicorn stock_manager.wsgi --bind 0.0.0.0:$PORT"
+
+[[crons]]
+schedule = "0 10 * * *"
+command = "curl https://web-production-1391c5.up.railway.app/cron/morning/"
+
+[[crons]]
+schedule = "0 18 * * *"
+command = "curl https://web-production-1391c5.up.railway.app/cron/evening/"

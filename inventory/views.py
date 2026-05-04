@@ -1421,6 +1421,174 @@ def api_recheck_session(request):
     return JsonResponse({"status": "ok", "moved": moved})
 
 
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+
+def _send_low_stock_email():
+    """Send low stock report email."""
+    products = Product.objects.prefetch_related("variants__units").all()
+    low_items = []
+    for product in products:
+        stock = sum(v.total_stock for v in product.variants.all())
+        if stock <= product.alert_threshold:
+            low_items.append({"name": product.name, "code": product.code, "stock": stock, "threshold": product.alert_threshold})
+        # Check size alerts
+        for variant in product.variants.all():
+            for alert in variant.size_alerts.all():
+                current = ProductUnit.objects.filter(variant=variant, size=alert.size, status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)).count()
+                if current <= alert.threshold:
+                    low_items.append({"name": f"{product.name} {variant.color_label} taille {alert.size}", "code": product.code, "stock": current, "threshold": alert.threshold})
+
+    if not low_items:
+        return False
+
+    lines = "\n".join([f"- {item['name']} ({item['code']}): {item['stock']} unités (seuil: {item['threshold']})" for item in low_items])
+    body = f"""Rapport de stock bas — {timezone.now().strftime('%d/%m/%Y %H:%M')}
+
+Les produits suivants ont un stock bas :
+
+{lines}
+
+Connectez-vous pour voir les détails : https://web-production-1391c5.up.railway.app/products/
+"""
+    send_mail(
+        subject=f"⚠ Stock bas — {len(low_items)} produit(s) à réapprovisionner",
+        message=body,
+        from_email="Stock Manager <elkamelrami1@gmail.com>",
+        recipient_list=["elkamelrami1@gmail.com"],
+        fail_silently=True,
+    )
+    return True
+
+
+def _send_daily_summary_email():
+    """Send daily scan summary email."""
+    today = timezone.now().date()
+    # Today's session
+    from .models import ScanSessionLog
+    correct = ScanSessionLog.objects.filter(session_date=today, is_correct=True).count()
+    wrong = ScanSessionLog.objects.filter(session_date=today, is_correct=False).count()
+
+    # En attente from Navex (approx from our DB)
+    import urllib.request, urllib.parse
+    navex_count = "N/A"
+    try:
+        data = urllib.parse.urlencode({"getattente": "1"}).encode()
+        req = urllib.request.Request(
+            "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+            data=data, method="POST"
+        )
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            import json as json_lib
+            navex_data = json_lib.loads(resp.read().decode())
+        our_barcodes = set(ShippingOrder.objects.filter(status__in=(ShippingOrder.CLOSED, ShippingOrder.PAID)).values_list("bordereau_barcode", flat=True))
+        navex_count = sum(1 for c in navex_data.get("colis", []) if c.get("code_barre") not in our_barcodes)
+    except Exception:
+        pass
+
+    # À vérifier count
+    from .models import OrderVerification
+    now = timezone.now()
+    verifier_count = 0
+    for order in ShippingOrder.objects.filter(status__in=(ShippingOrder.CLOSED, ShippingOrder.PARTIAL_RETURNED)):
+        if order.closed_at:
+            weekday = order.closed_at.weekday()
+            limit = 58 if weekday == 5 else 34
+            if (now - order.closed_at).total_seconds() / 3600 >= limit:
+                verifier_count += 1
+
+    body = f"""Résumé de la journée — {today.strftime('%d/%m/%Y')}
+
+📦 Ordres scannés aujourd'hui :
+  ✓ Corrects : {correct}
+  ✗ À vérifier : {wrong}
+
+⏳ En attente Navex (non encore scannés) : {navex_count}
+
+⚠ Ordres en retard de livraison : {verifier_count}
+
+Connectez-vous pour voir les détails : https://web-production-1391c5.up.railway.app/
+"""
+    send_mail(
+        subject=f"📊 Résumé du {today.strftime('%d/%m/%Y')} — {correct} ordres scannés",
+        message=body,
+        from_email="Stock Manager <elkamelrami1@gmail.com>",
+        recipient_list=["elkamelrami1@gmail.com"],
+        fail_silently=True,
+    )
+    return True
+
+
+def _send_a_verifier_email():
+    """Send À vérifier alert email."""
+    now = timezone.now()
+    late_orders = []
+    for order in ShippingOrder.objects.filter(status__in=(ShippingOrder.CLOSED, ShippingOrder.PARTIAL_RETURNED)):
+        if order.closed_at:
+            weekday = order.closed_at.weekday()
+            limit = 58 if weekday == 5 else 34
+            hours = (now - order.closed_at).total_seconds() / 3600
+            if hours >= limit:
+                late_orders.append({"bc": order.bordereau_barcode, "hours": round(hours, 1), "closed": order.closed_at.strftime("%d/%m/%Y %H:%M")})
+
+    if not late_orders:
+        return False
+
+    lines = "\n".join([f"- {o['bc']} — expédié le {o['closed']} ({o['hours']}h sans livraison)" for o in late_orders])
+    body = f"""Alerte — Ordres en retard de livraison — {now.strftime('%d/%m/%Y %H:%M')}
+
+{len(late_orders)} ordre(s) expédiés depuis plus de 34h sans confirmation de livraison :
+
+{lines}
+
+Vérifiez ces ordres : https://web-production-1391c5.up.railway.app/a-verifier/
+"""
+    send_mail(
+        subject=f"⚠ {len(late_orders)} ordre(s) en retard de livraison",
+        message=body,
+        from_email="Stock Manager <elkamelrami1@gmail.com>",
+        recipient_list=["elkamelrami1@gmail.com"],
+        fail_silently=True,
+    )
+    return True
+
+
+# Manual email send endpoints
+@csrf_exempt
+def api_send_email(request, email_type):
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Admin uniquement."})
+    
+    if email_type == "low_stock":
+        result = _send_low_stock_email()
+        msg = "Email stock bas envoyé !" if result else "Aucun produit en stock bas."
+    elif email_type == "daily_summary":
+        result = _send_daily_summary_email()
+        msg = "Résumé quotidien envoyé !"
+    elif email_type == "a_verifier":
+        result = _send_a_verifier_email()
+        msg = "Email À vérifier envoyé !" if result else "Aucun ordre en retard."
+    else:
+        return JsonResponse({"status": "error", "message": "Type inconnu."})
+    
+    return JsonResponse({"status": "ok", "message": msg})
+
+
+# Cron endpoints (called by Railway cron)
+def cron_morning_email(request):
+    """Called at 11am by Railway cron."""
+    _send_low_stock_email()
+    return JsonResponse({"status": "ok", "type": "morning"})
+
+
+def cron_evening_email(request):
+    """Called at 7pm by Railway cron."""
+    _send_daily_summary_email()
+    _send_a_verifier_email()
+    return JsonResponse({"status": "ok", "type": "evening"})
+
+
 def navex_sync(request):
     """Sync page — shows all shipped orders with their Navex status."""
     if not request.user.is_staff:

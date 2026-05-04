@@ -647,5 +647,50 @@
   </div>
 
 </div>
+
+{% if request.user.is_superuser %}
+<!-- EMAIL BUTTON -->
+<div id="email-fab" style="position:fixed;bottom:28px;right:28px;z-index:999;">
+  <div id="email-menu" style="display:none;flex-direction:column;gap:8px;margin-bottom:12px;align-items:flex-end;">
+    <button onclick="sendEmail('low_stock')" style="padding:8px 16px;background:#fff;border:0.5px solid rgba(0,0,0,0.1);border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.1);white-space:nowrap;">⚠ Stock bas</button>
+    <button onclick="sendEmail('daily_summary')" style="padding:8px 16px;background:#fff;border:0.5px solid rgba(0,0,0,0.1);border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.1);white-space:nowrap;">📊 Résumé quotidien</button>
+    <button onclick="sendEmail('a_verifier')" style="padding:8px 16px;background:#fff;border:0.5px solid rgba(0,0,0,0.1);border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.1);white-space:nowrap;">📋 À vérifier</button>
+  </div>
+  <button id="email-btn" onclick="toggleEmailMenu()" style="width:52px;height:52px;border-radius:50%;background:#1a1a18;color:#fff;border:none;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;">✉</button>
+</div>
+
+<div id="email-toast" style="display:none;position:fixed;bottom:100px;right:28px;background:#1a1a18;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;z-index:1000;"></div>
+
+<script>
+function toggleEmailMenu() {
+  var menu = document.getElementById('email-menu');
+  var btn = document.getElementById('email-btn');
+  var open = menu.style.display === 'none';
+  menu.style.display = open ? 'flex' : 'none';
+  btn.textContent = open ? '✕' : '✉';
+}
+
+async function sendEmail(type) {
+  var btn = event.target;
+  btn.disabled = true;
+  btn.style.opacity = '0.5';
+  try {
+    var res = await fetch('/api/send-email/' + type + '/');
+    var data = await res.json();
+    showToast(data.message || 'Email envoyé !');
+  } catch(e) { showToast('Erreur réseau.'); }
+  btn.disabled = false;
+  btn.style.opacity = '1';
+  toggleEmailMenu();
+}
+
+function showToast(msg) {
+  var toast = document.getElementById('email-toast');
+  toast.textContent = msg;
+  toast.style.display = 'block';
+  setTimeout(function(){ toast.style.display = 'none'; }, 3000);
+}
+</script>
+{% endif %}
 </body>
 </html>
