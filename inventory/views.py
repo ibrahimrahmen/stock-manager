@@ -1,4 +1,5 @@
 import json
+import os
 from decimal import Decimal
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import JsonResponse, HttpResponseForbidden
@@ -14,6 +15,14 @@ from .models import (
     ShippingOrder, OrderItem, StockMovement, Payment, SizeAlert, OrderVerification, ScanSessionLog,
 )
 from .scan_service import handle_shipping_scan, handle_stock_scan
+
+
+# Navex API URL — token comes from env var, never hard-coded.
+# Set NAVEX_API_TOKEN in Railway variables.
+NAVEX_API_URL = (
+    f"https://app.navex.tn/api/rashop-etat-"
+    f"{os.environ.get('NAVEX_API_TOKEN', '')}/v1/post.php"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -190,24 +199,10 @@ def _do_return_unit(unit):
     if order_item:
         order_item.status_at_payment = ProductUnit.RETURNED
         order_item.save(update_fields=["status_at_payment"])
-    # Update order status based on remaining units
-    if order_item and order_item.order:
-        order = order_item.order
-        order.refresh_from_db()
-        # Query unit statuses fresh from DB
-        unit_statuses = list(
-            ProductUnit.objects.filter(
-                order_items__order=order
-            ).values_list("status", flat=True)
-        )
-        all_returned = bool(unit_statuses) and all(s == "returned" for s in unit_statuses)
-        any_returned = any(s == "returned" for s in unit_statuses)
-        if order.status == "closed":
-            if all_returned:
-                order.status = "returned"
-            elif any_returned:
-                order.status = "partial_returned"
-            order.save(update_fields=["status"])
+    # Update order status based on remaining units (handles paid / livre / closed)
+    if order_item and order_item.order_id:
+        order_item.order.refresh_from_db()
+        _update_order_return_status(order_item.order)
     unit_data = {
         "barcode": unit.barcode, "size": unit.size,
         "product_name": variant.product.name, "color_label": variant.color_label,
@@ -217,8 +212,6 @@ def _do_return_unit(unit):
     return unit_data, reconciliation
 
 
-@csrf_exempt
-@require_POST
 def _update_order_return_status(order):
     """Update order status after a unit return."""
     items = list(order.items.select_related("unit").all())
@@ -240,6 +233,8 @@ def _update_order_return_status(order):
     order.save(update_fields=["status"])
 
 
+@csrf_exempt
+@require_POST
 def api_scan_return(request):
     from .barcode_parser import is_bordereau_barcode
     data = json.loads(request.body)
@@ -920,7 +915,7 @@ def api_navex_status(request, pk):
     try:
         data = urllib.parse.urlencode({'code': order.bordereau_barcode, 'include_prix': '1'}).encode()
         req = urllib.request.Request(
-            'https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php',
+            NAVEX_API_URL,
             data=data,
             method='POST'
         )
@@ -975,7 +970,7 @@ def api_navex_en_attente(request):
     try:
         data = urllib.parse.urlencode({"getattente": "1"}).encode()
         req = urllib.request.Request(
-            "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+            NAVEX_API_URL,
             data=data, method="POST"
         )
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
@@ -1071,7 +1066,7 @@ def a_verifier(request):
             codes_string = ", ".join(codes)
             data = urllib.parse.urlencode({"codes": codes_string, "include_prix": "1"}).encode()
             req = urllib.request.Request(
-                "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+                NAVEX_API_URL,
                 data=data, method="POST"
             )
             req.add_header("Content-Type", "application/x-www-form-urlencoded")
@@ -1155,7 +1150,7 @@ def api_get_order_amount(request, pk):
                 "include_prix": "1"
             }).encode()
             req = urllib.request.Request(
-                "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+                NAVEX_API_URL,
                 data=data, method="POST"
             )
             req.add_header("Content-Type", "application/x-www-form-urlencoded")
@@ -1351,7 +1346,7 @@ def api_recheck_session(request):
         codes_string = ", ".join(barcodes)
         data = urllib.parse.urlencode({"codes": codes_string, "include_prix": "1"}).encode()
         req = urllib.request.Request(
-            "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+            NAVEX_API_URL,
             data=data, method="POST"
         )
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
@@ -1436,9 +1431,35 @@ def api_recheck_session(request):
     return JsonResponse({"status": "ok", "moved": moved})
 
 
-from django.core.mail import send_mail
+import resend as resend_client
 
 import socket as _socket
+
+# Configure Resend client from env (never hard-code the key)
+resend_client.api_key = os.environ.get("RESEND_API_KEY", "")
+
+# Resend free plan only delivers to verified addresses.
+# Until a domain is verified, send everything to this single recipient.
+EMAIL_RECIPIENTS = ["ibrahimrahmen0@gmail.com"]
+EMAIL_FROM = "Stock Manager <onboarding@resend.dev>"
+
+
+def _send_email(subject, body):
+    """Send a plain-text email via Resend. Returns True on success, False otherwise."""
+    if not resend_client.api_key:
+        # No key configured (e.g. local dev) — silently no-op instead of crashing.
+        return False
+    try:
+        resend_client.Emails.send({
+            "from": EMAIL_FROM,
+            "to": EMAIL_RECIPIENTS,
+            "subject": subject,
+            "text": body,
+        })
+        return True
+    except Exception:
+        # Match previous fail_silently behaviour
+        return False
 
 def _send_low_stock_email():
     """Send low stock report email."""
@@ -1467,14 +1488,10 @@ Les produits suivants ont un stock bas :
 
 Connectez-vous pour voir les détails : https://web-production-1391c5.up.railway.app/products/
 """
-    send_mail(
+    return _send_email(
         subject=f"⚠ Stock bas — {len(low_items)} produit(s) à réapprovisionner",
-        message=body,
-        from_email="Stock Manager <elkamelrami1@gmail.com>",
-        recipient_list=['ibrahimrahmen95@gmail.com', 'ibrahimrahmen0@gmail.com', 'elkamelrami1@gmail.com'],
-        fail_silently=True,
+        body=body,
     )
-    return True
 
 
 def _send_daily_summary_email():
@@ -1491,7 +1508,7 @@ def _send_daily_summary_email():
     try:
         data = urllib.parse.urlencode({"getattente": "1"}).encode()
         req = urllib.request.Request(
-            "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+            NAVEX_API_URL,
             data=data, method="POST"
         )
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
@@ -1526,14 +1543,10 @@ def _send_daily_summary_email():
 
 Connectez-vous pour voir les détails : https://web-production-1391c5.up.railway.app/
 """
-    send_mail(
+    return _send_email(
         subject=f"📊 Résumé du {today.strftime('%d/%m/%Y')} — {correct} ordres scannés",
-        message=body,
-        from_email="Stock Manager <elkamelrami1@gmail.com>",
-        recipient_list=['ibrahimrahmen95@gmail.com', 'ibrahimrahmen0@gmail.com', 'elkamelrami1@gmail.com'],
-        fail_silently=True,
+        body=body,
     )
-    return True
 
 
 def _send_a_verifier_email():
@@ -1560,14 +1573,10 @@ def _send_a_verifier_email():
 
 Vérifiez ces ordres : https://web-production-1391c5.up.railway.app/a-verifier/
 """
-    send_mail(
+    return _send_email(
         subject=f"⚠ {len(late_orders)} ordre(s) en retard de livraison",
-        message=body,
-        from_email="Stock Manager <elkamelrami1@gmail.com>",
-        recipient_list=['ibrahimrahmen95@gmail.com', 'ibrahimrahmen0@gmail.com', 'elkamelrami1@gmail.com'],
-        fail_silently=True,
+        body=body,
     )
-    return True
 
 
 # Manual email send endpoints
@@ -1641,7 +1650,7 @@ def api_navex_sync(request):
     try:
         data = urllib.parse.urlencode({"codes": codes_string, "include_prix": "1"}).encode()
         req = urllib.request.Request(
-            "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+            NAVEX_API_URL,
             data=data,
             method="POST"
         )

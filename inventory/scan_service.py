@@ -31,10 +31,15 @@ def handle_shipping_scan(barcode: str) -> dict:
 def _get_navex_info(barcode: str):
     """Fetch full info from Navex getattente — short timeout, never blocks scan."""
     try:
+        import os
         import urllib.request, urllib.parse
+        navex_url = (
+            f"https://app.navex.tn/api/rashop-etat-"
+            f"{os.environ.get('NAVEX_API_TOKEN', '')}/v1/post.php"
+        )
         data = urllib.parse.urlencode({"getattente": "1"}).encode()
         req = urllib.request.Request(
-            "https://app.navex.tn/api/rashop-etat-UI3UBFX5QQRYSP3JHOG1ZJH2W8K1FT18/v1/post.php",
+            navex_url,
             data=data, method="POST"
         )
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
