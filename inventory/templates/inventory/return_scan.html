@@ -196,10 +196,11 @@
       // Log confirmed return
       if (data.status === 'ok') addReturnLog(data, barcode);
     } catch(e) {
-      // On error, put barcode back at front of queue
+      // On error, put barcode back at front of queue and alert user
       returnQueue.unshift(barcode);
-      setFeedback('err', 'Erreur réseau — réessai en cours...');
-      await new Promise(r => setTimeout(r, 2000));
+      showErrPopup('⚠ Le scan de ' + barcode + ' n'a pas été enregistré — vérifiez votre connexion. Réessai automatique dans 3 secondes.');
+      setFeedback('err', 'Erreur réseau — réessai dans 3s...');
+      await new Promise(r => setTimeout(r, 3000));
     }
     returnProcessing = false;
     processReturnQueue();
