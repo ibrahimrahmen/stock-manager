@@ -51,19 +51,11 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'stock_manager.wsgi.application'
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('PGDATABASE', ''),
-        'USER': os.environ.get('PGUSER', ''),
-        'PASSWORD': os.environ.get('PGPASSWORD', ''),
-        'HOST': os.environ.get('PGHOST', ''),
-        'PORT': os.environ.get('PGPORT', '5432'),
-    }
-}
-
-# Use SQLite locally if no PostgreSQL env vars
-if not os.environ.get('PGDATABASE'):
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+if DATABASE_URL:
+    import dj_database_url
+    DATABASES = {'default': dj_database_url.parse(DATABASE_URL)}
+else:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
