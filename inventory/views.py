@@ -1560,19 +1560,21 @@ def api_send_email(request, email_type):
     if not request.user.is_superuser:
         return JsonResponse({"status": "error", "message": "Admin uniquement."})
     
-    if email_type == "low_stock":
-        result = _send_low_stock_email()
-        msg = "Email stock bas envoyé !" if result else "Aucun produit en stock bas."
-    elif email_type == "daily_summary":
-        result = _send_daily_summary_email()
-        msg = "Résumé quotidien envoyé !"
-    elif email_type == "a_verifier":
-        result = _send_a_verifier_email()
-        msg = "Email À vérifier envoyé !" if result else "Aucun ordre en retard."
-    else:
-        return JsonResponse({"status": "error", "message": "Type inconnu."})
-    
-    return JsonResponse({"status": "ok", "message": msg})
+    try:
+        if email_type == "low_stock":
+            result = _send_low_stock_email()
+            msg = "Email stock bas envoyé !" if result else "Aucun produit en stock bas."
+        elif email_type == "daily_summary":
+            result = _send_daily_summary_email()
+            msg = "Résumé quotidien envoyé !"
+        elif email_type == "a_verifier":
+            result = _send_a_verifier_email()
+            msg = "Email À vérifier envoyé !" if result else "Aucun ordre en retard."
+        else:
+            return JsonResponse({"status": "error", "message": "Type inconnu."})
+        return JsonResponse({"status": "ok", "message": msg})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)})
 
 
 # Cron endpoints (called by Railway cron)
