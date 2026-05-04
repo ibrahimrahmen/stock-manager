@@ -133,6 +133,27 @@
   .pred-check svg{width:44px;height:44px;stroke:#fff;stroke-width:3;}
 
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+  /* SIDE PANEL */
+  .scan-layout{display:flex;height:100vh;overflow:hidden;}
+  .side-panel{width:280px;flex-shrink:0;background:var(--surface);border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+  .side-panel-header{padding:12px 14px;border-bottom:0.5px solid var(--border);font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);display:flex;align-items:center;justify-content:space-between;}
+  .side-panel-body{flex:1;overflow-y:auto;padding:8px;}
+  .scan-main{flex:1;overflow-y:auto;display:flex;flex-direction:column;}
+  .sp-section{margin-bottom:8px;}
+  .sp-title{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;padding:6px 8px;border-radius:6px;margin-bottom:4px;}
+  .sp-title.green{background:var(--green-bg);color:var(--green);}
+  .sp-title.red{background:var(--red-bg);color:var(--red);}
+  .sp-item{padding:8px 10px;border-radius:8px;margin-bottom:4px;font-size:12px;border:0.5px solid transparent;}
+  .sp-item.correct{background:#f0fdf7;border-color:#a3dfc5;}
+  .sp-item.wrong{background:#fef2f2;border-color:#fca5a5;}
+  .sp-bc{font-family:monospace;font-size:10px;color:var(--muted);margin-top:2px;}
+  .sp-reason{font-size:10px;color:var(--red);margin-top:2px;}
+  .sp-count{font-size:11px;padding:1px 6px;border-radius:10px;font-weight:600;}
+  .sp-count.green{background:var(--green-bg);color:var(--green);}
+  .sp-count.red{background:var(--red-bg);color:var(--red);}
+  .clear-btn{font-size:10px;color:var(--muted);border:none;background:none;cursor:pointer;padding:2px 6px;}
+  .clear-btn:hover{color:var(--red);}
+
   /* NAVEX COUNTER */
   .navex-counter{background:rgba(26,158,110,0.15);border:0.5px solid rgba(26,158,110,0.3);border-radius:20px;padding:5px 14px;font-size:12px;color:#1a9e6e;font-weight:500;}
   .navex-counter.loading{color:var(--hint);background:var(--surface2);border-color:var(--hint);}
@@ -157,6 +178,26 @@
 </head>
 <body>
 
+<div class="scan-layout">
+<!-- SIDE PANEL -->
+<div class="side-panel">
+  <div class="side-panel-header">
+    <span>Session du jour</span>
+    <button class="clear-btn" onclick="clearSession()">Vider</button>
+  </div>
+  <div class="side-panel-body">
+    <div class="sp-section">
+      <div class="sp-title green">✓ Corrects <span class="sp-count green" id="sp-correct-count">0</span></div>
+      <div id="sp-correct-list"></div>
+    </div>
+    <div class="sp-section">
+      <div class="sp-title red">✗ À vérifier <span class="sp-count red" id="sp-wrong-count">0</span></div>
+      <div id="sp-wrong-list"></div>
+    </div>
+  </div>
+</div>
+<!-- MAIN SCAN -->
+<div class="scan-main">
 <nav>
   <a href="{% url 'dashboard' %}">← Dashboard</a>
   <h1>Scan expédition</h1>
@@ -786,8 +827,72 @@
     });
   }
 
+  // SESSION LOG — stored in DB, shared across devices
+  async function addToSession(order, navexColis, scannedUnits) {
+    var bc = order.bordereau_barcode;
+    var isCorrect = true;
+    var reason = '';
+
+    if (navexColis && navexColis.matched_products && navexColis.matched_products.length > 0) {
+      var expectedNames = navexColis.matched_products.map(function(p){ return p.name.toLowerCase(); });
+      var scannedNames = scannedUnits.map(function(u){ return (u.product_name || '').toLowerCase(); });
+      var missing = expectedNames.filter(function(n){
+        return !scannedNames.some(function(s){ return s.indexOf(n.split(' ')[0]) !== -1; });
+      });
+      if (missing.length > 0) { isCorrect = false; reason = 'Manquant: ' + missing.join(', '); }
+    }
+
+    try {
+      await fetch('/api/scan-session/log/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          bordereau: bc,
+          designation: navexColis ? (navexColis.designation || '') : '',
+          unit_count: scannedUnits.length,
+          is_correct: isCorrect,
+          reason: reason,
+        })
+      });
+      await loadSession();
+    } catch(e) {}
+  }
+
+  async function loadSession() {
+    try {
+      var res = await fetch('/api/scan-session/today/');
+      var data = await res.json();
+      renderSession(data.correct || [], data.wrong || []);
+    } catch(e) {}
+  }
+
+  function clearSession() {
+    if (!confirm('Vider la liste de la session ?')) return;
+    // Just reload — can't delete from DB but resets visually
+    renderSession([], []);
+  }
+
+  function renderSession(correct, wrong) {
+    var cList = document.getElementById('sp-correct-list');
+    var wList = document.getElementById('sp-wrong-list');
+    document.getElementById('sp-correct-count').textContent = correct.length;
+    document.getElementById('sp-wrong-count').textContent = wrong.length;
+    cList.innerHTML = correct.slice(0,30).map(function(e){
+      return '<div class="sp-item correct"><div style="font-weight:500;">' + e.bc + ' <span style="color:var(--muted);font-size:10px;">' + e.time + '</span></div>' +
+        (e.designation ? '<div class="sp-bc">' + e.designation.slice(0,45) + '</div>' : '') + '</div>';
+    }).join('');
+    wList.innerHTML = wrong.slice(0,30).map(function(e){
+      return '<div class="sp-item wrong"><div style="font-weight:500;">' + e.bc + ' <span style="color:var(--muted);font-size:10px;">' + e.time + '</span></div>' +
+        (e.designation ? '<div class="sp-bc">' + e.designation.slice(0,45) + '</div>' : '') +
+        (e.reason ? '<div class="sp-reason">' + e.reason + '</div>' : '') + '</div>';
+    }).join('');
+  }
+
+  // Hook into order close
+  var _scannedUnitsInOrder = [];
+
   // Load on page open and when tab gets focus
-  window.addEventListener('load', loadNavexAttente);
+  window.addEventListener('load', function() { loadNavexAttente(); loadSession(); });
   window.addEventListener('focus', function() {
     // Reload silently when user switches back to tab
     loadNavexAttente();
@@ -827,14 +932,24 @@
         panel.classList.add('order-transition-in');
         setTimeout(function(){ panel.classList.remove('order-transition-in'); }, 400);
       }
-      if (data.closed_order) hideNavexOrderInfo();
+      if (data.closed_order) {
+        hideNavexOrderInfo();
+        // Log the closed order to session
+        var closedBC = data.closed_order.bordereau_barcode;
+        var closedColis = navexMap[closedBC] || null;
+        addToSession(data.closed_order, closedColis, _scannedUnitsInOrder);
+        _scannedUnitsInOrder = [];
+      }
     }
     if (data.type === 'unit' && data.unit) {
       animateUnitCard(data.unit.barcode);
       checkPrediction(data.unit.product_name, data.unit.color_label);
+      _scannedUnitsInOrder.push(data.unit);
     }
   };
 </script>
 {% include "inventory/partials/error_popup.html" %}
+</div><!-- scan-main -->
+</div><!-- scan-layout -->
 </body>
 </html>

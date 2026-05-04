@@ -11,7 +11,7 @@ from django.contrib.auth.decorators import login_required
 
 from .models import (
     Product, ProductVariant, ProductUnit,
-    ShippingOrder, OrderItem, StockMovement, Payment, SizeAlert, OrderVerification,
+    ShippingOrder, OrderItem, StockMovement, Payment, SizeAlert, OrderVerification, ScanSessionLog,
 )
 from .scan_service import handle_shipping_scan, handle_stock_scan
 
@@ -1286,6 +1286,35 @@ def api_get_size_alert(request, variant_pk, size):
         return JsonResponse({"status": "ok", "threshold": alert.threshold})
     except SizeAlert.DoesNotExist:
         return JsonResponse({"status": "ok", "threshold": None})
+
+
+@csrf_exempt
+@require_POST
+def api_log_scan_session(request):
+    """Save a closed order to the daily scan session log."""
+    data = json.loads(request.body)
+    today = timezone.now().date()
+    ScanSessionLog.objects.create(
+        bordereau_barcode=data.get("bordereau", ""),
+        designation=data.get("designation", ""),
+        unit_count=data.get("unit_count", 0),
+        is_correct=data.get("is_correct", True),
+        reason=data.get("reason", ""),
+        session_date=today,
+    )
+    return JsonResponse({"status": "ok"})
+
+
+@login_required(login_url="/login/")
+def api_get_scan_session(request):
+    """Get today's scan session log."""
+    today = timezone.now().date()
+    logs = ScanSessionLog.objects.filter(session_date=today).order_by("-scanned_at")
+    return JsonResponse({
+        "status": "ok",
+        "correct": [{"bc": l.bordereau_barcode, "designation": l.designation, "units": l.unit_count, "time": l.scanned_at.strftime("%H:%M")} for l in logs if l.is_correct],
+        "wrong": [{"bc": l.bordereau_barcode, "designation": l.designation, "units": l.unit_count, "reason": l.reason, "time": l.scanned_at.strftime("%H:%M")} for l in logs if not l.is_correct],
+    })
 
 
 def navex_sync(request):

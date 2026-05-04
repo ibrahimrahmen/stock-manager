@@ -281,3 +281,20 @@ class OrderVerification(models.Model):
 
     def __str__(self):
         return f"Verification {self.order.bordereau_barcode} — {'Traité' if self.treated else 'En attente'}"
+
+
+class ScanSessionLog(models.Model):
+    """Daily scan session log — resets each morning."""
+    bordereau_barcode = models.CharField(max_length=50)
+    designation = models.CharField(max_length=500, blank=True, default="")
+    unit_count = models.IntegerField(default=0)
+    is_correct = models.BooleanField(default=True)
+    reason = models.CharField(max_length=200, blank=True, default="")
+    scanned_at = models.DateTimeField(auto_now_add=True)
+    session_date = models.DateField()  # date of the session
+
+    class Meta:
+        ordering = ["-scanned_at"]
+
+    def __str__(self):
+        return f"{self.bordereau_barcode} — {'OK' if self.is_correct else 'WRONG'} @ {self.scanned_at:%Y-%m-%d %H:%M}"
