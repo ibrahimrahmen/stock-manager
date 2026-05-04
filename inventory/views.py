@@ -192,10 +192,22 @@ def _do_return_unit(unit):
         order_item.save(update_fields=["status_at_payment"])
     # Update order status based on remaining units
     if order_item and order_item.order:
-        try:
-            _update_order_return_status(order_item.order)
-        except Exception as e:
-            pass  # Don't fail the scan if status update fails
+        order = order_item.order
+        order.refresh_from_db()
+        # Query unit statuses fresh from DB
+        unit_statuses = list(
+            ProductUnit.objects.filter(
+                order_items__order=order
+            ).values_list("status", flat=True)
+        )
+        all_returned = bool(unit_statuses) and all(s == "returned" for s in unit_statuses)
+        any_returned = any(s == "returned" for s in unit_statuses)
+        if order.status == "closed":
+            if all_returned:
+                order.status = "returned"
+            elif any_returned:
+                order.status = "partial_returned"
+            order.save(update_fields=["status"])
     unit_data = {
         "barcode": unit.barcode, "size": unit.size,
         "product_name": variant.product.name, "color_label": variant.color_label,
