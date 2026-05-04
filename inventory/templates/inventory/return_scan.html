@@ -115,6 +115,15 @@
 
   <div class="feedback-bar idle" id="feedback">En attente de scan...</div>
 
+  <!-- RETURN LOG -->
+  <div style="margin-top:16px;max-width:520px;width:100%;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;">Retours confirmés</div>
+      <div style="font-size:13px;font-weight:600;color:#1a9e6e;"><span id="return-log-count">0</span> confirmés</div>
+    </div>
+    <div id="return-log-list" style="max-height:300px;overflow-y:auto;"></div>
+  </div>
+
   <div class="history" id="history" style="display:none;">
     <div class="history-title">Retours de cette session</div>
     <div id="history-list"></div>
@@ -166,20 +175,68 @@
   var selectedBarcodes = new Set();
   var pendingOrderId = null;
 
-  async function doScan() {
-    var barcode = input.value.trim();
-    input.value = ''; input.focus();
-    if (!barcode) return;
+  // SCAN QUEUE — prevents missed scans on bad connection
+  var returnQueue = [];
+  var returnProcessing = false;
 
+  async function processReturnQueue() {
+    if (returnProcessing || returnQueue.length === 0) return;
+    returnProcessing = true;
+    var barcode = returnQueue.shift();
+    // Show pending indicator
+    setFeedback('warn', 'Traitement en cours... (' + (returnQueue.length + 1) + ' en attente)');
     try {
       var res = await fetch("{% url 'api_scan_return' %}", {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken')},
-        body: JSON.stringify({barcode}),
+        body: JSON.stringify({barcode: barcode}),
       });
       var data = await res.json();
       handleResult(data);
-    } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); }
+      // Log confirmed return
+      if (data.status === 'ok') addReturnLog(data, barcode);
+    } catch(e) {
+      // On error, put barcode back at front of queue
+      returnQueue.unshift(barcode);
+      setFeedback('err', 'Erreur réseau — réessai en cours...');
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    returnProcessing = false;
+    processReturnQueue();
+  }
+
+  async function doScan() {
+    var barcode = input.value.trim();
+    input.value = ''; input.focus();
+    if (!barcode) return;
+    returnQueue.push(barcode);
+    processReturnQueue();
+  }
+
+  // RETURN LOG
+  var returnLog = [];
+
+  function addReturnLog(data, barcode) {
+    var entry = {
+      barcode: barcode,
+      time: new Date().toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}),
+      type: data.type || 'unit_returned',
+      message: data.message || '',
+    };
+    returnLog.unshift(entry);
+    renderReturnLog();
+  }
+
+  function renderReturnLog() {
+    var logEl = document.getElementById('return-log-list');
+    var countEl = document.getElementById('return-log-count');
+    if (!logEl) return;
+    countEl.textContent = returnLog.length;
+    logEl.innerHTML = returnLog.slice(0,30).map(function(e) {
+      return '<div style="padding:6px 10px;background:#e8f7f1;border-radius:8px;margin-bottom:4px;font-size:12px;">' +
+        '<div style="display:flex;justify-content:space-between;"><span style="font-weight:500;">' + e.barcode + '</span><span style="color:var(--muted);font-size:10px;">' + e.time + '</span></div>' +
+        '<div style="color:#1a9e6e;font-size:11px;margin-top:2px;">' + e.message.slice(0,50) + '</div></div>';
+    }).join('');
   }
 
   function handleResult(data) {
