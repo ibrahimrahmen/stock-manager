@@ -1422,7 +1422,6 @@ def api_recheck_session(request):
 
 
 from django.core.mail import send_mail
-from django.template.loader import render_to_string
 
 import socket as _socket
 

@@ -86,3 +86,4 @@ EMAIL_USE_SSL = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'elkamelrami1@gmail.com')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = 'Stock Manager <elkamelrami1@gmail.com>'
+EMAIL_TIMEOUT = 10
