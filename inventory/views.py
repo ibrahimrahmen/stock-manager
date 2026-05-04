@@ -1455,7 +1455,7 @@ Connectez-vous pour voir les détails : https://web-production-1391c5.up.railway
         subject=f"⚠ Stock bas — {len(low_items)} produit(s) à réapprovisionner",
         message=body,
         from_email="Stock Manager <elkamelrami1@gmail.com>",
-        recipient_list=["elkamelrami1@gmail.com"],
+        recipient_list=['ibrahimrahmen95@gmail.com', 'ibrahimrahmen0@gmail.com', 'elkamelrami1@gmail.com'],
         fail_silently=True,
     )
     return True
@@ -1514,7 +1514,7 @@ Connectez-vous pour voir les détails : https://web-production-1391c5.up.railway
         subject=f"📊 Résumé du {today.strftime('%d/%m/%Y')} — {correct} ordres scannés",
         message=body,
         from_email="Stock Manager <elkamelrami1@gmail.com>",
-        recipient_list=["elkamelrami1@gmail.com"],
+        recipient_list=['ibrahimrahmen95@gmail.com', 'ibrahimrahmen0@gmail.com', 'elkamelrami1@gmail.com'],
         fail_silently=True,
     )
     return True
@@ -1548,7 +1548,7 @@ Vérifiez ces ordres : https://web-production-1391c5.up.railway.app/a-verifier/
         subject=f"⚠ {len(late_orders)} ordre(s) en retard de livraison",
         message=body,
         from_email="Stock Manager <elkamelrami1@gmail.com>",
-        recipient_list=["elkamelrami1@gmail.com"],
+        recipient_list=['ibrahimrahmen95@gmail.com', 'ibrahimrahmen0@gmail.com', 'elkamelrami1@gmail.com'],
         fail_silently=True,
     )
     return True
