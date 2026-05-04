@@ -198,7 +198,7 @@
     } catch(e) {
       // On error, put barcode back at front of queue and alert user
       returnQueue.unshift(barcode);
-      showErrPopup('⚠ Le scan de ' + barcode + ' n'a pas été enregistré — vérifiez votre connexion. Réessai automatique dans 3 secondes.');
+      showErrPopup("⚠ Le scan de " + barcode + " n'a pas été enregistré — vérifiez votre connexion. Réessai dans 3s.");
       setFeedback('err', 'Erreur réseau — réessai dans 3s...');
       await new Promise(r => setTimeout(r, 3000));
     }
