@@ -192,7 +192,10 @@ def _do_return_unit(unit):
         order_item.save(update_fields=["status_at_payment"])
     # Update order status based on remaining units
     if order_item and order_item.order:
-        _update_order_return_status(order_item.order)
+        try:
+            _update_order_return_status(order_item.order)
+        except Exception as e:
+            pass  # Don't fail the scan if status update fails
     unit_data = {
         "barcode": unit.barcode, "size": unit.size,
         "product_name": variant.product.name, "color_label": variant.color_label,
