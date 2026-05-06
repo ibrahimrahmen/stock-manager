@@ -115,6 +115,49 @@ def api_scan_shipping(request):
     return JsonResponse(handle_shipping_scan(barcode))
 
 
+@login_required(login_url="/login/")
+def api_get_order_state(request, pk):
+    """Return the current saved unit list for an order — used by the frontend
+    to recover after a scan failure or tab focus change. Server is source of truth."""
+    try:
+        order = ShippingOrder.objects.prefetch_related(
+            "items__unit__variant__product"
+        ).get(pk=pk)
+    except ShippingOrder.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Ordre introuvable."}, status=404)
+
+    units = []
+    total = Decimal("0")
+    for item in order.items.all():
+        unit = item.unit
+        if not unit:
+            continue
+        variant = unit.variant
+        product = variant.product
+        units.append({
+            "barcode": unit.barcode,
+            "size": unit.size,
+            "status": unit.status,
+            "product_name": product.name,
+            "color_label": variant.color_label,
+            "sell_price": str(product.sell_price),
+            "image_url": variant.image.url if variant.image else None,
+        })
+        total += product.sell_price
+
+    return JsonResponse({
+        "status": "ok",
+        "order": {
+            "id": order.id,
+            "bordereau_barcode": order.bordereau_barcode,
+            "status": order.status,
+            "unit_count": len(units),
+            "total": str(total),
+        },
+        "units": units,
+    })
+
+
 @csrf_exempt
 @require_POST
 def api_scan_reception(request):

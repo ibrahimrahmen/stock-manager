@@ -275,11 +275,17 @@
         <div class="modal-bc" id="modal-bc"></div>
       </div>
       <div class="modal-count" id="modal-count">0 unité(s)</div>
+      <button class="modal-close-btn" onclick="reloadOrderState()" id="btn-reload" style="margin-right:6px;background:#fff7e6;border-color:#f0c674;color:#8a5a00;" title="Recharger depuis le serveur">↻ Recharger</button>
       <button class="modal-close-btn" onclick="openPricePanelWithNavex()" id="btn-modify" style="margin-right:6px;">Modifier / Fermer</button>
     </div>
 
     <div class="modal-scan">
       <input class="modal-scan-input" id="modal-scan-input" placeholder="Scanner un produit..." autocomplete="off">
+    </div>
+
+    <!-- SYNC WARNING BANNER -->
+    <div id="sync-banner" style="display:none;background:#fdecea;color:#a8261d;padding:10px 20px;font-size:13px;font-weight:500;border-bottom:1px solid #f5c6c2;">
+      ⚠ <span id="sync-banner-text">Erreur réseau — rechargement de l'ordre...</span>
     </div>
 
     <div class="modal-feedback idle" id="modal-feedback">Scannez les produits de cet ordre...</div>
@@ -418,16 +424,87 @@
   // SCAN QUEUE — prevents lost scans when scanning fast
   var scanQueue = [];
   var scanProcessing = false;
+  var scanLocked = false;  // when true, all scanning is blocked until reload completes
+
+  // Fetch with timeout — rejects if no response in 10s
+  function fetchWithTimeout(url, opts, ms) {
+    ms = ms || 10000;
+    var ctrl = new AbortController();
+    var timer = setTimeout(function(){ ctrl.abort(); }, ms);
+    return fetch(url, Object.assign({}, opts, {signal: ctrl.signal}))
+      .finally(function(){ clearTimeout(timer); });
+  }
+
+  function lockScanning(reason) {
+    scanLocked = true;
+    scanQueue.length = 0;  // drop pending scans — server is no longer trusted
+    var banner = document.getElementById('sync-banner');
+    var text = document.getElementById('sync-banner-text');
+    if (text) text.textContent = reason || 'Erreur réseau — rechargement de l\'ordre...';
+    if (banner) banner.style.display = 'block';
+    var mi = document.getElementById('modal-scan-input');
+    if (mi) mi.disabled = true;
+  }
+
+  function unlockScanning() {
+    scanLocked = false;
+    var banner = document.getElementById('sync-banner');
+    if (banner) banner.style.display = 'none';
+    var mi = document.getElementById('modal-scan-input');
+    if (mi) { mi.disabled = false; mi.focus(); }
+  }
+
+  // Re-fetch the order's saved state from the server and rebuild the modal grid
+  async function reloadOrderState() {
+    if (!currentOrderId) return;
+    lockScanning('Rechargement de l\'ordre depuis le serveur...');
+    try {
+      var res = await fetchWithTimeout('/api/orders/' + currentOrderId + '/state/', {}, 10000);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var data = await res.json();
+      if (data.status !== 'ok') throw new Error(data.message || 'Erreur serveur');
+
+      // Rebuild the grid from server truth
+      var grid = document.getElementById('modal-grid');
+      grid.innerHTML = '';
+      runningTotal = 0;
+      data.units.forEach(function(u){
+        addCard(u);
+        runningTotal += parseFloat(u.sell_price) || 0;
+      });
+      if (data.units.length === 0) {
+        grid.innerHTML = '<div class="modal-empty" id="modal-empty"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>Scannez des produits pour les ajouter</div>';
+      }
+      unitCount = data.order.unit_count;
+      document.getElementById('modal-count').textContent = unitCount + ' unité(s)';
+      document.getElementById('modal-total').textContent = runningTotal.toFixed(3) + ' TND';
+      unlockScanning();
+    } catch(e) {
+      // Reload itself failed — keep locked, let user retry manually
+      var text = document.getElementById('sync-banner-text');
+      if (text) text.textContent = 'Rechargement échoué — cliquez ↻ Recharger pour réessayer.';
+      var mi = document.getElementById('modal-scan-input');
+      if (mi) mi.disabled = true;
+    }
+  }
+
+  // Triggered on any failed scan: warn, then auto-reload after 2s
+  function handleScanFailure(reason) {
+    showErrPopup(reason);
+    lockScanning('⚠ Erreur de scan — rechargement automatique dans 2s...');
+    setTimeout(reloadOrderState, 2000);
+  }
 
   async function processQueue() {
-    if (scanProcessing || scanQueue.length === 0) return;
+    if (scanProcessing || scanLocked || scanQueue.length === 0) return;
     scanProcessing = true;
     var barcode = scanQueue.shift();
     try {
-      var res = await fetch("{% url 'api_scan_shipping' %}", {
+      var res = await fetchWithTimeout("{% url 'api_scan_shipping' %}", {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({barcode}),
-      });
+      }, 10000);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
       var data = await res.json();
       if (data.status === 'error') { showErrPopup(data.message); }
       else if (data.type === 'unit') {
@@ -443,18 +520,30 @@
         document.getElementById('overlay').classList.remove('visible');
         handleMainResult(data);
       }
-    } catch(e) { showErrPopup('Erreur: ' + e.message); }
-    scanProcessing = false;
-    processQueue(); // process next in queue
+      scanProcessing = false;
+      processQueue(); // process next in queue
+    } catch(e) {
+      // Network/timeout/parse error — server state is unknown, must reload
+      scanProcessing = false;
+      handleScanFailure('Erreur réseau: ' + (e.message || 'requête échouée'));
+    }
   }
 
   async function doModalScan() {
     var barcode = modalInput.value.trim();
     modalInput.value = ''; modalInput.focus();
     if (!barcode) return;
+    if (scanLocked) return;  // ignore scans while locked
     scanQueue.push(barcode);
     processQueue();
   }
+
+  // When tab regains focus, silently re-sync if an order is open.
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible' && currentOrderId && !scanLocked) {
+      reloadOrderState();
+    }
+  });
 
   function addCard(unit) {
     var empty = document.getElementById('modal-empty');

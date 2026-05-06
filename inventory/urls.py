@@ -10,6 +10,7 @@ urlpatterns = [
     path("scan/payment/", views.payment_scan, name="payment_scan"),
     path("stock-value/", views.stock_value, name="stock_value"),
     path("api/scan/shipping/", views.api_scan_shipping, name="api_scan_shipping"),
+    path("api/orders/<int:pk>/state/", views.api_get_order_state, name="api_get_order_state"),
     path("api/scan/reception/", views.api_scan_reception, name="api_scan_reception"),
     path("api/scan/return/", views.api_scan_return, name="api_scan_return"),
     path("api/scan/return/multiple/", views.api_return_multiple, name="api_return_multiple"),
