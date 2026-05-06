@@ -1856,3 +1856,66 @@ def product_detail(request, pk):
         "variants": variants,
         "variants_data": variants_data,
     })
+
+
+@login_required(login_url="/login/")
+def api_check_barcode_gaps(request, pk):
+    """Find gaps in unit barcode numeric sequences, grouped by (color, size).
+
+    Barcode pattern: <PREFIX>-<COLOR>-<SIZE>-<NUMBER>  e.g. PTSICY-WTE-3-016
+    For each (color, size) group we extract the trailing number and report
+    any missing integers between min and max.
+    """
+    import re
+    product = get_object_or_404(Product, pk=pk)
+
+    # Optional ?variant=ID & ?size=N filtering for per-variant button
+    variant_id = request.GET.get("variant")
+    size_filter = request.GET.get("size")
+
+    variants = product.variants.prefetch_related("units").all()
+    if variant_id:
+        variants = variants.filter(pk=variant_id)
+
+    groups = []  # one dict per (variant, size)
+    for variant in variants:
+        # Group units by size
+        size_buckets = {}
+        for unit in variant.units.all():
+            if size_filter and str(unit.size) != str(size_filter):
+                continue
+            size_buckets.setdefault(unit.size, []).append(unit.barcode)
+
+        for size, barcodes in size_buckets.items():
+            numbers = []
+            for bc in barcodes:
+                m = re.search(r"(\d+)$", bc or "")
+                if m:
+                    numbers.append(int(m.group(1)))
+            if not numbers:
+                continue
+            numbers_set = set(numbers)
+            lo, hi = min(numbers), max(numbers)
+            missing = [n for n in range(lo, hi + 1) if n not in numbers_set]
+
+            groups.append({
+                "variant_id": variant.pk,
+                "color": variant.color_label,
+                "size": size,
+                "count": len(numbers),
+                "range_lo": lo,
+                "range_hi": hi,
+                "missing": missing,
+                "missing_count": len(missing),
+            })
+
+    # Sort: variants by color, then by size
+    groups.sort(key=lambda g: (g["color"], str(g["size"])))
+
+    total_missing = sum(g["missing_count"] for g in groups)
+    return JsonResponse({
+        "status": "ok",
+        "product": product.name,
+        "total_missing": total_missing,
+        "groups": groups,
+    })

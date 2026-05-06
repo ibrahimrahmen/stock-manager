@@ -42,6 +42,25 @@
     .size-chip.clickable:hover{transform:scale(1.08);box-shadow:0 2px 8px rgba(0,0,0,0.1);}
     .sz-l{font-size:11px;color:var(--muted);}
     .vcard-total{display:flex;justify-content:space-between;font-size:13px;padding-top:10px;border-top:0.5px solid var(--border);}
+    .vcheck-btn{margin-top:10px;width:100%;font-size:12px;padding:6px 10px;border-radius:8px;border:0.5px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;transition:all .15s;}
+    .vcheck-btn:hover{background:var(--text);color:#fff;border-color:var(--text);}
+    .check-all-btn{background:#fff7e6 !important;border-color:#f0c674 !important;color:#8a5a00 !important;}
+    .check-all-btn:hover{background:#f0c674 !important;color:#fff !important;}
+    /* Gap-check modal */
+    #gap-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:300;align-items:center;justify-content:center;}
+    #gap-modal{background:#fff;border-radius:14px;padding:24px;max-width:560px;width:90%;max-height:80vh;overflow:auto;}
+    #gap-modal h3{margin:0 0 14px 0;font-size:18px;}
+    .gap-summary{font-size:13px;padding:10px 14px;border-radius:8px;margin-bottom:14px;}
+    .gap-summary.ok{background:#e8f5ed;color:#0e7a3f;}
+    .gap-summary.warn{background:#fdecea;color:#a8261d;}
+    .gap-group{border:0.5px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;}
+    .gap-group-h{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:500;margin-bottom:6px;}
+    .gap-group-h .pill{font-size:11px;padding:2px 8px;border-radius:10px;}
+    .gap-group-h .pill.ok{background:#e8f5ed;color:#0e7a3f;}
+    .gap-group-h .pill.warn{background:#fdecea;color:#a8261d;}
+    .gap-meta{font-size:12px;color:var(--muted);}
+    .gap-missing{margin-top:6px;font-size:12px;font-family:monospace;color:#a8261d;word-break:break-all;}
+    #gap-close{margin-top:6px;width:100%;padding:10px;background:#1a1a18;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;}
     .tn{font-weight:500;font-size:16px;}
     .tn.zero{color:var(--red);}
     .tn.low{color:var(--amber);}
@@ -130,6 +149,9 @@
           <span style="color:var(--muted);">Total disponible</span>
           <span class="tn {% if vd.total_stock == 0 %}zero{% elif vd.total_stock <= product.alert_threshold %}low{% else %}ok{% endif %}">{{ vd.total_stock }}</span>
         </div>
+        <button class="vcheck-btn" onclick="checkGaps({{ product.pk }}, {{ vd.variant.pk }})" title="Vérifier les barcodes manquants">
+          🔍 Vérifier
+        </button>
       </div>
     </div>
     {% endfor %}
@@ -147,6 +169,7 @@
       <button class="fbtn" onclick="setFilter('shipped',this)">Expédié</button>
       <button class="fbtn" onclick="setFilter('paid',this)">Vendu</button>
       <button class="fbtn" onclick="setFilter('returned',this)">Retourné</button>
+      <button class="fbtn check-all-btn" onclick="checkGaps({{ product.pk }})" title="Vérifier les barcodes manquants pour toutes les variantes">🔍 Vérifier tout</button>
     </div>
     <div class="units-count" id="units-count">0</div>
   </div>
@@ -335,5 +358,88 @@ function makeChart(title, data, total) {
 
 applyAll();
 </script>
+<!-- GAP CHECK MODAL -->
+<div id="gap-overlay" onclick="if(event.target===this)closeGap()">
+  <div id="gap-modal">
+    <h3 id="gap-title">Vérification des barcodes</h3>
+    <div id="gap-body"><div style="text-align:center;color:var(--muted);padding:20px;">Chargement...</div></div>
+    <button id="gap-close" onclick="closeGap()">Fermer</button>
+  </div>
+</div>
+
+<script>
+function closeGap() { document.getElementById('gap-overlay').style.display = 'none'; }
+
+async function checkGaps(productId, variantId) {
+  document.getElementById('gap-overlay').style.display = 'flex';
+  document.getElementById('gap-body').innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;">Chargement...</div>';
+
+  var url = '/api/products/' + productId + '/check-gaps/';
+  if (variantId) url += '?variant=' + variantId;
+
+  try {
+    var res = await fetch(url);
+    var data = await res.json();
+    if (data.status !== 'ok') {
+      document.getElementById('gap-body').innerHTML = '<div class="gap-summary warn">Erreur lors de la vérification.</div>';
+      return;
+    }
+
+    var html = '';
+    if (data.total_missing === 0) {
+      html += '<div class="gap-summary ok">✓ Aucun barcode manquant. Toutes les séquences sont complètes.</div>';
+    } else {
+      html += '<div class="gap-summary warn">⚠ ' + data.total_missing + ' barcode(s) manquant(s) au total.</div>';
+    }
+
+    if (data.groups.length === 0) {
+      html += '<div style="color:var(--muted);font-size:13px;text-align:center;padding:10px;">Aucune unité trouvée.</div>';
+    } else {
+      data.groups.forEach(function(g){
+        var pillClass = g.missing_count === 0 ? 'ok' : 'warn';
+        var pillText = g.missing_count === 0 ? '✓' : g.missing_count + ' manquant(s)';
+        html += '<div class="gap-group">';
+        html += '<div class="gap-group-h"><span>' + g.color + ' / Taille ' + g.size + '</span>';
+        html += '<span class="pill ' + pillClass + '">' + pillText + '</span></div>';
+        html += '<div class="gap-meta">' + g.count + ' unités · plage ' + pad3(g.range_lo) + '–' + pad3(g.range_hi) + '</div>';
+        if (g.missing.length > 0) {
+          html += '<div class="gap-missing">Manquant : ' + g.missing.map(pad3).join(', ') + '</div>';
+        }
+        html += '</div>';
+      });
+    }
+    document.getElementById('gap-body').innerHTML = html;
+  } catch(e) {
+    document.getElementById('gap-body').innerHTML = '<div class="gap-summary warn">Erreur réseau.</div>';
+  }
+}
+
+function pad3(n) { return String(n).padStart(3, '0'); }
+
+// Sort the units table by trailing barcode number on page load
+(function sortUnitsTable() {
+  var tbody = document.getElementById('tbody');
+  if (!tbody) return;
+  var rows = Array.from(tbody.querySelectorAll('tr'));
+  rows.sort(function(a, b) {
+    var bcA = (a.querySelector('.ubc') || {}).textContent || '';
+    var bcB = (b.querySelector('.ubc') || {}).textContent || '';
+    // Group by color+size first for readability, then by trailing number
+    var colorA = a.getAttribute('data-color') || '';
+    var colorB = b.getAttribute('data-color') || '';
+    if (colorA !== colorB) return colorA.localeCompare(colorB);
+    var sizeA = a.getAttribute('data-size') || '';
+    var sizeB = b.getAttribute('data-size') || '';
+    if (sizeA !== sizeB) return String(sizeA).localeCompare(String(sizeB), undefined, {numeric: true});
+    var mA = bcA.match(/(\d+)$/);
+    var mB = bcB.match(/(\d+)$/);
+    var nA = mA ? parseInt(mA[1], 10) : 0;
+    var nB = mB ? parseInt(mB[1], 10) : 0;
+    return nA - nB;
+  });
+  rows.forEach(function(r){ tbody.appendChild(r); });
+})();
+</script>
+
 </body>
 </html>
