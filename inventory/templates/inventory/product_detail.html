@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+{% load inventory_tags %}
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
@@ -34,9 +35,13 @@
     .badge-low{background:var(--amber-bg);color:var(--amber);}
     .badge-out{background:var(--red-bg);color:var(--red);}
     .size-grid{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
-    .size-chip{display:flex;flex-direction:column;align-items:center;background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;min-width:44px;}
+    .size-chip{display:flex;flex-direction:column;align-items:center;background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;min-width:44px;position:relative;}
     .size-chip.has{background:var(--green-bg);border-color:#a3dfc5;}
     .size-chip.has .sz-n,.size-chip.has .sz-l{color:var(--green);}
+    .size-chip.low-forecast{background:#fff7e6 !important;border-color:#f0c674 !important;animation:pulse-low 2s ease-in-out infinite;}
+    .size-chip.low-forecast .sz-n,.size-chip.low-forecast .sz-l{color:#8a5a00 !important;}
+    .size-chip .sz-warn{position:absolute;top:-6px;right:-6px;background:#d94f4e;color:#fff;border-radius:50%;font-size:10px;width:14px;height:14px;display:flex;align-items:center;justify-content:center;font-weight:700;}
+    @keyframes pulse-low{0%,100%{box-shadow:0 0 0 0 rgba(217,79,78,0.0);}50%{box-shadow:0 0 0 4px rgba(217,79,78,0.18);}}
     .sz-n{font-size:16px;font-weight:500;}
     .size-chip.clickable{cursor:pointer;transition:all .15s;}
     .size-chip.clickable:hover{transform:scale(1.08);box-shadow:0 2px 8px rgba(0,0,0,0.1);}
@@ -137,12 +142,14 @@
         </div>
         <div class="size-grid">
           {% for size, count in vd.size_map.items %}
-          <div class="size-chip {% if count > 0 %}has{% endif %} {% if request.user.is_superuser %}clickable{% endif %}"
-            {% if request.user.is_superuser %}onclick="openSizeAlert({{ vd.variant.pk }}, '{{ size }}', {{ count }})"{% endif %}
-            title="{% if request.user.is_superuser %}Cliquer pour configurer l'alerte{% endif %}">
+          {% with forecast=vd.size_forecasts|get_item:size %}
+          <div class="size-chip {% if count > 0 %}has{% endif %} {% if forecast.is_triggered and count > 0 %}low-forecast{% endif %}"
+            title="{% if forecast.daily_rate > 0 %}~{{ forecast.daily_rate }}/jour · {{ forecast.days_of_cover }}j de stock{% else %}Aucune vente récente{% endif %}">
             <span class="sz-n">{{ count }}</span>
             <span class="sz-l">{{ size }}</span>
+            {% if forecast.is_triggered and count > 0 %}<span class="sz-warn" title="Stock bas — environ {{ forecast.days_of_cover }} jours">⚠</span>{% endif %}
           </div>
+          {% endwith %}
           {% endfor %}
         </div>
         <div class="vcard-total">
@@ -208,57 +215,7 @@
   </table>
 </div>
 
-<!-- SIZE ALERT MODAL -->
-<div id="sa-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:14px;padding:28px;max-width:360px;width:90%;text-align:center;">
-    <div style="font-size:20px;font-weight:600;margin-bottom:6px;">Alerte de stock</div>
-    <div id="sa-info" style="font-size:13px;color:#73726c;margin-bottom:20px;"></div>
-    <div style="margin-bottom:20px;">
-      <div style="font-size:12px;color:#73726c;margin-bottom:8px;">Alerter quand le stock descend en dessous de :</div>
-      <div style="display:flex;align-items:center;justify-content:center;gap:8px;">
-        <input id="sa-val" type="number" min="0" value="3" style="width:80px;font-size:24px;font-weight:700;text-align:center;border:0.5px solid #ddd;border-radius:8px;padding:8px;outline:none;background:#f5f4f0;">
-        <span style="font-size:13px;color:#73726c;">unités</span>
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;">
-      <button onclick="closeSA()" style="flex:1;padding:10px;background:#f5f4f0;border:0.5px solid #ddd;border-radius:8px;font-size:13px;cursor:pointer;">Annuler</button>
-      <button onclick="saveSA()" style="flex:1;padding:10px;background:#1a1a18;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;">Sauvegarder</button>
-    </div>
-  </div>
-</div>
-
-<script>
-var saVariantPk = null, saSize = null, saCount = 0, saThreshold = 3;
-
-async function openSizeAlert(variantPk, size, count) {
-  saVariantPk = variantPk; saSize = size; saCount = count;
-  document.getElementById('sa-info').textContent = 'Taille ' + size + ' — ' + count + ' unités en stock';
-  // Fetch current threshold
-  try {
-    var res = await fetch('/api/variants/' + variantPk + '/size-alert/' + encodeURIComponent(size) + '/get/');
-    var data = await res.json();
-    saThreshold = data.threshold || 3;
-  } catch(e) { saThreshold = 3; }
-  document.getElementById('sa-val').value = saThreshold;
-  document.getElementById('sa-overlay').style.display = 'flex';
-}
-
-function closeSA() { document.getElementById('sa-overlay').style.display = 'none'; }
-
-async function saveSA() {
-  try {
-    saThreshold = parseInt(document.getElementById('sa-val').value) || 0;
-  var res = await fetch('/api/variants/' + saVariantPk + '/size-alert/' + encodeURIComponent(saSize) + '/', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({threshold: saThreshold})
-    });
-    var data = await res.json();
-    if (data.status === 'ok') { closeSA(); location.reload(); }
-    else alert(data.message);
-  } catch(e) { alert('Erreur réseau.'); }
-}
-</script>
+<!-- (Old per-size threshold modal removed — alerts are now predictive based on 7-day net consumption.) -->
 
 <script>
 var curFilter = 'all';

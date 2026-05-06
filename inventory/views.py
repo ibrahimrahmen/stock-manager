@@ -1542,27 +1542,44 @@ def _send_email(subject, body):
         return False
 
 def _send_low_stock_email():
-    """Send low stock report email."""
+    """Send low stock report email — predictive (size will run out in <10 days)."""
+    from .models import compute_size_forecast, ALERT_DAYS
     products = Product.objects.prefetch_related("variants__units").all()
     low_items = []
     for product in products:
         stock = sum(v.total_stock for v in product.variants.all())
         if stock <= product.alert_threshold:
-            low_items.append({"name": product.name, "code": product.code, "stock": stock, "threshold": product.alert_threshold})
-        # Check size alerts
+            low_items.append({
+                "name": product.name, "code": product.code,
+                "stock": stock, "info": f"seuil produit: {product.alert_threshold}",
+            })
+        # Check predictive per-size alerts
         for variant in product.variants.all():
-            for alert in variant.size_alerts.all():
-                current = ProductUnit.objects.filter(variant=variant, size=alert.size, status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)).count()
-                if current <= alert.threshold:
-                    low_items.append({"name": f"{product.name} {variant.color_label} taille {alert.size}", "code": product.code, "stock": current, "threshold": alert.threshold})
+            sizes = set(variant.units.values_list("size", flat=True).distinct())
+            for size in sizes:
+                f = compute_size_forecast(variant, size)
+                if f["is_triggered"] and f["current_stock"] > 0:
+                    if f["days_of_cover"] is not None:
+                        info = f"~{f['days_of_cover']}j restants à {f['daily_rate']}/jour"
+                    else:
+                        info = "stock 0"
+                    low_items.append({
+                        "name": f"{product.name} {variant.color_label} taille {size}",
+                        "code": product.code,
+                        "stock": f["current_stock"],
+                        "info": info,
+                    })
 
     if not low_items:
         return False
 
-    lines = "\n".join([f"- {item['name']} ({item['code']}): {item['stock']} unités (seuil: {item['threshold']})" for item in low_items])
+    lines = "\n".join(
+        f"- {item['name']} ({item['code']}): {item['stock']} unités ({item['info']})"
+        for item in low_items
+    )
     body = f"""Rapport de stock bas — {timezone.now().strftime('%d/%m/%Y %H:%M')}
 
-Les produits suivants ont un stock bas :
+Les produits suivants ont un stock bas (alerte si moins de {ALERT_DAYS} jours de couverture) :
 
 {lines}
 
@@ -1827,32 +1844,34 @@ def products_list(request):
     total_shipped = ProductUnit.objects.filter(status=ProductUnit.SHIPPED).count()
     total_paid = ProductUnit.objects.filter(status=ProductUnit.PAID).count()
 
-    # Get all size alerts
-    size_alerts = {}
-    for alert in SizeAlert.objects.select_related("variant").all():
-        key = (alert.variant_id, alert.size)
-        size_alerts[key] = alert.threshold
+    from .models import compute_size_forecast
 
-    # Calculate low stock sizes per product
+    # Calculate low stock sizes per product (predictive: days-of-cover < 10)
     products_data = []
     for product in products:
         stock = sum(v.total_stock for v in product.variants.all())
         is_low = stock <= product.alert_threshold
 
-        # Find low/zero sizes using SizeAlert thresholds
+        # Find low/zero sizes using predictive forecast
         low_sizes = []
         zero_sizes = []
         for variant in product.variants.all():
-                size_map = {}
-                for unit in variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)):
-                    size_map[unit.size] = size_map.get(unit.size, 0) + 1
-                for size, count in size_map.items():
-                    threshold = size_alerts.get((variant.pk, size), None)
-                    if threshold is not None:
-                        if count == 0 and size not in zero_sizes:
-                            zero_sizes.append(size)
-                        elif count <= threshold and size not in low_sizes and size not in zero_sizes:
-                            low_sizes.append(size)
+            size_map = {}
+            for unit in variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)):
+                size_map[unit.size] = size_map.get(unit.size, 0) + 1
+            # Also include sizes with units in any status, so we can flag zero stock
+            all_sizes = set(size_map.keys()) | set(
+                variant.units.values_list("size", flat=True).distinct()
+            )
+            for size in all_sizes:
+                count = size_map.get(size, 0)
+                if count == 0:
+                    if size not in zero_sizes:
+                        zero_sizes.append(size)
+                else:
+                    forecast = compute_size_forecast(variant, size)
+                    if forecast["is_triggered"] and size not in low_sizes:
+                        low_sizes.append(size)
 
         products_data.append({
             "product": product,
@@ -1875,6 +1894,7 @@ def products_list(request):
 @login_required(login_url="/login/")
 def product_detail(request, pk):
     product = get_object_or_404(Product, pk=pk)
+    from .models import compute_size_forecast
     variants = product.variants.prefetch_related("units").all()
 
     # Build size breakdown per variant — only available units (in_stock + returned)
@@ -1887,9 +1907,16 @@ def product_detail(request, pk):
             size_map[size] = 0
         for unit in variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)):
             size_map[unit.size] = size_map.get(unit.size, 0) + 1
+
+        # Predictive forecast per size — feeds the alert UI
+        size_forecasts = {}
+        for size in size_map.keys():
+            size_forecasts[size] = compute_size_forecast(variant, size)
+
         variants_data.append({
             "variant": variant,
             "size_map": size_map,
+            "size_forecasts": size_forecasts,
             "total_stock": variant.total_stock,
             "all_units": variant.units.all(),
         })
