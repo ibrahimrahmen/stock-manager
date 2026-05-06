@@ -10,6 +10,8 @@ class Product(models.Model):
     buy_price = models.DecimalField(max_digits=10, decimal_places=3, default=0)
     sell_price = models.DecimalField(max_digits=10, decimal_places=3, default=0)
     alert_threshold = models.PositiveIntegerField(default=5)
+    alert_disabled = models.BooleanField(default=False, help_text="Skip low-stock alerts for this product (still active otherwise)")
+    archived = models.BooleanField(default=False, help_text="Retired product — hidden from lists and emails, but scanning still works")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

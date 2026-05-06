@@ -47,6 +47,7 @@ urlpatterns = [
     path("admin-panel/", views.admin_panel, name="admin_panel"),
     path("revenue/", views.revenue, name="revenue"),
     path("products/<int:pk>/", views.product_detail, name="product_detail"),
+    path("api/products/<int:pk>/toggle-flag/", views.api_toggle_product_flag, name="api_toggle_product_flag"),
     path("api/products/<int:pk>/check-gaps/", views.api_check_barcode_gaps, name="api_check_barcode_gaps"),
     path("search/", views.search, name="search"),
     path("api/search/", views.api_search, name="api_search"),

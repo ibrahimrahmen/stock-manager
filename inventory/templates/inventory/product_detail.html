@@ -33,6 +33,11 @@
     .badge{font-size:10px;padding:2px 8px;border-radius:10px;}
     .badge-ok{background:var(--green-bg);color:var(--green);}
     .badge-low{background:var(--amber-bg);color:var(--amber);}
+    .badge-archived{background:#6b6b6b;color:#fff;margin-left:8px;}
+    .badge-muted{background:#a89066;color:#fff;margin-left:8px;}
+    .adm-btn{font-size:12px;padding:8px 14px;border-radius:8px;border:0.5px solid var(--border);background:#fff;color:var(--text);cursor:pointer;transition:all .15s;}
+    .adm-btn:hover{background:var(--text);color:#fff;border-color:var(--text);}
+    .adm-btn:disabled{opacity:0.5;cursor:wait;}
     .badge-out{background:var(--red-bg);color:var(--red);}
     .size-grid{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
     .size-chip{display:flex;flex-direction:column;align-items:center;background:var(--bg);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;min-width:44px;position:relative;}
@@ -125,9 +130,23 @@
   <div class="topbar">
     <a href="{% url 'dashboard' %}" class="back">← Dashboard</a>
     <div>
-      <h1>{{ product.name }}</h1>
+      <h1>{{ product.name }}
+        {% if product.archived %}<span class="badge badge-archived">Archivé</span>{% endif %}
+        {% if product.alert_disabled %}<span class="badge badge-muted">Alertes désactivées</span>{% endif %}
+      </h1>
       <div class="meta">Code : {{ product.code }}{% if product.category %} · {{ product.category }}{% endif %} · Achat {{ product.buy_price|floatformat:3 }} TND · Vente {{ product.sell_price|floatformat:3 }} TND</div>
     </div>
+    {% if request.user.is_superuser %}
+    <div class="admin-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="adm-btn" onclick="toggleFlag('alert_disabled', this)" data-state="{{ product.alert_disabled|yesno:'on,off' }}">
+        {% if product.alert_disabled %}🔔 Réactiver alertes{% else %}🔕 Désactiver alertes{% endif %}
+      </button>
+      <button class="adm-btn" onclick="toggleFlag('archived', this)" data-state="{{ product.archived|yesno:'on,off' }}">
+        {% if product.archived %}📤 Désarchiver{% else %}📦 Archiver{% endif %}
+      </button>
+    </div>
+    {% endif %}
+  </div>
   </div>
 
   <div class="sec">Stock par variante et taille</div>
@@ -219,6 +238,32 @@
 </div>
 
 <!-- (Old per-size threshold modal removed — alerts are now predictive based on 7-day net consumption.) -->
+
+<script>
+async function toggleFlag(flag, btn) {
+  if (!confirm(flag === 'archived' ? 'Archiver/désarchiver ce produit ?' : 'Activer/désactiver les alertes pour ce produit ?')) return;
+  btn.disabled = true;
+  var original = btn.textContent;
+  btn.textContent = '...';
+  try {
+    var res = await fetch('/api/products/{{ product.pk }}/toggle-flag/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({flag: flag})
+    });
+    var data = await res.json();
+    if (data.status === 'ok') {
+      location.reload();
+    } else {
+      alert(data.message || 'Erreur.');
+      btn.textContent = original; btn.disabled = false;
+    }
+  } catch(e) {
+    alert('Erreur réseau.');
+    btn.textContent = original; btn.disabled = false;
+  }
+}
+</script>
 
 <script>
 var curFilter = 'all';

@@ -796,11 +796,19 @@ def dashboard(request):
     orders_this_month = ShippingOrder.objects.filter(opened_at__year=now.year, opened_at__month=now.month).count()
     total_in_stock = ProductUnit.objects.filter(status=ProductUnit.IN_STOCK).count()
     total_shipped = ProductUnit.objects.filter(status=ProductUnit.SHIPPED).count()
-    low_stock = [p for p in products if p.total_stock <= p.alert_threshold]
+    low_stock = [
+        p for p in products
+        if p.total_stock <= p.alert_threshold and not p.alert_disabled and not p.archived
+    ]
 
-    # Size alerts
+    # Size alerts — skip muted/archived parents
     from .models import SizeAlert
-    size_alerts = [sa for sa in SizeAlert.objects.select_related("variant__product").all() if sa.is_triggered]
+    size_alerts = [
+        sa for sa in SizeAlert.objects.select_related("variant__product").all()
+        if sa.is_triggered
+        and not sa.variant.product.alert_disabled
+        and not sa.variant.product.archived
+    ]
     total_products = products.count()
 
     # Alerts: shipped units that belong to paid orders = waiting to come back
@@ -1542,9 +1550,12 @@ def _send_email(subject, body):
         return False
 
 def _send_low_stock_email():
-    """Send low stock report email — predictive (size will run out in <10 days)."""
+    """Send low stock report email — predictive (size will run out in <10 days).
+    Skips products with alert_disabled=True or archived=True."""
     from .models import compute_size_forecast, ALERT_DAYS
-    products = Product.objects.prefetch_related("variants__units").all()
+    products = Product.objects.filter(
+        alert_disabled=False, archived=False
+    ).prefetch_related("variants__units")
     low_items = []
     for product in products:
         stock = sum(v.total_stock for v in product.variants.all())
@@ -1839,7 +1850,13 @@ def api_navex_sync(request):
 
 
 def products_list(request):
-    products = Product.objects.prefetch_related("variants__units").all()
+    show_archived = request.GET.get("archived") == "1"
+    products_qs = Product.objects.prefetch_related("variants__units")
+    if show_archived:
+        products_qs = products_qs.filter(archived=True)
+    else:
+        products_qs = products_qs.filter(archived=False)
+    products = products_qs.all()
     total_available = ProductUnit.objects.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)).count()
     total_shipped = ProductUnit.objects.filter(status=ProductUnit.SHIPPED).count()
     total_paid = ProductUnit.objects.filter(status=ProductUnit.PAID).count()
@@ -1850,28 +1867,29 @@ def products_list(request):
     products_data = []
     for product in products:
         stock = sum(v.total_stock for v in product.variants.all())
-        is_low = stock <= product.alert_threshold
+        is_low = stock <= product.alert_threshold and not product.alert_disabled
 
-        # Find low/zero sizes using predictive forecast
+        # Find low/zero sizes using predictive forecast — skipped entirely for muted products
         low_sizes = []
         zero_sizes = []
-        for variant in product.variants.all():
-            size_map = {}
-            for unit in variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)):
-                size_map[unit.size] = size_map.get(unit.size, 0) + 1
-            # Also include sizes with units in any status, so we can flag zero stock
-            all_sizes = set(size_map.keys()) | set(
-                variant.units.values_list("size", flat=True).distinct()
-            )
-            for size in all_sizes:
-                count = size_map.get(size, 0)
-                if count == 0:
-                    if size not in zero_sizes:
-                        zero_sizes.append(size)
-                else:
-                    forecast = compute_size_forecast(variant, size)
-                    if forecast["is_triggered"] and size not in low_sizes:
-                        low_sizes.append(size)
+        if not product.alert_disabled:
+            for variant in product.variants.all():
+                size_map = {}
+                for unit in variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)):
+                    size_map[unit.size] = size_map.get(unit.size, 0) + 1
+                # Also include sizes with units in any status, so we can flag zero stock
+                all_sizes = set(size_map.keys()) | set(
+                    variant.units.values_list("size", flat=True).distinct()
+                )
+                for size in all_sizes:
+                    count = size_map.get(size, 0)
+                    if count == 0:
+                        if size not in zero_sizes:
+                            zero_sizes.append(size)
+                    else:
+                        forecast = compute_size_forecast(variant, size)
+                        if forecast["is_triggered"] and size not in low_sizes:
+                            low_sizes.append(size)
 
         products_data.append({
             "product": product,
@@ -1888,6 +1906,8 @@ def products_list(request):
         "total_available": total_available,
         "total_shipped": total_shipped,
         "total_paid": total_paid,
+        "show_archived": show_archived,
+        "archived_count": Product.objects.filter(archived=True).count(),
     })
 
 
@@ -1925,6 +1945,33 @@ def product_detail(request, pk):
         "product": product,
         "variants": variants,
         "variants_data": variants_data,
+    })
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_toggle_product_flag(request, pk):
+    """Toggle alert_disabled or archived on a product. Admin-only."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+    flag = data.get("flag")
+    if flag not in ("alert_disabled", "archived"):
+        return JsonResponse({"status": "error", "message": "Flag invalide."}, status=400)
+    product = get_object_or_404(Product, pk=pk)
+    new_value = bool(data.get("value", not getattr(product, flag)))
+    setattr(product, flag, new_value)
+    product.save(update_fields=[flag])
+    return JsonResponse({
+        "status": "ok",
+        "flag": flag,
+        "value": new_value,
+        "alert_disabled": product.alert_disabled,
+        "archived": product.archived,
     })
 
 
