@@ -40,6 +40,9 @@
     .size-chip.has .sz-n,.size-chip.has .sz-l{color:var(--green);}
     .size-chip.low-forecast{background:#fff7e6 !important;border-color:#f0c674 !important;animation:pulse-low 2s ease-in-out infinite;}
     .size-chip.low-forecast .sz-n,.size-chip.low-forecast .sz-l{color:#8a5a00 !important;}
+    .size-chip.out{background:#fdecea !important;border-color:#e8a8a4 !important;animation:pulse-out 1.5s ease-in-out infinite;}
+    .size-chip.out .sz-n,.size-chip.out .sz-l{color:#a8261d !important;}
+    @keyframes pulse-out{0%,100%{box-shadow:0 0 0 0 rgba(168,38,29,0.0);}50%{box-shadow:0 0 0 5px rgba(168,38,29,0.25);}}
     .size-chip .sz-warn{position:absolute;top:-6px;right:-6px;background:#d94f4e;color:#fff;border-radius:50%;font-size:10px;width:14px;height:14px;display:flex;align-items:center;justify-content:center;font-weight:700;}
     @keyframes pulse-low{0%,100%{box-shadow:0 0 0 0 rgba(217,79,78,0.0);}50%{box-shadow:0 0 0 4px rgba(217,79,78,0.18);}}
     .sz-n{font-size:16px;font-weight:500;}
@@ -143,11 +146,11 @@
         <div class="size-grid">
           {% for size, count in vd.size_map.items %}
           {% with forecast=vd.size_forecasts|get_item:size %}
-          <div class="size-chip {% if count > 0 %}has{% endif %} {% if forecast.is_triggered and count > 0 %}low-forecast{% endif %}"
-            title="{% if forecast.daily_rate > 0 %}~{{ forecast.daily_rate }}/jour · {{ forecast.days_of_cover }}j de stock{% else %}Aucune vente récente{% endif %}">
+          <div class="size-chip {% if count > 0 %}has{% endif %} {% if count == 0 %}out{% elif forecast.is_triggered %}low-forecast{% endif %}"
+            title="{% if count == 0 %}Rupture de stock{% elif forecast.daily_rate > 0 %}~{{ forecast.daily_rate }}/jour · {{ forecast.days_of_cover }}j de stock{% else %}Aucune vente récente{% endif %}">
             <span class="sz-n">{{ count }}</span>
             <span class="sz-l">{{ size }}</span>
-            {% if forecast.is_triggered and count > 0 %}<span class="sz-warn" title="Stock bas — environ {{ forecast.days_of_cover }} jours">⚠</span>{% endif %}
+            {% if count == 0 %}<span class="sz-warn" title="Rupture de stock">!</span>{% elif forecast.is_triggered %}<span class="sz-warn" title="Stock bas — environ {{ forecast.days_of_cover }} jours">⚠</span>{% endif %}
           </div>
           {% endwith %}
           {% endfor %}
