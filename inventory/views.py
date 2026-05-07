@@ -808,6 +808,24 @@ def home_dispatcher(request):
 
 @login_required(login_url="/login/")
 def dashboard(request):
+    # Determine viewing mode (which bubble was clicked).
+    # Admins/superusers always see the full dashboard ("all").
+    # Non-admin users without a view param get bounced back to the bubble page.
+    view_mode = request.GET.get("view", "")
+    if request.user.is_superuser:
+        view_mode = view_mode or "all"
+    else:
+        try:
+            role = request.user.profile.role
+        except Exception:
+            role = "office"
+        # Messages Team can only ever see the messages view
+        if role == "messages":
+            view_mode = "messages"
+        # Non-admin without an explicit view → back to bubble picker
+        if view_mode not in ("shipping", "office", "messages"):
+            return redirect("home")
+
     products = Product.objects.prefetch_related("variants__units").all()
     open_order = ShippingOrder.objects.filter(status=ShippingOrder.OPEN).first()
     recent_orders = ShippingOrder.objects.order_by("-opened_at")[:10]
@@ -842,6 +860,7 @@ def dashboard(request):
         "low_stock": low_stock, "total_in_stock": total_in_stock,
         "total_shipped": total_shipped, "orders_this_month": orders_this_month,
         "pending_returns": waiting_return, "total_products": total_products, "size_alerts": size_alerts, "overdue_orders": overdue_orders,
+        "view_mode": view_mode,
     })
 
 

@@ -320,6 +320,9 @@
 <div class="topbar">
   <div class="logo">stock<span>.</span>manager</div>
   <div class="topbar-right">
+      {% if not request.user.is_superuser %}
+      <a href="{% url 'home' %}" style="font-size:12px;color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;">← Espaces</a>
+      {% endif %}
       <a href="{% url 'logout' %}" style="font-size:12px;color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;">Déconnexion</a>
     <div class="order-indicator">
       <div class="order-dot {% if open_order %}active{% endif %}"></div>
@@ -351,6 +354,7 @@
   <div class="bubbles">
 
     <!-- BUREAU + tous les autres voient Mes Produits -->
+    {% if view_mode == 'all' or view_mode == 'shipping' or view_mode == 'office' or view_mode == 'messages' %}
     <a href="{% url 'products_list' %}" class="bubble bubble-stock">
       <div class="bubble-icon">
         <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"/></svg>
@@ -361,9 +365,11 @@
       </div>
       <div class="bubble-arrow">→</div>
     </a>
+    {% endif %}
 
+    {% if view_mode == 'all' or view_mode == 'shipping' %}
     {% if request.user.is_staff %}
-    <!-- STOCK MANAGER + ADMIN -->
+    <!-- SHIPPING -->
     <a href="{% url 'shipping_scan' %}" class="bubble bubble-shipping">
       <div class="bubble-icon">
         <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z"/></svg>
@@ -407,7 +413,11 @@
       </div>
       <div class="bubble-arrow">→</div>
     </a>
+    {% endif %}{# end is_staff for shipping bubbles #}
+    {% endif %}{# end view_mode shipping #}
 
+    {# Recherche — visible in all views #}
+    {% if view_mode == 'all' or view_mode == 'shipping' or view_mode == 'office' or view_mode == 'messages' %}
     <a href="{% url 'search' %}" class="bubble bubble-stock" style="--before-bg:#1a5fa8;">
       <div class="bubble-icon" style="background:rgba(26,95,168,0.1);">
         <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg" style="stroke:#1a5fa8;"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
@@ -420,7 +430,23 @@
     </a>
     {% endif %}
 
-    <!-- À VÉRIFIER — staff only -->
+    {# OFFICE-only bubbles: À vérifier, Sync Navex, Ajouter commande (stub) #}
+    {% if view_mode == 'all' or view_mode == 'office' %}
+    {% if request.user.is_staff %}
+
+    <!-- AJOUTER COMMANDE — stub for now -->
+    <a href="#" onclick="alert('Ajout de commande — bientôt disponible'); return false;" class="bubble bubble-shipping" style="border-color:rgba(74,222,154,0.2);">
+      <div class="bubble-icon" style="background:rgba(74,222,154,0.1);">
+        <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg" style="stroke:#4ade9a;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+      </div>
+      <div>
+        <div class="bubble-title">Ajouter commande</div>
+        <div class="bubble-sub">Bientôt disponible</div>
+      </div>
+      <div class="bubble-arrow">→</div>
+    </a>
+
+    <!-- À VÉRIFIER -->
     <a href="{% url 'a_verifier' %}" class="bubble bubble-return" style="border-color:rgba(224,80,80,0.2);">
       <div class="bubble-icon" style="background:rgba(224,80,80,0.1);">
         <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg" style="stroke:#e05050;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
@@ -432,7 +458,7 @@
       <div class="bubble-arrow">→</div>
     </a>
 
-    <!-- NAVEX SYNC — staff only -->
+    <!-- NAVEX SYNC -->
     <a href="{% url 'navex_sync' %}" class="bubble bubble-stock" style="border-color:rgba(80,144,224,0.2);">
       <div class="bubble-icon" style="background:rgba(80,144,224,0.1);">
         <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" xmlns="http://www.w3.org/2000/svg" style="stroke:#5090e0;"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12"/></svg>
@@ -443,7 +469,8 @@
       </div>
       <div class="bubble-arrow">→</div>
     </a>
-
+    {% endif %}{# end is_staff for office bubbles #}
+    {% endif %}{# end view_mode office #}
     {% if request.user.is_superuser %}
     <!-- ADMIN SEULEMENT -->
     <a href="{% url 'revenue' %}" class="bubble bubble-shipping" style="border-color:rgba(61,186,138,0.2);">

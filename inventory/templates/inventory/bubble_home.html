@@ -208,45 +208,26 @@
 
       {% if not is_messages_team %}
       <!-- SHIPPING -->
-      <div class="bubble shipping">
+      <a href="{% url 'dashboard' %}?view=shipping" class="bubble shipping" style="text-decoration:none;color:inherit;display:block;">
         <div class="bubble-icon">🚚</div>
         <h2>Shipping</h2>
         <div class="subtitle">Stock, scan et retours</div>
-        <div class="bubble-links">
-          <a class="bubble-link" href="{% url 'products_list' %}"><span>Mes produits</span><span class="arrow">→</span></a>
-          <a class="bubble-link" href="{% url 'shipping_scan' %}"><span>Scan expédition</span><span class="arrow">→</span></a>
-          <a class="bubble-link" href="{% url 'shipping_scan' %}?mode=reception"><span>Ajouter stock</span><span class="arrow">→</span></a>
-          <a class="bubble-link" href="{% url 'return_scan' %}"><span>Retour / Échange</span><span class="arrow">→</span></a>
-          <a class="bubble-link" href="{% url 'search' %}"><span>Rechercher</span><span class="arrow">→</span></a>
-        </div>
-      </div>
+      </a>
 
       <!-- OFFICE -->
-      <div class="bubble office">
+      <a href="{% url 'dashboard' %}?view=office" class="bubble office" style="text-decoration:none;color:inherit;display:block;">
         <div class="bubble-icon">🏢</div>
         <h2>Office</h2>
         <div class="subtitle">Commandes et suivi</div>
-        <div class="bubble-links">
-          <!-- Add order is a stub for now — will be wired in a later phase -->
-          <a class="bubble-link" href="#" onclick="alert('Ajout de commande — bientôt disponible'); return false;"><span>Ajouter commande</span><span class="arrow">→</span></a>
-          <a class="bubble-link" href="{% url 'products_list' %}"><span>Mes produits</span><span class="arrow">→</span></a>
-          <a class="bubble-link" href="{% url 'search' %}"><span>Rechercher</span><span class="arrow">→</span></a>
-          <a class="bubble-link" href="{% url 'a_verifier' %}"><span>À vérifier</span><span class="arrow">→</span></a>
-          <a class="bubble-link" href="{% url 'navex_sync' %}"><span>Sync Navex</span><span class="arrow">→</span></a>
-        </div>
-      </div>
+      </a>
       {% endif %}
 
       <!-- MESSAGES TEAM -->
-      <div class="bubble messages {% if not is_messages_team and role != 'messages' %}{% endif %}">
+      <a href="{% url 'dashboard' %}?view=messages" class="bubble messages" style="text-decoration:none;color:inherit;display:block;">
         <div class="bubble-icon">💬</div>
         <h2>Messages Team</h2>
         <div class="subtitle">Consultation seule</div>
-        <div class="bubble-links">
-          <a class="bubble-link" href="{% url 'products_list' %}"><span>Mes produits</span><span class="arrow">→</span></a>
-          <a class="bubble-link" href="{% url 'search' %}"><span>Rechercher</span><span class="arrow">→</span></a>
-        </div>
-      </div>
+      </a>
 
     </div>
   </div>
