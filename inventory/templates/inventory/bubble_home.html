@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Manager</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f0d;
+      --surface: #1a1a17;
+      --surface2: #222220;
+      --border: rgba(255,255,255,0.08);
+      --text: #f0ede6;
+      --muted: #8a887f;
+      --green: #4ade9a;
+      --green-dim: rgba(74,222,154,0.15);
+      --amber: #f5a623;
+      --amber-dim: rgba(245,166,35,0.15);
+      --purple: #a78bfa;
+      --purple-dim: rgba(167,139,250,0.15);
+      --red: #f87171;
+    }
+
+    body {
+      background: var(--bg);
+      font-family: 'DM Sans', sans-serif;
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 18px 24px;
+      border-bottom: 0.5px solid var(--border);
+    }
+
+    .brand {
+      font-family: 'DM Serif Display', serif;
+      font-size: 22px;
+      letter-spacing: 0.02em;
+    }
+
+    .userbar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .userbar .role {
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: var(--surface2);
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .userbar a {
+      color: var(--muted);
+      text-decoration: none;
+    }
+
+    .userbar a:hover { color: var(--text); }
+
+    .container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+    }
+
+    .greeting {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    .greeting h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 36px;
+      font-weight: 400;
+      margin-bottom: 8px;
+    }
+
+    .greeting p {
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .bubbles {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+      width: 100%;
+      max-width: 1100px;
+    }
+
+    .bubble {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: 24px;
+      padding: 28px;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+      position: relative;
+    }
+
+    .bubble:hover {
+      border-color: rgba(255,255,255,0.15);
+    }
+
+    .bubble.disabled {
+      opacity: 0.45;
+      pointer-events: none;
+    }
+
+    .bubble-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      margin-bottom: 18px;
+    }
+
+    .bubble.shipping .bubble-icon { background: var(--green-dim); }
+    .bubble.office .bubble-icon { background: var(--amber-dim); }
+    .bubble.messages .bubble-icon { background: var(--purple-dim); }
+
+    .bubble h2 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 24px;
+      font-weight: 400;
+      margin-bottom: 4px;
+    }
+
+    .bubble .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+
+    .bubble-links {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .bubble-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 14px;
+      border-radius: 10px;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 14px;
+      transition: background 0.12s ease;
+    }
+
+    .bubble-link:hover {
+      background: var(--surface2);
+    }
+
+    .bubble-link .arrow {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    @media (max-width: 600px) {
+      .greeting h1 { font-size: 28px; }
+      .bubble { padding: 22px; }
+      .bubble h2 { font-size: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">Stock Manager</div>
+    <div class="userbar">
+      <span>{{ request.user.username }}</span>
+      <span class="role">{{ request.user.profile.get_role_display }}</span>
+      <a href="{% url 'logout' %}">Déconnexion</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="greeting">
+      <h1>Bonjour, {{ request.user.username }}</h1>
+      <p>Choisissez votre espace de travail</p>
+    </div>
+
+    <div class="bubbles">
+
+      {% if not is_messages_team %}
+      <!-- SHIPPING -->
+      <div class="bubble shipping">
+        <div class="bubble-icon">🚚</div>
+        <h2>Shipping</h2>
+        <div class="subtitle">Stock, scan et retours</div>
+        <div class="bubble-links">
+          <a class="bubble-link" href="{% url 'products_list' %}"><span>Mes produits</span><span class="arrow">→</span></a>
+          <a class="bubble-link" href="{% url 'shipping_scan' %}"><span>Scan expédition</span><span class="arrow">→</span></a>
+          <a class="bubble-link" href="{% url 'shipping_scan' %}?mode=reception"><span>Ajouter stock</span><span class="arrow">→</span></a>
+          <a class="bubble-link" href="{% url 'return_scan' %}"><span>Retour / Échange</span><span class="arrow">→</span></a>
+          <a class="bubble-link" href="{% url 'search' %}"><span>Rechercher</span><span class="arrow">→</span></a>
+        </div>
+      </div>
+
+      <!-- OFFICE -->
+      <div class="bubble office">
+        <div class="bubble-icon">🏢</div>
+        <h2>Office</h2>
+        <div class="subtitle">Commandes et suivi</div>
+        <div class="bubble-links">
+          <!-- Add order is a stub for now — will be wired in a later phase -->
+          <a class="bubble-link" href="#" onclick="alert('Ajout de commande — bientôt disponible'); return false;"><span>Ajouter commande</span><span class="arrow">→</span></a>
+          <a class="bubble-link" href="{% url 'products_list' %}"><span>Mes produits</span><span class="arrow">→</span></a>
+          <a class="bubble-link" href="{% url 'search' %}"><span>Rechercher</span><span class="arrow">→</span></a>
+          <a class="bubble-link" href="{% url 'a_verifier' %}"><span>À vérifier</span><span class="arrow">→</span></a>
+          <a class="bubble-link" href="{% url 'navex_sync' %}"><span>Sync Navex</span><span class="arrow">→</span></a>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- MESSAGES TEAM -->
+      <div class="bubble messages {% if not is_messages_team and role != 'messages' %}{% endif %}">
+        <div class="bubble-icon">💬</div>
+        <h2>Messages Team</h2>
+        <div class="subtitle">Consultation seule</div>
+        <div class="bubble-links">
+          <a class="bubble-link" href="{% url 'products_list' %}"><span>Mes produits</span><span class="arrow">→</span></a>
+          <a class="bubble-link" href="{% url 'search' %}"><span>Rechercher</span><span class="arrow">→</span></a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>

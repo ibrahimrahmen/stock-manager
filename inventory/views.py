@@ -194,7 +194,7 @@ def api_remove_from_order(request):
 
 def login_view(request):
     if request.user.is_authenticated:
-        return redirect('dashboard')
+        return redirect('home')
     if request.method == 'POST':
         username = request.POST.get('username')
         password = request.POST.get('password')
@@ -202,7 +202,7 @@ def login_view(request):
         user = authenticate(request, username=username, password=password)
         if user:
             login(request, user)
-            return redirect(next_url or 'dashboard')
+            return redirect(next_url or 'home')
         return render(request, 'inventory/login.html', {'form': type('F', (), {'errors': True})(), 'next': next_url})
     return render(request, 'inventory/login.html', {'next': request.GET.get('next', '/')})
 
@@ -786,6 +786,25 @@ def api_order_add_unit(request, pk):
 # ---------------------------------------------------------------------------
 # DASHBOARD & DETAIL VIEWS
 # ---------------------------------------------------------------------------
+
+@login_required(login_url="/login/")
+def home_dispatcher(request):
+    """Landing page at '/' — admins go to dashboard, everyone else sees the bubble menu."""
+    user = request.user
+    if user.is_superuser:
+        return redirect("dashboard")
+
+    # Determine role (default to office if no profile, e.g. legacy user)
+    try:
+        role = user.profile.role
+    except Exception:
+        role = "office"
+
+    return render(request, "inventory/bubble_home.html", {
+        "role": role,
+        "is_messages_team": role == "messages",
+    })
+
 
 @login_required(login_url="/login/")
 def dashboard(request):
