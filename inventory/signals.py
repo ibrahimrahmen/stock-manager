@@ -5,9 +5,21 @@ should add its own handler here rather than scattering log_action() calls
 through views (when possible).
 """
 from django.contrib.auth.signals import user_logged_in, user_logged_out, user_login_failed
+from django.contrib.auth.models import User
+from django.db.models.signals import post_save
 from django.dispatch import receiver
 
-from .models import AuditLog, log_action
+from .models import AuditLog, UserProfile, log_action
+
+
+@receiver(post_save, sender=User)
+def _create_profile(sender, instance, created, **kwargs):
+    """Every new user gets a Profile (default role = office)."""
+    if created:
+        UserProfile.objects.get_or_create(user=instance)
+    else:
+        # Make sure existing users always have a profile too — idempotent.
+        UserProfile.objects.get_or_create(user=instance)
 
 
 @receiver(user_logged_in)

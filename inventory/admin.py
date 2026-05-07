@@ -1,9 +1,37 @@
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
+from django.contrib.auth.models import User
 from .models import (
     Product, ProductVariant, ProductUnit,
     ShippingOrder, OrderItem, StockMovement, Payment, SizeAlert,
-    SalesPage, Customer, AuditLog,
+    SalesPage, Customer, AuditLog, UserProfile,
 )
+
+
+# --- User admin extension: show role inline on user edit page ---
+class UserProfileInline(admin.StackedInline):
+    model = UserProfile
+    can_delete = False
+    fk_name = "user"
+    verbose_name_plural = "Rôle"
+
+
+class CustomUserAdmin(DjangoUserAdmin):
+    inlines = [UserProfileInline]
+    list_display = ("username", "email", "get_role", "is_staff", "is_superuser", "is_active", "last_login")
+    list_filter = DjangoUserAdmin.list_filter + ("profile__role",)
+
+    def get_role(self, obj):
+        try:
+            return obj.profile.get_role_display()
+        except UserProfile.DoesNotExist:
+            return "—"
+    get_role.short_description = "Rôle"
+    get_role.admin_order_field = "profile__role"
+
+
+admin.site.unregister(User)
+admin.site.register(User, CustomUserAdmin)
 
 
 class ProductVariantInline(admin.TabularInline):

@@ -391,6 +391,31 @@ class Customer(models.Model):
 
 
 # ---------------------------------------------------------------------------
+# USER ROLES — non-superuser access scoping
+# Each User has one Profile with a role: shipping, office, or messages.
+# Superusers bypass roles entirely (see all features).
+# ---------------------------------------------------------------------------
+class UserProfile(models.Model):
+    SHIPPING = "shipping"
+    OFFICE   = "office"
+    MESSAGES = "messages"
+
+    ROLE_CHOICES = [
+        (SHIPPING, "Shipping"),
+        (OFFICE,   "Office"),
+        (MESSAGES, "Messages Team"),
+    ]
+
+    user = models.OneToOneField(
+        "auth.User", on_delete=models.CASCADE, related_name="profile",
+    )
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=OFFICE)
+
+    def __str__(self):
+        return f"{self.user.username} — {self.get_role_display()}"
+
+
+# ---------------------------------------------------------------------------
 # AUDIT LOG — records who did what, when.
 # Additive only. Every meaningful action writes one row here.
 # ---------------------------------------------------------------------------
