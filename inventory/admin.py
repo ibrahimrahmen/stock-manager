@@ -6,6 +6,7 @@ from .models import (
     ShippingOrder, OrderItem, StockMovement, Payment, SizeAlert,
     SalesPage, Customer, AuditLog, UserProfile,
     Region, Order, OrderLine,
+    Offer, OfferProduct, OrderOffer,
 )
 
 
@@ -197,3 +198,25 @@ class OrderAdmin(admin.ModelAdmin):
     autocomplete_fields = ("customer",)
     inlines = [OrderLineInline]
     date_hierarchy = "created_at"
+
+
+# --- V2 Phase 4-b: Offers ---
+class OfferProductInline(admin.TabularInline):
+    model = OfferProduct
+    extra = 0
+    autocomplete_fields = ("product",)
+
+
+@admin.register(Offer)
+class OfferAdmin(admin.ModelAdmin):
+    list_display = ("name", "bundle_price", "is_active", "created_at")
+    list_filter = ("is_active", "sales_pages")
+    search_fields = ("name",)
+    filter_horizontal = ("sales_pages",)
+    inlines = [OfferProductInline]
+
+
+@admin.register(OrderOffer)
+class OrderOfferAdmin(admin.ModelAdmin):
+    list_display = ("id", "order", "offer_name", "quantity", "bundle_price")
+    search_fields = ("order__id", "offer_name")

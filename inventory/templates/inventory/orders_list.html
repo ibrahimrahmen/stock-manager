@@ -19,37 +19,80 @@
 body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
 .topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
 .brand{font-family:'DM Serif Display',serif;font-size:22px;}
-.userbar{display:flex;gap:14px;font-size:13px;color:var(--muted);align-items:center;}
-.userbar a{color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;}
-.userbar a:hover{color:var(--text);}
-.container{padding:24px;max-width:1300px;margin:0 auto;}
-.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
-.page-title{font-family:'DM Serif Display',serif;font-size:28px;}
-.add-btn{background:var(--green);color:#0a0a08;padding:10px 18px;border-radius:10px;text-decoration:none;font-weight:500;font-size:14px;}
+.userbar{display:flex;gap:14px;align-items:center;}
+.userbar a{color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;font-size:13px;}
+.container{padding:20px;max-width:1500px;margin:0 auto;}
+.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;}
+.page-title{font-family:'DM Serif Display',serif;font-size:26px;}
+.muted{color:var(--muted);font-size:12px;}
+.add-btn{background:var(--green);color:#0a0a08;padding:9px 16px;border-radius:10px;border:none;font-weight:500;font-size:13px;cursor:pointer;}
 .add-btn:hover{background:#3acb88;}
-.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;}
-.chip{padding:7px 14px;border-radius:20px;border:0.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
+.add-btn:disabled{opacity:0.6;}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.chip{padding:6px 12px;border-radius:18px;border:0.5px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
 .chip:hover{background:var(--surface2);}
 .chip.active{background:var(--text);color:var(--bg);border-color:var(--text);}
-.chip .count{background:rgba(255,255,255,0.1);padding:1px 8px;border-radius:10px;font-size:11px;font-weight:500;}
+.chip .count{background:rgba(255,255,255,0.1);padding:1px 7px;border-radius:10px;font-size:11px;}
 .chip.active .count{background:rgba(0,0,0,0.15);}
-.table-wrap{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;overflow:hidden;}
+.table-wrap{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;overflow-x:auto;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
 thead{background:var(--surface2);}
-th{text-align:left;padding:12px 14px;font-weight:500;color:var(--muted);font-size:11px;letter-spacing:0.06em;text-transform:uppercase;}
-td{padding:12px 14px;border-top:0.5px solid var(--border);vertical-align:top;}
+th{text-align:left;padding:10px 12px;font-weight:500;color:var(--muted);font-size:11px;letter-spacing:0.05em;text-transform:uppercase;white-space:nowrap;}
+td{padding:10px 12px;border-top:0.5px solid var(--border);vertical-align:top;}
 tr:hover td{background:var(--surface2);}
-tr td a.row-link{color:var(--text);text-decoration:none;}
-tr td a.row-link:hover{text-decoration:underline;}
+a.row-link{color:var(--text);text-decoration:none;}
+a.row-link:hover{text-decoration:underline;}
 .status{padding:3px 9px;border-radius:10px;font-size:11px;font-weight:500;display:inline-block;}
 .status-non_confirmee{background:var(--red-dim);color:var(--red);}
 .status-confirmee{background:var(--green-dim);color:var(--green);}
 .status-injoignable{background:var(--amber-dim);color:var(--amber);}
 .status-pas_serieux{background:var(--purple-dim);color:var(--purple);}
 .status-annulee{background:rgba(120,120,120,0.2);color:var(--muted);text-decoration:line-through;}
-.muted{color:var(--muted);}
-.empty{text-align:center;padding:60px 20px;color:var(--muted);}
-.empty-cta{color:var(--green);text-decoration:none;font-weight:500;}
+tr.create-row{background:rgba(74,222,154,0.04);}
+tr.create-row td{border-top:0.5px solid var(--green);}
+tr.create-row input,tr.create-row select{
+  background:var(--surface2);border:0.5px solid var(--border);
+  color:var(--text);padding:6px 8px;border-radius:6px;font-size:12px;width:100%;font-family:inherit;
+}
+tr.create-row input:disabled,tr.create-row select:disabled{opacity:0.4;cursor:not-allowed;}
+tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:var(--green);}
+.add-articles-btn{background:var(--green);color:#0a0a08;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;}
+.add-articles-btn:disabled{opacity:0.4;cursor:not-allowed;}
+.cancel-btn{background:transparent;border:0.5px solid var(--border);color:var(--muted);padding:5px 8px;border-radius:6px;cursor:pointer;font-size:11px;}
+.cancel-btn:hover{color:var(--red);border-color:var(--red);}
+.save-btn{background:var(--green);color:#0a0a08;border:none;padding:6px 12px;border-radius:6px;font-weight:500;cursor:pointer;font-size:12px;}
+.save-btn:disabled{opacity:0.4;cursor:not-allowed;}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:none;z-index:100;align-items:center;justify-content:center;padding:20px;}
+.modal-overlay.show{display:flex;}
+.modal{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;width:100%;max-width:900px;max-height:90vh;overflow-y:auto;}
+.modal-head{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:0.5px solid var(--border);}
+.modal-title{font-family:'DM Serif Display',serif;font-size:22px;}
+.modal-close{background:transparent;border:none;color:var(--muted);font-size:22px;cursor:pointer;}
+.modal-body{padding:18px 22px;}
+.offer-block{background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px;}
+.offer-pick-row{display:grid;grid-template-columns:1fr 80px 30px;gap:10px;align-items:end;margin-bottom:10px;}
+.offer-pick-row label{font-size:11px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px;}
+.offer-pick-row select,.offer-pick-row input{background:var(--surface);border:0.5px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;width:100%;font-family:inherit;}
+.offer-products-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;}
+.offer-products-table th,.offer-products-table td{padding:6px 8px;text-align:left;}
+.offer-products-table th{color:var(--muted);font-size:10px;text-transform:uppercase;border-bottom:0.5px solid var(--border);font-weight:500;}
+.offer-products-table td{border-top:0.5px solid var(--border);}
+.offer-products-table select{background:var(--surface);border:0.5px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:12px;font-family:inherit;width:100%;}
+.stock-pill{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:500;}
+.stock-ok{background:var(--green-dim);color:var(--green);}
+.stock-low{background:var(--amber-dim);color:var(--amber);}
+.stock-out{background:var(--red-dim);color:var(--red);}
+.modal-foot{padding:16px 22px;border-top:0.5px solid var(--border);display:grid;grid-template-columns:repeat(4,1fr) auto;gap:14px;align-items:end;}
+.foot-field{display:flex;flex-direction:column;gap:4px;}
+.foot-field label{font-size:11px;color:var(--muted);text-transform:uppercase;}
+.foot-field input{background:var(--surface2);border:0.5px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;width:100%;font-family:inherit;}
+.foot-total{font-family:'DM Serif Display',serif;font-size:20px;color:var(--green);}
+.add-offer-btn{background:transparent;color:var(--green);border:0.5px dashed var(--green);padding:8px 14px;border-radius:8px;cursor:pointer;font-weight:500;font-size:12px;margin-top:6px;}
+.add-offer-btn:hover{background:var(--green-dim);}
+.remove-offer-btn{background:transparent;border:0.5px solid var(--red);color:var(--red);padding:4px 8px;border-radius:6px;cursor:pointer;font-size:11px;}
+.modal-validate{background:var(--green);color:#0a0a08;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:500;font-size:13px;}
+.error-box{background:var(--red-dim);color:var(--red);padding:8px 12px;border-radius:6px;font-size:12px;margin:8px 0;}
+.empty{text-align:center;padding:40px 20px;color:var(--muted);}
 </style>
 </head>
 <body>
@@ -57,6 +100,7 @@ tr td a.row-link:hover{text-decoration:underline;}
 <div class="topbar">
   <div class="brand">Stock Manager — Commandes</div>
   <div class="userbar">
+    {% if request.user.is_superuser %}<a href="{% url 'offers_manage' %}">Gérer les offres</a>{% endif %}
     {% if not request.user.is_superuser %}<a href="{% url 'home' %}">← Espaces</a>{% endif %}
     <a href="{% url 'logout' %}">Déconnexion</a>
   </div>
@@ -66,9 +110,9 @@ tr td a.row-link:hover{text-decoration:underline;}
   <div class="page-head">
     <div>
       <div class="page-title">Commandes</div>
-      <div class="muted" style="font-size:13px;margin-top:4px;">{{ total }} commande(s) au total</div>
+      <div class="muted">{{ total }} commande(s) au total</div>
     </div>
-    <a href="{% url 'order_create' %}" class="add-btn">+ Nouvelle commande</a>
+    <button class="add-btn" id="btn-new-order" onclick="openCreateRow()">+ Nouvelle commande</button>
   </div>
 
   <div class="chips">
@@ -84,13 +128,14 @@ tr td a.row-link:hover{text-decoration:underline;}
     <table>
       <thead>
         <tr>
-          <th>ID</th><th>Date</th><th>Page</th><th>Client</th><th>Adresse</th>
-          <th>Articles</th><th style="text-align:right;">Prix</th>
+          <th>ID</th><th>Date</th><th>PageFB</th><th>Nom & Téléphone</th>
+          <th>Ville & Adresse</th><th>Articles</th>
+          <th style="text-align:right;">Prix</th>
           <th>Statut</th><th>Barcode</th>
         </tr>
       </thead>
-      <tbody>
-      {% for o in orders %}
+      <tbody id="orders-tbody">
+        {% for o in orders %}
         <tr>
           <td><a class="row-link" href="{% url 'order_view' o.pk %}">#{{ o.id }}</a></td>
           <td class="muted">{{ o.created_at|date:"d/m H:i" }}</td>
@@ -108,16 +153,327 @@ tr td a.row-link:hover{text-decoration:underline;}
           <td><span class="status status-{{ o.status }}">{{ o.get_status_display }}</span></td>
           <td class="muted" style="font-family:monospace;font-size:11px;">{{ o.bordereau_barcode|default:"—" }}</td>
         </tr>
-      {% empty %}
-        <tr><td colspan="9" class="empty">
-          Aucune commande{% if status_filter %} pour ce statut{% endif %}.<br>
-          <a href="{% url 'order_create' %}" class="empty-cta">+ Créer la première commande</a>
-        </td></tr>
-      {% endfor %}
+        {% empty %}
+        <tr id="empty-row"><td colspan="9" class="empty">Aucune commande{% if status_filter %} pour ce statut{% endif %}.</td></tr>
+        {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+
+<!-- ARTICLES MODAL -->
+<div class="modal-overlay" id="articles-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">Ajouter des articles</div>
+      <button class="modal-close" onclick="closeArticlesModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="modal-error" class="error-box" style="display:none;"></div>
+      <div id="offer-blocks"></div>
+      <button type="button" class="add-offer-btn" onclick="addOfferBlock()">+ Ajouter une offre</button>
+    </div>
+    <div class="modal-foot">
+      <div class="foot-field">
+        <label>Prix Articles</label>
+        <input id="modal-articles-price" readonly value="0 DT" style="background:transparent;border:none;font-weight:500;">
+      </div>
+      <div class="foot-field">
+        <label>Prix Livraison</label>
+        <input id="modal-delivery" type="number" min="0" step="0.001" value="7" oninput="recalcModalTotal()">
+      </div>
+      <div class="foot-field">
+        <label>Remise</label>
+        <input id="modal-discount" type="number" min="0" step="0.001" value="0" oninput="recalcModalTotal()">
+      </div>
+      <div class="foot-field">
+        <label>Prix Total</label>
+        <div class="foot-total" id="modal-total">7 DT</div>
+      </div>
+      <button class="modal-validate" onclick="validateArticles()">✓ Valider</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SALES_PAGES = [
+  {% for p in sales_pages %}{ id: {{ p.id }}, name: "{{ p.name|escapejs }}" },{% endfor %}
+];
+const REGIONS = [
+  {% for r in regions %}{ id: {{ r.id }}, name: "{{ r.name|escapejs }}" },{% endfor %}
+];
+
+let creatingRow = false;
+let pickedPageId = null;
+let offersForPage = [];
+let offerCache = {};
+let modalOffers = [];
+
+function csrfToken() { return document.cookie.split('csrftoken=')[1]?.split(';')[0] || ''; }
+async function fetchJson(url, opts) { const r = await fetch(url, opts || {}); return r.json(); }
+
+function openCreateRow() {
+  if (creatingRow) return;
+  creatingRow = true;
+  document.getElementById('btn-new-order').disabled = true;
+  const tbody = document.getElementById('orders-tbody');
+  document.getElementById('empty-row')?.remove();
+  const tr = document.createElement('tr');
+  tr.className = 'create-row';
+  tr.id = 'create-row';
+  tr.innerHTML = `
+    <td><button class="cancel-btn" onclick="cancelCreateRow()">×</button></td>
+    <td class="muted">—</td>
+    <td>
+      <select id="cr-page" onchange="onPagePicked(this.value)" required>
+        <option value="">— Page —</option>
+        ${SALES_PAGES.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+      </select>
+    </td>
+    <td>
+      <input id="cr-name" type="text" placeholder="Nom" disabled>
+      <input id="cr-phone" type="tel" placeholder="Téléphone *" disabled style="margin-top:4px;" required>
+    </td>
+    <td>
+      <select id="cr-region" disabled>
+        <option value="">— Gouvernorat * —</option>
+        ${REGIONS.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
+      </select>
+      <input id="cr-ville" type="text" placeholder="Ville" disabled style="margin-top:4px;">
+      <input id="cr-address" type="text" placeholder="Adresse" disabled style="margin-top:4px;">
+    </td>
+    <td style="text-align:center;">
+      <button class="add-articles-btn" id="cr-articles" disabled onclick="openArticlesModal()" title="Ajouter des articles">+</button>
+      <div id="cr-articles-summary" class="muted" style="font-size:11px;margin-top:4px;"></div>
+    </td>
+    <td style="text-align:right;font-weight:500;" id="cr-total">0 DT</td>
+    <td><span class="status status-non_confirmee">Non confirmée</span></td>
+    <td><button class="save-btn" id="cr-save" disabled onclick="submitNewOrder()">Sauver</button></td>
+  `;
+  tbody.insertBefore(tr, tbody.firstChild);
+  document.getElementById('cr-page').focus();
+}
+
+function cancelCreateRow() {
+  document.getElementById('create-row')?.remove();
+  creatingRow = false;
+  pickedPageId = null;
+  offersForPage = [];
+  modalOffers = [];
+  document.getElementById('btn-new-order').disabled = false;
+}
+
+async function onPagePicked(pageId) {
+  pickedPageId = pageId || null;
+  const enable = !!pickedPageId;
+  ['cr-name','cr-phone','cr-region','cr-ville','cr-address','cr-articles']
+    .forEach(id => document.getElementById(id).disabled = !enable);
+  if (!enable) return;
+  try {
+    const data = await fetchJson(`/api/sales-pages/${pageId}/offers/`);
+    offersForPage = data.offers || [];
+    if (offersForPage.length === 0) {
+      alert("Aucune offre n'est attachée à cette page. Demandez à l'admin d'en ajouter via 'Gérer les offres'.");
+    }
+  } catch (e) { alert('Erreur : ' + e.message); }
+}
+
+function updateArticlesSummary() {
+  const summaryEl = document.getElementById('cr-articles-summary');
+  const totalEl = document.getElementById('cr-total');
+  const saveBtn = document.getElementById('cr-save');
+  if (!summaryEl) return;
+  if (modalOffers.length === 0) {
+    summaryEl.textContent = '';
+    totalEl.textContent = '0 DT';
+    saveBtn.disabled = true;
+    return;
+  }
+  const total = computeOrderTotal();
+  summaryEl.textContent = `${modalOffers.length} offre(s)`;
+  totalEl.textContent = total.toFixed(0) + ' DT';
+  saveBtn.disabled = false;
+}
+
+function openArticlesModal() {
+  if (offersForPage.length === 0) { alert("Aucune offre disponible pour cette page."); return; }
+  document.getElementById('modal-error').style.display = 'none';
+  document.getElementById('articles-modal').classList.add('show');
+  if (modalOffers.length === 0) addOfferBlock();
+  else renderOfferBlocks();
+  recalcModalTotal();
+}
+function closeArticlesModal() { document.getElementById('articles-modal').classList.remove('show'); }
+function addOfferBlock() { modalOffers.push({ offer_id: null, quantity: 1, products: [] }); renderOfferBlocks(); }
+function removeOfferBlock(idx) { modalOffers.splice(idx, 1); renderOfferBlocks(); }
+
+function renderOfferBlocks() {
+  const wrap = document.getElementById('offer-blocks');
+  wrap.innerHTML = modalOffers.map((mo, idx) => `
+    <div class="offer-block">
+      <div class="offer-pick-row">
+        <div>
+          <label>Offre</label>
+          <select onchange="onOfferPicked(${idx}, this.value)">
+            <option value="">— Choisir —</option>
+            ${offersForPage.map(o => `<option value="${o.id}" ${mo.offer_id == o.id ? 'selected' : ''}>${o.name} — ${o.bundle_price} DT</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Qté</label>
+          <input type="number" min="1" value="${mo.quantity}" onchange="modalOffers[${idx}].quantity=Math.max(1,parseInt(this.value)||1);recalcModalTotal()">
+        </div>
+        <div>${modalOffers.length > 1 ? `<button class="remove-offer-btn" onclick="removeOfferBlock(${idx})">×</button>` : ''}</div>
+      </div>
+      <div id="offer-products-${idx}">${renderOfferProducts(idx)}</div>
+    </div>
+  `).join('');
+}
+
+function renderOfferProducts(idx) {
+  const mo = modalOffers[idx];
+  if (!mo.offer_id) return '<div class="muted" style="font-size:11px;padding:6px 0;">Choisissez une offre pour voir les produits.</div>';
+  const detail = offerCache[mo.offer_id];
+  if (!detail) return '<div class="muted" style="font-size:11px;padding:6px 0;">Chargement...</div>';
+  return `
+    <table class="offer-products-table">
+      <thead><tr><th>Produit</th><th>Couleur</th><th>Taille</th><th style="text-align:center;">Stock</th></tr></thead>
+      <tbody>
+        ${detail.products.map((p, pIdx) => {
+          const pickedVariant = mo.products[pIdx]?.variant_id || '';
+          const pickedSize = mo.products[pIdx]?.size || '';
+          const variant = p.variants.find(v => v.id == pickedVariant);
+          const stock = variant && pickedSize ? (variant.stock_by_size[pickedSize] || 0) : null;
+          let stockClass = 'stock-ok'; if (stock === 0) stockClass='stock-out'; else if (stock !== null && stock <= 3) stockClass='stock-low';
+          return `
+            <tr>
+              <td>${p.product_name} ${p.quantity > 1 ? '×' + p.quantity : ''}</td>
+              <td><select onchange="onVariantPicked(${idx},${pIdx},${p.product_id},this.value)">
+                <option value="">—</option>
+                ${p.variants.map(v => `<option value="${v.id}" ${pickedVariant == v.id ? 'selected' : ''}>${v.color}</option>`).join('')}
+              </select></td>
+              <td><select onchange="onSizePicked(${idx},${pIdx},this.value)" ${!pickedVariant ? 'disabled' : ''}>
+                <option value="">—</option>
+                ${variant ? variant.sizes.map(s => `<option value="${s}" ${pickedSize == s ? 'selected' : ''}>${s}</option>`).join('') : ''}
+              </select></td>
+              <td style="text-align:center;">${stock !== null ? `<span class="stock-pill ${stockClass}">${stock}</span>` : '<span class="muted">—</span>'}</td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function onOfferPicked(idx, offerId) {
+  modalOffers[idx].offer_id = offerId ? parseInt(offerId) : null;
+  modalOffers[idx].products = [];
+  if (offerId && !offerCache[offerId]) {
+    try {
+      const data = await fetchJson(`/api/offers/${offerId}/`);
+      if (data.status === 'ok') offerCache[offerId] = data.offer;
+    } catch (e) { alert('Erreur: ' + e.message); }
+  }
+  if (offerId && offerCache[offerId]) {
+    modalOffers[idx].products = offerCache[offerId].products.map(p => ({
+      offer_product_id: p.offer_product_id,
+      product_id: p.product_id,
+      variant_id: null,
+      size: '',
+      quantity: p.quantity,
+    }));
+  }
+  renderOfferBlocks();
+  recalcModalTotal();
+}
+
+function onVariantPicked(offerIdx, prodIdx, productId, variantId) {
+  modalOffers[offerIdx].products[prodIdx].variant_id = variantId ? parseInt(variantId) : null;
+  modalOffers[offerIdx].products[prodIdx].size = '';
+  document.getElementById('offer-products-' + offerIdx).innerHTML = renderOfferProducts(offerIdx);
+}
+function onSizePicked(offerIdx, prodIdx, size) {
+  modalOffers[offerIdx].products[prodIdx].size = size;
+  document.getElementById('offer-products-' + offerIdx).innerHTML = renderOfferProducts(offerIdx);
+}
+
+function computeOrderTotal() {
+  const articles = modalOffers.reduce((sum, mo) => {
+    const detail = offerCache[mo.offer_id];
+    if (!detail) return sum;
+    return sum + (parseFloat(detail.bundle_price) * mo.quantity);
+  }, 0);
+  const delivery = parseFloat(document.getElementById('modal-delivery')?.value || '7') || 0;
+  const discount = parseFloat(document.getElementById('modal-discount')?.value || '0') || 0;
+  return Math.max(0, articles + delivery - discount);
+}
+
+function recalcModalTotal() {
+  const articles = modalOffers.reduce((sum, mo) => {
+    const detail = offerCache[mo.offer_id];
+    if (!detail) return sum;
+    return sum + (parseFloat(detail.bundle_price) * mo.quantity);
+  }, 0);
+  const delivery = parseFloat(document.getElementById('modal-delivery').value) || 0;
+  const discount = parseFloat(document.getElementById('modal-discount').value) || 0;
+  const total = Math.max(0, articles + delivery - discount);
+  document.getElementById('modal-articles-price').value = articles.toFixed(0) + ' DT';
+  document.getElementById('modal-total').textContent = total.toFixed(0) + ' DT';
+}
+
+function validateArticles() {
+  const errBox = document.getElementById('modal-error');
+  errBox.style.display = 'none';
+  for (const mo of modalOffers) {
+    if (!mo.offer_id) {
+      errBox.textContent = "Choisissez une offre dans chaque bloc.";
+      errBox.style.display = 'block';
+      return;
+    }
+    for (const p of mo.products) {
+      if (!p.variant_id || !p.size) {
+        errBox.textContent = "Choisissez la couleur et la taille pour chaque produit.";
+        errBox.style.display = 'block';
+        return;
+      }
+    }
+  }
+  closeArticlesModal();
+  updateArticlesSummary();
+}
+
+async function submitNewOrder() {
+  const phone = document.getElementById('cr-phone').value.trim();
+  const region = document.getElementById('cr-region').value;
+  if (!phone) { alert('Téléphone obligatoire.'); return; }
+  if (!region) { alert('Gouvernorat obligatoire.'); return; }
+  if (modalOffers.length === 0) { alert('Articles obligatoires.'); return; }
+  const payload = {
+    phone,
+    name: document.getElementById('cr-name').value.trim(),
+    sales_page: parseInt(pickedPageId),
+    region: parseInt(region),
+    ville: document.getElementById('cr-ville').value.trim(),
+    localite: '',
+    address: document.getElementById('cr-address').value.trim(),
+    delivery_fee: parseFloat(document.getElementById('modal-delivery').value) || 7,
+    discount: parseFloat(document.getElementById('modal-discount').value) || 0,
+    offers: modalOffers,
+  };
+  const btn = document.getElementById('cr-save');
+  btn.disabled = true; btn.textContent = '...';
+  try {
+    const res = await fetch('/api/orders/create/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') window.location.reload();
+    else { alert(data.message || 'Erreur'); btn.disabled = false; btn.textContent = 'Sauver'; }
+  } catch (e) { alert('Erreur réseau : ' + e.message); btn.disabled = false; btn.textContent = 'Sauver'; }
+}
+</script>
 
 </body>
 </html>

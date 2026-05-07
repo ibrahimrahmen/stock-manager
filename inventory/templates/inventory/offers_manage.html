@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gérer les offres — Stock Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0f0f0d; --surface:#1a1a17; --surface2:#222220;
+  --border:rgba(255,255,255,0.08); --text:#f0ede6; --muted:#8a887f;
+  --green:#4ade9a; --green-dim:rgba(74,222,154,0.15);
+  --red:#f87171; --red-dim:rgba(248,113,113,0.15);
+  --amber:#f5a623;
+}
+body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
+.brand{font-family:'DM Serif Display',serif;font-size:22px;}
+.userbar{display:flex;gap:14px;align-items:center;}
+.userbar a{color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;font-size:13px;}
+.container{padding:24px;max-width:1100px;margin:0 auto;}
+.page-title{font-family:'DM Serif Display',serif;font-size:28px;margin-bottom:18px;}
+.add-btn{background:var(--green);color:#0a0a08;padding:10px 18px;border-radius:10px;border:none;font-weight:500;cursor:pointer;font-size:14px;}
+.card{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;padding:22px;margin-bottom:14px;}
+.card-head{display:flex;justify-content:space-between;align-items:start;gap:12px;}
+.offer-name{font-family:'DM Serif Display',serif;font-size:20px;}
+.offer-price{color:var(--green);font-weight:500;}
+.offer-meta{color:var(--muted);font-size:12px;margin-top:4px;}
+.products-list{margin-top:12px;border-top:0.5px solid var(--border);padding-top:12px;}
+.product-row{padding:6px 0;font-size:13px;display:flex;gap:8px;}
+.product-row .qty{color:var(--green);font-weight:500;}
+.btn-row{display:flex;gap:8px;}
+.btn-edit{background:transparent;border:0.5px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;}
+.btn-edit:hover{border-color:var(--text);}
+.btn-del{background:transparent;border:0.5px solid var(--red);color:var(--red);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:none;z-index:100;align-items:center;justify-content:center;padding:20px;}
+.modal-overlay.show{display:flex;}
+.modal{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;width:100%;max-width:700px;max-height:90vh;overflow-y:auto;}
+.modal-head{padding:18px 22px;border-bottom:0.5px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+.modal-title{font-family:'DM Serif Display',serif;font-size:22px;}
+.modal-close{background:transparent;border:none;color:var(--muted);font-size:22px;cursor:pointer;}
+.modal-body{padding:18px 22px;}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;}
+label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;}
+input,select{background:var(--surface2);border:0.5px solid var(--border);color:var(--text);padding:9px 12px;border-radius:6px;font-size:13px;font-family:inherit;}
+input:focus,select:focus{outline:none;border-color:var(--green);}
+.checkbox-list{display:flex;flex-wrap:wrap;gap:10px;background:var(--surface2);padding:10px;border-radius:8px;}
+.cbox{display:flex;align-items:center;gap:6px;font-size:13px;}
+.product-pick-row{display:grid;grid-template-columns:1fr 80px auto;gap:8px;margin-bottom:6px;}
+.add-product-btn{background:transparent;color:var(--green);border:0.5px dashed var(--green);padding:8px;border-radius:6px;cursor:pointer;font-size:12px;width:100%;margin-top:6px;}
+.modal-foot{padding:14px 22px;border-top:0.5px solid var(--border);display:flex;justify-content:flex-end;gap:8px;}
+.btn-save{background:var(--green);color:#0a0a08;border:none;padding:10px 18px;border-radius:8px;font-weight:500;cursor:pointer;}
+.btn-cancel{background:transparent;border:0.5px solid var(--border);color:var(--muted);padding:10px 18px;border-radius:8px;cursor:pointer;}
+.empty{text-align:center;padding:40px 20px;color:var(--muted);}
+.error{background:var(--red-dim);color:var(--red);padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;display:none;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">Gérer les offres</div>
+  <div class="userbar">
+    <a href="{% url 'orders_list' %}">← Commandes</a>
+    <a href="{% url 'dashboard' %}">Dashboard</a>
+    <a href="{% url 'logout' %}">Déconnexion</a>
+  </div>
+</div>
+
+<div class="container">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+    <div class="page-title">Offres</div>
+    <button class="add-btn" onclick="openCreate()">+ Nouvelle offre</button>
+  </div>
+
+  {% for offer in offers %}
+  <div class="card" data-offer-id="{{ offer.id }}">
+    <div class="card-head">
+      <div>
+        <div class="offer-name">{{ offer.name }} <span class="offer-price">— {{ offer.bundle_price|floatformat:0 }} DT</span></div>
+        <div class="offer-meta">
+          Pages : {% for p in offer.sales_pages.all %}<span>{{ p.name }}{% if not forloop.last %}, {% endif %}</span>{% empty %}<em>aucune page</em>{% endfor %}
+          {% if not offer.is_active %}· <span style="color:var(--amber);">INACTIVE</span>{% endif %}
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-edit" onclick='openEdit({{ offer.id }}, {{ offer.name|escapejs|safe|stringformat:"r" }}, {{ offer.bundle_price }}, {{ offer.is_active|yesno:"true,false" }}, [{% for p in offer.sales_pages.all %}{{ p.id }}{% if not forloop.last %},{% endif %}{% endfor %}], [{% for op in offer.products.all %}{ "product_id": {{ op.product.id }}, "quantity": {{ op.quantity }} }{% if not forloop.last %},{% endif %}{% endfor %}])'>Modifier</button>
+        <button class="btn-del" onclick="deleteOffer({{ offer.id }}, '{{ offer.name|escapejs }}')">Supprimer</button>
+      </div>
+    </div>
+    <div class="products-list">
+      {% for op in offer.products.all %}
+        <div class="product-row"><span class="qty">{{ op.quantity }}×</span> {{ op.product.name }}</div>
+      {% empty %}
+        <div class="muted" style="font-size:12px;color:var(--muted);">Aucun produit dans cette offre.</div>
+      {% endfor %}
+    </div>
+  </div>
+  {% empty %}
+  <div class="empty">
+    <div style="margin-bottom:10px;">Aucune offre créée.</div>
+    <button class="add-btn" onclick="openCreate()">Créer la première offre</button>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="offer-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="modal-title">Nouvelle offre</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="error" id="modal-err"></div>
+      <div class="field"><label>Nom *</label><input id="of-name" type="text" placeholder="ex: Tenue Camo"></div>
+      <div class="field"><label>Prix bundle *</label><input id="of-price" type="number" min="0" step="0.001" placeholder="96"></div>
+
+      <div class="field">
+        <label>Pages où cette offre apparaît</label>
+        <div class="checkbox-list">
+          {% for p in sales_pages %}
+            <label class="cbox"><input type="checkbox" name="sp" value="{{ p.id }}"> {{ p.name }}</label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Produits dans l'offre</label>
+        <div id="products-pick"></div>
+        <button type="button" class="add-product-btn" onclick="addProductPick()">+ Ajouter un produit</button>
+      </div>
+
+      <div class="field">
+        <label class="cbox"><input type="checkbox" id="of-active" checked> Active</label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-cancel" onclick="closeModal()">Annuler</button>
+      <button class="btn-save" id="btn-save-offer" onclick="saveOffer()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const PRODUCTS = [{% for p in products %}{ id: {{ p.id }}, name: "{{ p.name|escapejs }}" },{% endfor %}];
+let editingOfferId = null;
+let productPicks = [];
+
+function csrfToken() { return document.cookie.split('csrftoken=')[1]?.split(';')[0] || ''; }
+
+function renderProductPicks() {
+  const wrap = document.getElementById('products-pick');
+  wrap.innerHTML = productPicks.map((pp, idx) => `
+    <div class="product-pick-row">
+      <select onchange="productPicks[${idx}].product_id = parseInt(this.value)||null">
+        <option value="">— Choisir un produit —</option>
+        ${PRODUCTS.map(p => `<option value="${p.id}" ${pp.product_id == p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
+      </select>
+      <input type="number" min="1" value="${pp.quantity}" onchange="productPicks[${idx}].quantity = Math.max(1, parseInt(this.value)||1)">
+      <button class="btn-del" onclick="productPicks.splice(${idx},1); renderProductPicks();" style="padding:6px 10px;">×</button>
+    </div>
+  `).join('');
+}
+function addProductPick() { productPicks.push({ product_id: null, quantity: 1 }); renderProductPicks(); }
+
+function openCreate() {
+  editingOfferId = null;
+  document.getElementById('modal-title').textContent = 'Nouvelle offre';
+  document.getElementById('of-name').value = '';
+  document.getElementById('of-price').value = '';
+  document.getElementById('of-active').checked = true;
+  document.querySelectorAll('input[name="sp"]').forEach(c => c.checked = false);
+  productPicks = [];
+  renderProductPicks();
+  document.getElementById('modal-err').style.display = 'none';
+  document.getElementById('offer-modal').classList.add('show');
+}
+
+function openEdit(id, name, price, active, pageIds, products) {
+  editingOfferId = id;
+  document.getElementById('modal-title').textContent = 'Modifier l\'offre';
+  document.getElementById('of-name').value = name;
+  document.getElementById('of-price').value = price;
+  document.getElementById('of-active').checked = active;
+  document.querySelectorAll('input[name="sp"]').forEach(c => { c.checked = pageIds.includes(parseInt(c.value)); });
+  productPicks = products.map(p => ({ product_id: p.product_id, quantity: p.quantity }));
+  renderProductPicks();
+  document.getElementById('modal-err').style.display = 'none';
+  document.getElementById('offer-modal').classList.add('show');
+}
+
+function closeModal() { document.getElementById('offer-modal').classList.remove('show'); }
+
+async function saveOffer() {
+  const errBox = document.getElementById('modal-err');
+  errBox.style.display = 'none';
+  const name = document.getElementById('of-name').value.trim();
+  const price = parseFloat(document.getElementById('of-price').value) || 0;
+  if (!name) { errBox.textContent = 'Nom obligatoire.'; errBox.style.display='block'; return; }
+  const sp = Array.from(document.querySelectorAll('input[name="sp"]:checked')).map(c => parseInt(c.value));
+  const products = productPicks.filter(p => p.product_id).map(p => ({product_id: p.product_id, quantity: p.quantity}));
+
+  const payload = {
+    name, bundle_price: price,
+    is_active: document.getElementById('of-active').checked,
+    sales_page_ids: sp,
+    products,
+  };
+  const url = editingOfferId ? `/api/offers/${editingOfferId}/edit/` : '/api/offers/';
+  const btn = document.getElementById('btn-save-offer');
+  btn.disabled = true; btn.textContent = '...';
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-CSRFToken':csrfToken()},
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') { window.location.reload(); }
+    else { errBox.textContent = data.message || 'Erreur.'; errBox.style.display='block'; btn.disabled=false; btn.textContent='Enregistrer'; }
+  } catch (e) { errBox.textContent='Réseau : '+e.message; errBox.style.display='block'; btn.disabled=false; btn.textContent='Enregistrer'; }
+}
+
+async function deleteOffer(id, name) {
+  if (!confirm(`Supprimer l'offre "${name}" ?`)) return;
+  try {
+    const res = await fetch(`/api/offers/${id}/delete/`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken()},
+    });
+    const data = await res.json();
+    if (data.status === 'ok') window.location.reload();
+    else alert(data.message || 'Erreur');
+  } catch (e) { alert('Réseau : '+e.message); }
+}
+</script>
+
+</body>
+</html>

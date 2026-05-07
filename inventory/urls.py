@@ -58,4 +58,15 @@ urlpatterns = [
     path("orders/add/", views.order_create, name="order_create"),
     path("orders/<int:pk>/", views.order_view, name="order_view"),
     path("api/orders/<int:pk>/status/", views.api_order_change_status, name="api_order_change_status"),
+
+    # V2 — Inline create + offer APIs
+    path("api/orders/create/", views.api_create_order_inline, name="api_create_order_inline"),
+    path("api/sales-pages/<int:page_id>/offers/", views.api_offers_for_page, name="api_offers_for_page"),
+    path("api/offers/<int:offer_id>/", views.api_offer_detail, name="api_offer_detail"),
+
+    # V2 — Admin: manage offers
+    path("admin-offers/", views.offers_manage, name="offers_manage"),
+    path("api/offers/", views.api_offer_create, name="api_offer_create"),
+    path("api/offers/<int:pk>/edit/", views.api_offer_update, name="api_offer_update"),
+    path("api/offers/<int:pk>/delete/", views.api_offer_delete, name="api_offer_delete"),
 ]

@@ -2339,14 +2339,15 @@ def _orders_role_check(request):
 def orders_list(request):
     if not _orders_role_check(request):
         return redirect("home")
-    from .models import Order
+    from .models import Order, SalesPage, Region
     status_filter = request.GET.get("status", "")
-    qs = Order.objects.select_related("customer", "region", "sales_page").prefetch_related("lines__product")
+    qs = Order.objects.select_related("customer", "region", "sales_page").prefetch_related(
+        "lines__product", "order_offers"
+    )
     if status_filter:
         qs = qs.filter(status=status_filter)
-    orders = qs[:500]  # cap to prevent slowness on huge tables
+    orders = qs[:500]
 
-    # Counts per status (for filter chips)
     from django.db.models import Count
     counts = dict(Order.objects.values_list("status").annotate(n=Count("id")))
     return render(request, "inventory/orders_list.html", {
@@ -2354,103 +2355,326 @@ def orders_list(request):
         "status_filter": status_filter,
         "counts": counts,
         "total": Order.objects.count(),
+        # Data needed by the inline-create row + modal
+        "sales_pages": SalesPage.objects.filter(is_active=True),
+        "regions": Region.objects.filter(is_active=True),
     })
 
 
 @login_required(login_url="/login/")
 def order_create(request):
+    """Legacy alias — redirects to orders list (inline-create lives there)."""
+    return redirect("orders_list")
+
+
+# ---- New inline-create flow APIs ------------------------------------------
+
+@login_required(login_url="/login/")
+def api_offers_for_page(request, page_id):
+    """Return active offers attached to a given SalesPage."""
     if not _orders_role_check(request):
-        return redirect("home")
-    from .models import Order, OrderLine, Customer, SalesPage, Region
-    if request.method == "POST":
-        return _save_new_order(request)
-    return render(request, "inventory/order_create.html", {
-        "sales_pages": SalesPage.objects.filter(is_active=True),
-        "regions": Region.objects.filter(is_active=True),
-        "products": Product.objects.filter(archived=False).prefetch_related("variants"),
+        return JsonResponse({"status": "error"}, status=403)
+    from .models import Offer
+    offers = Offer.objects.filter(is_active=True, sales_pages__id=page_id).distinct()
+    return JsonResponse({
+        "status": "ok",
+        "offers": [
+            {"id": o.id, "name": o.name, "bundle_price": str(o.bundle_price)}
+            for o in offers
+        ],
     })
 
 
-@require_POST
-def _save_new_order(request):
-    from .models import Order, OrderLine, Customer, SalesPage, Region, log_action, AuditLog
+@login_required(login_url="/login/")
+def api_offer_detail(request, offer_id):
+    """Return an offer's products with each product's variants and sizes-with-stock."""
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error"}, status=403)
+    from .models import Offer
     try:
-        # Customer
-        phone = (request.POST.get("phone") or "").strip()
+        offer = Offer.objects.prefetch_related("products__product__variants__units").get(pk=offer_id)
+    except Offer.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Offre introuvable."}, status=404)
+
+    products_data = []
+    for op in offer.products.all():
+        product = op.product
+        variants = []
+        for v in product.variants.all():
+            # stock_by_size = how many in_stock or returned units per size
+            stock_by_size = {}
+            sizes_seen = []
+            for u in v.units.all():
+                if u.status in (ProductUnit.IN_STOCK, ProductUnit.RETURNED):
+                    stock_by_size[u.size] = stock_by_size.get(u.size, 0) + 1
+                if u.size and u.size not in sizes_seen:
+                    sizes_seen.append(u.size)
+            variants.append({
+                "id": v.id,
+                "color": v.color_label or v.color_name,
+                "sizes": sizes_seen,
+                "stock_by_size": stock_by_size,
+            })
+        products_data.append({
+            "offer_product_id": op.id,
+            "product_id": product.id,
+            "product_name": product.name,
+            "quantity": op.quantity,
+            "variants": variants,
+        })
+
+    return JsonResponse({
+        "status": "ok",
+        "offer": {
+            "id": offer.id, "name": offer.name,
+            "bundle_price": str(offer.bundle_price),
+            "products": products_data,
+        },
+    })
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_create_order_inline(request):
+    """Save a new order from the inline-row form.
+
+    Expected JSON payload:
+    {
+      "phone": "...", "name": "...",
+      "sales_page": <id>, "region": <id>,
+      "ville": "...", "localite": "...", "address": "...",
+      "delivery_fee": 7, "discount": 0, "notes": "...",
+      "offers": [
+        {
+          "offer_id": 12, "quantity": 1,
+          "products": [
+            {"offer_product_id": 5, "product_id": 3, "variant_id": 8, "size": "M", "quantity": 1},
+            ...
+          ]
+        }, ...
+      ]
+    }
+    """
+    from .models import (
+        Order, OrderLine, OrderOffer, Offer, Customer, SalesPage, Region,
+        log_action, AuditLog,
+    )
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+
+    try:
+        phone = (data.get("phone") or "").strip()
         if not phone:
             return JsonResponse({"status": "error", "message": "Téléphone obligatoire."}, status=400)
-        name = (request.POST.get("name") or "").strip()
-        customer, created_customer = Customer.objects.get_or_create(
-            phone=phone, defaults={"name": name},
-        )
+
+        sales_page_id = data.get("sales_page")
+        if not sales_page_id:
+            return JsonResponse({"status": "error", "message": "Page obligatoire."}, status=400)
+
+        offers_payload = data.get("offers", [])
+        if not offers_payload:
+            return JsonResponse({"status": "error", "message": "Au moins une offre requise."}, status=400)
+
+        name = (data.get("name") or "").strip()
+        customer, _ = Customer.objects.get_or_create(phone=phone, defaults={"name": name})
         if name and customer.name != name:
             customer.name = name
             customer.save(update_fields=["name"])
 
-        # Region / address
-        region_id = request.POST.get("region") or None
-        ville = (request.POST.get("ville") or "").strip()
-        localite = (request.POST.get("localite") or "").strip()
-        address = (request.POST.get("address") or "").strip()
-        sales_page_id = request.POST.get("sales_page") or None
-
-        delivery_fee = Decimal(str(request.POST.get("delivery_fee") or "7"))
-        discount = Decimal(str(request.POST.get("discount") or "0"))
-        notes = (request.POST.get("notes") or "").strip()
-
-        # Lines come as parallel arrays: line_product[], line_variant[], line_size[], line_qty[], line_price[]
-        line_products = request.POST.getlist("line_product")
-        line_variants = request.POST.getlist("line_variant")
-        line_sizes    = request.POST.getlist("line_size")
-        line_qtys     = request.POST.getlist("line_qty")
-        line_prices   = request.POST.getlist("line_price")
-
-        if not line_products:
-            return JsonResponse({"status": "error", "message": "Au moins un article requis."}, status=400)
+        delivery_fee = Decimal(str(data.get("delivery_fee") or "7"))
+        discount = Decimal(str(data.get("discount") or "0"))
 
         with transaction.atomic():
             order = Order.objects.create(
                 customer=customer,
-                sales_page_id=sales_page_id or None,
-                region_id=region_id or None,
-                ville=ville,
-                localite=localite,
-                address=address,
+                sales_page_id=sales_page_id,
+                region_id=data.get("region") or None,
+                ville=(data.get("ville") or "").strip(),
+                localite=(data.get("localite") or "").strip(),
+                address=(data.get("address") or "").strip(),
                 delivery_fee=delivery_fee,
                 discount=discount,
-                notes=notes,
+                notes=(data.get("notes") or "").strip(),
                 created_by=request.user if request.user.is_authenticated else None,
             )
-            for i, prod_id in enumerate(line_products):
-                if not prod_id:
-                    continue
-                qty = int(line_qtys[i]) if i < len(line_qtys) and line_qtys[i] else 1
-                price_raw = line_prices[i] if i < len(line_prices) else "0"
+
+            for op in offers_payload:
                 try:
-                    price = Decimal(str(price_raw))
-                except Exception:
-                    price = Decimal("0")
-                variant_id = line_variants[i] if i < len(line_variants) and line_variants[i] else None
-                size = line_sizes[i] if i < len(line_sizes) else ""
-                OrderLine.objects.create(
-                    order=order,
-                    product_id=prod_id,
-                    variant_id=variant_id,
-                    size=size,
-                    quantity=max(qty, 1),
-                    unit_price=price,
+                    offer = Offer.objects.get(pk=op.get("offer_id"))
+                except Offer.DoesNotExist:
+                    continue
+                qty = max(int(op.get("quantity") or 1), 1)
+                order_offer = OrderOffer.objects.create(
+                    order=order, offer=offer,
+                    offer_name=offer.name,
+                    bundle_price=offer.bundle_price,
+                    quantity=qty,
                 )
+                for line in op.get("products", []):
+                    OrderLine.objects.create(
+                        order=order,
+                        order_offer=order_offer,
+                        product_id=line.get("product_id"),
+                        variant_id=line.get("variant_id") or None,
+                        size=(line.get("size") or "").strip(),
+                        quantity=max(int(line.get("quantity") or 1), 1),
+                        unit_price=0,  # individual product price not used inside an offer
+                    )
+
             order.recalc_total()
 
         log_action(
             request.user, AuditLog.CREATE,
-            description=f"Commande #{order.id} créée pour {customer} ({order.lines.count()} ligne(s), {order.total} TND)",
+            description=f"Commande #{order.id} créée pour {customer} ({order.order_offers.count()} offre(s), {order.total} TND)",
             request=request,
             target_model="Order", target_id=order.id,
         )
-        return JsonResponse({"status": "ok", "order_id": order.id, "redirect": f"/orders/{order.id}/"})
+        return JsonResponse({
+            "status": "ok",
+            "order": {
+                "id": order.id,
+                "total": str(order.total),
+                "redirect": f"/orders/{order.id}/",
+            },
+        })
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=400)
+
+
+# ---- Admin-only: manage offers ---------------------------------------------
+
+def _admin_only(view_fn):
+    from functools import wraps
+    @wraps(view_fn)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect("login")
+        if not request.user.is_superuser:
+            return redirect("home")
+        return view_fn(request, *args, **kwargs)
+    return wrapper
+
+
+@_admin_only
+def offers_manage(request):
+    """Custom admin page to manage offers."""
+    from .models import Offer, SalesPage, Product
+    return render(request, "inventory/offers_manage.html", {
+        "offers": Offer.objects.prefetch_related("sales_pages", "products__product").all(),
+        "sales_pages": SalesPage.objects.filter(is_active=True),
+        "products": Product.objects.filter(archived=False).order_by("name"),
+    })
+
+
+@csrf_exempt
+@require_POST
+@_admin_only
+def api_offer_create(request):
+    from .models import Offer, SalesPage, Product, OfferProduct, log_action, AuditLog
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+    name = (data.get("name") or "").strip()
+    if not name:
+        return JsonResponse({"status": "error", "message": "Nom obligatoire."}, status=400)
+    if Offer.objects.filter(name=name).exists():
+        return JsonResponse({"status": "error", "message": "Une offre avec ce nom existe déjà."}, status=400)
+    bundle_price = Decimal(str(data.get("bundle_price") or "0"))
+    page_ids = data.get("sales_page_ids") or []
+    products_data = data.get("products") or []  # list of {product_id, quantity}
+
+    with transaction.atomic():
+        offer = Offer.objects.create(name=name, bundle_price=bundle_price)
+        if page_ids:
+            offer.sales_pages.set(SalesPage.objects.filter(id__in=page_ids))
+        for p in products_data:
+            try:
+                OfferProduct.objects.create(
+                    offer=offer,
+                    product_id=int(p.get("product_id")),
+                    quantity=max(int(p.get("quantity") or 1), 1),
+                )
+            except Exception:
+                pass
+
+    log_action(
+        request.user, AuditLog.CREATE,
+        description=f"Offre créée : '{offer.name}' à {offer.bundle_price} DT",
+        request=request,
+        target_model="Offer", target_id=offer.id,
+    )
+    return JsonResponse({"status": "ok", "offer_id": offer.id})
+
+
+@csrf_exempt
+@require_POST
+@_admin_only
+def api_offer_update(request, pk):
+    from .models import Offer, SalesPage, Product, OfferProduct, log_action, AuditLog
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+    try:
+        offer = Offer.objects.get(pk=pk)
+    except Offer.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Offre introuvable."}, status=404)
+
+    with transaction.atomic():
+        if "name" in data:
+            offer.name = data["name"].strip() or offer.name
+        if "bundle_price" in data:
+            offer.bundle_price = Decimal(str(data["bundle_price"]))
+        if "is_active" in data:
+            offer.is_active = bool(data["is_active"])
+        offer.save()
+        if "sales_page_ids" in data:
+            offer.sales_pages.set(SalesPage.objects.filter(id__in=data["sales_page_ids"]))
+        if "products" in data:
+            offer.products.all().delete()
+            for p in data["products"]:
+                try:
+                    OfferProduct.objects.create(
+                        offer=offer,
+                        product_id=int(p.get("product_id")),
+                        quantity=max(int(p.get("quantity") or 1), 1),
+                    )
+                except Exception:
+                    pass
+
+    log_action(
+        request.user, AuditLog.EDIT,
+        description=f"Offre modifiée : '{offer.name}'",
+        request=request,
+        target_model="Offer", target_id=offer.id,
+    )
+    return JsonResponse({"status": "ok"})
+
+
+@csrf_exempt
+@require_POST
+@_admin_only
+def api_offer_delete(request, pk):
+    from .models import Offer, log_action, AuditLog
+    try:
+        offer = Offer.objects.get(pk=pk)
+    except Offer.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Offre introuvable."}, status=404)
+    name = offer.name
+    offer.delete()
+    log_action(
+        request.user, AuditLog.DELETE,
+        description=f"Offre supprimée : '{name}'",
+        request=request,
+        target_model="Offer", target_id=pk,
+    )
+    return JsonResponse({"status": "ok"})
 
 
 @login_required(login_url="/login/")

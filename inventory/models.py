@@ -462,21 +462,33 @@ class Order(models.Model):
         return f"#{self.id} — {self.customer} — {self.get_status_display()}"
 
     def recalc_total(self):
-        """Recompute total from lines + delivery − discount. Saves."""
+        """Recompute total from order_offers + standalone lines + delivery − discount.
+        Saves."""
         from decimal import Decimal
-        lines_sum = sum((l.line_total for l in self.lines.all()), Decimal("0"))
-        self.total = max(Decimal("0"), lines_sum + (self.delivery_fee or 0) - (self.discount or 0))
+        offers_sum = sum((oo.offer_total for oo in self.order_offers.all()), Decimal("0"))
+        # Standalone lines (lines without an OrderOffer parent) — for legacy/direct entry
+        standalone_lines_sum = sum(
+            (l.line_total for l in self.lines.filter(order_offer__isnull=True)),
+            Decimal("0")
+        )
+        self.total = max(
+            Decimal("0"),
+            offers_sum + standalone_lines_sum + (self.delivery_fee or 0) - (self.discount or 0),
+        )
         self.save(update_fields=["total", "updated_at"])
 
     @property
     def article_summary(self):
-        """Short text summary of the products for list display."""
+        """Short text summary of offers + standalone products for list display."""
         parts = []
-        for line in self.lines.all()[:3]:
+        for oo in self.order_offers.all()[:3]:
+            parts.append(f"{oo.quantity}× {oo.offer_name or 'Offre'}")
+        for line in self.lines.filter(order_offer__isnull=True)[:3]:
             parts.append(f"{line.quantity}× {line.product.name}")
-        extra = self.lines.count() - 3
-        if extra > 0:
-            parts.append(f"+{extra} autre(s)")
+        # truncate
+        if len(parts) > 3:
+            shown, extra = parts[:3], len(parts) - 3
+            return ", ".join(shown) + f", +{extra}"
         return ", ".join(parts) if parts else "—"
 
 
@@ -490,6 +502,13 @@ class OrderLine(models.Model):
     unit_price = models.DecimalField(max_digits=10, decimal_places=3, default=0,
         help_text="Snapshot of the product's sell_price at order creation")
 
+    # Phase-4b: lines can now belong to an OrderOffer instead of (or in addition to)
+    # being directly attached to the Order. Nullable for backward compat.
+    order_offer = models.ForeignKey(
+        "OrderOffer", on_delete=models.CASCADE,
+        null=True, blank=True, related_name="lines",
+    )
+
     class Meta:
         ordering = ["id"]
 
@@ -500,6 +519,65 @@ class OrderLine(models.Model):
     def line_total(self):
         from decimal import Decimal
         return (self.unit_price or Decimal("0")) * self.quantity
+
+
+# ---------------------------------------------------------------------------
+# OFFERS — bundles of products with a fixed bundle price.
+# An offer can appear on multiple SalesPages (M2M).
+# When picked in an order, the worker chooses variant + size per product.
+# ---------------------------------------------------------------------------
+class Offer(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    bundle_price = models.DecimalField(max_digits=10, decimal_places=3, default=0)
+    is_active = models.BooleanField(default=True)
+    sales_pages = models.ManyToManyField(SalesPage, related_name="offers", blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.bundle_price} DT)"
+
+
+class OfferProduct(models.Model):
+    """A product that belongs to an offer. Quantity defaults to 1.
+    Variant and size are NOT pinned here — picked at order-creation time."""
+    offer    = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name="products")
+    product  = models.ForeignKey(Product, on_delete=models.PROTECT)
+    quantity = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.quantity}× {self.product.name} (in offer {self.offer.name})"
+
+
+# ---------------------------------------------------------------------------
+# ORDER OFFERS — when an order picks an offer, this row stores
+# the snapshot of the offer + its bundle price. The lines (one per product
+# inside the offer with chosen variant/size) link to it via OrderLine.order_offer.
+# ---------------------------------------------------------------------------
+class OrderOffer(models.Model):
+    order        = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="order_offers")
+    offer        = models.ForeignKey(Offer, on_delete=models.PROTECT, null=True, blank=True)
+    offer_name   = models.CharField(max_length=120, blank=True, default="",
+        help_text="Snapshot of offer name in case the offer is renamed/deleted later")
+    bundle_price = models.DecimalField(max_digits=10, decimal_places=3, default=0)
+    quantity     = models.PositiveIntegerField(default=1,
+        help_text="How many copies of this offer in the order")
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.quantity}× {self.offer_name or '?'}  in order #{self.order_id}"
+
+    @property
+    def offer_total(self):
+        from decimal import Decimal
+        return (self.bundle_price or Decimal("0")) * self.quantity
 
 
 # ---------------------------------------------------------------------------
