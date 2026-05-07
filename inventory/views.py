@@ -1352,29 +1352,44 @@ def api_get_size_alert(request, variant_pk, size):
 @csrf_exempt
 @require_POST
 def api_log_scan_session(request):
-    """Save a closed order to the daily scan session log."""
+    """Save a closed order to the daily scan session log.
+    Idempotent — same bordereau scanned twice today updates the existing row
+    instead of creating a duplicate."""
     data = json.loads(request.body)
     today = timezone.now().date()
-    ScanSessionLog.objects.create(
-        bordereau_barcode=data.get("bordereau", ""),
-        designation=data.get("designation", ""),
-        unit_count=data.get("unit_count", 0),
-        is_correct=data.get("is_correct", True),
-        reason=data.get("reason", ""),
+    bc = (data.get("bordereau") or "").strip()
+    if not bc:
+        return JsonResponse({"status": "error", "message": "Bordereau vide."}, status=400)
+    ScanSessionLog.objects.update_or_create(
         session_date=today,
+        bordereau_barcode=bc,
+        defaults={
+            "designation": data.get("designation", ""),
+            "unit_count": data.get("unit_count", 0),
+            "is_correct": data.get("is_correct", True),
+            "reason": data.get("reason", ""),
+        },
     )
     return JsonResponse({"status": "ok"})
 
 
 @login_required(login_url="/login/")
 def api_get_scan_session(request):
-    """Get today's scan session log."""
+    """Get today's scan session log — dedupes by bordereau (latest wins)."""
     today = timezone.now().date()
+    # Order so the *latest* row per bordereau comes first
     logs = ScanSessionLog.objects.filter(session_date=today).order_by("-scanned_at")
+    seen = set()
+    deduped = []
+    for log in logs:
+        if log.bordereau_barcode in seen:
+            continue
+        seen.add(log.bordereau_barcode)
+        deduped.append(log)
     return JsonResponse({
         "status": "ok",
-        "correct": [{"bc": l.bordereau_barcode, "designation": l.designation, "units": l.unit_count, "time": l.scanned_at.strftime("%H:%M")} for l in logs if l.is_correct],
-        "wrong": [{"bc": l.bordereau_barcode, "designation": l.designation, "units": l.unit_count, "reason": l.reason, "time": l.scanned_at.strftime("%H:%M")} for l in logs if not l.is_correct],
+        "correct": [{"bc": l.bordereau_barcode, "designation": l.designation, "units": l.unit_count, "time": l.scanned_at.strftime("%H:%M")} for l in deduped if l.is_correct],
+        "wrong": [{"bc": l.bordereau_barcode, "designation": l.designation, "units": l.unit_count, "reason": l.reason, "time": l.scanned_at.strftime("%H:%M")} for l in deduped if not l.is_correct],
     })
 
 
@@ -1605,10 +1620,20 @@ Connectez-vous pour voir les détails : https://web-production-1391c5.up.railway
 def _send_daily_summary_email():
     """Send daily scan summary email."""
     today = timezone.now().date()
-    # Today's session
+    # Today's session — dedupe per bordereau (latest row per barcode wins)
     from .models import ScanSessionLog
-    correct = ScanSessionLog.objects.filter(session_date=today, is_correct=True).count()
-    wrong = ScanSessionLog.objects.filter(session_date=today, is_correct=False).count()
+    logs = ScanSessionLog.objects.filter(session_date=today).order_by("-scanned_at")
+    seen = set()
+    correct = 0
+    wrong = 0
+    for log in logs:
+        if log.bordereau_barcode in seen:
+            continue
+        seen.add(log.bordereau_barcode)
+        if log.is_correct:
+            correct += 1
+        else:
+            wrong += 1
 
     # En attente from Navex (approx from our DB)
     import urllib.request, urllib.parse
