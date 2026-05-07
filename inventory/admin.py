@@ -2,6 +2,7 @@ from django.contrib import admin
 from .models import (
     Product, ProductVariant, ProductUnit,
     ShippingOrder, OrderItem, StockMovement, Payment, SizeAlert,
+    SalesPage, Customer,
 )
 
 
@@ -100,3 +101,19 @@ class SizeAlertAdmin(admin.ModelAdmin):
     def is_triggered(self, obj):
         return "⚠ OUI" if obj.is_triggered else "✓ OK"
     is_triggered.short_description = "Alerte"
+
+
+# --- V2 (Phase 1) ---
+@admin.register(SalesPage)
+class SalesPageAdmin(admin.ModelAdmin):
+    list_display = ("name", "is_active", "created_at")
+    list_filter = ("is_active",)
+    search_fields = ("name",)
+    readonly_fields = ("created_at",)
+
+
+@admin.register(Customer)
+class CustomerAdmin(admin.ModelAdmin):
+    list_display = ("phone", "name", "created_at")
+    search_fields = ("phone", "name")
+    readonly_fields = ("created_at",)

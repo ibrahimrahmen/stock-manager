@@ -358,3 +358,35 @@ def compute_size_forecast(variant, size):
         "is_triggered": is_triggered,
     }
 
+
+# ---------------------------------------------------------------------------
+# V2 ORDER CREATION — Phase 1: SalesPage + Customer
+# Additive only. No existing tables touched.
+# ---------------------------------------------------------------------------
+class SalesPage(models.Model):
+    """A sales channel — e.g. 'Barats.tn'. Offers belong to one or more pages."""
+    name = models.CharField(max_length=120, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Customer(models.Model):
+    """Customer identified by phone number. Same phone = same customer."""
+    phone = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=120, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.name} ({self.phone})" if self.name else self.phone
+
+
