@@ -390,3 +390,113 @@ class Customer(models.Model):
         return f"{self.name} ({self.phone})" if self.name else self.phone
 
 
+# ---------------------------------------------------------------------------
+# AUDIT LOG — records who did what, when.
+# Additive only. Every meaningful action writes one row here.
+# ---------------------------------------------------------------------------
+class AuditLog(models.Model):
+    """One row per significant action — login, scan, edit, status change, etc."""
+    # Action categories. Add new ones over time.
+    LOGIN          = "login"
+    LOGOUT         = "logout"
+    SCAN_SHIPPING  = "scan_shipping"
+    SCAN_RETURN    = "scan_return"
+    SCAN_RECEPTION = "scan_reception"
+    STATUS_CHANGE  = "status_change"
+    EDIT           = "edit"
+    CREATE         = "create"
+    DELETE         = "delete"
+    NAVEX_PUSH     = "navex_push"
+    NAVEX_SYNC     = "navex_sync"
+    PAYMENT        = "payment"
+    OTHER          = "other"
+
+    ACTION_CHOICES = [
+        (LOGIN,          "Connexion"),
+        (LOGOUT,         "Déconnexion"),
+        (SCAN_SHIPPING,  "Scan expédition"),
+        (SCAN_RETURN,    "Scan retour"),
+        (SCAN_RECEPTION, "Scan réception"),
+        (STATUS_CHANGE,  "Changement de statut"),
+        (EDIT,           "Modification"),
+        (CREATE,         "Création"),
+        (DELETE,         "Suppression"),
+        (NAVEX_PUSH,     "Push Navex"),
+        (NAVEX_SYNC,     "Sync Navex"),
+        (PAYMENT,        "Paiement"),
+        (OTHER,          "Autre"),
+    ]
+
+    # Who did it — nullable so login/logout signals can record even when user FK is unstable.
+    # SET_NULL means: if a user is ever deleted, the log row stays but the link goes to NULL.
+    # username is also stored as plain text so we never lose attribution.
+    user = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="audit_logs",
+    )
+    username = models.CharField(max_length=150, blank=True, default="")
+
+    # What happened
+    action = models.CharField(max_length=30, choices=ACTION_CHOICES, default=OTHER)
+    description = models.CharField(max_length=500, blank=True, default="")
+
+    # Optional links to the thing affected (all nullable, all SET_NULL on delete)
+    target_unit_barcode = models.CharField(max_length=100, blank=True, default="")
+    target_order_barcode = models.CharField(max_length=100, blank=True, default="")
+    target_model = models.CharField(max_length=80, blank=True, default="")
+    target_id = models.CharField(max_length=50, blank=True, default="")
+
+    # Free-form payload for diff / before / after — JSON text
+    extra = models.TextField(blank=True, default="")
+
+    # Network info
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["-created_at"]),
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["action", "-created_at"]),
+        ]
+
+    def __str__(self):
+        who = self.username or "?"
+        return f"{who} — {self.get_action_display()} @ {self.created_at:%Y-%m-%d %H:%M}"
+
+
+def log_action(user, action, description="", request=None, **kwargs):
+    """Helper to write an audit row safely. Never crashes the caller.
+
+    Usage:
+        from inventory.models import log_action, AuditLog
+        log_action(request.user, AuditLog.SCAN_SHIPPING,
+                   description=f"Scanned {barcode} into order {order_bc}",
+                   request=request,
+                   target_unit_barcode=barcode,
+                   target_order_barcode=order_bc)
+    """
+    try:
+        ip = None
+        if request is not None:
+            ip = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or \
+                 request.META.get("REMOTE_ADDR") or None
+        AuditLog.objects.create(
+            user=user if (user and user.is_authenticated) else None,
+            username=(user.username if user and user.is_authenticated else "anonymous"),
+            action=action,
+            description=description[:500],
+            ip_address=ip,
+            target_unit_barcode=kwargs.get("target_unit_barcode", "")[:100],
+            target_order_barcode=kwargs.get("target_order_barcode", "")[:100],
+            target_model=kwargs.get("target_model", "")[:80],
+            target_id=str(kwargs.get("target_id", ""))[:50],
+            extra=kwargs.get("extra", "")[:5000],
+        )
+    except Exception:
+        # Audit failures must never break the user's action.
+        pass
+
+

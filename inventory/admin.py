@@ -2,7 +2,7 @@ from django.contrib import admin
 from .models import (
     Product, ProductVariant, ProductUnit,
     ShippingOrder, OrderItem, StockMovement, Payment, SizeAlert,
-    SalesPage, Customer,
+    SalesPage, Customer, AuditLog,
 )
 
 
@@ -117,3 +117,28 @@ class CustomerAdmin(admin.ModelAdmin):
     list_display = ("phone", "name", "created_at")
     search_fields = ("phone", "name")
     readonly_fields = ("created_at",)
+
+
+@admin.register(AuditLog)
+class AuditLogAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "username", "action", "description", "ip_address")
+    list_filter = ("action", "username")
+    search_fields = ("username", "description", "target_unit_barcode", "target_order_barcode")
+    readonly_fields = (
+        "user", "username", "action", "description",
+        "target_unit_barcode", "target_order_barcode",
+        "target_model", "target_id", "extra", "ip_address", "created_at",
+    )
+    date_hierarchy = "created_at"
+
+    def has_add_permission(self, request):
+        # Audit log entries are written by the system, never created by hand.
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        # Read-only — never let anyone edit audit history.
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        # Allow superuser to delete (e.g. retention cleanup) but not regular staff.
+        return request.user.is_superuser
