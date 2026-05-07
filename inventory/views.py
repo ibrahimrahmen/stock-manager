@@ -409,6 +409,7 @@ def api_scan_return(request):
 @csrf_exempt
 @require_POST
 def api_return_multiple(request):
+    from .models import log_action, AuditLog
     data = json.loads(request.body)
     barcodes = data.get("barcodes", [])
     if not barcodes:
@@ -427,6 +428,11 @@ def api_return_multiple(request):
             pass
     if not returned_units:
         return JsonResponse({"status": "error", "message": "Aucune unité retournée."})
+    log_action(
+        request.user, AuditLog.SCAN_RETURN,
+        description=f"Retour multi-unité : {len(returned_units)} unité(s) — {', '.join(u['barcode'] for u in returned_units[:5])}{'...' if len(returned_units) > 5 else ''}",
+        request=request,
+    )
     combined = {"message": " | ".join(r["message"] for r in reconciliations)} if reconciliations else None
     return JsonResponse({"status": "ok", "message": f"{len(returned_units)} unité(s) retournée(s).",
                          "returned_units": returned_units, "reconciliation": combined})
@@ -440,6 +446,7 @@ def api_scan_payment(request):
     - If it matches a closed order's payment_barcode → return order details for review
     - If another payment barcode is scanned → mark previous as fully paid
     """
+    from .models import log_action, AuditLog
     data = json.loads(request.body)
     barcode = data.get("barcode", "").strip()
     if not barcode:
@@ -465,6 +472,13 @@ def api_scan_payment(request):
                             unit=item.unit, movement_type=StockMovement.PAID,
                             reference=prev_order.bordereau_barcode,
                         )
+                log_action(
+                    request.user, AuditLog.PAYMENT,
+                    description=f"Ordre {prev_order.bordereau_barcode} marqué payé (auto, scan suivant)",
+                    request=request,
+                    target_order_barcode=prev_order.bordereau_barcode,
+                    target_model="ShippingOrder", target_id=prev_order.id,
+                )
         except ShippingOrder.DoesNotExist:
             pass
 
@@ -528,6 +542,7 @@ def api_scan_payment(request):
 @require_POST
 def api_confirm_payment(request):
     """Confirm payment with optional modifications (refused items, adjusted price)."""
+    from .models import log_action, AuditLog
     data = json.loads(request.body)
     order_id = data.get("order_id")
     sold_barcodes = data.get("sold_barcodes", [])   # items client accepted
@@ -599,6 +614,13 @@ def api_confirm_payment(request):
             OrderItem.objects.filter(pk=item.pk).update(status_at_payment=ProductUnit.PAID)
 
     pending_count = len(refused_barcodes)
+    log_action(
+        request.user, AuditLog.PAYMENT,
+        description=f"Paiement confirmé pour {order.bordereau_barcode} : {amount_collected} TND ({len(sold_barcodes)} vendu, {pending_count} refusé)",
+        request=request,
+        target_order_barcode=order.bordereau_barcode,
+        target_model="ShippingOrder", target_id=order.id,
+    )
     return JsonResponse({
         "status": "ok",
         "message": f"Paiement confirmé. {len(sold_barcodes)} vendu(s), {pending_count} en attente de retour physique.",
@@ -1159,6 +1181,7 @@ def api_navex_status(request, pk):
 @require_POST
 def api_confirm_payment_from_navex(request, pk):
     """Confirm payment for an order using Navex price."""
+    from .models import log_action, AuditLog
     import urllib.request, urllib.parse
     data = json.loads(request.body)
     amount = Decimal(str(data.get("amount", "0")))
@@ -1185,6 +1208,14 @@ def api_confirm_payment_from_navex(request, pk):
                     unit=item.unit, movement_type=StockMovement.PAID,
                     reference=order.bordereau_barcode,
                 )
+
+    log_action(
+        request.user, AuditLog.PAYMENT,
+        description=f"Ordre {order.bordereau_barcode} marqué payé via Navex — {amount} TND",
+        request=request,
+        target_order_barcode=order.bordereau_barcode,
+        target_model="ShippingOrder", target_id=order.id,
+    )
 
     return JsonResponse({"status": "ok", "message": f"Ordre {order.bordereau_barcode} marque comme paye — {amount} TND."})
 
@@ -1344,6 +1375,7 @@ def api_mark_treated(request, pk):
 @require_POST
 def api_save_navex_info(request, pk):
     """Save Navex info to an order — called from JS after scan."""
+    from .models import log_action, AuditLog
     try:
         data = json.loads(request.body)
         ShippingOrder.objects.filter(pk=pk).update(
@@ -1354,6 +1386,17 @@ def api_save_navex_info(request, pk):
             client_ville=data.get("ville", ""),
             navex_designation=data.get("designation", ""),
         )
+        try:
+            order = ShippingOrder.objects.get(pk=pk)
+            log_action(
+                request.user, AuditLog.EDIT,
+                description=f"Infos Navex enregistrées pour ordre {order.bordereau_barcode} (client: {data.get('nom','')[:60]})",
+                request=request,
+                target_order_barcode=order.bordereau_barcode,
+                target_model="ShippingOrder", target_id=order.id,
+            )
+        except ShippingOrder.DoesNotExist:
+            pass
         return JsonResponse({"status": "ok"})
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)})
@@ -1400,6 +1443,7 @@ def api_get_order_amount(request, pk):
 @require_POST  
 def api_create_return_order(request):
     """Create a new return order from an unknown barcode scanned in retour section."""
+    from .models import log_action, AuditLog
     data = json.loads(request.body)
     barcode = data.get("barcode", "").strip().upper()
     if not barcode:
@@ -1414,6 +1458,13 @@ def api_create_return_order(request):
         status=ShippingOrder.OPEN,
         notes="Ordre retour",
     )
+    log_action(
+        request.user, AuditLog.CREATE,
+        description=f"Ordre retour créé : {barcode}",
+        request=request,
+        target_order_barcode=barcode,
+        target_model="ShippingOrder", target_id=order.id,
+    )
     return JsonResponse({
         "status": "ok",
         "order": {"id": order.id, "bordereau_barcode": order.bordereau_barcode},
@@ -1425,6 +1476,7 @@ def api_create_return_order(request):
 @require_POST
 def api_return_unit_to_order(request, pk):
     """Move a unit from its original order to a return order."""
+    from .models import log_action, AuditLog
     data = json.loads(request.body)
     barcode = data.get("barcode", "").strip().upper()
     
@@ -1484,6 +1536,14 @@ def api_return_unit_to_order(request, pk):
             return_order.status = ShippingOrder.PARTIAL_RETURNED
         return_order.save(update_fields=["status"])
     
+    log_action(
+        request.user, AuditLog.SCAN_RETURN,
+        description=f"Unité {barcode} retournée vers ordre retour {return_order.bordereau_barcode}" + (f" (depuis {original_order.bordereau_barcode})" if original_order else ""),
+        request=request,
+        target_unit_barcode=barcode,
+        target_order_barcode=return_order.bordereau_barcode,
+    )
+
     return JsonResponse({
         "status": "ok",
         "message": f"{unit.variant.product.name} {unit.variant.color_label} — {unit.size} retourné.",
@@ -1941,6 +2001,7 @@ def navex_sync(request):
 @csrf_exempt
 def api_navex_sync(request):
     """Call Navex API for multiple barcodes at once."""
+    from .models import log_action, AuditLog
     import urllib.request
     import urllib.parse
 
@@ -1952,6 +2013,12 @@ def api_navex_sync(request):
 
     if not orders:
         return JsonResponse({"status": "ok", "results": []})
+
+    log_action(
+        request.user, AuditLog.NAVEX_SYNC,
+        description=f"Sync Navex lancé sur {len(orders)} ordre(s) CLOSED",
+        request=request,
+    )
 
     codes = [o["bordereau_barcode"] for o in orders]
     codes_string = ", ".join(codes)
@@ -2164,9 +2231,19 @@ def api_toggle_product_flag(request, pk):
     if flag not in ("alert_disabled", "archived"):
         return JsonResponse({"status": "error", "message": "Flag invalide."}, status=400)
     product = get_object_or_404(Product, pk=pk)
-    new_value = bool(data.get("value", not getattr(product, flag)))
+    old_value = getattr(product, flag)
+    new_value = bool(data.get("value", not old_value))
     setattr(product, flag, new_value)
     product.save(update_fields=[flag])
+
+    from .models import log_action, AuditLog
+    log_action(
+        request.user, AuditLog.EDIT,
+        description=f"Produit '{product.name}' : {flag} {old_value} → {new_value}",
+        request=request,
+        target_model="Product", target_id=product.id,
+    )
+
     return JsonResponse({
         "status": "ok",
         "flag": flag,
