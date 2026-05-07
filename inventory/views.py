@@ -112,7 +112,32 @@ def api_scan_shipping(request):
     barcode = data.get("barcode", "").strip()
     if not barcode:
         return JsonResponse({"status": "error", "message": "Barcode vide."}, status=400)
-    return JsonResponse(handle_shipping_scan(barcode))
+    result = handle_shipping_scan(barcode)
+
+    # Audit — record what kind of scan this resolved to.
+    from .models import log_action, AuditLog
+    rtype = result.get("type", "unknown")
+    if rtype == "bordereau":
+        log_action(
+            request.user, AuditLog.SCAN_SHIPPING,
+            description=f"Bordereau scanné : {barcode}",
+            request=request, target_order_barcode=barcode,
+        )
+    elif rtype == "unit":
+        unit_bc = (result.get("unit") or {}).get("barcode", "")
+        order_bc = (result.get("order") or {}).get("bordereau_barcode", "")
+        log_action(
+            request.user, AuditLog.SCAN_SHIPPING,
+            description=f"Unité {unit_bc} scannée vers {order_bc}",
+            request=request, target_unit_barcode=unit_bc, target_order_barcode=order_bc,
+        )
+    elif result.get("status") == "error":
+        log_action(
+            request.user, AuditLog.SCAN_SHIPPING,
+            description=f"Scan refusé : {barcode} — {result.get('message','')[:200]}",
+            request=request, target_unit_barcode=barcode,
+        )
+    return JsonResponse(result)
 
 
 @login_required(login_url="/login/")
@@ -165,7 +190,23 @@ def api_scan_reception(request):
     barcode = data.get("barcode", "").strip()
     if not barcode:
         return JsonResponse({"status": "error", "message": "Barcode vide."}, status=400)
-    return JsonResponse(handle_stock_scan(barcode))
+    result = handle_stock_scan(barcode)
+
+    from .models import log_action, AuditLog
+    if result.get("status") == "ok":
+        unit_bc = (result.get("unit") or {}).get("barcode", barcode)
+        log_action(
+            request.user, AuditLog.SCAN_RECEPTION,
+            description=f"Unité {unit_bc} ajoutée au stock",
+            request=request, target_unit_barcode=unit_bc,
+        )
+    else:
+        log_action(
+            request.user, AuditLog.SCAN_RECEPTION,
+            description=f"Scan stock refusé : {barcode} — {result.get('message','')[:200]}",
+            request=request, target_unit_barcode=barcode,
+        )
+    return JsonResponse(result)
 
 
 @csrf_exempt
@@ -280,6 +321,7 @@ def _update_order_return_status(order):
 @require_POST
 def api_scan_return(request):
     from .barcode_parser import is_bordereau_barcode
+    from .models import log_action, AuditLog
     data = json.loads(request.body)
     barcode = data.get("barcode", "").strip().upper()
     if not barcode:
@@ -289,6 +331,11 @@ def api_scan_return(request):
         try:
             order = ShippingOrder.objects.prefetch_related("items__unit__variant__product").get(bordereau_barcode=barcode)
         except ShippingOrder.DoesNotExist:
+            log_action(
+                request.user, AuditLog.SCAN_RETURN,
+                description=f"Retour : bordereau introuvable {barcode}",
+                request=request, target_order_barcode=barcode,
+            )
             return JsonResponse({"status": "error", "message": f"Aucun ordre trouvé pour : {barcode}", "code": "ORDER_NOT_FOUND", "barcode": barcode})
         items = order.items.select_related("unit__variant__product")
         returnable = [i for i in items if i.unit.status in (ProductUnit.SHIPPED, ProductUnit.PAID)]
@@ -301,9 +348,21 @@ def api_scan_return(request):
                       for i in items]
         if len(returnable) == 1:
             unit_data, reconciliation = _do_return_unit(returnable[0].unit)
+            log_action(
+                request.user, AuditLog.SCAN_RETURN,
+                description=f"Unité {unit_data['barcode']} retournée (auto-single) depuis {barcode}",
+                request=request,
+                target_unit_barcode=unit_data["barcode"],
+                target_order_barcode=barcode,
+            )
             return JsonResponse({"status": "ok", "type": "order_single",
                                  "message": f"Unité {unit_data['barcode']} retournée automatiquement.",
                                  "unit": unit_data, "reconciliation": reconciliation})
+        log_action(
+            request.user, AuditLog.SCAN_RETURN,
+            description=f"Retour multi-unité ouvert pour {barcode} ({len(returnable)} retournables)",
+            request=request, target_order_barcode=barcode,
+        )
         return JsonResponse({"status": "ok", "type": "order_multiple",
                              "order_bordereau": order.bordereau_barcode,
                              "order_id": order.id, "items": items_data})
@@ -311,14 +370,29 @@ def api_scan_return(request):
     try:
         unit = ProductUnit.objects.select_related("variant__product").get(barcode=barcode)
     except ProductUnit.DoesNotExist:
+        log_action(
+            request.user, AuditLog.SCAN_RETURN,
+            description=f"Retour : unité introuvable {barcode}",
+            request=request, target_unit_barcode=barcode,
+        )
         return JsonResponse({"status": "error", "message": f"Unite introuvable : {barcode}"})
     if unit.status not in (ProductUnit.SHIPPED, ProductUnit.PAID):
         msgs = {
             ProductUnit.IN_STOCK: "déjà en stock",
             ProductUnit.RETURNED: "déjà retournée",
         }
+        log_action(
+            request.user, AuditLog.SCAN_RETURN,
+            description=f"Retour refusé pour {barcode} : statut {unit.get_status_display()}",
+            request=request, target_unit_barcode=barcode,
+        )
         return JsonResponse({"status": "error", "message": f"Impossible — {msgs.get(unit.status, unit.get_status_display())}."})
     unit_data, reconciliation = _do_return_unit(unit)
+    log_action(
+        request.user, AuditLog.SCAN_RETURN,
+        description=f"Unité {unit_data['barcode']} retournée",
+        request=request, target_unit_barcode=unit_data["barcode"],
+    )
     return JsonResponse({"status": "ok", "type": "unit_returned",
                          "message": f"{unit_data['product_name']} {unit_data['color_label']} taille {unit_data['size']} retourné.",
                          "unit": unit_data, "reconciliation": reconciliation})
