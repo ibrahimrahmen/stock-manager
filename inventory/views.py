@@ -213,6 +213,7 @@ def api_scan_reception(request):
 @require_POST
 def api_remove_from_order(request):
     """Remove a unit from the currently open order."""
+    from .models import log_action, AuditLog
     data = json.loads(request.body)
     barcode = data.get("barcode", "").strip().upper()
     open_order = ShippingOrder.objects.filter(status=ShippingOrder.OPEN).first()
@@ -224,6 +225,13 @@ def api_remove_from_order(request):
         item.delete()
         unit.status = ProductUnit.IN_STOCK
         unit.save()
+        log_action(
+            request.user, AuditLog.EDIT,
+            description=f"Unité {barcode} retirée de l'ordre ouvert {open_order.bordereau_barcode}",
+            request=request,
+            target_unit_barcode=barcode,
+            target_order_barcode=open_order.bordereau_barcode,
+        )
         return JsonResponse({
             "status": "ok",
             "message": f"{barcode} retiré de l'ordre.",
@@ -604,6 +612,7 @@ def api_confirm_payment(request):
 @require_POST
 def api_close_order(request):
     """Manually close the currently open order with an expected amount."""
+    from .models import log_action, AuditLog
     data = json.loads(request.body)
     expected_amount = Decimal(str(data.get("expected_amount", "0")))
 
@@ -633,6 +642,14 @@ def api_close_order(request):
             reference=open_order.bordereau_barcode,
         )
 
+    log_action(
+        request.user, AuditLog.STATUS_CHANGE,
+        description=f"Ordre {open_order.bordereau_barcode} fermé ({open_order.unit_count} unités, {expected_amount} TND)",
+        request=request,
+        target_order_barcode=open_order.bordereau_barcode,
+        target_model="ShippingOrder", target_id=open_order.id,
+    )
+
     return JsonResponse({
         "status": "ok",
         "message": f"Ordre {open_order.bordereau_barcode} fermé.",
@@ -646,6 +663,7 @@ def api_close_order(request):
 @require_POST
 def api_update_order_amount(request, pk):
     """Update the amount collected for an order from order detail page."""
+    from .models import log_action, AuditLog
     data = json.loads(request.body)
     amount = Decimal(str(data.get("amount_collected", "0")))
     try:
@@ -669,6 +687,14 @@ def api_update_order_amount(request, pk):
     diff = amount - old_amount
     if diff != 0:
         note = f"Montant {'augmenté' if diff > 0 else 'réduit'} de {abs(diff):.3f} TND (ancien: {old_amount:.3f} TND)"
+
+    log_action(
+        request.user, AuditLog.EDIT,
+        description=f"Montant ordre {order.bordereau_barcode} : {old_amount} TND → {amount} TND",
+        request=request,
+        target_order_barcode=order.bordereau_barcode,
+        target_model="ShippingOrder", target_id=order.id,
+    )
 
     return JsonResponse({"status": "ok", "note": note})
 
@@ -744,6 +770,7 @@ def api_search(request):
 @require_POST
 def api_fix_order_units(request, pk):
     """Resync unit statuses with their order status."""
+    from .models import log_action, AuditLog
     try:
         order = ShippingOrder.objects.prefetch_related("items__unit").get(pk=pk)
     except ShippingOrder.DoesNotExist:
@@ -762,6 +789,15 @@ def api_fix_order_units(request, pk):
             unit.save()
             fixed += 1
 
+    if fixed > 0:
+        log_action(
+            request.user, AuditLog.EDIT,
+            description=f"Resync ordre {order.bordereau_barcode} : {fixed} unité(s) corrigée(s)",
+            request=request,
+            target_order_barcode=order.bordereau_barcode,
+            target_model="ShippingOrder", target_id=order.id,
+        )
+
     return JsonResponse({"status": "ok", "message": f"{fixed} unité(s) resynchronisée(s).", "fixed": fixed})
 
 
@@ -769,6 +805,7 @@ def api_fix_order_units(request, pk):
 @require_POST
 def api_delete_order(request, pk):
     """Delete an order and return all units to in_stock."""
+    from .models import log_action, AuditLog
     data = json.loads(request.body)
     confirmation = data.get("confirmation", "")
     if confirmation != "DELETE":
@@ -779,15 +816,26 @@ def api_delete_order(request, pk):
         return JsonResponse({"status": "error", "message": "Ordre introuvable."})
     if order.status == ShippingOrder.PAID:
         return JsonResponse({"status": "error", "message": "Impossible de supprimer un ordre déjà payé."})
+    # Capture key fields BEFORE delete so the audit row stays useful
+    bordereau = order.bordereau_barcode
+    unit_count = order.items.count()
+    order_id = order.id
     # Return all units to in_stock
     for item in order.items.select_related("unit"):
         item.unit.status = ProductUnit.IN_STOCK
         item.unit.save()
         StockMovement.objects.create(
             unit=item.unit, movement_type=StockMovement.RECEIVED,
-            reference=f"SUPPRESSION ORDRE {order.bordereau_barcode}"
+            reference=f"SUPPRESSION ORDRE {bordereau}"
         )
     order.delete()
+    log_action(
+        request.user, AuditLog.DELETE,
+        description=f"Ordre {bordereau} SUPPRIMÉ ({unit_count} unités remises en stock)",
+        request=request,
+        target_order_barcode=bordereau,
+        target_model="ShippingOrder", target_id=order_id,
+    )
     return JsonResponse({"status": "ok", "message": "Ordre supprimé, unités remises en stock."})
 
 
@@ -795,6 +843,7 @@ def api_delete_order(request, pk):
 @require_POST
 def api_order_remove_unit(request, pk):
     """Remove a unit from an order and return it to in_stock."""
+    from .models import log_action, AuditLog
     data = json.loads(request.body)
     confirmation = data.get("confirmation", "")
     barcode = data.get("barcode", "")
@@ -815,6 +864,13 @@ def api_order_remove_unit(request, pk):
         unit=unit, movement_type=StockMovement.RECEIVED,
         reference=f"MODIFICATION ORDRE {order.bordereau_barcode}"
     )
+    log_action(
+        request.user, AuditLog.EDIT,
+        description=f"Unité {barcode} retirée de l'ordre {order.bordereau_barcode}",
+        request=request,
+        target_unit_barcode=barcode,
+        target_order_barcode=order.bordereau_barcode,
+    )
     return JsonResponse({"status": "ok", "message": f"{barcode} retiré et remis en stock."})
 
 
@@ -822,6 +878,7 @@ def api_order_remove_unit(request, pk):
 @require_POST
 def api_order_add_unit(request, pk):
     """Add a unit to an existing order by scanning barcode."""
+    from .models import log_action, AuditLog
     data = json.loads(request.body)
     confirmation = data.get("confirmation", "")
     barcode = data.get("barcode", "").strip().upper()
@@ -845,6 +902,13 @@ def api_order_add_unit(request, pk):
     unit.status = ProductUnit.SHIPPED
     unit.save()
     variant = unit.variant
+    log_action(
+        request.user, AuditLog.EDIT,
+        description=f"Unité {barcode} ajoutée à l'ordre {order.bordereau_barcode}",
+        request=request,
+        target_unit_barcode=barcode,
+        target_order_barcode=order.bordereau_barcode,
+    )
     return JsonResponse({
         "status": "ok",
         "message": f"{variant.product.name} {variant.color_label} taille {unit.size} ajouté.",
