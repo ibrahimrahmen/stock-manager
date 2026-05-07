@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nouvelle commande — Stock Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0f0f0d; --surface:#1a1a17; --surface2:#222220;
+  --border:rgba(255,255,255,0.08); --text:#f0ede6; --muted:#8a887f;
+  --green:#4ade9a; --green-dim:rgba(74,222,154,0.15);
+  --red:#f87171; --red-dim:rgba(248,113,113,0.15);
+  --amber:#f5a623;
+}
+body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
+.brand{font-family:'DM Serif Display',serif;font-size:22px;}
+.userbar a{color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;font-size:13px;}
+.userbar{display:flex;gap:14px;align-items:center;}
+.container{padding:24px;max-width:1100px;margin:0 auto;}
+.page-title{font-family:'DM Serif Display',serif;font-size:28px;margin-bottom:20px;}
+.card{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;padding:22px;margin-bottom:16px;}
+.card-title{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:14px;font-weight:500;}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;}
+.field{display:flex;flex-direction:column;gap:6px;}
+label{font-size:12px;color:var(--muted);}
+input,select,textarea{
+  background:var(--surface2);border:0.5px solid var(--border);color:var(--text);
+  padding:10px 12px;border-radius:8px;font-family:inherit;font-size:14px;width:100%;
+}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green);}
+textarea{resize:vertical;min-height:60px;}
+.lines-table{width:100%;border-collapse:collapse;}
+.lines-table th{text-align:left;padding:8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:500;border-bottom:0.5px solid var(--border);}
+.lines-table td{padding:8px 4px;vertical-align:top;}
+.line-row select,.line-row input{font-size:13px;padding:8px 10px;}
+.qty-input{width:60px;text-align:center;}
+.price-input{width:90px;text-align:right;}
+.stock-pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500;}
+.stock-ok{background:var(--green-dim);color:var(--green);}
+.stock-low{background:rgba(245,166,35,0.15);color:var(--amber);}
+.stock-out{background:var(--red-dim);color:var(--red);}
+.btn-icon{background:transparent;border:0.5px solid var(--border);color:var(--muted);width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:18px;display:inline-flex;align-items:center;justify-content:center;}
+.btn-icon:hover{background:var(--red-dim);color:var(--red);border-color:var(--red);}
+.btn-add-line{background:transparent;color:var(--green);border:0.5px dashed var(--green);padding:10px;border-radius:8px;cursor:pointer;width:100%;font-size:13px;font-weight:500;margin-top:12px;}
+.btn-add-line:hover{background:var(--green-dim);}
+.footer{display:grid;grid-template-columns:repeat(4,1fr) auto;gap:14px;align-items:end;}
+.footer .field input{padding:10px 12px;}
+.total-display{font-family:'DM Serif Display',serif;font-size:22px;color:var(--green);}
+.btn-save{background:var(--green);color:#0a0a08;padding:12px 24px;border-radius:10px;font-weight:500;border:none;cursor:pointer;font-size:14px;}
+.btn-save:hover{background:#3acb88;}
+.btn-save:disabled{opacity:0.5;cursor:wait;}
+.error-box{background:var(--red-dim);color:var(--red);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:14px;display:none;}
+.muted{color:var(--muted);font-size:11px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">Nouvelle commande</div>
+  <div class="userbar">
+    <a href="{% url 'orders_list' %}">← Liste</a>
+    {% if not request.user.is_superuser %}<a href="{% url 'home' %}">Espaces</a>{% endif %}
+    <a href="{% url 'logout' %}">Déconnexion</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-title">Créer une commande</div>
+
+  <div id="err" class="error-box"></div>
+
+  <form id="order-form">
+    {% csrf_token %}
+
+    <!-- CLIENT INFO -->
+    <div class="card">
+      <div class="card-title">Client</div>
+      <div class="row">
+        <div class="field">
+          <label>Téléphone *</label>
+          <input name="phone" type="tel" required placeholder="ex: 28 060 730">
+        </div>
+        <div class="field">
+          <label>Nom complet</label>
+          <input name="name" type="text" placeholder="Nom du client">
+        </div>
+        <div class="field">
+          <label>Page *</label>
+          <select name="sales_page" required>
+            <option value="">— Choisir —</option>
+            {% for p in sales_pages %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADDRESS -->
+    <div class="card">
+      <div class="card-title">Adresse</div>
+      <div class="row">
+        <div class="field">
+          <label>Gouvernorat *</label>
+          <select name="region" required>
+            <option value="">— Choisir —</option>
+            {% for r in regions %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label>Ville</label>
+          <input name="ville" type="text" placeholder="Tunis-tunis">
+        </div>
+        <div class="field">
+          <label>Localité</label>
+          <input name="localite" type="text" placeholder="Optionnel">
+        </div>
+      </div>
+      <div class="field" style="margin-top:12px;">
+        <label>Adresse complète</label>
+        <textarea name="address" placeholder="Rue, immeuble, étage, indications…"></textarea>
+      </div>
+    </div>
+
+    <!-- ARTICLES -->
+    <div class="card">
+      <div class="card-title">Articles</div>
+      <table class="lines-table">
+        <thead>
+          <tr>
+            <th>Produit</th><th>Couleur</th><th>Taille</th>
+            <th style="text-align:center;">Stock</th>
+            <th style="text-align:center;">Qté</th>
+            <th style="text-align:right;">Prix unit.</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="lines-body">
+          <!-- rows added by JS -->
+        </tbody>
+      </table>
+      <button type="button" class="btn-add-line" onclick="addLine()">+ Ajouter un article</button>
+    </div>
+
+    <!-- TOTALS + SAVE -->
+    <div class="card">
+      <div class="footer">
+        <div class="field">
+          <label>Sous-total articles</label>
+          <input id="subtotal-display" readonly value="0 DT" style="background:transparent;border:none;color:var(--text);font-weight:500;padding:8px 0;">
+        </div>
+        <div class="field">
+          <label>Livraison</label>
+          <input name="delivery_fee" type="number" min="0" step="0.001" value="7" oninput="recalcTotal()">
+        </div>
+        <div class="field">
+          <label>Remise</label>
+          <input name="discount" type="number" min="0" step="0.001" value="0" oninput="recalcTotal()">
+        </div>
+        <div class="field">
+          <label>Total</label>
+          <div class="total-display" id="total-display">7 DT</div>
+        </div>
+        <button type="submit" class="btn-save" id="btn-save">Valider</button>
+      </div>
+      <div class="field" style="margin-top:14px;">
+        <label>Notes (optionnel)</label>
+        <textarea name="notes" placeholder="Notes internes…"></textarea>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+// ---------- products data (from server) ----------
+const PRODUCTS = [
+{% for p in products %}
+{
+  id: {{ p.id }},
+  name: "{{ p.name|escapejs }}",
+  sell_price: {{ p.sell_price|stringformat:'s' }},
+  variants: [
+    {% for v in p.variants.all %}
+    { id: {{ v.id }}, color: "{{ v.color_label|escapejs }}",
+      sizes: [
+        {% for u in v.units.all %}{% if u.status == 'in_stock' or u.status == 'returned' %}"{{ u.size|escapejs }}",{% endif %}{% endfor %}
+      ],
+      stock_by_size: (function(){
+        let m = {};
+        {% for u in v.units.all %}
+        {% if u.status == 'in_stock' or u.status == 'returned' %}
+        m["{{ u.size|escapejs }}"] = (m["{{ u.size|escapejs }}"]||0)+1;
+        {% endif %}
+        {% endfor %}
+        return m;
+      })(),
+    },
+    {% endfor %}
+  ]
+},
+{% endfor %}
+];
+const PRODUCTS_BY_ID = Object.fromEntries(PRODUCTS.map(p => [p.id, p]));
+
+let lineCounter = 0;
+
+function addLine() {
+  const id = ++lineCounter;
+  const tr = document.createElement('tr');
+  tr.className = 'line-row';
+  tr.dataset.lineId = id;
+  tr.innerHTML = `
+    <td>
+      <select name="line_product" onchange="onProductChange(this, ${id})" required>
+        <option value="">— produit —</option>
+        ${PRODUCTS.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+      </select>
+    </td>
+    <td>
+      <select name="line_variant" onchange="onVariantChange(this, ${id})">
+        <option value="">—</option>
+      </select>
+    </td>
+    <td>
+      <select name="line_size" onchange="updateStockDisplay(${id})">
+        <option value="">—</option>
+      </select>
+    </td>
+    <td style="text-align:center;"><span class="stock-pill" id="stock-${id}">—</span></td>
+    <td><input class="qty-input" name="line_qty" type="number" min="1" value="1" oninput="recalcTotal()"></td>
+    <td><input class="price-input" name="line_price" type="number" min="0" step="0.001" value="0" oninput="recalcTotal()"></td>
+    <td><button type="button" class="btn-icon" onclick="removeLine(${id})" title="Retirer">×</button></td>
+  `;
+  document.getElementById('lines-body').appendChild(tr);
+  recalcTotal();
+}
+
+function removeLine(id) {
+  document.querySelector(`tr[data-line-id="${id}"]`)?.remove();
+  recalcTotal();
+}
+
+function onProductChange(select, id) {
+  const row = select.closest('tr');
+  const productId = parseInt(select.value);
+  const product = PRODUCTS_BY_ID[productId];
+  const variantSelect = row.querySelector('select[name="line_variant"]');
+  const sizeSelect = row.querySelector('select[name="line_size"]');
+  const priceInput = row.querySelector('input[name="line_price"]');
+  variantSelect.innerHTML = '<option value="">—</option>';
+  sizeSelect.innerHTML = '<option value="">—</option>';
+  if (!product) return;
+  product.variants.forEach(v => {
+    variantSelect.innerHTML += `<option value="${v.id}">${v.color}</option>`;
+  });
+  priceInput.value = product.sell_price;
+  updateStockDisplay(id);
+  recalcTotal();
+}
+
+function onVariantChange(select, id) {
+  const row = select.closest('tr');
+  const productId = parseInt(row.querySelector('select[name="line_product"]').value);
+  const variantId = parseInt(select.value);
+  const sizeSelect = row.querySelector('select[name="line_size"]');
+  sizeSelect.innerHTML = '<option value="">—</option>';
+  const product = PRODUCTS_BY_ID[productId];
+  if (!product) return;
+  const variant = product.variants.find(v => v.id === variantId);
+  if (!variant) return;
+  // unique sizes preserving first-seen order
+  const seen = new Set();
+  variant.sizes.forEach(s => {
+    if (!seen.has(s) && s) {
+      seen.add(s);
+      sizeSelect.innerHTML += `<option value="${s}">${s}</option>`;
+    }
+  });
+  updateStockDisplay(id);
+}
+
+function updateStockDisplay(id) {
+  const row = document.querySelector(`tr[data-line-id="${id}"]`);
+  if (!row) return;
+  const productId = parseInt(row.querySelector('select[name="line_product"]').value);
+  const variantId = parseInt(row.querySelector('select[name="line_variant"]').value);
+  const size = row.querySelector('select[name="line_size"]').value;
+  const stockEl = document.getElementById('stock-' + id);
+  if (!productId || !variantId || !size) { stockEl.textContent = '—'; stockEl.className = 'stock-pill'; return; }
+  const variant = PRODUCTS_BY_ID[productId].variants.find(v => v.id === variantId);
+  const count = (variant && variant.stock_by_size[size]) || 0;
+  stockEl.textContent = count;
+  stockEl.className = 'stock-pill ' + (count === 0 ? 'stock-out' : count <= 3 ? 'stock-low' : 'stock-ok');
+}
+
+function recalcTotal() {
+  let subtotal = 0;
+  document.querySelectorAll('.line-row').forEach(row => {
+    const qty = parseFloat(row.querySelector('input[name="line_qty"]').value) || 0;
+    const price = parseFloat(row.querySelector('input[name="line_price"]').value) || 0;
+    subtotal += qty * price;
+  });
+  const delivery = parseFloat(document.querySelector('input[name="delivery_fee"]').value) || 0;
+  const discount = parseFloat(document.querySelector('input[name="discount"]').value) || 0;
+  const total = Math.max(0, subtotal + delivery - discount);
+  document.getElementById('subtotal-display').value = subtotal.toFixed(0) + ' DT';
+  document.getElementById('total-display').textContent = total.toFixed(0) + ' DT';
+}
+
+document.getElementById('order-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const errBox = document.getElementById('err');
+  errBox.style.display = 'none';
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true;
+  btn.textContent = '...';
+
+  const fd = new FormData(this);
+  try {
+    const res = await fetch("{% url 'order_create' %}", {
+      method: 'POST',
+      body: fd,
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      window.location = data.redirect;
+    } else {
+      errBox.textContent = data.message || 'Erreur lors de la création.';
+      errBox.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Valider';
+    }
+  } catch (e) {
+    errBox.textContent = 'Erreur réseau : ' + e.message;
+    errBox.style.display = 'block';
+    btn.disabled = false; btn.textContent = 'Valider';
+  }
+});
+
+// Start with one empty line
+addLine();
+</script>
+</body>
+</html>

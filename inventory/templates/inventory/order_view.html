@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commande #{{ order.id }} — Stock Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0f0f0d;--surface:#1a1a17;--surface2:#222220;
+  --border:rgba(255,255,255,0.08);--text:#f0ede6;--muted:#8a887f;
+  --green:#4ade9a;--green-dim:rgba(74,222,154,0.15);
+  --amber:#f5a623;--amber-dim:rgba(245,166,35,0.15);
+  --red:#f87171;--red-dim:rgba(248,113,113,0.15);
+  --purple:#a78bfa;--purple-dim:rgba(167,139,250,0.15);
+}
+body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
+.brand{font-family:'DM Serif Display',serif;font-size:22px;}
+.userbar{display:flex;gap:14px;align-items:center;}
+.userbar a{color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;font-size:13px;}
+.container{padding:24px;max-width:1000px;margin:0 auto;}
+.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
+.title{font-family:'DM Serif Display',serif;font-size:28px;}
+.subtitle{color:var(--muted);font-size:13px;margin-top:4px;}
+.card{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;padding:22px;margin-bottom:16px;}
+.card-title{font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:14px;font-weight:500;}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;}
+.field-display label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;}
+.field-display .val{font-size:15px;margin-top:2px;}
+.status{padding:4px 12px;border-radius:14px;font-size:13px;font-weight:500;display:inline-block;}
+.status-non_confirmee{background:var(--red-dim);color:var(--red);}
+.status-confirmee{background:var(--green-dim);color:var(--green);}
+.status-injoignable{background:var(--amber-dim);color:var(--amber);}
+.status-pas_serieux{background:var(--purple-dim);color:var(--purple);}
+.status-annulee{background:rgba(120,120,120,0.2);color:var(--muted);}
+.status-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+.btn-status{padding:8px 14px;border-radius:8px;border:0.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;cursor:pointer;}
+.btn-status:hover{background:var(--surface);border-color:var(--text);}
+.btn-status.current{background:var(--text);color:var(--bg);border-color:var(--text);cursor:default;}
+.lines-table{width:100%;border-collapse:collapse;}
+.lines-table th{text-align:left;padding:10px 8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:500;border-bottom:0.5px solid var(--border);}
+.lines-table td{padding:10px 8px;border-bottom:0.5px solid var(--border);}
+.lines-table tr:last-child td{border-bottom:none;}
+.totals{margin-top:14px;display:grid;grid-template-columns:1fr auto;gap:6px 24px;align-items:baseline;font-size:14px;}
+.totals .label{color:var(--muted);}
+.totals .val{text-align:right;font-weight:500;}
+.totals .grand{font-family:'DM Serif Display',serif;font-size:22px;color:var(--green);padding-top:8px;border-top:0.5px solid var(--border);margin-top:8px;}
+.totals .grand-label{padding-top:8px;border-top:0.5px solid var(--border);margin-top:8px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">Commande #{{ order.id }}</div>
+  <div class="userbar">
+    <a href="{% url 'orders_list' %}">← Liste</a>
+    {% if not request.user.is_superuser %}<a href="{% url 'home' %}">Espaces</a>{% endif %}
+    <a href="{% url 'logout' %}">Déconnexion</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="head">
+    <div>
+      <div class="title">Commande #{{ order.id }}</div>
+      <div class="subtitle">
+        Créée le {{ order.created_at|date:"d/m/Y H:i" }}
+        {% if order.created_by %} par {{ order.created_by.username }}{% endif %}
+        · Page <strong>{{ order.sales_page.name|default:"—" }}</strong>
+      </div>
+    </div>
+    <span class="status status-{{ order.status }}" id="status-pill">{{ order.get_status_display }}</span>
+  </div>
+
+  <!-- STATUS ACTIONS -->
+  <div class="card">
+    <div class="card-title">Changer le statut</div>
+    <div class="status-actions">
+      <button class="btn-status {% if order.status == 'non_confirmee' %}current{% endif %}" onclick="changeStatus('non_confirmee', this)">Non confirmée</button>
+      <button class="btn-status {% if order.status == 'confirmee' %}current{% endif %}" onclick="changeStatus('confirmee', this)">Confirmée</button>
+      <button class="btn-status {% if order.status == 'injoignable' %}current{% endif %}" onclick="changeStatus('injoignable', this)">Injoignable</button>
+      <button class="btn-status {% if order.status == 'pas_serieux' %}current{% endif %}" onclick="changeStatus('pas_serieux', this)">Pas sérieux</button>
+      <button class="btn-status {% if order.status == 'annulee' %}current{% endif %}" onclick="changeStatus('annulee', this)">Annulée</button>
+    </div>
+  </div>
+
+  <!-- CLIENT -->
+  <div class="card">
+    <div class="card-title">Client</div>
+    <div class="row">
+      <div class="field-display"><label>Nom</label><div class="val">{{ order.customer.name|default:"—" }}</div></div>
+      <div class="field-display"><label>Téléphone</label><div class="val">{{ order.customer.phone }}</div></div>
+      <div class="field-display"><label>Gouvernorat</label><div class="val">{{ order.region.name|default:"—" }}</div></div>
+      <div class="field-display"><label>Ville</label><div class="val">{{ order.ville|default:"—" }}</div></div>
+      {% if order.localite %}<div class="field-display"><label>Localité</label><div class="val">{{ order.localite }}</div></div>{% endif %}
+    </div>
+    {% if order.address %}
+    <div class="field-display" style="margin-top:14px;">
+      <label>Adresse</label>
+      <div class="val">{{ order.address }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ARTICLES -->
+  <div class="card">
+    <div class="card-title">Articles</div>
+    <table class="lines-table">
+      <thead>
+        <tr><th>Produit</th><th>Couleur</th><th>Taille</th><th style="text-align:center;">Qté</th><th style="text-align:right;">Prix unit.</th><th style="text-align:right;">Total ligne</th></tr>
+      </thead>
+      <tbody>
+        {% for line in order.lines.all %}
+        <tr>
+          <td>{{ line.product.name }}</td>
+          <td>{{ line.variant.color_label|default:"—" }}</td>
+          <td>{{ line.size|default:"—" }}</td>
+          <td style="text-align:center;">{{ line.quantity }}</td>
+          <td style="text-align:right;">{{ line.unit_price|floatformat:3 }} DT</td>
+          <td style="text-align:right;">{{ line.line_total|floatformat:3 }} DT</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="totals">
+      <div class="label">Livraison</div><div class="val">{{ order.delivery_fee|floatformat:3 }} DT</div>
+      {% if order.discount %}
+        <div class="label">Remise</div><div class="val">−{{ order.discount|floatformat:3 }} DT</div>
+      {% endif %}
+      <div class="label grand-label">Total</div><div class="val grand">{{ order.total|floatformat:0 }} DT</div>
+    </div>
+  </div>
+
+  {% if order.notes %}
+  <div class="card">
+    <div class="card-title">Notes</div>
+    <div>{{ order.notes|linebreaks }}</div>
+  </div>
+  {% endif %}
+
+  {% if order.bordereau_barcode %}
+  <div class="card">
+    <div class="card-title">Navex</div>
+    <div class="field-display"><label>Bordereau</label><div class="val" style="font-family:monospace;">{{ order.bordereau_barcode }}</div></div>
+    {% if order.pushed_to_navex_at %}<div class="muted" style="margin-top:6px;color:var(--muted);font-size:12px;">Envoyé à Navex le {{ order.pushed_to_navex_at|date:"d/m/Y H:i" }}</div>{% endif %}
+  </div>
+  {% else %}
+  <div class="card" style="border-color:rgba(245,166,35,0.3);">
+    <div class="card-title" style="color:var(--amber);">Navex</div>
+    <div style="color:var(--muted);font-size:13px;">Cette commande n'a pas encore été envoyée à Navex. Le bouton « Pousser vers Navex » sera disponible dans une prochaine version.</div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+async function changeStatus(newStatus, btn) {
+  if (btn.classList.contains('current')) return;
+  const csrf = document.cookie.split('csrftoken=')[1]?.split(';')[0] || '';
+  try {
+    const res = await fetch("{% url 'api_order_change_status' order.pk %}", {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+      body: JSON.stringify({status: newStatus}),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      // Update pill
+      const pill = document.getElementById('status-pill');
+      pill.textContent = data.label;
+      pill.className = 'status status-' + newStatus;
+      // Update buttons
+      document.querySelectorAll('.btn-status').forEach(b => b.classList.remove('current'));
+      btn.classList.add('current');
+    } else {
+      alert(data.message || 'Erreur');
+    }
+  } catch (e) { alert('Erreur réseau'); }
+}
+</script>
+</body>
+</html>

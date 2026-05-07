@@ -2314,3 +2314,182 @@ def api_check_barcode_gaps(request, pk):
         "total_missing": total_missing,
         "groups": groups,
     })
+
+
+# ---------------------------------------------------------------------------
+# V2 — ORDER MANAGEMENT (Phase 4)
+# Customer order creation. Independent from the existing scan/Navex flow.
+# Once an order is "Confirmée", a later phase will push it to Navex and
+# fill in the bordereau_barcode.
+# ---------------------------------------------------------------------------
+
+def _orders_role_check(request):
+    """Office, Shipping, and Admins may access. Messages Team cannot."""
+    if not request.user.is_authenticated:
+        return False
+    if request.user.is_superuser:
+        return True
+    try:
+        return request.user.profile.role != "messages"
+    except Exception:
+        return True  # legacy users default to allowed
+
+
+@login_required(login_url="/login/")
+def orders_list(request):
+    if not _orders_role_check(request):
+        return redirect("home")
+    from .models import Order
+    status_filter = request.GET.get("status", "")
+    qs = Order.objects.select_related("customer", "region", "sales_page").prefetch_related("lines__product")
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    orders = qs[:500]  # cap to prevent slowness on huge tables
+
+    # Counts per status (for filter chips)
+    from django.db.models import Count
+    counts = dict(Order.objects.values_list("status").annotate(n=Count("id")))
+    return render(request, "inventory/orders_list.html", {
+        "orders": orders,
+        "status_filter": status_filter,
+        "counts": counts,
+        "total": Order.objects.count(),
+    })
+
+
+@login_required(login_url="/login/")
+def order_create(request):
+    if not _orders_role_check(request):
+        return redirect("home")
+    from .models import Order, OrderLine, Customer, SalesPage, Region
+    if request.method == "POST":
+        return _save_new_order(request)
+    return render(request, "inventory/order_create.html", {
+        "sales_pages": SalesPage.objects.filter(is_active=True),
+        "regions": Region.objects.filter(is_active=True),
+        "products": Product.objects.filter(archived=False).prefetch_related("variants"),
+    })
+
+
+@require_POST
+def _save_new_order(request):
+    from .models import Order, OrderLine, Customer, SalesPage, Region, log_action, AuditLog
+    try:
+        # Customer
+        phone = (request.POST.get("phone") or "").strip()
+        if not phone:
+            return JsonResponse({"status": "error", "message": "Téléphone obligatoire."}, status=400)
+        name = (request.POST.get("name") or "").strip()
+        customer, created_customer = Customer.objects.get_or_create(
+            phone=phone, defaults={"name": name},
+        )
+        if name and customer.name != name:
+            customer.name = name
+            customer.save(update_fields=["name"])
+
+        # Region / address
+        region_id = request.POST.get("region") or None
+        ville = (request.POST.get("ville") or "").strip()
+        localite = (request.POST.get("localite") or "").strip()
+        address = (request.POST.get("address") or "").strip()
+        sales_page_id = request.POST.get("sales_page") or None
+
+        delivery_fee = Decimal(str(request.POST.get("delivery_fee") or "7"))
+        discount = Decimal(str(request.POST.get("discount") or "0"))
+        notes = (request.POST.get("notes") or "").strip()
+
+        # Lines come as parallel arrays: line_product[], line_variant[], line_size[], line_qty[], line_price[]
+        line_products = request.POST.getlist("line_product")
+        line_variants = request.POST.getlist("line_variant")
+        line_sizes    = request.POST.getlist("line_size")
+        line_qtys     = request.POST.getlist("line_qty")
+        line_prices   = request.POST.getlist("line_price")
+
+        if not line_products:
+            return JsonResponse({"status": "error", "message": "Au moins un article requis."}, status=400)
+
+        with transaction.atomic():
+            order = Order.objects.create(
+                customer=customer,
+                sales_page_id=sales_page_id or None,
+                region_id=region_id or None,
+                ville=ville,
+                localite=localite,
+                address=address,
+                delivery_fee=delivery_fee,
+                discount=discount,
+                notes=notes,
+                created_by=request.user if request.user.is_authenticated else None,
+            )
+            for i, prod_id in enumerate(line_products):
+                if not prod_id:
+                    continue
+                qty = int(line_qtys[i]) if i < len(line_qtys) and line_qtys[i] else 1
+                price_raw = line_prices[i] if i < len(line_prices) else "0"
+                try:
+                    price = Decimal(str(price_raw))
+                except Exception:
+                    price = Decimal("0")
+                variant_id = line_variants[i] if i < len(line_variants) and line_variants[i] else None
+                size = line_sizes[i] if i < len(line_sizes) else ""
+                OrderLine.objects.create(
+                    order=order,
+                    product_id=prod_id,
+                    variant_id=variant_id,
+                    size=size,
+                    quantity=max(qty, 1),
+                    unit_price=price,
+                )
+            order.recalc_total()
+
+        log_action(
+            request.user, AuditLog.CREATE,
+            description=f"Commande #{order.id} créée pour {customer} ({order.lines.count()} ligne(s), {order.total} TND)",
+            request=request,
+            target_model="Order", target_id=order.id,
+        )
+        return JsonResponse({"status": "ok", "order_id": order.id, "redirect": f"/orders/{order.id}/"})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=400)
+
+
+@login_required(login_url="/login/")
+def order_view(request, pk):
+    if not _orders_role_check(request):
+        return redirect("home")
+    from .models import Order
+    order = get_object_or_404(
+        Order.objects.select_related("customer", "region", "sales_page", "created_by")
+                     .prefetch_related("lines__product", "lines__variant"),
+        pk=pk,
+    )
+    return render(request, "inventory/order_view.html", {"order": order})
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_order_change_status(request, pk):
+    """Change the status of an order (non_confirmee → confirmee, etc.)."""
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import Order, log_action, AuditLog
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+    new_status = data.get("status", "")
+    valid = dict(Order.STATUS_CHOICES)
+    if new_status not in valid:
+        return JsonResponse({"status": "error", "message": "Statut invalide."}, status=400)
+    order = get_object_or_404(Order, pk=pk)
+    old_status = order.get_status_display()
+    order.status = new_status
+    order.save(update_fields=["status", "updated_at"])
+    log_action(
+        request.user, AuditLog.STATUS_CHANGE,
+        description=f"Commande #{order.id} : {old_status} → {valid[new_status]}",
+        request=request,
+        target_model="Order", target_id=order.id,
+    )
+    return JsonResponse({"status": "ok", "new_status": new_status, "label": valid[new_status]})

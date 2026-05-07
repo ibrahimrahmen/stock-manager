@@ -52,4 +52,10 @@ urlpatterns = [
     path("api/products/<int:pk>/check-gaps/", views.api_check_barcode_gaps, name="api_check_barcode_gaps"),
     path("search/", views.search, name="search"),
     path("api/search/", views.api_search, name="api_search"),
+
+    # V2 — Order management (Phase 4)
+    path("orders/", views.orders_list, name="orders_list"),
+    path("orders/add/", views.order_create, name="order_create"),
+    path("orders/<int:pk>/", views.order_view, name="order_view"),
+    path("api/orders/<int:pk>/status/", views.api_order_change_status, name="api_order_change_status"),
 ]

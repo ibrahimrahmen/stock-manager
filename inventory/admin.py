@@ -5,6 +5,7 @@ from .models import (
     Product, ProductVariant, ProductUnit,
     ShippingOrder, OrderItem, StockMovement, Payment, SizeAlert,
     SalesPage, Customer, AuditLog, UserProfile,
+    Region, Order, OrderLine,
 )
 
 
@@ -170,3 +171,29 @@ class AuditLogAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         # Allow superuser to delete (e.g. retention cleanup) but not regular staff.
         return request.user.is_superuser
+
+
+# --- V2 Phase 4: Order management ---
+@admin.register(Region)
+class RegionAdmin(admin.ModelAdmin):
+    list_display = ("name", "is_active")
+    list_filter = ("is_active",)
+    search_fields = ("name",)
+
+
+class OrderLineInline(admin.TabularInline):
+    model = OrderLine
+    extra = 0
+    fields = ("product", "variant", "size", "quantity", "unit_price")
+    autocomplete_fields = ("product", "variant")
+
+
+@admin.register(Order)
+class OrderAdmin(admin.ModelAdmin):
+    list_display = ("id", "created_at", "customer", "sales_page", "status", "total", "bordereau_barcode")
+    list_filter = ("status", "sales_page", "region", "source")
+    search_fields = ("customer__phone", "customer__name", "bordereau_barcode", "notes")
+    readonly_fields = ("created_at", "updated_at", "created_by", "total")
+    autocomplete_fields = ("customer",)
+    inlines = [OrderLineInline]
+    date_hierarchy = "created_at"

@@ -390,6 +390,118 @@ class Customer(models.Model):
         return f"{self.name} ({self.phone})" if self.name else self.phone
 
 
+class Region(models.Model):
+    """A Tunisian governorate. Seeded by a data migration with the standard 24."""
+    name = models.CharField(max_length=80, unique=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Order(models.Model):
+    """A customer order created in our system (v2)."""
+    NON_CONFIRMEE = "non_confirmee"
+    CONFIRMEE     = "confirmee"
+    INJOIGNABLE   = "injoignable"
+    PAS_SERIEUX   = "pas_serieux"
+    ANNULEE       = "annulee"
+
+    STATUS_CHOICES = [
+        (NON_CONFIRMEE, "Non confirmée"),
+        (CONFIRMEE,     "Confirmée"),
+        (INJOIGNABLE,   "Injoignable"),
+        (PAS_SERIEUX,   "Pas sérieux"),
+        (ANNULEE,       "Annulée"),
+    ]
+
+    SOURCE_WEBFORM = "web_form"
+    SOURCE_SHOPIFY = "shopify"
+
+    SOURCE_CHOICES = [
+        (SOURCE_WEBFORM, "Saisie manuelle"),
+        (SOURCE_SHOPIFY, "Shopify"),
+    ]
+
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="orders")
+    sales_page = models.ForeignKey(SalesPage, on_delete=models.SET_NULL, null=True, blank=True, related_name="orders")
+    region = models.ForeignKey(Region, on_delete=models.SET_NULL, null=True, blank=True, related_name="orders")
+    ville = models.CharField(max_length=120, blank=True, default="")
+    localite = models.CharField(max_length=120, blank=True, default="")
+    address = models.TextField(blank=True, default="")
+
+    delivery_fee = models.DecimalField(max_digits=10, decimal_places=3, default=7)
+    discount = models.DecimalField(max_digits=10, decimal_places=3, default=0)
+    total = models.DecimalField(max_digits=10, decimal_places=3, default=0,
+        help_text="Computed: sum(line totals) + delivery_fee − discount")
+
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default=NON_CONFIRMEE)
+    notes = models.TextField(blank=True, default="")
+
+    # Filled later by Phase 5 (Navex push) — blank means "not yet pushed"
+    bordereau_barcode = models.CharField(max_length=50, blank=True, default="")
+    pushed_to_navex_at = models.DateTimeField(null=True, blank=True)
+
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_WEBFORM)
+    created_by = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="orders_created")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["-created_at"]),
+            models.Index(fields=["status", "-created_at"]),
+            models.Index(fields=["bordereau_barcode"]),
+        ]
+
+    def __str__(self):
+        return f"#{self.id} — {self.customer} — {self.get_status_display()}"
+
+    def recalc_total(self):
+        """Recompute total from lines + delivery − discount. Saves."""
+        from decimal import Decimal
+        lines_sum = sum((l.line_total for l in self.lines.all()), Decimal("0"))
+        self.total = max(Decimal("0"), lines_sum + (self.delivery_fee or 0) - (self.discount or 0))
+        self.save(update_fields=["total", "updated_at"])
+
+    @property
+    def article_summary(self):
+        """Short text summary of the products for list display."""
+        parts = []
+        for line in self.lines.all()[:3]:
+            parts.append(f"{line.quantity}× {line.product.name}")
+        extra = self.lines.count() - 3
+        if extra > 0:
+            parts.append(f"+{extra} autre(s)")
+        return ", ".join(parts) if parts else "—"
+
+
+class OrderLine(models.Model):
+    """One product line inside an Order. Stores price as snapshot."""
+    order    = models.ForeignKey(Order, on_delete=models.CASCADE, related_name="lines")
+    product  = models.ForeignKey(Product, on_delete=models.PROTECT)
+    variant  = models.ForeignKey(ProductVariant, on_delete=models.PROTECT, null=True, blank=True)
+    size     = models.CharField(max_length=10, blank=True, default="")
+    quantity = models.PositiveIntegerField(default=1)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=3, default=0,
+        help_text="Snapshot of the product's sell_price at order creation")
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.quantity}× {self.product.name}"
+
+    @property
+    def line_total(self):
+        from decimal import Decimal
+        return (self.unit_price or Decimal("0")) * self.quantity
+
+
 # ---------------------------------------------------------------------------
 # USER ROLES — non-superuser access scoping
 # Each User has one Profile with a role: shipping, office, or messages.

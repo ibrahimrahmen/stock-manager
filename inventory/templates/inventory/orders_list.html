@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commandes — Stock Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0f0f0d; --surface:#1a1a17; --surface2:#222220;
+  --border:rgba(255,255,255,0.08); --text:#f0ede6; --muted:#8a887f;
+  --green:#4ade9a; --green-dim:rgba(74,222,154,0.15);
+  --amber:#f5a623; --amber-dim:rgba(245,166,35,0.15);
+  --red:#f87171; --red-dim:rgba(248,113,113,0.15);
+  --blue:#60a5fa; --blue-dim:rgba(96,165,250,0.15);
+  --purple:#a78bfa; --purple-dim:rgba(167,139,250,0.15);
+}
+body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
+.brand{font-family:'DM Serif Display',serif;font-size:22px;}
+.userbar{display:flex;gap:14px;font-size:13px;color:var(--muted);align-items:center;}
+.userbar a{color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;}
+.userbar a:hover{color:var(--text);}
+.container{padding:24px;max-width:1300px;margin:0 auto;}
+.page-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
+.page-title{font-family:'DM Serif Display',serif;font-size:28px;}
+.add-btn{background:var(--green);color:#0a0a08;padding:10px 18px;border-radius:10px;text-decoration:none;font-weight:500;font-size:14px;}
+.add-btn:hover{background:#3acb88;}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;}
+.chip{padding:7px 14px;border-radius:20px;border:0.5px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
+.chip:hover{background:var(--surface2);}
+.chip.active{background:var(--text);color:var(--bg);border-color:var(--text);}
+.chip .count{background:rgba(255,255,255,0.1);padding:1px 8px;border-radius:10px;font-size:11px;font-weight:500;}
+.chip.active .count{background:rgba(0,0,0,0.15);}
+.table-wrap{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;overflow:hidden;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+thead{background:var(--surface2);}
+th{text-align:left;padding:12px 14px;font-weight:500;color:var(--muted);font-size:11px;letter-spacing:0.06em;text-transform:uppercase;}
+td{padding:12px 14px;border-top:0.5px solid var(--border);vertical-align:top;}
+tr:hover td{background:var(--surface2);}
+tr td a.row-link{color:var(--text);text-decoration:none;}
+tr td a.row-link:hover{text-decoration:underline;}
+.status{padding:3px 9px;border-radius:10px;font-size:11px;font-weight:500;display:inline-block;}
+.status-non_confirmee{background:var(--red-dim);color:var(--red);}
+.status-confirmee{background:var(--green-dim);color:var(--green);}
+.status-injoignable{background:var(--amber-dim);color:var(--amber);}
+.status-pas_serieux{background:var(--purple-dim);color:var(--purple);}
+.status-annulee{background:rgba(120,120,120,0.2);color:var(--muted);text-decoration:line-through;}
+.muted{color:var(--muted);}
+.empty{text-align:center;padding:60px 20px;color:var(--muted);}
+.empty-cta{color:var(--green);text-decoration:none;font-weight:500;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">Stock Manager — Commandes</div>
+  <div class="userbar">
+    {% if not request.user.is_superuser %}<a href="{% url 'home' %}">← Espaces</a>{% endif %}
+    <a href="{% url 'logout' %}">Déconnexion</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-head">
+    <div>
+      <div class="page-title">Commandes</div>
+      <div class="muted" style="font-size:13px;margin-top:4px;">{{ total }} commande(s) au total</div>
+    </div>
+    <a href="{% url 'order_create' %}" class="add-btn">+ Nouvelle commande</a>
+  </div>
+
+  <div class="chips">
+    <a href="{% url 'orders_list' %}" class="chip {% if not status_filter %}active{% endif %}">Toutes <span class="count">{{ total }}</span></a>
+    <a href="?status=non_confirmee" class="chip {% if status_filter == 'non_confirmee' %}active{% endif %}">Non confirmée <span class="count">{{ counts.non_confirmee|default:0 }}</span></a>
+    <a href="?status=confirmee" class="chip {% if status_filter == 'confirmee' %}active{% endif %}">Confirmée <span class="count">{{ counts.confirmee|default:0 }}</span></a>
+    <a href="?status=injoignable" class="chip {% if status_filter == 'injoignable' %}active{% endif %}">Injoignable <span class="count">{{ counts.injoignable|default:0 }}</span></a>
+    <a href="?status=pas_serieux" class="chip {% if status_filter == 'pas_serieux' %}active{% endif %}">Pas sérieux <span class="count">{{ counts.pas_serieux|default:0 }}</span></a>
+    <a href="?status=annulee" class="chip {% if status_filter == 'annulee' %}active{% endif %}">Annulée <span class="count">{{ counts.annulee|default:0 }}</span></a>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Date</th><th>Page</th><th>Client</th><th>Adresse</th>
+          <th>Articles</th><th style="text-align:right;">Prix</th>
+          <th>Statut</th><th>Barcode</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for o in orders %}
+        <tr>
+          <td><a class="row-link" href="{% url 'order_view' o.pk %}">#{{ o.id }}</a></td>
+          <td class="muted">{{ o.created_at|date:"d/m H:i" }}</td>
+          <td>{{ o.sales_page.name|default:"—" }}</td>
+          <td>
+            <div>{{ o.customer.name|default:o.customer.phone }}</div>
+            <div class="muted" style="font-size:11px;">{{ o.customer.phone }}</div>
+          </td>
+          <td>
+            <div>{{ o.region.name|default:"" }}{% if o.ville %} · {{ o.ville }}{% endif %}</div>
+            {% if o.address %}<div class="muted" style="font-size:11px;">{{ o.address|truncatechars:50 }}</div>{% endif %}
+          </td>
+          <td class="muted">{{ o.article_summary }}</td>
+          <td style="text-align:right;font-weight:500;">{{ o.total|floatformat:0 }} DT</td>
+          <td><span class="status status-{{ o.status }}">{{ o.get_status_display }}</span></td>
+          <td class="muted" style="font-family:monospace;font-size:11px;">{{ o.bordereau_barcode|default:"—" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="9" class="empty">
+          Aucune commande{% if status_filter %} pour ce statut{% endif %}.<br>
+          <a href="{% url 'order_create' %}" class="empty-cta">+ Créer la première commande</a>
+        </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</body>
+</html>
