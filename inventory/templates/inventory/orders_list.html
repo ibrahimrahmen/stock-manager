@@ -100,7 +100,6 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
 <div class="topbar">
   <div class="brand">Stock Manager — Commandes</div>
   <div class="userbar">
-    {% if request.user.is_superuser %}<a href="{% url 'offers_manage' %}">Gérer les offres</a>{% endif %}
     {% if not request.user.is_superuser %}<a href="{% url 'home' %}">← Espaces</a>{% endif %}
     <a href="{% url 'logout' %}">Déconnexion</a>
   </div>
