@@ -8,7 +8,7 @@ from django.db import migrations
 
 GOUVERNORATS = [
     "Ariana", "Béja", "Ben Arous", "Bizerte", "Gabès", "Gafsa",
-    "Jendouba", "Kairouan", "Kasserine", "Kébili", "La Mannouba",
+    "Jendouba", "Kairouan", "Kasserine", "Kébili", "La Manouba",
     "LE Kef", "Mahdia", "Médenine", "Monastir", "Nabeul", "Sfax",
     "Sidi Bouzid", "Siliana", "Sousse", "Tataouine", "Tozeur",
     "Tunis", "Zaghouan",

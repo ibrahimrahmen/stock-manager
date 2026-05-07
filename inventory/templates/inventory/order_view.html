@@ -147,9 +147,16 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
     {% if order.pushed_to_navex_at %}<div class="muted" style="margin-top:6px;color:var(--muted);font-size:12px;">Envoyé à Navex le {{ order.pushed_to_navex_at|date:"d/m/Y H:i" }}</div>{% endif %}
   </div>
   {% else %}
-  <div class="card" style="border-color:rgba(245,166,35,0.3);">
-    <div class="card-title" style="color:var(--amber);">Navex</div>
-    <div style="color:var(--muted);font-size:13px;">Cette commande n'a pas encore été envoyée à Navex. Le bouton « Pousser vers Navex » sera disponible dans une prochaine version.</div>
+  <div class="card" style="border-color:rgba(74,222,154,0.3);">
+    <div class="card-title" style="color:var(--green);">Navex</div>
+    <div style="color:var(--muted);font-size:13px;margin-bottom:14px;">
+      Cette commande n'a pas encore été envoyée à Navex.<br>
+      Vérifiez que client, gouvernorat, adresse et articles sont corrects avant de pousser.
+    </div>
+    <button id="btn-push-navex" onclick="pushToNavex()" style="background:var(--green);color:#0a0a08;border:none;padding:10px 20px;border-radius:8px;font-weight:500;cursor:pointer;font-size:14px;">
+      📤 Pousser vers Navex
+    </button>
+    <div id="push-status" style="margin-top:10px;font-size:12px;color:var(--muted);"></div>
   </div>
   {% endif %}
 </div>
@@ -177,6 +184,35 @@ async function changeStatus(newStatus, btn) {
       alert(data.message || 'Erreur');
     }
   } catch (e) { alert('Erreur réseau'); }
+}
+async function pushToNavex() {
+  if (!confirm('Envoyer cette commande à Navex ? Cette action n\'est pas réversible.')) return;
+  const btn = document.getElementById('btn-push-navex');
+  const statusEl = document.getElementById('push-status');
+  btn.disabled = true; btn.textContent = '⏳ Envoi en cours...';
+  statusEl.textContent = '';
+  const csrf = document.cookie.split('csrftoken=')[1]?.split(';')[0] || '';
+  try {
+    const res = await fetch("{% url 'api_push_order_to_navex' order.pk %}", {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = '✓ Envoyé. Bordereau : ' + (data.bordereau || '(récupération en cours)');
+      setTimeout(() => window.location.reload(), 1200);
+    } else {
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = '✗ ' + (data.message || 'Erreur Navex.');
+      btn.disabled = false; btn.textContent = '📤 Pousser vers Navex';
+    }
+  } catch (e) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '✗ Erreur réseau : ' + e.message;
+    btn.disabled = false; btn.textContent = '📤 Pousser vers Navex';
+  }
 }
 </script>
 </body>

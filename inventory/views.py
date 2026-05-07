@@ -2717,3 +2717,199 @@ def api_order_change_status(request, pk):
         target_model="Order", target_id=order.id,
     )
     return JsonResponse({"status": "ok", "new_status": new_status, "label": valid[new_status]})
+
+
+# ---------------------------------------------------------------------------
+# PHASE 5 — PUSH ORDER TO NAVEX
+# Sends a confirmed order to Navex for shipping. On success Navex returns a
+# bordereau code which we save back to order.bordereau_barcode.
+# ---------------------------------------------------------------------------
+
+def _build_designation(order):
+    """Plain-text description of articles for Navex's 'designation' field."""
+    parts = []
+    for oo in order.order_offers.all():
+        # Show the offer + its products (with chosen variant/size if any)
+        offer_parts = []
+        for line in oo.lines.all():
+            seg = line.product.name
+            if line.variant:
+                seg += f" {line.variant.color_label or line.variant.color_name}"
+            if line.size:
+                seg += f" {line.size}"
+            if line.quantity > 1:
+                seg = f"{line.quantity}× {seg}"
+            offer_parts.append(seg)
+        offer_label = oo.offer_name or "Offre"
+        if oo.quantity > 1:
+            offer_label = f"{oo.quantity}× {offer_label}"
+        if offer_parts:
+            parts.append(f"{offer_label} ({', '.join(offer_parts)})")
+        else:
+            parts.append(offer_label)
+    # Standalone lines (no offer parent)
+    for line in order.lines.filter(order_offer__isnull=True):
+        seg = line.product.name
+        if line.variant:
+            seg += f" {line.variant.color_label or line.variant.color_name}"
+        if line.size:
+            seg += f" {line.size}"
+        if line.quantity > 1:
+            seg = f"{line.quantity}× {seg}"
+        parts.append(seg)
+    return " | ".join(parts) if parts else "Commande"
+
+
+def _count_articles(order):
+    """Total number of physical articles for nb_article."""
+    n = 0
+    for oo in order.order_offers.all():
+        for line in oo.lines.all():
+            n += line.quantity
+        if not oo.lines.exists():
+            n += oo.quantity  # offer with no detailed lines counts as itself
+    for line in order.lines.filter(order_offer__isnull=True):
+        n += line.quantity
+    return max(n, 1)
+
+
+def _extract_bordereau_from_navex_response(resp_data):
+    """Try multiple known field paths to find the bordereau code in Navex's response.
+    Returns "" if not found — we'll log the full response so we can adjust later."""
+    if not isinstance(resp_data, dict):
+        return ""
+    # Direct top-level keys to try
+    for key in ("code", "barcode", "bordereau", "bordereau_barcode", "tracking", "id"):
+        v = resp_data.get(key)
+        if v and isinstance(v, (str, int)):
+            return str(v).strip()
+    # Look inside a "colis" sub-object
+    colis = resp_data.get("colis")
+    if isinstance(colis, dict):
+        for key in ("code", "barcode", "bordereau", "bordereau_barcode", "tracking", "id"):
+            v = colis.get(key)
+            if v and isinstance(v, (str, int)):
+                return str(v).strip()
+    return ""
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_push_order_to_navex(request, pk):
+    """Push a v2 Order to Navex. Saves the returned bordereau on success."""
+    import urllib.request, urllib.parse
+    from .models import Order, log_action, AuditLog
+
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+
+    token = os.environ.get("NAVEX_API_TOKEN", "")
+    if not token:
+        return JsonResponse({"status": "error", "message": "NAVEX_API_TOKEN non configuré côté serveur."}, status=500)
+
+    try:
+        order = Order.objects.select_related("customer", "region", "sales_page").prefetch_related(
+            "order_offers__lines__product", "order_offers__lines__variant",
+            "lines__product", "lines__variant",
+        ).get(pk=pk)
+    except Order.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Commande introuvable."}, status=404)
+
+    # Idempotent: don't push twice
+    if order.bordereau_barcode:
+        return JsonResponse({
+            "status": "error",
+            "message": f"Déjà envoyé à Navex (bordereau {order.bordereau_barcode}).",
+            "code": "ALREADY_PUSHED",
+        }, status=400)
+
+    # Validate required fields
+    if not order.customer.phone:
+        return JsonResponse({"status": "error", "message": "Téléphone manquant."}, status=400)
+    if not order.region:
+        return JsonResponse({"status": "error", "message": "Gouvernorat manquant."}, status=400)
+
+    # Build payload — every field must be present (empty string for optional)
+    designation = _build_designation(order)
+    nb_article = _count_articles(order)
+    payload = {
+        "prix":           f"{order.total:.0f}" if order.total else "0",
+        "nom":            order.customer.name or order.customer.phone,
+        "gouvernerat":    order.region.name,  # spelling already aligned to Navex
+        "ville":          order.ville or "",
+        "adresse":        (order.address or order.localite or "").strip() or order.ville or "",
+        "tel":            order.customer.phone,
+        "tel2":           "",
+        "designation":    designation[:500],
+        "nb_article":     str(nb_article),
+        "msg":            (order.notes or "")[:500],
+        "echange":        "",
+        "article":        "",
+        "nb_echange":     "",
+        "ouvrir":         "",
+        "sender_name":    "",
+        "sender_location":"",
+    }
+
+    url = f"https://app.navex.tn/api/rashop-{token}/v1/post.php"
+    try:
+        body = urllib.parse.urlencode(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            try:
+                navex_data = json.loads(raw)
+            except json.JSONDecodeError:
+                navex_data = {"_raw": raw}
+    except Exception as e:
+        log_action(
+            request.user, AuditLog.NAVEX_PUSH,
+            description=f"Push #{order.id} ÉCHEC réseau : {str(e)[:200]}",
+            request=request, target_model="Order", target_id=order.id,
+        )
+        return JsonResponse({"status": "error", "message": f"Erreur réseau Navex : {e}"}, status=502)
+
+    # Status-message-based success check (Navex returns "Product Added." on success)
+    msg = (navex_data.get("status_message") or navex_data.get("message") or "").lower()
+    is_success = ("added" in msg) or ("ajout" in msg) or (str(navex_data.get("status", "")).lower() in ("ok", "success", "201"))
+
+    if not is_success:
+        # Log full response so we can debug if Navex changes its format
+        log_action(
+            request.user, AuditLog.NAVEX_PUSH,
+            description=f"Push #{order.id} REFUSÉ par Navex : {str(navex_data)[:300]}",
+            request=request, target_model="Order", target_id=order.id,
+            extra=str(navex_data)[:5000],
+        )
+        return JsonResponse({
+            "status": "error",
+            "message": navex_data.get("status_message") or navex_data.get("message") or "Navex a refusé la commande.",
+            "navex_response": navex_data,
+        }, status=400)
+
+    bordereau = _extract_bordereau_from_navex_response(navex_data)
+
+    # Save what we have. If we couldn't find a bordereau, still mark pushed_at
+    # so we don't push twice — admin can fill it in manually from /admin/.
+    order.pushed_to_navex_at = timezone.now()
+    if bordereau:
+        order.bordereau_barcode = bordereau
+    if order.status == Order.NON_CONFIRMEE:
+        order.status = Order.CONFIRMEE
+    order.save(update_fields=["bordereau_barcode", "pushed_to_navex_at", "status", "updated_at"])
+
+    log_action(
+        request.user, AuditLog.NAVEX_PUSH,
+        description=f"Commande #{order.id} envoyée à Navex" + (f" — bordereau {bordereau}" if bordereau else " (bordereau manquant dans la réponse)"),
+        request=request, target_model="Order", target_id=order.id,
+        extra=str(navex_data)[:5000],
+    )
+
+    return JsonResponse({
+        "status": "ok",
+        "bordereau": bordereau,
+        "navex_response": navex_data,
+        "redirect": f"/orders/{order.id}/",
+    })
