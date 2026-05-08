@@ -53,15 +53,16 @@ urlpatterns = [
     path("search/", views.search, name="search"),
     path("api/search/", views.api_search, name="api_search"),
 
-    # V2 — Order management (Phase 4)
-    path("orders/", views.orders_list, name="orders_list"),
-    path("orders/add/", views.order_create, name="order_create"),
-    path("orders/<int:pk>/", views.order_view, name="order_view"),
-    path("api/orders/<int:pk>/status/", views.api_order_change_status, name="api_order_change_status"),
-    path("api/orders/<int:pk>/push-navex/", views.api_push_order_to_navex, name="api_push_order_to_navex"),
+    # V2 — Order management (Phase 4) — renamed to /sales-orders/ to avoid
+    # colliding with v1's /orders/<pk>/ which routes to ShippingOrder detail.
+    path("sales-orders/", views.orders_list, name="orders_list"),
+    path("sales-orders/add/", views.order_create, name="order_create"),
+    path("sales-orders/<int:pk>/", views.order_view, name="order_view"),
+    path("api/sales-orders/<int:pk>/status/", views.api_order_change_status, name="api_order_change_status"),
+    path("api/sales-orders/<int:pk>/push-navex/", views.api_push_order_to_navex, name="api_push_order_to_navex"),
 
     # V2 — Inline create + offer APIs
-    path("api/orders/create/", views.api_create_order_inline, name="api_create_order_inline"),
+    path("api/sales-orders/create/", views.api_create_order_inline, name="api_create_order_inline"),
     path("api/sales-pages/<int:page_id>/offers/", views.api_offers_for_page, name="api_offers_for_page"),
     path("api/offers/<int:offer_id>/", views.api_offer_detail, name="api_offer_detail"),
 
