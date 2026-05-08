@@ -442,35 +442,57 @@ function validateArticles() {
 }
 
 async function submitNewOrder() {
-  const phone = document.getElementById('cr-phone').value.trim();
-  const region = document.getElementById('cr-region').value;
-  if (!phone) { alert('Téléphone obligatoire.'); return; }
-  if (!region) { alert('Gouvernorat obligatoire.'); return; }
-  if (modalOffers.length === 0) { alert('Articles obligatoires.'); return; }
-  const payload = {
-    phone,
-    name: document.getElementById('cr-name').value.trim(),
-    sales_page: parseInt(pickedPageId),
-    region: parseInt(region),
-    ville: document.getElementById('cr-ville').value.trim(),
-    localite: '',
-    address: document.getElementById('cr-address').value.trim(),
-    delivery_fee: parseFloat(document.getElementById('modal-delivery').value) || 7,
-    discount: parseFloat(document.getElementById('modal-discount').value) || 0,
-    offers: modalOffers,
-  };
-  const btn = document.getElementById('cr-save');
-  btn.disabled = true; btn.textContent = '...';
+  console.log('[order] submitNewOrder() called');
   try {
+    const phone = document.getElementById('cr-phone').value.trim();
+    const region = document.getElementById('cr-region').value;
+    console.log('[order] phone=', phone, 'region=', region, 'pickedPageId=', pickedPageId, 'modalOffers=', modalOffers);
+    if (!phone) { alert('Téléphone obligatoire.'); return; }
+    if (!region) { alert('Gouvernorat obligatoire.'); return; }
+    if (modalOffers.length === 0) { alert('Articles obligatoires.'); return; }
+    const payload = {
+      phone,
+      name: document.getElementById('cr-name').value.trim(),
+      sales_page: parseInt(pickedPageId),
+      region: parseInt(region),
+      ville: document.getElementById('cr-ville').value.trim(),
+      localite: '',
+      address: document.getElementById('cr-address').value.trim(),
+      delivery_fee: parseFloat(document.getElementById('modal-delivery')?.value || '7') || 7,
+      discount: parseFloat(document.getElementById('modal-discount')?.value || '0') || 0,
+      offers: modalOffers,
+    };
+    console.log('[order] payload built:', payload);
+    const btn = document.getElementById('cr-save');
+    btn.disabled = true; btn.textContent = '...';
+    console.log('[order] sending POST to /api/orders/create/');
     const res = await fetch('/api/orders/create/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
       body: JSON.stringify(payload),
     });
-    const data = await res.json();
-    if (data.status === 'ok') window.location.reload();
-    else { alert(data.message || 'Erreur'); btn.disabled = false; btn.textContent = 'Sauver'; }
-  } catch (e) { alert('Erreur réseau : ' + e.message); btn.disabled = false; btn.textContent = 'Sauver'; }
+    console.log('[order] response status:', res.status);
+    const text = await res.text();
+    console.log('[order] response body:', text);
+    let data;
+    try { data = JSON.parse(text); } catch(e) {
+      alert('Réponse non-JSON du serveur. Voir console (F12).');
+      btn.disabled = false; btn.textContent = 'Sauver';
+      return;
+    }
+    if (data.status === 'ok') {
+      console.log('[order] success, reloading');
+      window.location.reload();
+    } else {
+      alert(data.message || 'Erreur');
+      btn.disabled = false; btn.textContent = 'Sauver';
+    }
+  } catch (e) {
+    console.error('[order] EXCEPTION:', e);
+    alert('Erreur : ' + e.message);
+    const btn = document.getElementById('cr-save');
+    if (btn) { btn.disabled = false; btn.textContent = 'Sauver'; }
+  }
 }
 </script>
 
