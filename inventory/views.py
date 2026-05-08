@@ -2774,16 +2774,27 @@ def _count_articles(order):
 
 
 def _extract_bordereau_from_navex_response(resp_data):
-    """Try multiple known field paths to find the bordereau code in Navex's response.
-    Returns "" if not found — we'll log the full response so we can adjust later."""
+    """Find the bordereau code in Navex's response.
+
+    Real Navex success response (verified 2026-05-08):
+        {'status': 1, 'lien': '...', 'status_message': '918762425951'}
+
+    The bordereau is the digit string in status_message.
+    Fallback: look for known field names in case Navex changes the format.
+    """
     if not isinstance(resp_data, dict):
         return ""
-    # Direct top-level keys to try
+    # Real-world success: status_message is the bordereau (a digit string)
+    sm = resp_data.get("status_message", "")
+    if isinstance(sm, (str, int)):
+        s = str(sm).strip()
+        if s.isdigit() and len(s) >= 6:  # looks like a bordereau number
+            return s
+    # Fallback: try other plausible keys
     for key in ("code", "barcode", "bordereau", "bordereau_barcode", "tracking", "id"):
         v = resp_data.get(key)
         if v and isinstance(v, (str, int)):
             return str(v).strip()
-    # Look inside a "colis" sub-object
     colis = resp_data.get("colis")
     if isinstance(colis, dict):
         for key in ("code", "barcode", "bordereau", "bordereau_barcode", "tracking", "id"):
@@ -2791,6 +2802,24 @@ def _extract_bordereau_from_navex_response(resp_data):
             if v and isinstance(v, (str, int)):
                 return str(v).strip()
     return ""
+
+
+def _navex_response_is_success(resp_data):
+    """Detect a successful Navex create response.
+
+    Real Navex success: status == 1 (integer) and status_message contains a digit string.
+    Failure: status_message contains 'ERREUR' or status is something else.
+    """
+    if not isinstance(resp_data, dict):
+        return False
+    status = resp_data.get("status")
+    if status == 1 or status == "1" or status == "ok" or status == "success":
+        return True
+    # Fallback: success if we can extract a bordereau-looking number anywhere
+    bc = _extract_bordereau_from_navex_response(resp_data)
+    if bc and bc.isdigit() and len(bc) >= 6:
+        return True
+    return False
 
 
 @csrf_exempt
@@ -2871,9 +2900,8 @@ def api_push_order_to_navex(request, pk):
         )
         return JsonResponse({"status": "error", "message": f"Erreur réseau Navex : {e}"}, status=502)
 
-    # Status-message-based success check (Navex returns "Product Added." on success)
-    msg = (navex_data.get("status_message") or navex_data.get("message") or "").lower()
-    is_success = ("added" in msg) or ("ajout" in msg) or (str(navex_data.get("status", "")).lower() in ("ok", "success", "201"))
+    # Real Navex returns status==1 (int) on success, status_message holds the bordereau.
+    is_success = _navex_response_is_success(navex_data)
 
     if not is_success:
         # Log full response so we can debug if Navex changes its format
@@ -2890,15 +2918,18 @@ def api_push_order_to_navex(request, pk):
         }, status=400)
 
     bordereau = _extract_bordereau_from_navex_response(navex_data)
+    label_url = navex_data.get("lien") or ""
 
     # Save what we have. If we couldn't find a bordereau, still mark pushed_at
     # so we don't push twice — admin can fill it in manually from /admin/.
     order.pushed_to_navex_at = timezone.now()
     if bordereau:
         order.bordereau_barcode = bordereau
+    if label_url:
+        order.navex_label_url = label_url[:500]
     if order.status == Order.NON_CONFIRMEE:
         order.status = Order.CONFIRMEE
-    order.save(update_fields=["bordereau_barcode", "pushed_to_navex_at", "status", "updated_at"])
+    order.save(update_fields=["bordereau_barcode", "navex_label_url", "pushed_to_navex_at", "status", "updated_at"])
 
     log_action(
         request.user, AuditLog.NAVEX_PUSH,

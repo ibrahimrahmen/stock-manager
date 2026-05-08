@@ -145,6 +145,11 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
     <div class="card-title">Navex</div>
     <div class="field-display"><label>Bordereau</label><div class="val" style="font-family:monospace;">{{ order.bordereau_barcode }}</div></div>
     {% if order.pushed_to_navex_at %}<div class="muted" style="margin-top:6px;color:var(--muted);font-size:12px;">Envoyé à Navex le {{ order.pushed_to_navex_at|date:"d/m/Y H:i" }}</div>{% endif %}
+    {% if order.navex_label_url %}
+    <div style="margin-top:12px;">
+      <a href="{{ order.navex_label_url }}" target="_blank" rel="noopener" style="background:var(--green);color:#0a0a08;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:500;">📄 Imprimer l'étiquette</a>
+    </div>
+    {% endif %}
   </div>
   {% else %}
   <div class="card" style="border-color:rgba(74,222,154,0.3);">

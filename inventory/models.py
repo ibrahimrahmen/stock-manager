@@ -444,6 +444,8 @@ class Order(models.Model):
     # Filled later by Phase 5 (Navex push) — blank means "not yet pushed"
     bordereau_barcode = models.CharField(max_length=50, blank=True, default="")
     pushed_to_navex_at = models.DateTimeField(null=True, blank=True)
+    navex_label_url = models.URLField(max_length=500, blank=True, default="",
+        help_text="Print URL returned by Navex after successful push")
 
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_WEBFORM)
     created_by = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="orders_created")
