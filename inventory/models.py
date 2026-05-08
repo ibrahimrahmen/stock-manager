@@ -463,6 +463,20 @@ class Order(models.Model):
     navex_label_url = models.URLField(max_length=500, blank=True, default="",
         help_text="Print URL returned by Navex after successful push")
 
+    # Phase 7: cached Navex status (synced hourly via cron + on demand)
+    navex_last_status = models.CharField(max_length=80, blank=True, default="",
+        help_text="Statut Navex tel que retourné par leur API (ex: 'En cours', 'Livré', 'En magasin')")
+    navex_last_synced_at = models.DateTimeField(null=True, blank=True)
+    navex_last_status_raw = models.TextField(blank=True, default="",
+        help_text="Réponse Navex complète au dernier sync (pour debug)")
+    navex_motif = models.CharField(max_length=200, blank=True, default="",
+        help_text="Motif lié au statut Navex actuel (ex: 'Client non sérieux')")
+    navex_pre_etat = models.CharField(max_length=80, blank=True, default="",
+        help_text="État précédent côté Navex")
+    navex_livreur = models.CharField(max_length=120, blank=True, default="",
+        help_text="Nom du livreur / agence Navex")
+    navex_livreur_tel = models.CharField(max_length=30, blank=True, default="")
+
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_WEBFORM)
     created_by = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="orders_created")
     created_at = models.DateTimeField(auto_now_add=True)

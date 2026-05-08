@@ -2750,6 +2750,18 @@ def api_order_change_status(request, pk):
                 "code": "REASON_REQUIRED",
             }, status=400)
 
+        # Pre-cancel re-check: if a Navex bordereau exists, fetch the latest status
+        # before doing anything. This catches cases where Navex moved the colis to
+        # a non-cancellable state since our last sync (e.g. 'En magasin').
+        if order.bordereau_barcode:
+            _sync_navex_status_for_order(order)
+            order.refresh_from_db()
+            # Soft check: if we have a previously-known terminal/locked status,
+            # refuse before even calling the cancel endpoint. We don't hardcode
+            # which statuses lock — Navex's delete API will reject impossible
+            # cancellations on its own. We just surface the latest status to the
+            # user so they understand if it fails.
+
         # Rupture de stock: verify the products are actually out
         if cancel_reason == Order.CANCEL_RUPTURE:
             has_rupture, details = _check_order_stock_rupture(order)
@@ -3129,6 +3141,135 @@ def _navex_response_is_success(resp_data):
     return False
 
 
+def _navex_fetch_one(bordereau):
+    """Fetch the current Navex status for a single bordereau.
+    Returns (ok: bool, parsed: dict, raw_response: dict|str).
+    The parsed dict has keys: etat, motif, pre_etat, livreur, livreur_tel.
+    Uses the bulk endpoint with codes= for consistency.
+    """
+    ok, items, raw = _navex_fetch_many([bordereau])
+    if not ok or not items:
+        return False, {}, raw
+    return True, items.get(bordereau, {}), raw
+
+
+def _navex_fetch_many(bordereaux):
+    """Fetch Navex status for a list of bordereaux in ONE API call.
+    Returns (ok: bool, items_by_code: dict, raw_response: dict|str).
+
+    items_by_code maps {code: {"etat": "...", "motif": "...", "pre_etat": "...",
+                               "livreur": "...", "livreur_tel": "...",
+                               "found": bool}}.
+    """
+    import urllib.request, urllib.parse
+    token = os.environ.get("NAVEX_API_TOKEN", "")
+    if not token or not bordereaux:
+        return False, {}, {"_error": "missing token or bordereaux"}
+
+    # Use the etat (read) endpoint with codes= (plural) per Navex docs.
+    url = f"https://app.navex.tn/api/rashop-etat-{token}/v1/post.php"
+    codes_string = ", ".join(b for b in bordereaux if b)
+    try:
+        body = urllib.parse.urlencode({"codes": codes_string}).encode("utf-8")
+        req = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                return False, {}, {"_raw": raw}
+    except Exception as e:
+        return False, {}, {"_error": f"network: {e}"}
+
+    items = {}
+    if isinstance(data, dict):
+        results = data.get("results") or []
+        if isinstance(results, list):
+            for entry in results:
+                if not isinstance(entry, dict):
+                    continue
+                code = str(entry.get("code", "")).strip()
+                if not code:
+                    continue
+                items[code] = {
+                    "etat":        str(entry.get("etat") or "").strip(),
+                    "motif":       str(entry.get("motif") or "").strip(),
+                    "pre_etat":    str(entry.get("pre_etat") or "").strip(),
+                    "livreur":     str(entry.get("livreur") or "").strip(),
+                    "livreur_tel": str(entry.get("livreur_tel") or "").strip(),
+                    "found":       bool(entry.get("status") == 1),
+                }
+    return True, items, data
+
+
+def _sync_navex_status_for_order(order, force=False):
+    """Refresh navex status fields for a single Order. Returns True if updated."""
+    if not order.bordereau_barcode:
+        return False
+    ok, parsed, raw = _navex_fetch_one(order.bordereau_barcode)
+    if not ok or not parsed:
+        return False
+    order.navex_last_status   = (parsed.get("etat") or "")[:80]
+    order.navex_motif         = (parsed.get("motif") or "")[:200]
+    order.navex_pre_etat      = (parsed.get("pre_etat") or "")[:80]
+    order.navex_livreur       = (parsed.get("livreur") or "")[:120]
+    order.navex_livreur_tel   = (parsed.get("livreur_tel") or "")[:30]
+    order.navex_last_status_raw = str(raw)[:5000]
+    order.navex_last_synced_at = timezone.now()
+    order.save(update_fields=[
+        "navex_last_status", "navex_motif", "navex_pre_etat",
+        "navex_livreur", "navex_livreur_tel",
+        "navex_last_status_raw", "navex_last_synced_at", "updated_at",
+    ])
+    return True
+
+
+def _sync_navex_for_v2_orders(only_pending=True):
+    """Bulk-refresh Navex status for v2 orders that have a bordereau.
+
+    Uses Navex's bulk endpoint: ALL orders synced in ONE API call.
+    only_pending=True (default): skip orders already in Annulée status.
+    Returns (n_attempted, n_updated).
+    """
+    from .models import Order
+    qs = Order.objects.exclude(bordereau_barcode="")
+    if only_pending:
+        qs = qs.exclude(status=Order.ANNULEE)
+    orders = list(qs)
+    n_attempted = len(orders)
+    if n_attempted == 0:
+        return 0, 0
+
+    # Bulk fetch
+    bordereaux = [o.bordereau_barcode for o in orders]
+    ok, items, raw = _navex_fetch_many(bordereaux)
+    if not ok:
+        return n_attempted, 0
+
+    n_updated = 0
+    now = timezone.now()
+    raw_str = str(raw)[:5000]
+    for o in orders:
+        parsed = items.get(o.bordereau_barcode)
+        if not parsed:
+            continue
+        o.navex_last_status   = (parsed.get("etat") or "")[:80]
+        o.navex_motif         = (parsed.get("motif") or "")[:200]
+        o.navex_pre_etat      = (parsed.get("pre_etat") or "")[:80]
+        o.navex_livreur       = (parsed.get("livreur") or "")[:120]
+        o.navex_livreur_tel   = (parsed.get("livreur_tel") or "")[:30]
+        o.navex_last_status_raw = raw_str
+        o.navex_last_synced_at = now
+        o.save(update_fields=[
+            "navex_last_status", "navex_motif", "navex_pre_etat",
+            "navex_livreur", "navex_livreur_tel",
+            "navex_last_status_raw", "navex_last_synced_at", "updated_at",
+        ])
+        n_updated += 1
+    return n_attempted, n_updated
+
+
 def _navex_cancel_colis(bordereau):
     """Call Navex's delete endpoint to cancel an existing colis.
 
@@ -3190,3 +3331,24 @@ def api_push_order_to_navex(request, pk):
     except Order.DoesNotExist:
         return JsonResponse({"status": "error", "message": "Commande introuvable."}, status=404)
     return _push_order_to_navex_internal(request, order)
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_sync_v2_orders_navex(request):
+    """Manual button: sync all pending v2 orders' Navex status now."""
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import log_action, AuditLog
+    n_attempted, n_updated = _sync_navex_for_v2_orders(only_pending=True)
+    log_action(
+        request.user, AuditLog.NAVEX_SYNC,
+        description=f"Sync Navex v2: {n_updated}/{n_attempted} commandes mises à jour",
+        request=request,
+    )
+    return JsonResponse({
+        "status": "ok",
+        "attempted": n_attempted,
+        "updated": n_updated,
+    })

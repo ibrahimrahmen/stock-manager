@@ -196,7 +196,24 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
   {% if order.bordereau_barcode %}
   <div class="card">
     <div class="card-title">Navex</div>
-    <div class="field-display"><label>Bordereau</label><div class="val" style="font-family:monospace;">{{ order.bordereau_barcode }}</div></div>
+    <div class="row">
+      <div class="field-display"><label>Bordereau</label><div class="val" style="font-family:monospace;">{{ order.bordereau_barcode }}</div></div>
+      {% if order.navex_last_status %}
+      <div class="field-display"><label>Statut Navex</label><div class="val">{{ order.navex_last_status }}</div></div>
+      {% endif %}
+      {% if order.navex_motif %}
+      <div class="field-display"><label>Motif</label><div class="val" style="font-size:13px;">{{ order.navex_motif }}</div></div>
+      {% endif %}
+      {% if order.navex_pre_etat %}
+      <div class="field-display"><label>Statut précédent</label><div class="val" style="font-size:13px;color:var(--muted);">{{ order.navex_pre_etat }}</div></div>
+      {% endif %}
+      {% if order.navex_livreur %}
+      <div class="field-display"><label>Livreur</label><div class="val" style="font-size:13px;">{{ order.navex_livreur }}{% if order.navex_livreur_tel %} · {{ order.navex_livreur_tel }}{% endif %}</div></div>
+      {% endif %}
+      {% if order.navex_last_synced_at %}
+      <div class="field-display"><label>Dernier sync</label><div class="val" style="font-size:13px;color:var(--muted);">{{ order.navex_last_synced_at|date:"d/m/Y H:i" }}</div></div>
+      {% endif %}
+    </div>
     {% if order.pushed_to_navex_at %}<div class="muted" style="margin-top:6px;color:var(--muted);font-size:12px;">Envoyé à Navex le {{ order.pushed_to_navex_at|date:"d/m/Y H:i" }}</div>{% endif %}
     {% if order.navex_label_url %}
     <div style="margin-top:12px;">
