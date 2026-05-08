@@ -173,7 +173,9 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
             {% endif %}
           </td>
           <td>
-            {% if o.bordereau_barcode %}
+            {% if o.status == 'annulee' %}
+              <span class="muted" style="font-size:11px;">—</span>
+            {% elif o.bordereau_barcode %}
               {% if o.navex_last_status %}
                 <span class="muted" style="font-size:11px;">{{ o.navex_last_status }}</span>
                 <div class="muted" style="font-size:10px;">{{ o.navex_last_synced_at|date:"d/m H:i" }}</div>
@@ -184,7 +186,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
               <span class="muted" style="font-size:11px;">—</span>
             {% endif %}
           </td>
-          <td class="muted" style="font-family:monospace;font-size:11px;">{{ o.bordereau_barcode|default:"—" }}</td>
+          <td class="muted" style="font-family:monospace;font-size:11px;">{% if o.status == 'annulee' %}—{% else %}{{ o.bordereau_barcode|default:"—" }}{% endif %}</td>
         </tr>
         {% empty %}
         <tr id="empty-row"><td colspan="10" class="empty">Aucune commande{% if status_filter %} pour ce statut{% endif %}.</td></tr>

@@ -193,7 +193,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
   </div>
   {% endif %}
 
-  {% if order.bordereau_barcode %}
+  {% if order.bordereau_barcode and order.status != 'annulee' %}
   <div class="card">
     <div class="card-title">Navex</div>
     <div class="row">
@@ -222,17 +222,19 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
     {% endif %}
   </div>
   {% else %}
-  <div class="card" style="border-color:rgba(74,222,154,0.3);">
-    <div class="card-title" style="color:var(--green);">Navex</div>
-    <div style="color:var(--muted);font-size:13px;margin-bottom:14px;">
-      Cette commande n'a pas encore été envoyée à Navex.<br>
-      Vérifiez que client, gouvernorat, adresse et articles sont corrects avant de pousser.
+    {% if order.status != 'annulee' %}
+    <div class="card" style="border-color:rgba(74,222,154,0.3);">
+      <div class="card-title" style="color:var(--green);">Navex</div>
+      <div style="color:var(--muted);font-size:13px;margin-bottom:14px;">
+        Cette commande n'a pas encore été envoyée à Navex.<br>
+        Vérifiez que client, gouvernorat, adresse et articles sont corrects avant de pousser.
+      </div>
+      <button id="btn-push-navex" onclick="pushToNavex()" style="background:var(--green);color:#0a0a08;border:none;padding:10px 20px;border-radius:8px;font-weight:500;cursor:pointer;font-size:14px;">
+        📤 Pousser vers Navex
+      </button>
+      <div id="push-status" style="margin-top:10px;font-size:12px;color:var(--muted);"></div>
     </div>
-    <button id="btn-push-navex" onclick="pushToNavex()" style="background:var(--green);color:#0a0a08;border:none;padding:10px 20px;border-radius:8px;font-weight:500;cursor:pointer;font-size:14px;">
-      📤 Pousser vers Navex
-    </button>
-    <div id="push-status" style="margin-top:10px;font-size:12px;color:var(--muted);"></div>
-  </div>
+    {% endif %}
   {% endif %}
 </div>
 
