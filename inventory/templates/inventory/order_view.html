@@ -359,15 +359,15 @@ async function pushToNavex() {
         <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Choisissez la raison de l'annulation :</div>
         <button class="reason-option" onclick="cancelWithReason('client')">
           <span class="label">Client a annulé</span>
-          <span class="desc">Le client a explicitement demandé d'annuler.</span>
+          <span class="desc">Le client a explicitement demandé d'annuler. Le bordereau sera supprimé sur Navex si déjà envoyé.</span>
         </button>
         <button class="reason-option" onclick="cancelWithReason('changement')">
           <span class="label">Annulé pour changement</span>
-          <span class="desc">Le client veut modifier la commande. La commande sera supprimée de Navex et redeviendra modifiable.</span>
+          <span class="desc">Le bordereau Navex sera supprimé et la commande redeviendra modifiable (statut Non confirmée). Vous pourrez la modifier puis la confirmer à nouveau pour générer un nouveau bordereau.</span>
         </button>
         <button class="reason-option" onclick="cancelWithReason('rupture_stock')">
           <span class="label">Rupture de stock</span>
-          <span class="desc">Vérification automatique du stock avant annulation.</span>
+          <span class="desc">Vérification automatique du stock avant annulation. Si confirmée et le bordereau existe, il sera supprimé sur Navex.</span>
         </button>
       </div>
       <div id="stock-detail" style="display:none;"></div>

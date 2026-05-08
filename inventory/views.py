@@ -2761,23 +2761,77 @@ def api_order_change_status(request, pk):
                     "stock_details": details,
                 }, status=400)
 
-        # Annulé pour changement: needs to cancel on Navex first IF barcode exists.
-        # Phase 6.2 will wire the Navex cancel API call. For now, refuse if barcode
-        # exists to avoid leaving a ghost colis on Navex.
-        if cancel_reason == Order.CANCEL_CHANGEMENT and order.bordereau_barcode:
-            return JsonResponse({
-                "status": "error",
-                "message": "L'API Navex d'annulation n'est pas encore configurée. Annulez manuellement sur Navex puis utilisez 'Annulé pour changement' depuis l'admin.",
-                "code": "NAVEX_CANCEL_NOT_WIRED",
-            }, status=400)
+        # If a Navex bordereau exists, we MUST cancel it on Navex first.
+        navex_was_cancelled = False
+        navex_response = None
+        if order.bordereau_barcode:
+            ok, navex_response = _navex_cancel_colis(order.bordereau_barcode)
+            if not ok:
+                # Cancellation on Navex failed → don't change anything in our DB
+                err_msg = ""
+                if isinstance(navex_response, dict):
+                    err_msg = navex_response.get("status_message") or \
+                              navex_response.get("message") or \
+                              navex_response.get("_error") or \
+                              navex_response.get("_raw") or ""
+                log_action(
+                    request.user, AuditLog.OTHER,
+                    description=f"Annulation refusée par Navex pour #{order.id} (bordereau {order.bordereau_barcode}): {str(navex_response)[:200]}",
+                    request=request, target_model="Order", target_id=order.id,
+                    extra=str(navex_response)[:5000],
+                )
+                return JsonResponse({
+                    "status": "error",
+                    "message": f"Navex a refusé la suppression : {err_msg or 'erreur inconnue'}. La commande n'a pas été annulée.",
+                    "code": "NAVEX_CANCEL_FAILED",
+                    "navex_response": navex_response,
+                }, status=400)
+            navex_was_cancelled = True
+            log_action(
+                request.user, AuditLog.OTHER,
+                description=f"Bordereau {order.bordereau_barcode} supprimé sur Navex (commande #{order.id})",
+                request=request, target_model="Order", target_id=order.id,
+                extra=str(navex_response)[:5000],
+            )
 
+        # Branch: "Annulé pour changement" REVERTS the order to non_confirmee + editable
+        if cancel_reason == Order.CANCEL_CHANGEMENT:
+            old_bordereau = order.bordereau_barcode
+            order.status = Order.NON_CONFIRMEE
+            order.bordereau_barcode = ""
+            order.navex_label_url = ""
+            order.pushed_to_navex_at = None
+            # Don't set cancel_reason or cancelled_at — order is "live" again
+            order.save(update_fields=[
+                "status", "bordereau_barcode", "navex_label_url",
+                "pushed_to_navex_at", "updated_at",
+            ])
+            log_action(
+                request.user, AuditLog.STATUS_CHANGE,
+                description=f"Commande #{order.id} ré-ouverte pour modification (ancien bordereau {old_bordereau} supprimé sur Navex)",
+                request=request, target_model="Order", target_id=order.id,
+            )
+            return JsonResponse({
+                "status": "ok",
+                "new_status": Order.NON_CONFIRMEE,
+                "label": "Non confirmée",
+                "reopened": True,
+                "navex_was_cancelled": navex_was_cancelled,
+                "redirect": f"/sales-orders/{order.id}/",
+            })
+
+        # Standard cancellation (client / rupture_stock): mark annulee + reason
         order.status = Order.ANNULEE
         order.cancel_reason = cancel_reason
         order.cancelled_at = timezone.now()
         order.save(update_fields=["status", "cancel_reason", "cancelled_at", "updated_at"])
         log_action(
             request.user, AuditLog.STATUS_CHANGE,
-            description=f"Commande #{order.id} annulée : {dict(Order.CANCEL_REASON_CHOICES).get(cancel_reason, cancel_reason)}",
+            description=(
+                f"Commande #{order.id} annulée : "
+                f"{dict(Order.CANCEL_REASON_CHOICES).get(cancel_reason, cancel_reason)}"
+                + (" (bordereau Navex également supprimé)" if navex_was_cancelled else "")
+            ),
             request=request,
             target_model="Order", target_id=order.id,
         )
@@ -2785,6 +2839,7 @@ def api_order_change_status(request, pk):
             "status": "ok", "new_status": Order.ANNULEE,
             "label": valid[Order.ANNULEE],
             "cancel_reason": cancel_reason,
+            "navex_was_cancelled": navex_was_cancelled,
         })
 
     # ---- Other simple transitions (injoignable, pas_serieux, rappeler_plus_tard) ----
@@ -3072,6 +3127,48 @@ def _navex_response_is_success(resp_data):
     if bc and bc.isdigit() and len(bc) >= 6:
         return True
     return False
+
+
+def _navex_cancel_colis(bordereau):
+    """Call Navex's delete endpoint to cancel an existing colis.
+
+    Returns (ok: bool, response_data: dict|str).
+    On any error (network, refused), ok=False.
+    Endpoint:
+        POST https://app.navex.tn/api/rashop-delete-{TOKEN}/v1/post.php
+        body: delete_code=<bordereau>
+    """
+    import urllib.request, urllib.parse
+    token = os.environ.get("NAVEX_API_TOKEN", "")
+    if not token:
+        return False, {"_error": "NAVEX_API_TOKEN non configuré côté serveur."}
+    if not bordereau:
+        return False, {"_error": "Bordereau vide."}
+
+    url = f"https://app.navex.tn/api/rashop-delete-{token}/v1/post.php"
+    try:
+        body = urllib.parse.urlencode({"delete_code": bordereau}).encode("utf-8")
+        req = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                data = {"_raw": raw}
+    except Exception as e:
+        return False, {"_error": f"Erreur réseau: {e}"}
+
+    # Success: status==1 OR status_message looks positive (no "ERREUR")
+    if isinstance(data, dict):
+        status = data.get("status")
+        msg = str(data.get("status_message") or data.get("message") or "")
+        if status == 1 or status == "1" or status == "ok" or status == "success":
+            return True, data
+        if msg and "erreur" not in msg.lower() and "error" not in msg.lower():
+            # Likely success even without explicit status==1
+            return True, data
+    return False, data
 
 
 @csrf_exempt
