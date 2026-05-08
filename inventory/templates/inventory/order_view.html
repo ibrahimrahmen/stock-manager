@@ -34,11 +34,33 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .status-confirmee{background:var(--green-dim);color:var(--green);}
 .status-injoignable{background:var(--amber-dim);color:var(--amber);}
 .status-pas_serieux{background:var(--purple-dim);color:var(--purple);}
+.status-rappeler_plus_tard{background:rgba(96,165,250,0.15);color:#60a5fa;}
 .status-annulee{background:rgba(120,120,120,0.2);color:var(--muted);}
 .status-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
 .btn-status{padding:8px 14px;border-radius:8px;border:0.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;cursor:pointer;}
 .btn-status:hover{background:var(--surface);border-color:var(--text);}
 .btn-status.current{background:var(--text);color:var(--bg);border-color:var(--text);cursor:default;}
+.btn-status.danger{border-color:rgba(248,113,113,0.3);color:var(--red);}
+.btn-status.danger:hover{background:rgba(248,113,113,0.1);border-color:var(--red);}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:none;z-index:100;align-items:center;justify-content:center;padding:20px;}
+.modal-overlay.show{display:flex;}
+.modal{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;}
+.modal-head{padding:18px 22px;border-bottom:0.5px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+.modal-title{font-family:'DM Serif Display',serif;font-size:20px;}
+.modal-close{background:transparent;border:none;color:var(--muted);font-size:22px;cursor:pointer;}
+.modal-body{padding:18px 22px;}
+.reason-option{display:block;width:100%;text-align:left;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);padding:14px 16px;border-radius:10px;cursor:pointer;margin-bottom:8px;font-size:14px;font-family:inherit;}
+.reason-option:hover{border-color:var(--text);}
+.reason-option .label{font-weight:500;display:block;margin-bottom:4px;}
+.reason-option .desc{color:var(--muted);font-size:12px;}
+.modal-foot{padding:14px 22px;border-top:0.5px solid var(--border);display:flex;justify-content:flex-end;gap:8px;}
+.btn-cancel-modal{background:transparent;border:0.5px solid var(--border);color:var(--muted);padding:10px 16px;border-radius:8px;cursor:pointer;}
+.modal-error{background:var(--red-dim);color:var(--red);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px;display:none;}
+.stock-table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px;}
+.stock-table th,.stock-table td{padding:6px 8px;text-align:left;border-bottom:0.5px solid var(--border);}
+.stock-table th{color:var(--muted);font-size:11px;text-transform:uppercase;}
+.stock-ok-cell{color:var(--green);}
+.stock-short-cell{color:var(--red);font-weight:500;}
 .lines-table{width:100%;border-collapse:collapse;}
 .lines-table th{text-align:left;padding:10px 8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;font-weight:500;border-bottom:0.5px solid var(--border);}
 .lines-table td{padding:10px 8px;border-bottom:0.5px solid var(--border);}
@@ -74,16 +96,47 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
     <span class="status status-{{ order.status }}" id="status-pill">{{ order.get_status_display }}</span>
   </div>
 
-  <!-- STATUS ACTIONS -->
+  <!-- STATUS ACTIONS — only show transitions that are valid for the current status -->
   <div class="card">
-    <div class="card-title">Changer le statut</div>
-    <div class="status-actions">
-      <button class="btn-status {% if order.status == 'non_confirmee' %}current{% endif %}" onclick="changeStatus('non_confirmee', this)">Non confirmée</button>
-      <button class="btn-status {% if order.status == 'confirmee' %}current{% endif %}" onclick="changeStatus('confirmee', this)">Confirmée</button>
-      <button class="btn-status {% if order.status == 'injoignable' %}current{% endif %}" onclick="changeStatus('injoignable', this)">Injoignable</button>
-      <button class="btn-status {% if order.status == 'pas_serieux' %}current{% endif %}" onclick="changeStatus('pas_serieux', this)">Pas sérieux</button>
-      <button class="btn-status {% if order.status == 'annulee' %}current{% endif %}" onclick="changeStatus('annulee', this)">Annulée</button>
-    </div>
+    <div class="card-title">Actions</div>
+
+    {% if order.status == 'non_confirmee' or order.status == 'rappeler_plus_tard' or order.status == 'injoignable' %}
+      {# Active phone-call states: can confirm, push back the call, mark not interested, or cancel #}
+      <div class="status-actions">
+        <button class="btn-status confirm" onclick="confirmAndPush(this)" style="background:var(--green);color:#0a0a08;border-color:var(--green);">
+          ✓ Confirmée &nbsp;<span style="font-size:11px;opacity:0.7;">(envoie à Navex)</span>
+        </button>
+        {% if order.status != 'rappeler_plus_tard' %}
+        <button class="btn-status" onclick="changeStatus('rappeler_plus_tard', this)">📞 Rappeler plus tard</button>
+        {% endif %}
+        {% if order.status != 'injoignable' %}
+        <button class="btn-status" onclick="changeStatus('injoignable', this)">📵 Injoignable</button>
+        {% endif %}
+        <button class="btn-status" onclick="changeStatus('pas_serieux', this)">🚫 Pas sérieux</button>
+        <button class="btn-status danger" onclick="openCancelModal()">❌ Annuler</button>
+      </div>
+
+    {% elif order.status == 'pas_serieux' %}
+      <div class="status-actions">
+        <div class="muted" style="font-size:13px;color:var(--muted);">Statut « Pas sérieux ». Action possible :</div>
+        <button class="btn-status danger" onclick="openCancelModal()">❌ Annuler</button>
+      </div>
+
+    {% elif order.status == 'confirmee' %}
+      <div class="muted" style="font-size:13px;color:var(--muted);margin-bottom:10px;">
+        Cette commande est confirmée et envoyée à Navex. Les changements de statut sont verrouillés.
+      </div>
+      <div class="status-actions">
+        <button class="btn-status danger" onclick="openCancelModal()">❌ Annuler la commande</button>
+      </div>
+
+    {% elif order.status == 'annulee' %}
+      <div class="muted" style="font-size:13px;color:var(--muted);">
+        Commande annulée
+        {% if order.cancel_reason %}— motif : <strong>{{ order.get_cancel_reason_display }}</strong>{% endif %}
+        {% if order.cancelled_at %}le {{ order.cancelled_at|date:"d/m/Y H:i" }}{% endif %}
+      </div>
+    {% endif %}
   </div>
 
   <!-- CLIENT -->
@@ -167,40 +220,113 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 </div>
 
 <script>
-async function changeStatus(newStatus, btn) {
-  if (btn.classList.contains('current')) return;
-  const csrf = document.cookie.split('csrftoken=')[1]?.split(';')[0] || '';
+const csrf = () => document.cookie.split('csrftoken=')[1]?.split(';')[0] || '';
+
+async function changeStatus(newStatus, btn, extra) {
+  if (btn && btn.classList.contains('current')) return;
+  const body = Object.assign({status: newStatus}, extra || {});
   try {
     const res = await fetch("{% url 'api_order_change_status' order.pk %}", {
       method: 'POST',
-      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
-      body: JSON.stringify({status: newStatus}),
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     if (data.status === 'ok') {
-      // Update pill
-      const pill = document.getElementById('status-pill');
-      pill.textContent = data.label;
-      pill.className = 'status status-' + newStatus;
-      // Update buttons
-      document.querySelectorAll('.btn-status').forEach(b => b.classList.remove('current'));
-      btn.classList.add('current');
+      window.location.reload();
     } else {
+      // Special-case stock check failures so we show the table inside the modal
+      if (data.code === 'NOT_RUPTURE' && data.stock_details) {
+        showStockDetail(data.stock_details, data.message);
+        return false;
+      }
       alert(data.message || 'Erreur');
+      return false;
     }
-  } catch (e) { alert('Erreur réseau'); }
+  } catch (e) { alert('Erreur réseau : ' + e.message); return false; }
+  return true;
 }
+
+async function confirmAndPush(btn) {
+  if (!confirm('Confirmer cette commande et l\'envoyer à Navex ?\n\nCette action est définitive.')) return;
+  btn.disabled = true; btn.textContent = '⏳ Envoi à Navex...';
+  await changeStatus('confirmee', btn);
+  // changeStatus reloads on success, so we only get here on failure
+  btn.disabled = false; btn.innerHTML = '✓ Confirmée &nbsp;<span style="font-size:11px;opacity:0.7;">(envoie à Navex)</span>';
+}
+
+// ----- Cancel modal -----
+function openCancelModal() {
+  document.getElementById('cancel-error').style.display = 'none';
+  document.getElementById('cancel-error').textContent = '';
+  document.getElementById('stock-detail').style.display = 'none';
+  document.getElementById('stock-detail').innerHTML = '';
+  document.getElementById('reason-picker').style.display = 'block';
+  document.getElementById('cancel-modal').classList.add('show');
+}
+function closeCancelModal() {
+  document.getElementById('cancel-modal').classList.remove('show');
+}
+
+async function cancelWithReason(reason) {
+  const labels = { client: 'Client a annulé', changement: 'Annulé pour changement', rupture_stock: 'Rupture de stock' };
+  if (!confirm(`Annuler avec le motif : ${labels[reason]} ?`)) return;
+
+  const errBox = document.getElementById('cancel-error');
+  errBox.style.display = 'none';
+  try {
+    const res = await fetch("{% url 'api_order_change_status' order.pk %}", {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
+      body: JSON.stringify({status: 'annulee', cancel_reason: reason}),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      window.location.reload();
+    } else if (data.code === 'NOT_RUPTURE' && data.stock_details) {
+      showStockDetail(data.stock_details, data.message);
+    } else {
+      errBox.textContent = data.message || 'Erreur';
+      errBox.style.display = 'block';
+    }
+  } catch (e) {
+    errBox.textContent = 'Erreur réseau : ' + e.message;
+    errBox.style.display = 'block';
+  }
+}
+
+function showStockDetail(details, msg) {
+  document.getElementById('reason-picker').style.display = 'none';
+  const sd = document.getElementById('stock-detail');
+  sd.style.display = 'block';
+  sd.innerHTML = `
+    <div class="modal-error" style="display:block;">${msg}</div>
+    <table class="stock-table">
+      <thead><tr><th>Produit</th><th>Couleur</th><th>Taille</th><th>Demandé</th><th>En stock</th></tr></thead>
+      <tbody>
+        ${details.map(d => `
+          <tr>
+            <td>${d.product}</td><td>${d.variant}</td><td>${d.size}</td>
+            <td>${d.needed}</td>
+            <td class="${d.is_short ? 'stock-short-cell' : 'stock-ok-cell'}">${d.in_stock}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <button class="btn-cancel-modal" onclick="document.getElementById('reason-picker').style.display='block';document.getElementById('stock-detail').style.display='none';">← Retour aux raisons</button>
+  `;
+}
+
 async function pushToNavex() {
   if (!confirm('Envoyer cette commande à Navex ? Cette action n\'est pas réversible.')) return;
   const btn = document.getElementById('btn-push-navex');
   const statusEl = document.getElementById('push-status');
   btn.disabled = true; btn.textContent = '⏳ Envoi en cours...';
   statusEl.textContent = '';
-  const csrf = document.cookie.split('csrftoken=')[1]?.split(';')[0] || '';
   try {
     const res = await fetch("{% url 'api_push_order_to_navex' order.pk %}", {
       method: 'POST',
-      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
       body: JSON.stringify({}),
     });
     const data = await res.json();
@@ -220,5 +346,37 @@ async function pushToNavex() {
   }
 }
 </script>
+<!-- CANCEL MODAL -->
+<div class="modal-overlay" id="cancel-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title">Annuler la commande #{{ order.id }}</div>
+      <button class="modal-close" onclick="closeCancelModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-error" id="cancel-error"></div>
+      <div id="reason-picker">
+        <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Choisissez la raison de l'annulation :</div>
+        <button class="reason-option" onclick="cancelWithReason('client')">
+          <span class="label">Client a annulé</span>
+          <span class="desc">Le client a explicitement demandé d'annuler.</span>
+        </button>
+        <button class="reason-option" onclick="cancelWithReason('changement')">
+          <span class="label">Annulé pour changement</span>
+          <span class="desc">Le client veut modifier la commande. La commande sera supprimée de Navex et redeviendra modifiable.</span>
+        </button>
+        <button class="reason-option" onclick="cancelWithReason('rupture_stock')">
+          <span class="label">Rupture de stock</span>
+          <span class="desc">Vérification automatique du stock avant annulation.</span>
+        </button>
+      </div>
+      <div id="stock-detail" style="display:none;"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-cancel-modal" onclick="closeCancelModal()">Fermer</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

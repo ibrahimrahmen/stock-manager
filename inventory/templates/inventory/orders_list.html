@@ -47,6 +47,7 @@ a.row-link:hover{text-decoration:underline;}
 .status-confirmee{background:var(--green-dim);color:var(--green);}
 .status-injoignable{background:var(--amber-dim);color:var(--amber);}
 .status-pas_serieux{background:var(--purple-dim);color:var(--purple);}
+.status-rappeler_plus_tard{background:rgba(96,165,250,0.15);color:#60a5fa;}
 .status-annulee{background:rgba(120,120,120,0.2);color:var(--muted);text-decoration:line-through;}
 tr.create-row{background:rgba(74,222,154,0.04);}
 tr.create-row td{border-top:0.5px solid var(--green);}
@@ -118,6 +119,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
     <a href="{% url 'orders_list' %}" class="chip {% if not status_filter %}active{% endif %}">Toutes <span class="count">{{ total }}</span></a>
     <a href="?status=non_confirmee" class="chip {% if status_filter == 'non_confirmee' %}active{% endif %}">Non confirmée <span class="count">{{ counts.non_confirmee|default:0 }}</span></a>
     <a href="?status=confirmee" class="chip {% if status_filter == 'confirmee' %}active{% endif %}">Confirmée <span class="count">{{ counts.confirmee|default:0 }}</span></a>
+    <a href="?status=rappeler_plus_tard" class="chip {% if status_filter == 'rappeler_plus_tard' %}active{% endif %}">Rappeler <span class="count">{{ counts.rappeler_plus_tard|default:0 }}</span></a>
     <a href="?status=injoignable" class="chip {% if status_filter == 'injoignable' %}active{% endif %}">Injoignable <span class="count">{{ counts.injoignable|default:0 }}</span></a>
     <a href="?status=pas_serieux" class="chip {% if status_filter == 'pas_serieux' %}active{% endif %}">Pas sérieux <span class="count">{{ counts.pas_serieux|default:0 }}</span></a>
     <a href="?status=annulee" class="chip {% if status_filter == 'annulee' %}active{% endif %}">Annulée <span class="count">{{ counts.annulee|default:0 }}</span></a>

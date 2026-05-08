@@ -2694,7 +2694,15 @@ def order_view(request, pk):
 @require_POST
 @login_required(login_url="/login/")
 def api_order_change_status(request, pk):
-    """Change the status of an order (non_confirmee → confirmee, etc.)."""
+    """Change the status of an order, enforcing valid transitions.
+
+    Rules:
+    - Once an order has a Navex barcode, the only allowed status change is to ANNULEE.
+    - Setting status to CONFIRMEE auto-triggers a Navex push. If the push fails,
+      status stays where it was and the error is returned.
+    - Cancellation requires a `cancel_reason`. For 'rupture_stock', the system
+      verifies the stock and refuses if the products are actually available.
+    """
     if not _orders_role_check(request):
         return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
     from .models import Order, log_action, AuditLog
@@ -2702,21 +2710,203 @@ def api_order_change_status(request, pk):
         data = json.loads(request.body or "{}")
     except json.JSONDecodeError:
         return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+
     new_status = data.get("status", "")
+    cancel_reason = (data.get("cancel_reason") or "").strip()
     valid = dict(Order.STATUS_CHOICES)
     if new_status not in valid:
         return JsonResponse({"status": "error", "message": "Statut invalide."}, status=400)
+
     order = get_object_or_404(Order, pk=pk)
-    old_status = order.get_status_display()
+    old_status = order.status
+    old_label = order.get_status_display()
+
+    # ---- Lock: if an order has a Navex barcode, only annulation is allowed ----
+    if order.bordereau_barcode and new_status != Order.ANNULEE:
+        return JsonResponse({
+            "status": "error",
+            "message": "Cette commande a déjà été envoyée à Navex. Seule une annulation est possible.",
+            "code": "LOCKED_BY_NAVEX",
+        }, status=400)
+
+    # ---- Confirmée → auto-push to Navex ----
+    if new_status == Order.CONFIRMEE:
+        if order.bordereau_barcode:
+            return JsonResponse({
+                "status": "error",
+                "message": f"Déjà confirmée (bordereau {order.bordereau_barcode}).",
+            }, status=400)
+        # Delegate to the existing push function via internal call
+        # Re-use the logic from api_push_order_to_navex
+        return _push_order_to_navex_internal(request, order)
+
+    # ---- Annulée → require a reason ----
+    if new_status == Order.ANNULEE:
+        valid_reasons = [Order.CANCEL_CLIENT, Order.CANCEL_CHANGEMENT, Order.CANCEL_RUPTURE]
+        if cancel_reason not in valid_reasons:
+            return JsonResponse({
+                "status": "error",
+                "message": "Raison d'annulation requise (client, changement ou rupture_stock).",
+                "code": "REASON_REQUIRED",
+            }, status=400)
+
+        # Rupture de stock: verify the products are actually out
+        if cancel_reason == Order.CANCEL_RUPTURE:
+            has_rupture, details = _check_order_stock_rupture(order)
+            if not has_rupture:
+                return JsonResponse({
+                    "status": "error",
+                    "message": "Les produits sont disponibles en stock — pas de rupture confirmée.",
+                    "code": "NOT_RUPTURE",
+                    "stock_details": details,
+                }, status=400)
+
+        # Annulé pour changement: needs to cancel on Navex first IF barcode exists.
+        # Phase 6.2 will wire the Navex cancel API call. For now, refuse if barcode
+        # exists to avoid leaving a ghost colis on Navex.
+        if cancel_reason == Order.CANCEL_CHANGEMENT and order.bordereau_barcode:
+            return JsonResponse({
+                "status": "error",
+                "message": "L'API Navex d'annulation n'est pas encore configurée. Annulez manuellement sur Navex puis utilisez 'Annulé pour changement' depuis l'admin.",
+                "code": "NAVEX_CANCEL_NOT_WIRED",
+            }, status=400)
+
+        order.status = Order.ANNULEE
+        order.cancel_reason = cancel_reason
+        order.cancelled_at = timezone.now()
+        order.save(update_fields=["status", "cancel_reason", "cancelled_at", "updated_at"])
+        log_action(
+            request.user, AuditLog.STATUS_CHANGE,
+            description=f"Commande #{order.id} annulée : {dict(Order.CANCEL_REASON_CHOICES).get(cancel_reason, cancel_reason)}",
+            request=request,
+            target_model="Order", target_id=order.id,
+        )
+        return JsonResponse({
+            "status": "ok", "new_status": Order.ANNULEE,
+            "label": valid[Order.ANNULEE],
+            "cancel_reason": cancel_reason,
+        })
+
+    # ---- Other simple transitions (injoignable, pas_serieux, rappeler_plus_tard) ----
+    # Valid transitions table
+    allowed_transitions = {
+        Order.NON_CONFIRMEE: [Order.INJOIGNABLE, Order.PAS_SERIEUX, Order.RAPPELER, Order.ANNULEE],
+        Order.RAPPELER:      [Order.INJOIGNABLE, Order.PAS_SERIEUX, Order.ANNULEE],
+        Order.INJOIGNABLE:   [Order.RAPPELER, Order.PAS_SERIEUX, Order.ANNULEE],
+        Order.PAS_SERIEUX:   [Order.ANNULEE],
+        Order.CONFIRMEE:     [Order.ANNULEE],   # only via cancellation flow above
+        Order.ANNULEE:       [],                # frozen (admin only)
+    }
+    if new_status not in allowed_transitions.get(old_status, []):
+        return JsonResponse({
+            "status": "error",
+            "message": f"Transition non permise : {old_label} → {valid[new_status]}.",
+            "code": "INVALID_TRANSITION",
+        }, status=400)
+
     order.status = new_status
     order.save(update_fields=["status", "updated_at"])
     log_action(
         request.user, AuditLog.STATUS_CHANGE,
-        description=f"Commande #{order.id} : {old_status} → {valid[new_status]}",
+        description=f"Commande #{order.id} : {old_label} → {valid[new_status]}",
         request=request,
         target_model="Order", target_id=order.id,
     )
     return JsonResponse({"status": "ok", "new_status": new_status, "label": valid[new_status]})
+
+
+def _push_order_to_navex_internal(request, order):
+    """Internal: push an order to Navex and return JsonResponse with the result.
+    Same logic as api_push_order_to_navex but takes an already-loaded order."""
+    import urllib.request, urllib.parse
+    from .models import Order, log_action, AuditLog
+
+    token = os.environ.get("NAVEX_API_TOKEN", "")
+    if not token:
+        return JsonResponse({"status": "error", "message": "NAVEX_API_TOKEN non configuré côté serveur."}, status=500)
+
+    if order.bordereau_barcode:
+        return JsonResponse({
+            "status": "error",
+            "message": f"Déjà envoyé à Navex (bordereau {order.bordereau_barcode}).",
+        }, status=400)
+    if not order.customer.phone:
+        return JsonResponse({"status": "error", "message": "Téléphone manquant."}, status=400)
+    if not order.region:
+        return JsonResponse({"status": "error", "message": "Gouvernorat manquant."}, status=400)
+
+    designation = _build_designation(order)
+    nb_article = _count_articles(order)
+    payload = {
+        "prix":           f"{order.total:.0f}" if order.total else "0",
+        "nom":            order.customer.name or order.customer.phone,
+        "gouvernerat":    order.region.name,
+        "ville":          order.ville or "",
+        "adresse":        (order.address or order.localite or "").strip() or order.ville or "",
+        "tel":            order.customer.phone,
+        "tel2":           "",
+        "designation":    designation[:500],
+        "nb_article":     str(nb_article),
+        "msg":            (order.notes or "")[:500],
+        "echange":        "", "article": "", "nb_echange": "", "ouvrir": "",
+        "sender_name":    "", "sender_location": "",
+    }
+    url = f"https://app.navex.tn/api/rashop-{token}/v1/post.php"
+    try:
+        body = urllib.parse.urlencode(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            try:
+                navex_data = json.loads(raw)
+            except json.JSONDecodeError:
+                navex_data = {"_raw": raw}
+    except Exception as e:
+        log_action(
+            request.user, AuditLog.NAVEX_PUSH,
+            description=f"Push #{order.id} ÉCHEC réseau : {str(e)[:200]}",
+            request=request, target_model="Order", target_id=order.id,
+        )
+        return JsonResponse({"status": "error", "message": f"Erreur réseau Navex : {e}"}, status=502)
+
+    if not _navex_response_is_success(navex_data):
+        log_action(
+            request.user, AuditLog.NAVEX_PUSH,
+            description=f"Push #{order.id} REFUSÉ par Navex : {str(navex_data)[:300]}",
+            request=request, target_model="Order", target_id=order.id,
+            extra=str(navex_data)[:5000],
+        )
+        return JsonResponse({
+            "status": "error",
+            "message": navex_data.get("status_message") or navex_data.get("message") or "Navex a refusé la commande.",
+            "navex_response": navex_data,
+        }, status=400)
+
+    bordereau = _extract_bordereau_from_navex_response(navex_data)
+    label_url = navex_data.get("lien") or ""
+    order.pushed_to_navex_at = timezone.now()
+    if bordereau:
+        order.bordereau_barcode = bordereau
+    if label_url:
+        order.navex_label_url = label_url[:500]
+    order.status = Order.CONFIRMEE
+    order.save(update_fields=["bordereau_barcode", "navex_label_url", "pushed_to_navex_at", "status", "updated_at"])
+
+    log_action(
+        request.user, AuditLog.NAVEX_PUSH,
+        description=f"Commande #{order.id} envoyée à Navex" + (f" — bordereau {bordereau}" if bordereau else " (bordereau manquant)"),
+        request=request, target_model="Order", target_id=order.id,
+        extra=str(navex_data)[:5000],
+    )
+    return JsonResponse({
+        "status": "ok",
+        "bordereau": bordereau,
+        "label_url": label_url,
+        "new_status": Order.CONFIRMEE,
+        "label": "Confirmée",
+        "redirect": f"/sales-orders/{order.id}/",
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -2726,6 +2916,68 @@ def api_order_change_status(request, pk):
 # ---------------------------------------------------------------------------
 
 def _build_designation(order):
+    """Plain-text description of articles for Navex's 'designation' field."""
+    parts = []
+    for oo in order.order_offers.all():
+        offer_parts = []
+        for line in oo.lines.all():
+            seg = line.product.name
+            if line.variant:
+                seg += f" {line.variant.color_label or line.variant.color_name}"
+            if line.size:
+                seg += f" {line.size}"
+            if line.quantity > 1:
+                seg = f"{line.quantity}× {seg}"
+            offer_parts.append(seg)
+        offer_label = oo.offer_name or "Offre"
+        if oo.quantity > 1:
+            offer_label = f"{oo.quantity}× {offer_label}"
+        if offer_parts:
+            parts.append(f"{offer_label} ({', '.join(offer_parts)})")
+        else:
+            parts.append(offer_label)
+    for line in order.lines.filter(order_offer__isnull=True):
+        seg = line.product.name
+        if line.variant:
+            seg += f" {line.variant.color_label or line.variant.color_name}"
+        if line.size:
+            seg += f" {line.size}"
+        if line.quantity > 1:
+            seg = f"{line.quantity}× {seg}"
+        parts.append(seg)
+    return " | ".join(parts) if parts else "Commande"
+
+
+def _check_order_stock_rupture(order):
+    """For each line in the order, check if the (variant, size) is actually
+    in stock. Returns (is_rupture, details_list) where:
+        is_rupture = True if at least one line has 0 in_stock+returned units
+        details_list = list of {product, variant, size, in_stock_count}
+    Used to verify a 'rupture de stock' cancellation reason.
+    """
+    details = []
+    has_rupture = False
+    for line in order.lines.all():
+        variant = line.variant
+        size = line.size
+        if not variant or not size:
+            continue
+        # Count units in_stock or returned (sellable) at this variant+size
+        count = variant.units.filter(
+            status__in=[ProductUnit.IN_STOCK, ProductUnit.RETURNED],
+            size=size,
+        ).count()
+        details.append({
+            "product": line.product.name,
+            "variant": variant.color_label or variant.color_name,
+            "size": size,
+            "needed": line.quantity,
+            "in_stock": count,
+            "is_short": count < line.quantity,
+        })
+        if count < line.quantity:
+            has_rupture = True
+    return has_rupture, details
     """Plain-text description of articles for Navex's 'designation' field."""
     parts = []
     for oo in order.order_offers.all():
@@ -2826,17 +3078,13 @@ def _navex_response_is_success(resp_data):
 @require_POST
 @login_required(login_url="/login/")
 def api_push_order_to_navex(request, pk):
-    """Push a v2 Order to Navex. Saves the returned bordereau on success."""
-    import urllib.request, urllib.parse
-    from .models import Order, log_action, AuditLog
-
+    """Manual fallback: push a v2 Order to Navex.
+    The recommended path is now via the 'Confirmée' status button which calls
+    api_order_change_status — this endpoint stays as a manual fallback button.
+    """
+    from .models import Order
     if not _orders_role_check(request):
         return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
-
-    token = os.environ.get("NAVEX_API_TOKEN", "")
-    if not token:
-        return JsonResponse({"status": "error", "message": "NAVEX_API_TOKEN non configuré côté serveur."}, status=500)
-
     try:
         order = Order.objects.select_related("customer", "region", "sales_page").prefetch_related(
             "order_offers__lines__product", "order_offers__lines__variant",
@@ -2844,103 +3092,4 @@ def api_push_order_to_navex(request, pk):
         ).get(pk=pk)
     except Order.DoesNotExist:
         return JsonResponse({"status": "error", "message": "Commande introuvable."}, status=404)
-
-    # Idempotent: don't push twice
-    if order.bordereau_barcode:
-        return JsonResponse({
-            "status": "error",
-            "message": f"Déjà envoyé à Navex (bordereau {order.bordereau_barcode}).",
-            "code": "ALREADY_PUSHED",
-        }, status=400)
-
-    # Validate required fields
-    if not order.customer.phone:
-        return JsonResponse({"status": "error", "message": "Téléphone manquant."}, status=400)
-    if not order.region:
-        return JsonResponse({"status": "error", "message": "Gouvernorat manquant."}, status=400)
-
-    # Build payload — every field must be present (empty string for optional)
-    designation = _build_designation(order)
-    nb_article = _count_articles(order)
-    payload = {
-        "prix":           f"{order.total:.0f}" if order.total else "0",
-        "nom":            order.customer.name or order.customer.phone,
-        "gouvernerat":    order.region.name,  # spelling already aligned to Navex
-        "ville":          order.ville or "",
-        "adresse":        (order.address or order.localite or "").strip() or order.ville or "",
-        "tel":            order.customer.phone,
-        "tel2":           "",
-        "designation":    designation[:500],
-        "nb_article":     str(nb_article),
-        "msg":            (order.notes or "")[:500],
-        "echange":        "",
-        "article":        "",
-        "nb_echange":     "",
-        "ouvrir":         "",
-        "sender_name":    "",
-        "sender_location":"",
-    }
-
-    url = f"https://app.navex.tn/api/rashop-{token}/v1/post.php"
-    try:
-        body = urllib.parse.urlencode(payload).encode("utf-8")
-        req = urllib.request.Request(url, data=body, method="POST")
-        req.add_header("Content-Type", "application/x-www-form-urlencoded")
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-            try:
-                navex_data = json.loads(raw)
-            except json.JSONDecodeError:
-                navex_data = {"_raw": raw}
-    except Exception as e:
-        log_action(
-            request.user, AuditLog.NAVEX_PUSH,
-            description=f"Push #{order.id} ÉCHEC réseau : {str(e)[:200]}",
-            request=request, target_model="Order", target_id=order.id,
-        )
-        return JsonResponse({"status": "error", "message": f"Erreur réseau Navex : {e}"}, status=502)
-
-    # Real Navex returns status==1 (int) on success, status_message holds the bordereau.
-    is_success = _navex_response_is_success(navex_data)
-
-    if not is_success:
-        # Log full response so we can debug if Navex changes its format
-        log_action(
-            request.user, AuditLog.NAVEX_PUSH,
-            description=f"Push #{order.id} REFUSÉ par Navex : {str(navex_data)[:300]}",
-            request=request, target_model="Order", target_id=order.id,
-            extra=str(navex_data)[:5000],
-        )
-        return JsonResponse({
-            "status": "error",
-            "message": navex_data.get("status_message") or navex_data.get("message") or "Navex a refusé la commande.",
-            "navex_response": navex_data,
-        }, status=400)
-
-    bordereau = _extract_bordereau_from_navex_response(navex_data)
-    label_url = navex_data.get("lien") or ""
-
-    # Save what we have. If we couldn't find a bordereau, still mark pushed_at
-    # so we don't push twice — admin can fill it in manually from /admin/.
-    order.pushed_to_navex_at = timezone.now()
-    if bordereau:
-        order.bordereau_barcode = bordereau
-    if label_url:
-        order.navex_label_url = label_url[:500]
-    if order.status == Order.NON_CONFIRMEE:
-        order.status = Order.CONFIRMEE
-    order.save(update_fields=["bordereau_barcode", "navex_label_url", "pushed_to_navex_at", "status", "updated_at"])
-
-    log_action(
-        request.user, AuditLog.NAVEX_PUSH,
-        description=f"Commande #{order.id} envoyée à Navex" + (f" — bordereau {bordereau}" if bordereau else " (bordereau manquant dans la réponse)"),
-        request=request, target_model="Order", target_id=order.id,
-        extra=str(navex_data)[:5000],
-    )
-
-    return JsonResponse({
-        "status": "ok",
-        "bordereau": bordereau,
-        "navex_response": navex_data,
-        "redirect": f"/orders/{order.id}/",
-    })
+    return _push_order_to_navex_internal(request, order)

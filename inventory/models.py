@@ -408,6 +408,7 @@ class Order(models.Model):
     CONFIRMEE     = "confirmee"
     INJOIGNABLE   = "injoignable"
     PAS_SERIEUX   = "pas_serieux"
+    RAPPELER      = "rappeler_plus_tard"
     ANNULEE       = "annulee"
 
     STATUS_CHOICES = [
@@ -415,7 +416,19 @@ class Order(models.Model):
         (CONFIRMEE,     "Confirmée"),
         (INJOIGNABLE,   "Injoignable"),
         (PAS_SERIEUX,   "Pas sérieux"),
+        (RAPPELER,      "Rappeler plus tard"),
         (ANNULEE,       "Annulée"),
+    ]
+
+    # Cancellation reasons (only meaningful when status == ANNULEE)
+    CANCEL_CLIENT     = "client"
+    CANCEL_CHANGEMENT = "changement"
+    CANCEL_RUPTURE    = "rupture_stock"
+    CANCEL_REASON_CHOICES = [
+        ("",                "—"),
+        (CANCEL_CLIENT,     "Client a annulé"),
+        (CANCEL_CHANGEMENT, "Annulé pour changement"),
+        (CANCEL_RUPTURE,    "Rupture de stock"),
     ]
 
     SOURCE_WEBFORM = "web_form"
@@ -439,6 +452,9 @@ class Order(models.Model):
         help_text="Computed: sum(line totals) + delivery_fee − discount")
 
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default=NON_CONFIRMEE)
+    cancel_reason = models.CharField(max_length=30, choices=CANCEL_REASON_CHOICES, blank=True, default="",
+        help_text="Raison de l'annulation (client / changement / rupture stock)")
+    cancelled_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True, default="")
 
     # Filled later by Phase 5 (Navex push) — blank means "not yet pushed"
