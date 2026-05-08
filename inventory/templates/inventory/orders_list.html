@@ -43,6 +43,14 @@ tr:hover td{background:var(--surface2);}
 a.row-link{color:var(--text);text-decoration:none;}
 a.row-link:hover{text-decoration:underline;}
 .status{padding:3px 9px;border-radius:10px;font-size:11px;font-weight:500;display:inline-block;}
+.status-btn{cursor:pointer;border:0.5px solid transparent;font-family:inherit;}
+.status-btn:hover{filter:brightness(1.15);}
+.status-menu{position:absolute;background:var(--surface);border:0.5px solid var(--border);border-radius:8px;padding:4px;z-index:50;box-shadow:0 8px 20px rgba(0,0,0,0.4);min-width:180px;}
+.status-menu button{display:block;width:100%;background:transparent;color:var(--text);border:none;padding:8px 12px;border-radius:6px;cursor:pointer;font-size:12px;text-align:left;font-family:inherit;}
+.status-menu button:hover{background:var(--surface2);}
+.status-menu .danger{color:var(--red);}
+.status-menu .confirm{color:var(--green);}
+.status-menu .sep{height:0.5px;background:var(--border);margin:4px 0;}
 .status-non_confirmee{background:var(--red-dim);color:var(--red);}
 .status-confirmee{background:var(--green-dim);color:var(--green);}
 .status-injoignable{background:var(--amber-dim);color:var(--amber);}
@@ -112,7 +120,10 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
       <div class="page-title">Commandes</div>
       <div class="muted">{{ total }} commande(s) au total</div>
     </div>
-    <button class="add-btn" id="btn-new-order" onclick="openCreateRow()">+ Nouvelle commande</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="add-btn" id="btn-sync-navex" onclick="syncNavex()" style="background:transparent;color:var(--text);border:0.5px solid var(--border);">↻ Sync Navex</button>
+      <button class="add-btn" id="btn-new-order" onclick="openCreateRow()">+ Nouvelle commande</button>
+    </div>
   </div>
 
   <div class="chips">
@@ -132,12 +143,12 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
           <th>ID</th><th>Date</th><th>PageFB</th><th>Nom & Téléphone</th>
           <th>Ville & Adresse</th><th>Articles</th>
           <th style="text-align:right;">Prix</th>
-          <th>Statut</th><th>Barcode</th>
+          <th>Statut</th><th>Statut Navex</th><th>Barcode</th>
         </tr>
       </thead>
       <tbody id="orders-tbody">
         {% for o in orders %}
-        <tr>
+        <tr data-order-id="{{ o.id }}">
           <td><a class="row-link" href="{% url 'order_view' o.pk %}">#{{ o.id }}</a></td>
           <td class="muted">{{ o.created_at|date:"d/m H:i" }}</td>
           <td>{{ o.sales_page.name|default:"—" }}</td>
@@ -151,11 +162,32 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
           </td>
           <td class="muted">{{ o.article_summary }}</td>
           <td style="text-align:right;font-weight:500;">{{ o.total|floatformat:0 }} DT</td>
-          <td><span class="status status-{{ o.status }}">{{ o.get_status_display }}</span></td>
+          <td>
+            {% if o.status == 'annulee' %}
+              <span class="status status-annulee">{{ o.get_status_display }}</span>
+              {% if o.cancel_reason %}<div class="muted" style="font-size:10px;margin-top:2px;">{{ o.get_cancel_reason_display }}</div>{% endif %}
+            {% else %}
+              <button class="status status-{{ o.status }} status-btn" onclick="openStatusMenu(this, {{ o.id }}, '{{ o.status }}', {{ o.bordereau_barcode|yesno:'true,false' }})" title="Changer le statut">
+                {{ o.get_status_display }} <span style="opacity:0.6;">▾</span>
+              </button>
+            {% endif %}
+          </td>
+          <td>
+            {% if o.bordereau_barcode %}
+              {% if o.navex_last_status %}
+                <span class="muted" style="font-size:11px;">{{ o.navex_last_status }}</span>
+                <div class="muted" style="font-size:10px;">{{ o.navex_last_synced_at|date:"d/m H:i" }}</div>
+              {% else %}
+                <span class="muted" style="font-size:11px;">— jamais sync —</span>
+              {% endif %}
+            {% else %}
+              <span class="muted" style="font-size:11px;">—</span>
+            {% endif %}
+          </td>
           <td class="muted" style="font-family:monospace;font-size:11px;">{{ o.bordereau_barcode|default:"—" }}</td>
         </tr>
         {% empty %}
-        <tr id="empty-row"><td colspan="9" class="empty">Aucune commande{% if status_filter %} pour ce statut{% endif %}.</td></tr>
+        <tr id="empty-row"><td colspan="10" class="empty">Aucune commande{% if status_filter %} pour ce statut{% endif %}.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -249,6 +281,7 @@ function openCreateRow() {
     </td>
     <td style="text-align:right;font-weight:500;" id="cr-total">0 DT</td>
     <td><span class="status status-non_confirmee">Non confirmée</span></td>
+    <td><span class="muted" style="font-size:11px;">—</span></td>
     <td><button class="save-btn" id="cr-save" disabled onclick="submitNewOrder()">Sauver</button></td>
   `;
   tbody.insertBefore(tr, tbody.firstChild);
@@ -453,7 +486,7 @@ async function submitNewOrder() {
       const tr = document.getElementById('create-row');
       const errTr = document.createElement('tr');
       errTr.id = 'cr-row-error-tr';
-      errTr.innerHTML = `<td colspan="9" id="cr-row-error" style="background:rgba(248,113,113,0.1);color:var(--red);padding:8px 14px;font-size:12px;">${msg}</td>`;
+      errTr.innerHTML = `<td colspan="10" id="cr-row-error" style="background:rgba(248,113,113,0.1);color:var(--red);padding:8px 14px;font-size:12px;">${msg}</td>`;
       tr.parentNode.insertBefore(errTr, tr.nextSibling);
     } else {
       errEl.textContent = msg;
@@ -511,6 +544,147 @@ async function submitNewOrder() {
   } catch (e) {
     console.error('[order] EXCEPTION:', e);
     showRowError('Erreur : ' + e.message);
+  }
+}
+// ----- Inline status menu on each row -----
+let statusMenuEl = null;
+function closeStatusMenu() {
+  if (statusMenuEl) { statusMenuEl.remove(); statusMenuEl = null; }
+}
+document.addEventListener('click', (e) => {
+  if (statusMenuEl && !statusMenuEl.contains(e.target) && !e.target.classList.contains('status-btn')) {
+    closeStatusMenu();
+  }
+});
+
+function openStatusMenu(btn, orderId, currentStatus, hasBordereau) {
+  closeStatusMenu();
+  // Decide which transitions are allowed (mirror server-side rules)
+  let options = [];
+  if (hasBordereau) {
+    // Confirmée with barcode → only annulation allowed
+    options = [{label: '❌ Annuler la commande', cls: 'danger', action: 'cancel'}];
+  } else if (currentStatus === 'pas_serieux') {
+    options = [{label: '❌ Annuler', cls: 'danger', action: 'cancel'}];
+  } else {
+    // non_confirmee, rappeler_plus_tard, injoignable
+    options = [
+      {label: '✓ Confirmée (envoie à Navex)', cls: 'confirm', action: 'confirm'},
+    ];
+    if (currentStatus !== 'rappeler_plus_tard') options.push({label: '📞 Rappeler plus tard', action: 'set:rappeler_plus_tard'});
+    if (currentStatus !== 'injoignable')        options.push({label: '📵 Injoignable',        action: 'set:injoignable'});
+    if (currentStatus !== 'pas_serieux')        options.push({label: '🚫 Pas sérieux',        action: 'set:pas_serieux'});
+    options.push({type: 'sep'});
+    options.push({label: '❌ Annuler', cls: 'danger', action: 'cancel'});
+  }
+
+  const menu = document.createElement('div');
+  menu.className = 'status-menu';
+  menu.innerHTML = options.map(o => {
+    if (o.type === 'sep') return '<div class="sep"></div>';
+    return `<button class="${o.cls || ''}" data-action="${o.action}">${o.label}</button>`;
+  }).join('');
+  document.body.appendChild(menu);
+  const r = btn.getBoundingClientRect();
+  menu.style.left = (r.left + window.scrollX) + 'px';
+  menu.style.top = (r.bottom + window.scrollY + 4) + 'px';
+  statusMenuEl = menu;
+
+  menu.querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const action = b.dataset.action;
+      closeStatusMenu();
+      if (action === 'confirm') {
+        if (!confirm('Confirmer cette commande et l\'envoyer à Navex ?')) return;
+        await sendStatusChange(orderId, 'confirmee', null, btn);
+      } else if (action === 'cancel') {
+        openInlineCancelModal(orderId, btn);
+      } else if (action.startsWith('set:')) {
+        await sendStatusChange(orderId, action.slice(4), null, btn);
+      }
+    });
+  });
+}
+
+async function sendStatusChange(orderId, newStatus, cancelReason, originBtn) {
+  const body = {status: newStatus};
+  if (cancelReason) body.cancel_reason = cancelReason;
+  try {
+    const res = await fetch(`/api/sales-orders/${orderId}/status/`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken()},
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      window.location.reload();
+    } else if (data.code === 'NOT_RUPTURE' && data.stock_details) {
+      alert(data.message + '\n\n' + data.stock_details.map(d =>
+        `${d.product} ${d.variant} ${d.size} : besoin ${d.needed}, stock ${d.in_stock}`
+      ).join('\n'));
+    } else {
+      alert(data.message || 'Erreur');
+    }
+  } catch (e) { alert('Erreur réseau : ' + e.message); }
+}
+
+// Inline cancel: opens a small modal for picking the reason (same 3 reasons)
+function openInlineCancelModal(orderId, originBtn) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay show';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;z-index:200;align-items:center;justify-content:center;padding:20px;';
+  overlay.innerHTML = `
+    <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:14px;width:100%;max-width:480px;padding:18px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-family:'DM Serif Display',serif;font-size:18px;">Annuler la commande #${orderId}</div>
+        <button onclick="this.closest('.modal-overlay').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;">×</button>
+      </div>
+      <div style="color:var(--muted);font-size:12px;margin-bottom:10px;">Choisissez la raison :</div>
+      <button class="cr-btn" data-reason="client" style="display:block;width:100%;text-align:left;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;margin-bottom:6px;cursor:pointer;font-family:inherit;">
+        <strong>Client a annulé</strong><br><span style="color:var(--muted);font-size:11px;">Bordereau supprimé sur Navex si présent.</span>
+      </button>
+      <button class="cr-btn" data-reason="changement" style="display:block;width:100%;text-align:left;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;margin-bottom:6px;cursor:pointer;font-family:inherit;">
+        <strong>Annulé pour changement</strong><br><span style="color:var(--muted);font-size:11px;">Supprime sur Navex et redevient modifiable.</span>
+      </button>
+      <button class="cr-btn" data-reason="rupture_stock" style="display:block;width:100%;text-align:left;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);padding:10px 12px;border-radius:8px;cursor:pointer;font-family:inherit;">
+        <strong>Rupture de stock</strong><br><span style="color:var(--muted);font-size:11px;">Vérification de stock automatique.</span>
+      </button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelectorAll('.cr-btn').forEach(b => {
+    b.addEventListener('click', async () => {
+      const reason = b.dataset.reason;
+      const labels = {client:'Client a annulé', changement:'Annulé pour changement', rupture_stock:'Rupture de stock'};
+      if (!confirm(`Annuler avec : ${labels[reason]} ?`)) return;
+      overlay.remove();
+      await sendStatusChange(orderId, 'annulee', reason, originBtn);
+    });
+  });
+}
+
+// ----- Sync Navex statuses -----
+async function syncNavex() {
+  const btn = document.getElementById('btn-sync-navex');
+  btn.disabled = true; const orig = btn.textContent; btn.textContent = '⏳ Sync...';
+  try {
+    const res = await fetch('/api/sales-orders/sync-navex/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken()},
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      alert(`Sync terminé : ${data.updated}/${data.attempted} commandes mises à jour.`);
+      window.location.reload();
+    } else {
+      alert(data.message || 'Erreur');
+      btn.disabled = false; btn.textContent = orig;
+    }
+  } catch (e) {
+    alert('Erreur réseau : ' + e.message);
+    btn.disabled = false; btn.textContent = orig;
   }
 }
 </script>

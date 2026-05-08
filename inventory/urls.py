@@ -60,6 +60,7 @@ urlpatterns = [
     path("sales-orders/<int:pk>/", views.order_view, name="order_view"),
     path("api/sales-orders/<int:pk>/status/", views.api_order_change_status, name="api_order_change_status"),
     path("api/sales-orders/<int:pk>/push-navex/", views.api_push_order_to_navex, name="api_push_order_to_navex"),
+    path("api/sales-orders/sync-navex/", views.api_sync_v2_orders_navex, name="api_sync_v2_orders_navex"),
 
     # V2 — Inline create + offer APIs
     path("api/sales-orders/create/", views.api_create_order_inline, name="api_create_order_inline"),
