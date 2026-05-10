@@ -478,6 +478,14 @@
       unitCount = data.order.unit_count;
       document.getElementById('modal-count').textContent = unitCount + ' unité(s)';
       document.getElementById('modal-total').textContent = runningTotal.toFixed(3) + ' TND';
+
+      // Bug 1 fix: also (re)load the prediction panel.
+      // If we already have the colis cached in navexMap, re-render right away.
+      // Otherwise re-fetch the Navex attente list and try again.
+      try {
+        await reloadPredictionPanel();
+      } catch (perr) { /* prediction is best-effort, don't break the reload */ }
+
       unlockScanning();
     } catch(e) {
       // Reload itself failed — keep locked, let user retry manually
@@ -486,6 +494,20 @@
       var mi = document.getElementById('modal-scan-input');
       if (mi) mi.disabled = true;
     }
+  }
+
+  // Re-render the prediction panel using cached colis data, or refetch from Navex if missing.
+  async function reloadPredictionPanel() {
+    if (!currentOrderBC) return;
+    var colis = navexMap[currentOrderBC];
+    if (colis) {
+      buildPredictionCards(colis);
+      return;
+    }
+    // Cache miss — refetch Navex attente list, then try again
+    await loadNavexAttente();
+    var c2 = navexMap[currentOrderBC];
+    if (c2) buildPredictionCards(c2);
   }
 
   // Triggered on any failed scan: warn, then auto-reload after 2s
@@ -552,6 +574,8 @@
     var card = document.createElement('div');
     card.className = 'pcard new';
     card.dataset.barcode = unit.barcode;
+    card.dataset.productName = unit.product_name || '';
+    card.dataset.colorLabel  = unit.color_label || '';
     var imgHtml = unit.image_url
       ? '<img class="pcard-img" src="'+unit.image_url+'" alt="">'
       : '<div class="pcard-ph">'+unit.color_label+'</div>';
@@ -580,14 +604,77 @@
       if (data.status === 'ok') {
         var card = btn.closest('.pcard');
         var price = parseFloat(card.querySelector('.pcard-price').textContent);
+        var removedName  = card.dataset.productName || '';
+        var removedColor = card.dataset.colorLabel  || '';
         runningTotal -= price;
         document.getElementById('modal-total').textContent = runningTotal.toFixed(3) + ' TND';
         card.remove();
         unitCount = data.unit_count;
         document.getElementById('modal-count').textContent = unitCount + ' unité(s)';
+        // Reset matching prediction card (handles both green check and lingering red X)
+        rebalancePredictionForRemoval(removedName, removedColor);
         setModalFeedback('ok', barcode + ' retiré.');
       } else { setModalFeedback('err', data.message); }
     } catch(e) { showErrPopup('Erreur réseau. Vérifiez la connexion.'); }
+  }
+
+  // After removing one unit of (productName, colorLabel) from the modal grid,
+  // sync the prediction panel: count remaining matching units in the grid,
+  // count currently-checked prediction cards for the same (name,color),
+  // then un-check the excess (one card per excess) and clear any stuck red X.
+  function rebalancePredictionForRemoval(productName, colorLabel) {
+    if (!predictionProducts || !predictionProducts.length) return;
+    var scannedName  = (productName || '').toLowerCase().replace(/[^a-z ]/g, '').trim();
+    var scannedColor = (colorLabel  || '').toLowerCase();
+    var scannedWords = scannedName.split(' ').filter(function(w){ return w.length > 2; });
+
+    // Always clear any visible red X on any card — it's stale once user has acted.
+    for (var k = 0; k < predictionProducts.length; k++) {
+      var cw = document.getElementById('pred-' + k);
+      var we = document.getElementById('pred-wrong-' + k);
+      if (cw) cw.classList.remove('wrong');
+      if (we) { we.style.opacity = '0'; we.style.animation = ''; }
+    }
+
+    // Count remaining matching units in modal-grid
+    var grid = document.getElementById('modal-grid');
+    var remainingCount = 0;
+    if (grid) {
+      var pcards = grid.querySelectorAll('.pcard');
+      pcards.forEach(function(c){
+        var n = (c.dataset.productName || '').toLowerCase().replace(/[^a-z ]/g, '').trim();
+        var col = (c.dataset.colorLabel || '').toLowerCase();
+        var nWords = n.split(' ').filter(function(w){ return w.length > 2; });
+        var nameMatch = scannedWords.length === 0 || nWords.some(function(w){
+          return scannedWords.indexOf(w) !== -1;
+        });
+        var colorMatch = !scannedColor || !col || col.indexOf(scannedColor) !== -1 || scannedColor.indexOf(col) !== -1;
+        if (nameMatch && colorMatch) remainingCount += 1;
+      });
+    }
+
+    // Find prediction cards that match (name, color) and are currently checked
+    var matchingCheckedIdx = [];
+    for (var i = 0; i < predictionProducts.length; i++) {
+      var p = predictionProducts[i];
+      var card = document.getElementById('pred-' + i);
+      if (!card || !card.classList.contains('checked')) continue;
+      var expectedName = p.name.toLowerCase().replace(/[^a-z ]/g, '').trim();
+      var expectedColor = (p.color_matched || '').toLowerCase();
+      var nameMatch = scannedWords.some(function(w){ return expectedName.indexOf(w) !== -1; });
+      var colorMatch = !expectedColor || !scannedColor || scannedColor.indexOf(expectedColor) !== -1 || expectedColor.indexOf(scannedColor) !== -1;
+      if (nameMatch && colorMatch) matchingCheckedIdx.push(i);
+    }
+
+    // Un-check the excess (cards beyond what's still in the grid)
+    var excess = matchingCheckedIdx.length - remainingCount;
+    for (var x = 0; x < excess; x++) {
+      var idx = matchingCheckedIdx[x];
+      var pc  = document.getElementById('pred-' + idx);
+      var che = document.getElementById('pred-check-' + idx);
+      if (pc) pc.classList.remove('checked');
+      if (che) { che.style.opacity = '0'; che.style.animation = ''; }
+    }
   }
 
   function openPricePanel() {
