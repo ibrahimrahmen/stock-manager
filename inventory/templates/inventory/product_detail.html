@@ -226,7 +226,7 @@
     <tbody id="tbody">
       {% for variant in variants %}{% for unit in variant.units.all %}
       <tr data-status="{{ unit.status }}" data-size="{{ unit.size }}" data-color="{{ variant.color_label }}" data-date="{{ unit.updated_at|date:'Y-m-d' }}">
-        <td class="ubc">{{ unit.barcode }}</td>
+        <td class="ubc"><a href="{% url 'unit_detail' unit.barcode %}" style="color:inherit;text-decoration:none;border-bottom:1px dotted currentColor;">{{ unit.barcode }}</a></td>
         <td>{{ variant.color_label }}</td>
         <td>{{ unit.size }}</td>
         <td><span class="us us-{{ unit.status }}">{{ unit.get_status_display }}</span></td>

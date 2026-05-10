@@ -285,6 +285,14 @@ class StockMovement(models.Model):
     movement_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
     reference     = models.CharField(max_length=255, blank=True)
     moved_at      = models.DateTimeField(auto_now_add=True)
+    # Phase 8: who performed the scan/action. Nullable = old movements before this field.
+    user          = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="stock_movements",
+    )
+
+    class Meta:
+        ordering = ["-moved_at"]
 
     def __str__(self):
         return f"{self.unit.barcode} — {self.movement_type} @ {self.moved_at:%Y-%m-%d %H:%M}"

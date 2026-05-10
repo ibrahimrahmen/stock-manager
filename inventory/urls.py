@@ -53,6 +53,9 @@ urlpatterns = [
     path("search/", views.search, name="search"),
     path("api/search/", views.api_search, name="api_search"),
 
+    # V1 — Phase 8: unit history (clickable barcode)
+    path("unit/<str:barcode>/", views.unit_detail, name="unit_detail"),
+
     # V2 — Order management (Phase 4) — renamed to /sales-orders/ to avoid
     # colliding with v1's /orders/<pk>/ which routes to ShippingOrder detail.
     path("sales-orders/", views.orders_list, name="orders_list"),

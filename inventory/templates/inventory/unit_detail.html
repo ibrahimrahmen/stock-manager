@@ -1,0 +1,153 @@
+{% load static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Article {{ unit.barcode }} — Stock Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#0f0f0d; --surface:#1a1a17; --surface2:#222220;
+  --border:rgba(255,255,255,0.08); --text:#f0ede6; --muted:#8a887f;
+  --green:#4ade9a; --green-dim:rgba(74,222,154,0.15);
+  --amber:#f5a623; --amber-dim:rgba(245,166,35,0.15);
+  --red:#f87171; --red-dim:rgba(248,113,113,0.15);
+  --blue:#60a5fa; --blue-dim:rgba(96,165,250,0.15);
+}
+body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
+.brand{font-family:'DM Serif Display',serif;font-size:22px;}
+.userbar{display:flex;gap:14px;align-items:center;}
+.userbar a{color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;font-size:13px;}
+.container{padding:24px;max-width:980px;margin:0 auto;}
+.page-title{font-family:'DM Serif Display',serif;font-size:28px;}
+.subtitle{color:var(--muted);margin-bottom:18px;font-size:13px;}
+.muted{color:var(--muted);}
+.barcode{font-family:monospace;background:var(--surface2);padding:4px 10px;border-radius:6px;}
+.card{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;padding:20px;margin-bottom:14px;}
+.card-title{font-family:'DM Serif Display',serif;font-size:18px;margin-bottom:14px;color:var(--text);}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;}
+.field-display{display:flex;flex-direction:column;gap:4px;}
+.field-display label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;}
+.field-display .val{font-size:14px;}
+.status-pill{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:500;}
+.s-in_stock{background:var(--green-dim);color:var(--green);}
+.s-shipped{background:var(--blue-dim);color:var(--blue);}
+.s-paid{background:var(--green-dim);color:var(--green);}
+.s-returned{background:var(--amber-dim);color:var(--amber);}
+.s-defective{background:var(--red-dim);color:var(--red);}
+
+.timeline{position:relative;padding-left:28px;}
+.timeline::before{content:'';position:absolute;left:8px;top:8px;bottom:8px;width:2px;background:var(--border);}
+.tl-item{position:relative;padding-bottom:18px;}
+.tl-item::before{content:'';position:absolute;left:-24px;top:6px;width:14px;height:14px;border-radius:50%;background:var(--surface);border:2px solid var(--green);}
+.tl-item.shipped::before{border-color:var(--blue);}
+.tl-item.received::before{border-color:var(--green);}
+.tl-item.paid::before{border-color:var(--green);background:var(--green);}
+.tl-item.returned::before{border-color:var(--amber);}
+.tl-type{font-weight:500;font-size:14px;}
+.tl-date{color:var(--muted);font-size:12px;margin-top:2px;}
+.tl-meta{color:var(--muted);font-size:12px;margin-top:4px;}
+.tl-meta a{color:var(--blue);text-decoration:none;}
+.tl-meta a:hover{text-decoration:underline;}
+
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{text-align:left;padding:8px 10px;font-weight:500;color:var(--muted);font-size:11px;text-transform:uppercase;border-bottom:0.5px solid var(--border);}
+td{padding:8px 10px;border-top:0.5px solid var(--border);}
+
+.empty{text-align:center;padding:30px 20px;color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">Stock Manager — Article</div>
+  <div class="userbar">
+    <a href="javascript:history.back()">← Retour</a>
+    <a href="{% url 'logout' %}">Déconnexion</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-title">Article <span class="barcode">{{ unit.barcode }}</span></div>
+  <div class="subtitle">
+    <a href="{% url 'product_detail' unit.variant.product.pk %}" style="color:var(--blue);">{{ unit.variant.product.name }}</a>
+    · {{ unit.variant.color_label }}
+    {% if unit.size %}· Taille {{ unit.size }}{% endif %}
+  </div>
+
+  <!-- CURRENT STATUS -->
+  <div class="card">
+    <div class="card-title">État actuel</div>
+    <div class="row">
+      <div class="field-display">
+        <label>Statut</label>
+        <div class="val"><span class="status-pill s-{{ unit.status }}">{{ unit.get_status_display }}</span></div>
+      </div>
+      <div class="field-display">
+        <label>Ajouté au stock le</label>
+        <div class="val">{{ unit.created_at|date:"d/m/Y H:i"|default:"—" }}</div>
+      </div>
+      <div class="field-display">
+        <label>Variante</label>
+        <div class="val">{{ unit.variant.color_label }}</div>
+      </div>
+      <div class="field-display">
+        <label>Taille</label>
+        <div class="val">{{ unit.size|default:"—" }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY TIMELINE -->
+  <div class="card">
+    <div class="card-title">Historique des mouvements</div>
+    {% if movements %}
+    <div class="timeline">
+      {% for m in movements %}
+      <div class="tl-item {{ m.movement_type }}">
+        <div class="tl-type">{{ m.get_movement_type_display }}</div>
+        <div class="tl-date">{{ m.moved_at|date:"d/m/Y H:i:s" }}</div>
+        <div class="tl-meta">
+          {% if m.user %}Par <strong>{{ m.user.username }}</strong>{% else %}<em>(utilisateur non enregistré)</em>{% endif %}
+          {% if m.reference %}· Réf : <span class="barcode">{{ m.reference }}</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">Aucun mouvement enregistré pour cet article.</div>
+    {% endif %}
+  </div>
+
+  <!-- ORDERS THIS UNIT APPEARED IN -->
+  {% if order_items %}
+  <div class="card">
+    <div class="card-title">Commandes</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Bordereau</th>
+          <th>Date scan</th>
+          <th>Statut commande</th>
+          <th>Statut item</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in order_items %}
+        <tr>
+          <td><a href="{% url 'order_detail' item.order.pk %}" style="color:var(--text);">{{ item.order.bordereau_barcode }}</a></td>
+          <td class="muted">{{ item.scanned_at|date:"d/m/Y H:i" }}</td>
+          <td class="muted">{{ item.order.get_status_display }}</td>
+          <td class="muted">{{ item.get_status_display|default:"—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+</body>
+</html>

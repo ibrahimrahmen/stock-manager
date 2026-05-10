@@ -1,0 +1,25 @@
+{% load static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Article introuvable</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{background:#0f0f0d;color:#f0ede6;font-family:'DM Sans',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.box{text-align:center;}
+h1{font-family:'DM Serif Display',serif;font-size:32px;margin-bottom:10px;}
+p{color:#8a887f;margin-bottom:20px;}
+.barcode{font-family:monospace;background:#222220;padding:4px 10px;border-radius:6px;}
+a{color:#4ade9a;text-decoration:none;border:0.5px solid #4ade9a;padding:10px 20px;border-radius:8px;}
+a:hover{background:rgba(74,222,154,0.1);}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>Article introuvable</h1>
+  <p>Aucun article avec le barcode <span class="barcode">{{ barcode }}</span> n'existe.</p>
+  <a href="javascript:history.back()">← Retour</a>
+</div>
+</body>
+</html>

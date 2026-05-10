@@ -18,6 +18,14 @@ from .models import (
 from .scan_service import handle_shipping_scan, handle_stock_scan
 
 
+def _user_for_request(request):
+    """Return the authenticated user or None."""
+    user = getattr(request, 'user', None)
+    if user is not None and getattr(user, 'is_authenticated', False):
+        return user
+    return None
+
+
 # Navex API URL — token comes from env var, never hard-coded.
 # Set NAVEX_API_TOKEN in Railway variables.
 NAVEX_API_URL = (
@@ -113,7 +121,7 @@ def api_scan_shipping(request):
     barcode = data.get("barcode", "").strip()
     if not barcode:
         return JsonResponse({"status": "error", "message": "Barcode vide."}, status=400)
-    result = handle_shipping_scan(barcode)
+    result = handle_shipping_scan(barcode, user=_user_for_request(request))
 
     # Audit — record what kind of scan this resolved to.
     from .models import log_action, AuditLog
@@ -191,7 +199,7 @@ def api_scan_reception(request):
     barcode = data.get("barcode", "").strip()
     if not barcode:
         return JsonResponse({"status": "error", "message": "Barcode vide."}, status=400)
-    result = handle_stock_scan(barcode)
+    result = handle_stock_scan(barcode, user=_user_for_request(request))
 
     from .models import log_action, AuditLog
     if result.get("status") == "ok":
@@ -288,7 +296,7 @@ def _do_return_unit(unit):
         }
     unit.status = ProductUnit.RETURNED
     unit.save()
-    StockMovement.objects.create(unit=unit, movement_type=StockMovement.RETURNED, reference="RETOUR")
+    StockMovement.objects.create(unit=unit, movement_type=StockMovement.RETURNED, reference="RETOUR", user=_user_for_request(request))
     if order_item:
         order_item.status_at_payment = ProductUnit.RETURNED
         order_item.save(update_fields=["status_at_payment"])
@@ -471,8 +479,7 @@ def api_scan_payment(request):
                         item.unit.save()
                         StockMovement.objects.create(
                             unit=item.unit, movement_type=StockMovement.PAID,
-                            reference=prev_order.bordereau_barcode,
-                        )
+                            reference=prev_order.bordereau_barcode, user=_user_for_request(request))
                 log_action(
                     request.user, AuditLog.PAYMENT,
                     description=f"Ordre {prev_order.bordereau_barcode} marqué payé (auto, scan suivant)",
@@ -564,7 +571,7 @@ def api_confirm_payment(request):
                 continue  # Cannot pay a returned unit
             unit.status = ProductUnit.PAID
             unit.save()
-            StockMovement.objects.create(unit=unit, movement_type=StockMovement.PAID, reference=order.bordereau_barcode)
+            StockMovement.objects.create(unit=unit, movement_type=StockMovement.PAID, reference=order.bordereau_barcode, user=_user_for_request(request))
             OrderItem.objects.filter(order=order, unit=unit).update(status_at_payment=ProductUnit.PAID)
         except ProductUnit.DoesNotExist:
             pass
@@ -575,7 +582,7 @@ def api_confirm_payment(request):
             unit = ProductUnit.objects.get(barcode=barcode)
             unit.status = ProductUnit.RETURNED
             unit.save()
-            StockMovement.objects.create(unit=unit, movement_type=StockMovement.RETURNED, reference=order.bordereau_barcode)
+            StockMovement.objects.create(unit=unit, movement_type=StockMovement.RETURNED, reference=order.bordereau_barcode, user=_user_for_request(request))
             # Save snapshot on OrderItem
             OrderItem.objects.filter(order=order, unit=unit).update(status_at_payment=ProductUnit.RETURNED)
         except ProductUnit.DoesNotExist:
@@ -662,8 +669,7 @@ def api_close_order(request):
         StockMovement.objects.create(
             unit=item.unit,
             movement_type=StockMovement.SHIPPED,
-            reference=open_order.bordereau_barcode,
-        )
+            reference=open_order.bordereau_barcode, user=_user_for_request(request))
 
     log_action(
         request.user, AuditLog.STATUS_CHANGE,
@@ -849,8 +855,7 @@ def api_delete_order(request, pk):
         item.unit.save()
         StockMovement.objects.create(
             unit=item.unit, movement_type=StockMovement.RECEIVED,
-            reference=f"SUPPRESSION ORDRE {bordereau}"
-        )
+            reference=f"SUPPRESSION ORDRE {bordereau}", user=_user_for_request(request))
     order.delete()
     log_action(
         request.user, AuditLog.DELETE,
@@ -885,8 +890,7 @@ def api_order_remove_unit(request, pk):
     unit.save()
     StockMovement.objects.create(
         unit=unit, movement_type=StockMovement.RECEIVED,
-        reference=f"MODIFICATION ORDRE {order.bordereau_barcode}"
-    )
+        reference=f"MODIFICATION ORDRE {order.bordereau_barcode}", user=_user_for_request(request))
     log_action(
         request.user, AuditLog.EDIT,
         description=f"Unité {barcode} retirée de l'ordre {order.bordereau_barcode}",
@@ -1235,8 +1239,7 @@ def api_confirm_payment_from_navex(request, pk):
                 OrderItem.objects.filter(pk=item.pk).update(status_at_payment=ProductUnit.PAID)
                 StockMovement.objects.create(
                     unit=item.unit, movement_type=StockMovement.PAID,
-                    reference=order.bordereau_barcode,
-                )
+                    reference=order.bordereau_barcode, user=_user_for_request(request))
 
     log_action(
         request.user, AuditLog.PAYMENT,
@@ -1539,8 +1542,7 @@ def api_return_unit_to_order(request, pk):
         unit.save()
         StockMovement.objects.create(
             unit=unit, movement_type=StockMovement.RETURNED,
-            reference=return_order.bordereau_barcode
-        )
+            reference=return_order.bordereau_barcode, user=_user_for_request(request))
         
         # Update original order status and amount
         if original_order:
@@ -3380,4 +3382,25 @@ def api_sync_v2_orders_navex(request):
         "status": "ok",
         "attempted": n_attempted,
         "updated": n_updated,
+    })
+
+
+@login_required(login_url="/login/")
+def unit_detail(request, barcode):
+    """Show the full history of a single ProductUnit (barcode)."""
+    from .models import ProductUnit, StockMovement, OrderItem
+    barcode = (barcode or "").strip().upper()
+    try:
+        unit = ProductUnit.objects.select_related("variant__product").get(barcode=barcode)
+    except ProductUnit.DoesNotExist:
+        return render(request, "inventory/unit_not_found.html", {"barcode": barcode}, status=404)
+
+    movements = StockMovement.objects.filter(unit=unit).select_related("user").order_by("-moved_at")
+    # Find all orders this unit appeared in (for context)
+    order_items = OrderItem.objects.filter(unit=unit).select_related("order").order_by("-scanned_at")
+
+    return render(request, "inventory/unit_detail.html", {
+        "unit": unit,
+        "movements": movements,
+        "order_items": order_items,
     })

@@ -21,11 +21,11 @@ from .models import (
 from .barcode_parser import parse_barcode, is_bordereau_barcode
 
 
-def handle_shipping_scan(barcode: str) -> dict:
+def handle_shipping_scan(barcode: str, user=None) -> dict:
     barcode = barcode.strip().upper()
     if is_bordereau_barcode(barcode):
-        return _handle_bordereau(barcode)
-    return _handle_unit_scan(barcode)
+        return _handle_bordereau(barcode, user=user)
+    return _handle_unit_scan(barcode, user=user)
 
 
 def _get_navex_info(barcode: str):
@@ -133,7 +133,7 @@ def _get_matched_products(designation: str) -> list:
         return []
 
 
-def _handle_bordereau(barcode: str) -> dict:
+def _handle_bordereau(barcode: str, user=None) -> dict:
     closed_order = None
 
     with transaction.atomic():
@@ -155,7 +155,7 @@ def _handle_bordereau(barcode: str) -> dict:
                 item.save(update_fields=["status_at_close"])
                 StockMovement.objects.create(
                     unit=item.unit, movement_type=StockMovement.SHIPPED,
-                    reference=order.bordereau_barcode,
+                    reference=order.bordereau_barcode, user=user,
                 )
             closed_order = order
 
@@ -192,7 +192,7 @@ def _handle_bordereau(barcode: str) -> dict:
     }
 
 
-def _handle_unit_scan(barcode: str) -> dict:
+def _handle_unit_scan(barcode: str, user=None) -> dict:
     open_order = ShippingOrder.objects.filter(status=ShippingOrder.OPEN).first()
     if not open_order:
         return {"status": "error", "message": "Aucun ordre ouvert. Scannez d'abord un bordereau.", "code": "NO_OPEN_ORDER"}
@@ -232,7 +232,7 @@ def _handle_unit_scan(barcode: str) -> dict:
     }
 
 
-def handle_stock_scan(barcode: str) -> dict:
+def handle_stock_scan(barcode: str, user=None) -> dict:
     """Add new stock — only creates new units, never modifies existing ones."""
     barcode = barcode.strip().upper()
     parsed = parse_barcode(barcode)
@@ -255,7 +255,7 @@ def handle_stock_scan(barcode: str) -> dict:
 
     with transaction.atomic():
         unit = ProductUnit.objects.create(variant=variant, barcode=barcode, size=parsed.size, status=ProductUnit.IN_STOCK)
-        StockMovement.objects.create(unit=unit, movement_type=StockMovement.RECEIVED, reference="RECEPTION")
+        StockMovement.objects.create(unit=unit, movement_type=StockMovement.RECEIVED, reference="RECEPTION", user=user)
 
     return {
         "status": "ok", "type": "received",
