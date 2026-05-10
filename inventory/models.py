@@ -38,6 +38,19 @@ class ProductVariant(models.Model):
     def __str__(self):
         return f"{self.product.name} — {self.color_label}"
 
+    def save(self, *args, **kwargs):
+        # On save, if the image was just (re)uploaded, resize it down so we
+        # don't store 8MB WhatsApp photos. Max 1200×1200, JPEG quality 80.
+        # Only runs when image is new (has 'file' attribute) — avoids re-resizing
+        # when only other fields change.
+        super().save(*args, **kwargs)
+        if self.image:
+            try:
+                _resize_image_in_place(self.image.path, max_size=1200, quality=80)
+            except Exception:
+                # Don't crash the save if resize fails — log silently
+                pass
+
     @property
     def stock_by_size(self):
         sizes = {}
@@ -48,6 +61,35 @@ class ProductVariant(models.Model):
     @property
     def total_stock(self):
         return self.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)).count()
+
+
+def _resize_image_in_place(path, max_size=1200, quality=80):
+    """Resize an image file on disk, in place, to a max bounding box.
+    Skips images that are already small enough.
+    Preserves PNG transparency where applicable; converts huge JPEGs.
+    """
+    import os
+    from PIL import Image
+    if not os.path.isfile(path):
+        return
+    with Image.open(path) as img:
+        # Skip if already smaller than threshold (don't waste CPU)
+        if max(img.width, img.height) <= max_size:
+            # Re-save only if file is huge (>500KB) to recompress
+            if os.path.getsize(path) <= 500_000:
+                return
+        # Preserve format. JPEG-friendly conversion for non-RGB images.
+        original_format = (img.format or "JPEG").upper()
+        if original_format == "PNG" and img.mode in ("RGBA", "LA"):
+            # Keep transparency for PNG
+            img.thumbnail((max_size, max_size), Image.LANCZOS)
+            img.save(path, format="PNG", optimize=True)
+        else:
+            # Convert RGBA/P to RGB for JPEG
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            img.thumbnail((max_size, max_size), Image.LANCZOS)
+            img.save(path, format="JPEG", quality=quality, optimize=True, progressive=True)
 
 
 class ProductUnit(models.Model):
