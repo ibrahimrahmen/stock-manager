@@ -122,7 +122,7 @@
       {% with first_variant=variants.first %}
       <div class="img-wrap">
         {% if first_variant and first_variant.image %}
-          <img class="bubble-img" src="{{ first_variant.image.url }}" alt="{{ product.name }}">
+          <img loading="lazy" class="bubble-img" src="{{ first_variant.image.url }}" alt="{{ product.name }}">
         {% else %}
           <div class="bubble-ph">{{ product.code }}</div>
         {% endif %}
@@ -151,7 +151,7 @@
       <div class="variants-strip">
         {% for variant in variants %}
           {% if variant.image %}
-            <img class="vthumb" src="{{ variant.image.url }}" title="{{ variant.color_label }}">
+            <img loading="lazy" class="vthumb" src="{{ variant.image.url }}" title="{{ variant.color_label }}">
           {% else %}
             <div class="vthumb-ph" title="{{ variant.color_label }}">{{ variant.color_name|slice:":2" }}</div>
           {% endif %}

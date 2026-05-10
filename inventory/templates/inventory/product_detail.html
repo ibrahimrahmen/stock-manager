@@ -154,7 +154,7 @@
   <div class="variants-grid" style="flex:1;min-width:240px;">
     {% for vd in variants_data %}
     <div class="vcard">
-      {% if vd.variant.image %}<img class="vcard-img" src="{{ vd.variant.image.url }}" alt="">
+      {% if vd.variant.image %}<img loading="lazy" class="vcard-img" src="{{ vd.variant.image.url }}" alt="">
       {% else %}<div class="vcard-ph">{{ vd.variant.color_label }}</div>{% endif %}
       <div class="vcard-body">
         <div class="vcard-name">{{ vd.variant.color_label }}

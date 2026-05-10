@@ -176,7 +176,7 @@
     {% for item in items %}
     <div class="item-card {% if item.display_status == 'returned' %}returned{% endif %}">
       {% if item.unit.variant.image %}
-        <img class="item-img" src="{{ item.unit.variant.image.url }}" alt="">
+        <img loading="lazy" class="item-img" src="{{ item.unit.variant.image.url }}" alt="">
       {% else %}
         <div class="item-img-ph">{{ item.unit.variant.color_label }}</div>
       {% endif %}

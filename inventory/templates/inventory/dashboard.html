@@ -617,64 +617,16 @@
   </div>
   {% endif %}
 
-  <!-- STOCK TABLE -->
+  <!-- STOCK TABLE — removed from dashboard (memory crash with many images).
+       View full stock at /products/ instead. -->
   <div class="stock-section">
     <div class="section-title">Stock par produit</div>
-    <table class="stock-table">
-      <thead>
-        <tr>
-          <th>Produit</th>
-          <th>Variante</th>
-          <th>Tailles disponibles</th>
-          <th>Total</th>
-          <th>Statut</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for product in products %}
-          {% for variant in product.variants.all %}
-          <tr>
-            <td>
-              <a href="{% url 'product_detail' product.pk %}">{{ product.name }}</a>
-            </td>
-            <td>
-              <div style="display:flex;align-items:center;">
-                {% if variant.image %}
-                  <img src="{{ variant.image.url }}" class="variant-thumb" alt="">
-                {% else %}
-                  <div class="variant-ph">{{ variant.color_name|slice:":2" }}</div>
-                {% endif %}
-                {{ variant.color_label }}
-              </div>
-            </td>
-            <td>
-              <div class="size-pills">
-                {% for size in "XS,S,M,L,XL,XXL"|split:"," %}
-                  {% with count=variant.stock_by_size %}
-                    <span class="size-pill {% if size in count %}has-stock{% endif %}">
-                      {{ size }}{% if size in count %} {{ count|get_item:size }}{% endif %}
-                    </span>
-                  {% endwith %}
-                {% endfor %}
-              </div>
-            </td>
-            <td><strong>{{ variant.total_stock }}</strong></td>
-            <td>
-              {% if variant.total_stock == 0 %}
-                <span class="alert-badge alert-out">Épuisé</span>
-              {% elif variant.total_stock <= product.alert_threshold %}
-                <span class="alert-badge alert-low">Stock bas</span>
-              {% else %}
-                <span class="alert-badge alert-ok">En stock</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        {% empty %}
-          <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:32px;">Aucun produit enregistré</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div style="padding:24px;text-align:center;color:var(--muted);">
+      <div style="margin-bottom:12px;">{{ total_products }} produit(s) au total</div>
+      <a href="{% url 'products_list' %}" style="display:inline-block;background:var(--green);color:#0a0a08;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:500;">
+        Voir tout le stock →
+      </a>
+    </div>
   </div>
 
   <!-- RECENT ORDERS -->

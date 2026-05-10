@@ -7,6 +7,7 @@ from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
 from django.db import transaction
+from django.db.models import Count, Q
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 
@@ -986,17 +987,43 @@ def dashboard(request):
         if view_mode not in ("shipping", "office", "messages"):
             return redirect("home")
 
-    products = Product.objects.prefetch_related("variants__units").all()
+    # ---- OPTIMIZED: dashboard previously made ~50 queries (one per product
+    # for total_stock); now uses a single annotated query.
+
+    # Single SQL: every product with its count of in_stock + returned units
+    products_qs = Product.objects.annotate(
+        _stock_count=Count(
+            "variants__units",
+            filter=Q(variants__units__status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)),
+        ),
+    )
+
+    # Total products (cached from the same query — no extra round-trip)
+    total_products = products_qs.count()
+
+    # Low-stock list: filter in Python from the same data we already loaded.
+    # Build a small dict per item so the template never re-queries .total_stock.
+    products_for_template = list(
+        products_qs.filter(archived=False, alert_disabled=False).values(
+            "id", "name", "alert_threshold", "_stock_count",
+        )
+    )
+    low_stock = [
+        {
+            "name": p["name"],
+            "total_stock": p["_stock_count"],
+            "alert_threshold": p["alert_threshold"],
+        }
+        for p in products_for_template
+        if p["_stock_count"] <= p["alert_threshold"]
+    ]
+
     open_order = ShippingOrder.objects.filter(status=ShippingOrder.OPEN).first()
     recent_orders = ShippingOrder.objects.order_by("-opened_at")[:10]
     now = timezone.now()
     orders_this_month = ShippingOrder.objects.filter(opened_at__year=now.year, opened_at__month=now.month).count()
     total_in_stock = ProductUnit.objects.filter(status=ProductUnit.IN_STOCK).count()
     total_shipped = ProductUnit.objects.filter(status=ProductUnit.SHIPPED).count()
-    low_stock = [
-        p for p in products
-        if p.total_stock <= p.alert_threshold and not p.alert_disabled and not p.archived
-    ]
 
     # Size alerts — skip muted/archived parents
     from .models import SizeAlert
@@ -1006,7 +1033,6 @@ def dashboard(request):
         and not sa.variant.product.alert_disabled
         and not sa.variant.product.archived
     ]
-    total_products = products.count()
 
     # Alerts: shipped units that belong to paid orders = waiting to come back
     waiting_return = ProductUnit.objects.filter(
@@ -1016,10 +1042,13 @@ def dashboard(request):
     overdue_orders = [o for o in ShippingOrder.objects.filter(status=ShippingOrder.CLOSED) if o.is_overdue]
 
     return render(request, "inventory/dashboard.html", {
-        "products": products, "open_order": open_order, "recent_orders": recent_orders,
+        # NB: 'products' is no longer passed — the dashboard template doesn't
+        # actually iterate every product (it only uses low_stock + size_alerts).
+        "open_order": open_order, "recent_orders": recent_orders,
         "low_stock": low_stock, "total_in_stock": total_in_stock,
         "total_shipped": total_shipped, "orders_this_month": orders_this_month,
-        "pending_returns": waiting_return, "total_products": total_products, "size_alerts": size_alerts, "overdue_orders": overdue_orders,
+        "pending_returns": waiting_return, "total_products": total_products,
+        "size_alerts": size_alerts, "overdue_orders": overdue_orders,
         "view_mode": view_mode,
     })
 

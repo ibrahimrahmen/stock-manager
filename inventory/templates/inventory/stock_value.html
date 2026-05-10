@@ -104,7 +104,7 @@
         <td>
           <div style="display:flex;align-items:center;">
             {% if row.variant.image %}
-              <img src="{{ row.variant.image.url }}" class="variant-thumb" alt="">
+              <img loading="lazy" src="{{ row.variant.image.url }}" class="variant-thumb" alt="">
             {% else %}
               <div class="variant-ph">{{ row.variant.color_name|slice:":2" }}</div>
             {% endif %}
