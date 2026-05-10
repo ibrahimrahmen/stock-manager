@@ -1,5 +1,5 @@
 [deploy]
-startCommand = "python manage.py migrate && python manage.py ensure_superuser && python manage.py collectstatic --noinput && gunicorn stock_manager.wsgi --bind 0.0.0.0:$PORT"
+startCommand = "python manage.py migrate && python manage.py ensure_superuser && python manage.py collectstatic --noinput && gunicorn stock_manager.wsgi --bind 0.0.0.0:$PORT --workers 3 --timeout 90 --graceful-timeout 30 --max-requests 200 --max-requests-jitter 50"
 
 [[crons]]
 schedule = "0 10 * * *"
