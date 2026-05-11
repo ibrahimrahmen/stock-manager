@@ -390,21 +390,14 @@ def api_scan_return(request):
                        "sell_price": str(i.unit.variant.product.sell_price),
                        "image_url": i.unit.variant.image.url if i.unit.variant.image else None}
                       for i in items]
-        if len(returnable) == 1:
-            unit_data, reconciliation = _do_return_unit(returnable[0].unit, user=_user_for_request(request))
-            log_action(
-                request.user, AuditLog.SCAN_RETURN,
-                description=f"Unité {unit_data['barcode']} retournée (auto-single) depuis {barcode}",
-                request=request,
-                target_unit_barcode=unit_data["barcode"],
-                target_order_barcode=barcode,
-            )
-            return JsonResponse({"status": "ok", "type": "order_single",
-                                 "message": f"Unité {unit_data['barcode']} retournée automatiquement.",
-                                 "unit": unit_data, "reconciliation": reconciliation})
+        # Always open the modal regardless of unit count.
+        # The "auto-return on single unit" shortcut was a footgun: a single
+        # accidental scan would mark an item returned with no confirmation.
+        # Now the worker must scan the actual product barcode inside the modal,
+        # which guarantees they have the physical item in hand.
         log_action(
             request.user, AuditLog.SCAN_RETURN,
-            description=f"Retour multi-unité ouvert pour {barcode} ({len(returnable)} retournables)",
+            description=f"Retour ouvert pour {barcode} ({len(returnable)} retournable(s))",
             request=request, target_order_barcode=barcode,
         )
         return JsonResponse({"status": "ok", "type": "order_multiple",
