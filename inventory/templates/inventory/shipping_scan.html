@@ -133,24 +133,34 @@
   .pred-check svg{width:44px;height:44px;stroke:#fff;stroke-width:3;}
 
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
-  /* SIDE PANEL */
+  /* SIDE PANELS — 3-column layout: green left, scan center, red right */
   .scan-layout{display:flex;height:100vh;overflow:hidden;}
-  .side-panel{width:280px;flex-shrink:0;background:var(--surface);border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;}
+  .side-panel{width:280px;flex-shrink:0;background:var(--surface);display:flex;flex-direction:column;overflow:hidden;}
+  .side-panel.left{border-right:0.5px solid var(--border);}
+  .side-panel.right{border-left:0.5px solid var(--border);}
   .side-panel-header{padding:12px 14px;border-bottom:0.5px solid var(--border);font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);display:flex;align-items:center;justify-content:space-between;}
   .side-panel-body{flex:1;overflow-y:auto;padding:8px;}
   .scan-main{flex:1;overflow-y:auto;display:flex;flex-direction:column;}
   .sp-section{margin-bottom:8px;}
-  .sp-title{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;padding:6px 8px;border-radius:6px;margin-bottom:4px;}
+  .sp-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;padding:8px 10px;border-radius:6px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;}
   .sp-title.green{background:var(--green-bg);color:var(--green);}
   .sp-title.red{background:var(--red-bg);color:var(--red);}
   .sp-item{padding:8px 10px;border-radius:8px;margin-bottom:4px;font-size:12px;border:0.5px solid transparent;}
   .sp-item.correct{background:#f0fdf7;border-color:#a3dfc5;}
   .sp-item.wrong{background:#fef2f2;border-color:#fca5a5;}
+  /* Clickable barcode link */
+  .sp-item a.sp-bc-link{color:inherit;text-decoration:none;border-bottom:1px dotted currentColor;cursor:pointer;}
+  .sp-item a.sp-bc-link:hover{color:#1a9e6e;}
+  .sp-item.wrong a.sp-bc-link:hover{color:#d94f4e;}
   .sp-bc{font-family:monospace;font-size:10px;color:var(--muted);margin-top:2px;}
   .sp-reason{font-size:10px;color:var(--red);margin-top:2px;}
-  .sp-count{font-size:11px;padding:1px 6px;border-radius:10px;font-weight:600;}
+  .sp-count{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;}
   .sp-count.green{background:var(--green-bg);color:var(--green);}
   .sp-count.red{background:var(--red-bg);color:var(--red);}
+  /* Pulse the À VÉRIFIER panel when there are errors so they're impossible to miss */
+  @keyframes wrongPulse{0%,100%{box-shadow:inset 0 0 0 0 rgba(217,79,78,0);}50%{box-shadow:inset 0 0 0 3px rgba(217,79,78,0.4);}}
+  .side-panel.right.has-errors{animation:wrongPulse 2s ease-in-out infinite;}
+  .empty-state{text-align:center;color:var(--muted);font-size:12px;padding:20px 10px;font-style:italic;}
   .clear-btn{font-size:10px;color:var(--muted);border:none;background:none;cursor:pointer;padding:2px 6px;}
   .clear-btn:hover{color:var(--red);}
 
@@ -179,8 +189,8 @@
 <body>
 
 <div class="scan-layout">
-<!-- SIDE PANEL -->
-<div class="side-panel">
+<!-- LEFT SIDE PANEL — CORRECTS -->
+<div class="side-panel left">
   <div class="side-panel-header">
     <span>Session du jour</span>
     <span style="display:flex;gap:6px;">
@@ -190,12 +200,11 @@
   </div>
   <div class="side-panel-body">
     <div class="sp-section">
-      <div class="sp-title green">✓ Corrects <span class="sp-count green" id="sp-correct-count">0</span></div>
+      <div class="sp-title green">
+        <span>✓ Corrects</span>
+        <span class="sp-count green" id="sp-correct-count">0</span>
+      </div>
       <div id="sp-correct-list"></div>
-    </div>
-    <div class="sp-section">
-      <div class="sp-title red">✗ À vérifier <span class="sp-count red" id="sp-wrong-count">0</span></div>
-      <div id="sp-wrong-list"></div>
     </div>
   </div>
 </div>
@@ -325,6 +334,22 @@
     </div>
   </div>
 </div>
+<!-- RIGHT SIDE PANEL — À VÉRIFIER (errors) -->
+<div class="side-panel right" id="right-panel">
+  <div class="side-panel-header">
+    <span>Erreurs</span>
+  </div>
+  <div class="side-panel-body">
+    <div class="sp-section">
+      <div class="sp-title red">
+        <span>✗ À vérifier</span>
+        <span class="sp-count red" id="sp-wrong-count">0</span>
+      </div>
+      <div id="sp-wrong-list"></div>
+    </div>
+  </div>
+</div>
+</div><!-- /scan-layout -->
 
 <script>
   var isReceptionMode = new URLSearchParams(window.location.search).get('mode') === 'reception';
@@ -1074,15 +1099,38 @@
     var wList = document.getElementById('sp-wrong-list');
     document.getElementById('sp-correct-count').textContent = correct.length;
     document.getElementById('sp-wrong-count').textContent = wrong.length;
+
+    // Build a barcode (clickable if we have an order_id)
+    function bcLink(e) {
+      if (e.order_id) {
+        return '<a class="sp-bc-link" href="/orders/' + e.order_id + '/" target="_blank">' + e.bc + '</a>';
+      }
+      return e.bc;
+    }
+
     cList.innerHTML = correct.slice(0,30).map(function(e){
-      return '<div class="sp-item correct"><div style="font-weight:500;">' + e.bc + ' <span style="color:var(--muted);font-size:10px;">' + e.time + '</span></div>' +
+      return '<div class="sp-item correct"><div style="font-weight:500;">' +
+        bcLink(e) + ' <span style="color:var(--muted);font-size:10px;">' + e.time + '</span></div>' +
         (e.designation ? '<div class="sp-bc">' + e.designation.slice(0,45) + '</div>' : '') + '</div>';
     }).join('');
-    wList.innerHTML = wrong.slice(0,30).map(function(e){
-      return '<div class="sp-item wrong"><div style="font-weight:500;">' + e.bc + ' <span style="color:var(--muted);font-size:10px;">' + e.time + '</span></div>' +
-        (e.designation ? '<div class="sp-bc">' + e.designation.slice(0,45) + '</div>' : '') +
-        (e.reason ? '<div class="sp-reason">' + e.reason + '</div>' : '') + '</div>';
-    }).join('');
+
+    if (wrong.length === 0) {
+      wList.innerHTML = '<div class="empty-state">Aucune erreur ✓</div>';
+    } else {
+      wList.innerHTML = wrong.slice(0,30).map(function(e){
+        return '<div class="sp-item wrong"><div style="font-weight:500;">' +
+          bcLink(e) + ' <span style="color:var(--muted);font-size:10px;">' + e.time + '</span></div>' +
+          (e.designation ? '<div class="sp-bc">' + e.designation.slice(0,45) + '</div>' : '') +
+          (e.reason ? '<div class="sp-reason">' + e.reason + '</div>' : '') + '</div>';
+      }).join('');
+    }
+
+    // Pulse the right panel when there are errors, so they're impossible to miss
+    var rightPanel = document.getElementById('right-panel');
+    if (rightPanel) {
+      if (wrong.length > 0) rightPanel.classList.add('has-errors');
+      else rightPanel.classList.remove('has-errors');
+    }
   }
 
   // Hook into order close

@@ -1662,9 +1662,10 @@ def api_log_scan_session(request):
 
 @login_required(login_url="/login/")
 def api_get_scan_session(request):
-    """Get today's scan session log — dedupes by bordereau (latest wins)."""
+    """Get today's scan session log — dedupes by bordereau (latest wins).
+    Also resolves order_id for each bordereau so the UI can link to detail pages.
+    """
     today = timezone.now().date()
-    # Order so the *latest* row per bordereau comes first
     logs = ScanSessionLog.objects.filter(session_date=today).order_by("-scanned_at")
     seen = set()
     deduped = []
@@ -1673,10 +1674,30 @@ def api_get_scan_session(request):
             continue
         seen.add(log.bordereau_barcode)
         deduped.append(log)
+
+    # Resolve order_id per bordereau in ONE query (avoid N+1)
+    bordereaux = [l.bordereau_barcode for l in deduped]
+    order_ids = dict(
+        ShippingOrder.objects.filter(bordereau_barcode__in=bordereaux)
+        .values_list("bordereau_barcode", "id")
+    )
+
+    def serialize(l, is_correct):
+        d = {
+            "bc": l.bordereau_barcode,
+            "designation": l.designation,
+            "units": l.unit_count,
+            "time": l.scanned_at.strftime("%H:%M"),
+            "order_id": order_ids.get(l.bordereau_barcode),
+        }
+        if not is_correct:
+            d["reason"] = l.reason
+        return d
+
     return JsonResponse({
         "status": "ok",
-        "correct": [{"bc": l.bordereau_barcode, "designation": l.designation, "units": l.unit_count, "time": l.scanned_at.strftime("%H:%M")} for l in deduped if l.is_correct],
-        "wrong": [{"bc": l.bordereau_barcode, "designation": l.designation, "units": l.unit_count, "reason": l.reason, "time": l.scanned_at.strftime("%H:%M")} for l in deduped if not l.is_correct],
+        "correct": [serialize(l, True) for l in deduped if l.is_correct],
+        "wrong": [serialize(l, False) for l in deduped if not l.is_correct],
     })
 
 
