@@ -355,9 +355,36 @@ def api_scan_return(request):
             )
             return JsonResponse({"status": "error", "message": f"Aucun ordre trouvé pour : {barcode}", "code": "ORDER_NOT_FOUND", "barcode": barcode})
         items = order.items.select_related("unit__variant__product")
-        returnable = [i for i in items if i.unit.status in (ProductUnit.SHIPPED, ProductUnit.PAID)]
+        # Use the snapshotted status (display_status) — same source the UI uses
+        # to show 'Expédié' on each item. This matches user expectation: if the
+        # UI says it's expedié, it should be returnable. Also defensive against
+        # the rare case where a unit's live status was changed by another flow
+        # (e.g. unit reused in another order) leaving the snapshot intact.
+        # We also accept legacy items where snapshots are missing (display_status
+        # falls back to unit.status).
+        RETURNABLE_STATUSES = {"shipped", "paid", "expédié", "expedie"}
+        returnable = [i for i in items if (i.display_status or "").strip().lower() in RETURNABLE_STATUSES]
         if not returnable:
-            return JsonResponse({"status": "error", "message": "Aucune unité retournable dans cet ordre."})
+            # Build a clearer error message — list what state each item is in
+            # so the user understands WHY nothing is returnable.
+            if not items:
+                msg = "Cet ordre n'a aucun article."
+            else:
+                # Map statuses to human-readable labels
+                status_labels = {
+                    "in_stock": "En stock",
+                    "shipped": "Expédié",
+                    "paid": "Payé",
+                    "returned": "Déjà retourné",
+                    "defective": "Défectueux",
+                }
+                item_states = []
+                for i in items:
+                    s = (i.display_status or "").strip().lower()
+                    label = status_labels.get(s, s or "inconnu")
+                    item_states.append(f"{i.unit.barcode} : {label}")
+                msg = "Aucune unité retournable. État des articles :\n" + "\n".join(item_states)
+            return JsonResponse({"status": "error", "message": msg, "code": "NOTHING_RETURNABLE"})
         items_data = [{"barcode": i.unit.barcode, "size": i.unit.size, "status": i.unit.status,
                        "product_name": i.unit.variant.product.name, "color_label": i.unit.variant.color_label,
                        "sell_price": str(i.unit.variant.product.sell_price),
