@@ -271,7 +271,7 @@ def logout_view(request):
 
 
 
-def _do_return_unit(unit):
+def _do_return_unit(unit, user=None):
     variant = unit.variant
     reconciliation = None
     order_item = unit.order_items.select_related("order").order_by("-scanned_at").first()
@@ -296,7 +296,7 @@ def _do_return_unit(unit):
         }
     unit.status = ProductUnit.RETURNED
     unit.save()
-    StockMovement.objects.create(unit=unit, movement_type=StockMovement.RETURNED, reference="RETOUR", user=_user_for_request(request))
+    StockMovement.objects.create(unit=unit, movement_type=StockMovement.RETURNED, reference="RETOUR", user=user)
     if order_item:
         order_item.status_at_payment = ProductUnit.RETURNED
         order_item.save(update_fields=["status_at_payment"])
@@ -391,7 +391,7 @@ def api_scan_return(request):
                        "image_url": i.unit.variant.image.url if i.unit.variant.image else None}
                       for i in items]
         if len(returnable) == 1:
-            unit_data, reconciliation = _do_return_unit(returnable[0].unit)
+            unit_data, reconciliation = _do_return_unit(returnable[0].unit, user=_user_for_request(request))
             log_action(
                 request.user, AuditLog.SCAN_RETURN,
                 description=f"Unité {unit_data['barcode']} retournée (auto-single) depuis {barcode}",
@@ -431,7 +431,7 @@ def api_scan_return(request):
             request=request, target_unit_barcode=barcode,
         )
         return JsonResponse({"status": "error", "message": f"Impossible — {msgs.get(unit.status, unit.get_status_display())}."})
-    unit_data, reconciliation = _do_return_unit(unit)
+    unit_data, reconciliation = _do_return_unit(unit, user=_user_for_request(request))
     log_action(
         request.user, AuditLog.SCAN_RETURN,
         description=f"Unité {unit_data['barcode']} retournée",
@@ -456,7 +456,7 @@ def api_return_multiple(request):
         try:
             unit = ProductUnit.objects.select_related("variant__product").get(barcode=barcode)
             if unit.status in (ProductUnit.SHIPPED, ProductUnit.PAID):
-                unit_data, reconciliation = _do_return_unit(unit)
+                unit_data, reconciliation = _do_return_unit(unit, user=_user_for_request(request))
                 returned_units.append(unit_data)
                 if reconciliation:
                     reconciliations.append(reconciliation)
