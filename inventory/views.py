@@ -1793,9 +1793,27 @@ def api_recheck_session(request):
             )
             created += 1
 
+    # Return counts that match what /api/scan-session/today/ returns
+    # (deduped by bordereau, only logs for today). This ensures the Recheck
+    # button shows the same number as CORRECTS in the UI.
+    today_logs = ScanSessionLog.objects.filter(session_date=today).order_by("-scanned_at")
+    seen = set()
+    correct_count = 0
+    wrong_count = 0
+    for log in today_logs:
+        if log.bordereau_barcode in seen:
+            continue
+        seen.add(log.bordereau_barcode)
+        if log.is_correct:
+            correct_count += 1
+        else:
+            wrong_count += 1
+
     return JsonResponse({
         "status": "ok",
-        "checked": len(todays_orders),
+        "checked": correct_count,  # what the button displays — matches CORRECTS
+        "correct": correct_count,
+        "wrong": wrong_count,
         "created": created,
         "updated": updated,
     })
