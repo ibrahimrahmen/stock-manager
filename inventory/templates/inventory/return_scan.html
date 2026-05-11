@@ -269,8 +269,11 @@
     }
 
     if (data.type === 'order_multiple') {
-      // Order with multiple products — show selection popup
-      setFeedback('warn', `Ordre ${data.order_bordereau} — ${data.items.length} unité(s). Choisissez lesquelles retourner.`);
+      // Order — show selection popup. Even with 1 item, worker must confirm by
+      // scanning the actual product barcode (prevents accidental returns).
+      var n = data.items.length;
+      var word = n === 1 ? 'unité' : 'unités';
+      setFeedback('warn', `Ordre ${data.order_bordereau} — ${n} ${word}. Scannez le produit pour confirmer le retour.`);
       showMultiPopup(data.order_bordereau, data.order_id, data.items);
     }
   }
