@@ -2151,15 +2151,15 @@ def api_navex_sync(request):
                     pass
             # Get price from Navex (include_prix=1) - field is "prix"
             navex_prix = navex.get("prix") if navex else None
-            # Calculate our expected total and unit count
+            # 'Notre total' = the Navex price we saved on the order at scan time
+            # (api_save_navex_info writes the Navex 'prix' to order.amount_collected).
+            # We no longer recompute from sell_price + 7 — that would double-count
+            # delivery and cause spurious mismatches with Navex's price.
             try:
                 order_obj = ShippingOrder.objects.get(pk=order["id"])
                 order_items = list(order_obj.items.select_related("unit__variant__product"))
-                our_total = sum(
-                    item.unit.variant.product.sell_price
-                    for item in order_items
-                ) + Decimal("7")
                 unit_count = len(order_items)
+                our_total = order_obj.amount_collected  # may be None if not saved
             except Exception:
                 our_total = None
                 unit_count = 0
@@ -2167,7 +2167,7 @@ def api_navex_sync(request):
             price_match = None
             if navex_prix and our_total:
                 try:
-                    price_match = abs(Decimal(str(navex_prix)) - our_total) < Decimal("0.1")
+                    price_match = abs(Decimal(str(navex_prix)) - Decimal(str(our_total))) < Decimal("0.1")
                 except Exception:
                     price_match = None
 
