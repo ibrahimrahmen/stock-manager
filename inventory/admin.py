@@ -44,7 +44,8 @@ class ProductVariantInline(admin.TabularInline):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ("name", "code", "category", "buy_price", "sell_price", "total_stock", "alert_threshold")
+    list_display = ("name", "code", "category", "season", "buy_price", "sell_price", "total_stock", "alert_threshold")
+    list_filter = ("season", "archived", "alert_disabled")
     search_fields = ("name", "code", "category")
     inlines = [ProductVariantInline]
 

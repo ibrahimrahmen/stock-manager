@@ -2188,11 +2188,26 @@ def api_navex_sync(request):
 
 def products_list(request):
     show_archived = request.GET.get("archived") == "1"
+    season = request.GET.get("season", "")  # 'summer', 'winter', or '' (= bubble landing)
+
+    # If no season picked and not viewing archived → show the bubble landing page
+    if not season and not show_archived:
+        summer_count = Product.objects.filter(archived=False, season=Product.SEASON_SUMMER).count()
+        winter_count = Product.objects.filter(archived=False, season=Product.SEASON_WINTER).count()
+        archived_count = Product.objects.filter(archived=True).count()
+        return render(request, "inventory/products_landing.html", {
+            "summer_count": summer_count,
+            "winter_count": winter_count,
+            "archived_count": archived_count,
+        })
+
     products_qs = Product.objects.prefetch_related("variants__units")
     if show_archived:
         products_qs = products_qs.filter(archived=True)
     else:
         products_qs = products_qs.filter(archived=False)
+        if season in (Product.SEASON_SUMMER, Product.SEASON_WINTER):
+            products_qs = products_qs.filter(season=season)
     products = products_qs.all()
     total_available = ProductUnit.objects.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)).count()
     total_shipped = ProductUnit.objects.filter(status=ProductUnit.SHIPPED).count()
@@ -2244,6 +2259,7 @@ def products_list(request):
         "total_shipped": total_shipped,
         "total_paid": total_paid,
         "show_archived": show_archived,
+        "season": season,
         "archived_count": Product.objects.filter(archived=True).count(),
     })
 
