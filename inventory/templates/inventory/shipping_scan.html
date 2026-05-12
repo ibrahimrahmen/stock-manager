@@ -1149,30 +1149,42 @@
   handleMainResult = function(data) {
     _origHandleMainResult(data);
     if (data.type === 'bordereau' && data.new_order) {
-      // Use navexMap already loaded from getattente
-      showNavexOrderInfo(data.new_order.bordereau_barcode);
-      // Store navex price for this order from navexMap (already loaded)
-      var colis = navexMap[data.new_order.bordereau_barcode];
+      var bc = data.new_order.bordereau_barcode;
+      var oid = data.new_order.id;
+      console.log('[save-navex] bordereau:', bc, 'order_id:', oid);
+      console.log('[save-navex] navexMap total keys:', Object.keys(navexMap || {}).length);
+      var colis = navexMap[bc];
+      console.log('[save-navex] colis for this bordereau:', colis ? 'FOUND' : 'NOT FOUND', colis);
+
+      showNavexOrderInfo(bc);
+
       if (colis && colis.prix) {
         currentNavexPrice = parseFloat(colis.prix);
       } else {
         currentNavexPrice = null;
       }
-      // Save navex info to DB in background (fire and forget)
-      if (colis && data.new_order.id) {
-        fetch('/api/orders/' + data.new_order.id + '/save-navex/', {
+
+      if (colis && oid) {
+        var payload = {
+          prix: colis.prix,
+          nom: colis.nom || '',
+          tel: colis.tel || '',
+          ville: colis.ville || '',
+          designation: colis.designation || '',
+        };
+        console.log('[save-navex] sending POST:', payload);
+        fetch('/api/orders/' + oid + '/save-navex/', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            prix: colis.prix,
-            nom: colis.nom || '',
-            tel: colis.tel || '',
-            ville: colis.ville || '',
-            designation: colis.designation || '',
-          })
-        }).catch(function(){});
+          body: JSON.stringify(payload)
+        })
+        .then(function(r){ return r.json().then(function(d){ return {ok: r.ok, status: r.status, data: d}; }); })
+        .then(function(res){ console.log('[save-navex] RESPONSE:', res); })
+        .catch(function(e){ console.error('[save-navex] FETCH ERROR:', e); });
+      } else {
+        console.warn('[save-navex] SKIPPED — colis exists:', !!colis, 'oid exists:', !!oid);
       }
-      // Animate order transition
+
       var panel = document.getElementById('order-panel');
       if (panel) {
         panel.classList.add('order-transition-in');
@@ -1180,7 +1192,6 @@
       }
       if (data.closed_order) {
         hideNavexOrderInfo();
-        // Log the closed order to session
         var closedBC = data.closed_order.bordereau_barcode;
         var closedColis = navexMap[closedBC] || null;
         addToSession(data.closed_order, closedColis, _scannedUnitsInOrder);
