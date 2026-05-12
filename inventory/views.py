@@ -2652,6 +2652,222 @@ def api_create_order_inline(request):
         return JsonResponse({"status": "error", "message": str(e)}, status=400)
 
 
+# ---- AUTO-SAVE / DRAFT FLOW (Phase A) -------------------------------------
+# These let the frontend save the order progressively as the user fills it in,
+# instead of waiting for a "Save" button. The order is created as soon as the
+# phone number is filled in; from then on every field change → autosave call.
+# All edits are refused once status != non_confirmee (server-enforced lock).
+
+def _is_draft_editable(order):
+    """An order is editable as long as it hasn't been pushed to Navex.
+    The lock happens at confirmation time (status changes to 'confirmee')."""
+    return order.status == "non_confirmee" and not order.bordereau_barcode
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_order_draft_upsert(request):
+    """Create or update a draft order.
+    - If 'order_id' is in payload → update existing draft (with edit-lock check)
+    - Otherwise → create new draft (requires phone + sales_page)
+
+    Accepts ANY subset of fields. Unspecified fields aren't touched.
+    Returns {status:'ok', order_id, status, total, locked: bool}.
+    """
+    from .models import (
+        Order, OrderLine, OrderOffer, Offer, Customer, SalesPage, Region,
+        log_action, AuditLog,
+    )
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+
+    order_id = data.get("order_id")
+    phone = (data.get("phone") or "").strip()
+    name = (data.get("name") or "").strip()
+
+    try:
+        if order_id:
+            # UPDATE existing draft
+            try:
+                order = Order.objects.select_related("customer").get(pk=order_id)
+            except Order.DoesNotExist:
+                return JsonResponse({"status": "error", "message": "Brouillon introuvable."}, status=404)
+            if not _is_draft_editable(order):
+                return JsonResponse({
+                    "status": "error",
+                    "message": "Cette commande n'est plus modifiable (déjà confirmée).",
+                    "locked": True,
+                }, status=400)
+        else:
+            # CREATE new draft — require phone + sales_page
+            if not phone:
+                return JsonResponse({"status": "error", "message": "Téléphone obligatoire pour créer le brouillon."}, status=400)
+            sales_page_id = data.get("sales_page")
+            if not sales_page_id:
+                return JsonResponse({"status": "error", "message": "Page obligatoire pour créer le brouillon."}, status=400)
+            customer, _ = Customer.objects.get_or_create(phone=phone, defaults={"name": name})
+            if name and customer.name != name:
+                customer.name = name
+                customer.save(update_fields=["name"])
+            order = Order.objects.create(
+                customer=customer,
+                sales_page_id=sales_page_id,
+                created_by=request.user if request.user.is_authenticated else None,
+                status="non_confirmee",
+            )
+            log_action(
+                request.user, AuditLog.CREATION,
+                description=f"Brouillon créé (auto) — {phone}",
+                request=request, target_model="Order", target_id=order.id,
+            )
+
+        # Apply any provided fields
+        changed = []
+        # Customer fields
+        if phone and order.customer and order.customer.phone != phone:
+            order.customer.phone = phone
+            order.customer.save(update_fields=["phone"])
+            changed.append("phone")
+        if name and order.customer and order.customer.name != name:
+            order.customer.name = name
+            order.customer.save(update_fields=["name"])
+            changed.append("name")
+        # Direct order fields — only update if present in payload
+        if "sales_page" in data and data["sales_page"]:
+            order.sales_page_id = data["sales_page"]
+            changed.append("sales_page")
+        if "region" in data:
+            order.region_id = data["region"] or None
+            changed.append("region")
+        if "ville" in data:
+            order.ville = (data["ville"] or "").strip()
+            changed.append("ville")
+        if "localite" in data:
+            order.localite = (data["localite"] or "").strip()
+            changed.append("localite")
+        if "address" in data:
+            order.address = (data["address"] or "").strip()
+            changed.append("address")
+        if "delivery_fee" in data:
+            try:
+                order.delivery_fee = Decimal(str(data["delivery_fee"]))
+                changed.append("delivery_fee")
+            except Exception:
+                pass
+        if "discount" in data:
+            try:
+                order.discount = Decimal(str(data["discount"]))
+                changed.append("discount")
+            except Exception:
+                pass
+        if "notes" in data:
+            order.notes = (data["notes"] or "").strip()
+            changed.append("notes")
+        if changed:
+            order.save()
+
+        # Replace offers if the payload contains them (full replace, not partial)
+        if "offers" in data:
+            with transaction.atomic():
+                # Wipe existing lines and offers, then rebuild from payload
+                order.lines.all().delete()
+                order.offers.all().delete()
+                for op in data.get("offers", []):
+                    offer_id = op.get("offer_id")
+                    if not offer_id:
+                        continue
+                    try:
+                        offer = Offer.objects.get(pk=offer_id)
+                    except Offer.DoesNotExist:
+                        continue
+                    qty = max(int(op.get("quantity") or 1), 1)
+                    order_offer = OrderOffer.objects.create(
+                        order=order, offer=offer,
+                        offer_name=offer.name,
+                        bundle_price=offer.bundle_price,
+                        quantity=qty,
+                    )
+                    for line in op.get("products", []):
+                        OrderLine.objects.create(
+                            order=order,
+                            order_offer=order_offer,
+                            product_id=line.get("product_id"),
+                            variant_id=line.get("variant_id") or None,
+                            size=(line.get("size") or "").strip(),
+                            quantity=max(int(line.get("quantity") or 1), 1),
+                        )
+            changed.append("offers")
+
+        return JsonResponse({
+            "status": "ok",
+            "order_id": order.id,
+            "order_status": order.status,
+            "total": str(order.total),
+            "locked": not _is_draft_editable(order),
+            "changed": changed,
+        })
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=400)
+
+
+@login_required(login_url="/login/")
+def api_order_draft_get(request, pk):
+    """Return the full state of an order as JSON, for re-opening the edit form."""
+    from .models import Order
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error"}, status=403)
+    try:
+        order = Order.objects.select_related("customer", "sales_page", "region").prefetch_related(
+            "offers", "lines"
+        ).get(pk=pk)
+    except Order.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Commande introuvable."}, status=404)
+
+    offers_data = []
+    for oo in order.offers.all():
+        # Group lines belonging to this offer
+        products = []
+        for line in order.lines.filter(order_offer=oo):
+            products.append({
+                "offer_product_id": None,
+                "product_id": line.product_id,
+                "variant_id": line.variant_id,
+                "size": line.size,
+                "quantity": line.quantity,
+            })
+        offers_data.append({
+            "offer_id": oo.offer_id,
+            "quantity": oo.quantity,
+            "products": products,
+        })
+
+    return JsonResponse({
+        "status": "ok",
+        "order": {
+            "id": order.id,
+            "status": order.status,
+            "locked": not _is_draft_editable(order),
+            "phone": order.customer.phone if order.customer else "",
+            "name": order.customer.name if order.customer else "",
+            "sales_page": order.sales_page_id,
+            "region": order.region_id,
+            "ville": order.ville,
+            "localite": order.localite,
+            "address": order.address,
+            "delivery_fee": str(order.delivery_fee),
+            "discount": str(order.discount),
+            "notes": order.notes,
+            "offers": offers_data,
+            "total": str(order.total),
+        },
+    })
+
+
 # ---- Admin-only: manage offers ---------------------------------------------
 
 def _admin_only(view_fn):

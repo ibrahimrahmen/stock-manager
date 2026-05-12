@@ -67,6 +67,9 @@ urlpatterns = [
 
     # V2 — Inline create + offer APIs
     path("api/sales-orders/create/", views.api_create_order_inline, name="api_create_order_inline"),
+    # Phase A — auto-save / draft flow
+    path("api/sales-orders/draft/upsert/", views.api_order_draft_upsert, name="api_order_draft_upsert"),
+    path("api/sales-orders/<int:pk>/draft/", views.api_order_draft_get, name="api_order_draft_get"),
     path("api/sales-pages/<int:page_id>/offers/", views.api_offers_for_page, name="api_offers_for_page"),
     path("api/offers/<int:offer_id>/", views.api_offer_detail, name="api_offer_detail"),
 

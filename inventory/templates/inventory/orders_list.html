@@ -120,7 +120,9 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
       <div class="page-title">Commandes</div>
       <div class="muted">{{ total }} commande(s) au total</div>
     </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <!-- Auto-save status indicator (Phase A) -->
+      <span id="save-status" class="muted" style="font-size:12px;display:none;padding:0 8px;"></span>
       <button class="add-btn" id="btn-sync-navex" onclick="syncNavex()" style="background:transparent;color:var(--text);border:0.5px solid var(--border);">↻ Sync Navex</button>
       <button class="add-btn" id="btn-new-order" onclick="openCreateRow()">+ Nouvelle commande</button>
     </div>
@@ -149,7 +151,13 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
       <tbody id="orders-tbody">
         {% for o in orders %}
         <tr data-order-id="{{ o.id }}">
-          <td><a class="row-link" href="{% url 'order_view' o.pk %}">#{{ o.id }}</a></td>
+          <td>
+            {% if o.status == 'non_confirmee' %}
+              <a class="row-link" href="javascript:void(0)" onclick="editOrder({{ o.id }})" title="Modifier le brouillon">#{{ o.id }} <span style="font-size:10px;opacity:0.7;">✎</span></a>
+            {% else %}
+              <a class="row-link" href="{% url 'order_view' o.pk %}">#{{ o.id }}</a>
+            {% endif %}
+          </td>
           <td class="muted">{{ o.created_at|date:"d/m H:i" }}</td>
           <td>{{ o.sales_page.name|default:"—" }}</td>
           <td>
@@ -244,13 +252,110 @@ let offersForPage = [];
 let offerCache = {};
 let modalOffers = [];
 
+// --- Phase A: auto-save state ---
+let currentDraftId = null;       // id of the order being edited (null = brand new)
+let lastSaveAt = null;           // Date of last successful save
+let saveInFlight = false;        // simple lock to avoid overlapping requests
+let pendingSavePayload = null;   // if a change comes while a save is in flight, queue it
+
+function setSaveStatus(state, text) {
+  // state: 'saving' | 'saved' | 'error' | 'hide'
+  const el = document.getElementById('save-status');
+  if (!el) return;
+  if (state === 'hide') { el.style.display = 'none'; return; }
+  el.style.display = '';
+  if (state === 'saving') {
+    el.textContent = '• ' + (text || 'Sauvegarde…');
+    el.style.color = 'var(--muted)';
+  } else if (state === 'saved') {
+    el.textContent = '✓ ' + (text || 'Sauvegardé');
+    el.style.color = 'var(--green, #4ade9a)';
+  } else if (state === 'error') {
+    el.textContent = '⚠ ' + (text || 'Erreur de sauvegarde');
+    el.style.color = 'var(--red, #f87171)';
+  }
+}
+
+function buildCurrentPayload() {
+  // Read current form values into a payload. Returns null if not enough to save yet.
+  const phoneEl = document.getElementById('cr-phone');
+  if (!phoneEl) return null;
+  const phone = phoneEl.value.trim();
+  if (!phone) return null; // can't create draft without phone
+  const region = document.getElementById('cr-region').value;
+  return {
+    order_id: currentDraftId || undefined,
+    phone,
+    name: document.getElementById('cr-name').value.trim(),
+    sales_page: pickedPageId ? parseInt(pickedPageId) : null,
+    region: region ? parseInt(region) : null,
+    ville: document.getElementById('cr-ville').value.trim(),
+    localite: '',
+    address: document.getElementById('cr-address').value.trim(),
+    delivery_fee: parseFloat(document.getElementById('modal-delivery')?.value || '7') || 7,
+    discount: parseFloat(document.getElementById('modal-discount')?.value || '0') || 0,
+    offers: modalOffers,
+  };
+}
+
+async function autoSaveDraft(reason) {
+  const payload = buildCurrentPayload();
+  if (!payload) return; // no phone yet → don't try
+  if (saveInFlight) {
+    pendingSavePayload = payload;
+    return;
+  }
+  saveInFlight = true;
+  setSaveStatus('saving');
+  try {
+    const res = await fetch('/api/sales-orders/draft/upsert/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      currentDraftId = data.order_id;
+      lastSaveAt = new Date();
+      setSaveStatus('saved');
+    } else {
+      setSaveStatus('error', data.message || 'Erreur');
+    }
+  } catch (e) {
+    setSaveStatus('error', 'Erreur réseau');
+  } finally {
+    saveInFlight = false;
+    // If a change happened while we were saving, run again now
+    if (pendingSavePayload) {
+      pendingSavePayload = null;
+      autoSaveDraft('queued');
+    }
+  }
+}
+
+// Periodic refresh of the "saved Xs ago" message
+setInterval(() => {
+  if (!lastSaveAt) return;
+  const el = document.getElementById('save-status');
+  if (!el || el.style.display === 'none') return;
+  const s = Math.round((Date.now() - lastSaveAt.getTime()) / 1000);
+  if (s < 5) el.textContent = '✓ Sauvegardé';
+  else if (s < 60) el.textContent = `✓ Sauvegardé il y a ${s}s`;
+  else el.textContent = `✓ Sauvegardé il y a ${Math.floor(s/60)} min`;
+}, 5000);
+
 function csrfToken() { return document.cookie.split('csrftoken=')[1]?.split(';')[0] || ''; }
 async function fetchJson(url, opts) { const r = await fetch(url, opts || {}); return r.json(); }
 
-function openCreateRow() {
+function openCreateRow(opts) {
+  // opts = { editingId } when re-opening an existing draft
   if (creatingRow) return;
   creatingRow = true;
   document.getElementById('btn-new-order').disabled = true;
+  currentDraftId = (opts && opts.editingId) || null;
+  lastSaveAt = null;
+  pendingSavePayload = null;
+  setSaveStatus(currentDraftId ? 'saved' : 'hide', currentDraftId ? 'Brouillon chargé' : '');
   const tbody = document.getElementById('orders-tbody');
   document.getElementById('empty-row')?.remove();
   const tr = document.createElement('tr');
@@ -258,7 +363,7 @@ function openCreateRow() {
   tr.id = 'create-row';
   tr.innerHTML = `
     <td><button class="cancel-btn" onclick="cancelCreateRow()">×</button></td>
-    <td class="muted">—</td>
+    <td class="muted">${currentDraftId ? '#' + currentDraftId : '—'}</td>
     <td>
       <select id="cr-page" onchange="onPagePicked(this.value)" required>
         <option value="">— Page —</option>
@@ -284,9 +389,16 @@ function openCreateRow() {
     <td style="text-align:right;font-weight:500;" id="cr-total">0 DT</td>
     <td><span class="status status-non_confirmee">Non confirmée</span></td>
     <td><span class="muted" style="font-size:11px;">—</span></td>
-    <td><button class="save-btn" id="cr-save" disabled onclick="submitNewOrder()">Sauver</button></td>
+    <td><button class="save-btn" id="cr-save" disabled onclick="submitNewOrder()" title="Confirme et envoie à Navex">✓ Confirmer pour Navex</button></td>
   `;
   tbody.insertBefore(tr, tbody.firstChild);
+
+  // Attach blur listeners for auto-save on every field
+  ['cr-name','cr-phone','cr-region','cr-ville','cr-address'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('blur', () => autoSaveDraft(id));
+  });
+
   document.getElementById('cr-page').focus();
 }
 
@@ -296,6 +408,10 @@ function cancelCreateRow() {
   pickedPageId = null;
   offersForPage = [];
   modalOffers = [];
+  currentDraftId = null;
+  lastSaveAt = null;
+  pendingSavePayload = null;
+  setSaveStatus('hide');
   document.getElementById('btn-new-order').disabled = false;
 }
 
@@ -476,12 +592,17 @@ function validateArticles() {
   }
   closeArticlesModal();
   updateArticlesSummary();
+  // Phase A: persist the change immediately
+  autoSaveDraft('articles');
 }
 
 async function submitNewOrder() {
-  console.log('[order] submitNewOrder() called');
+  // This is now the "Confirmer pour Navex" button.
+  // It (1) makes sure the draft is up-to-date in DB, (2) flips status to confirmee
+  // which auto-pushes to Navex on the server side.
+  console.log('[order] submitNewOrder/confirm called');
   const btn = document.getElementById('cr-save');
-  const resetBtn = () => { if (btn) { btn.disabled = false; btn.textContent = 'Sauver'; } };
+  const resetBtn = () => { if (btn) { btn.disabled = false; btn.textContent = '✓ Confirmer pour Navex'; } };
   const showRowError = (msg) => {
     let errEl = document.getElementById('cr-row-error');
     if (!errEl) {
@@ -496,56 +617,86 @@ async function submitNewOrder() {
     setTimeout(() => {
       const t = document.getElementById('cr-row-error-tr');
       if (t) t.remove();
-    }, 4000);
+    }, 5000);
     resetBtn();
   };
 
   try {
     const phone = document.getElementById('cr-phone').value.trim();
     const region = document.getElementById('cr-region').value;
-    console.log('[order] phone=', phone, 'region=', region, 'pickedPageId=', pickedPageId, 'modalOffers=', modalOffers);
     if (!pickedPageId) { showRowError('Page obligatoire.'); return; }
     if (!phone) { showRowError('Téléphone obligatoire.'); return; }
-    if (!region) { showRowError('Gouvernorat obligatoire — choisissez dans la liste.'); return; }
-    if (modalOffers.length === 0) { showRowError('Articles obligatoires — cliquez sur le bouton +.'); return; }
+    if (!region) { showRowError('Gouvernorat obligatoire.'); return; }
+    if (modalOffers.length === 0) { showRowError('Articles obligatoires — cliquez sur +.'); return; }
 
-    const payload = {
-      phone,
-      name: document.getElementById('cr-name').value.trim(),
-      sales_page: parseInt(pickedPageId),
-      region: parseInt(region),
-      ville: document.getElementById('cr-ville').value.trim(),
-      localite: '',
-      address: document.getElementById('cr-address').value.trim(),
-      delivery_fee: parseFloat(document.getElementById('modal-delivery')?.value || '7') || 7,
-      discount: parseFloat(document.getElementById('modal-discount')?.value || '0') || 0,
-      offers: modalOffers,
-    };
-    console.log('[order] payload built:', payload);
-    btn.disabled = true; btn.textContent = '...';
-    console.log('[order] sending POST to /api/sales-orders/create/');
-    const res = await fetch('/api/sales-orders/create/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
-      body: JSON.stringify(payload),
-    });
-    console.log('[order] response status:', res.status);
-    const text = await res.text();
-    console.log('[order] response body:', text);
-    let data;
-    try { data = JSON.parse(text); } catch(e) {
-      showRowError('Réponse non-JSON du serveur. Voir console (F12).');
+    btn.disabled = true; btn.textContent = '... sauvegarde ...';
+    // Force a final save with everything
+    await autoSaveDraft('pre-confirm');
+    if (!currentDraftId) {
+      showRowError("Erreur — le brouillon n'a pas pu être créé. Réessayez.");
       return;
     }
+
+    btn.textContent = '... envoi Navex ...';
+    // Now flip status to confirmée → server auto-pushes Navex
+    const res = await fetch(`/api/sales-orders/${currentDraftId}/status/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+      body: JSON.stringify({ status: 'confirmee' }),
+    });
+    const data = await res.json();
     if (data.status === 'ok') {
-      console.log('[order] success, reloading');
       window.location.reload();
     } else {
-      showRowError(data.message || 'Erreur du serveur.');
+      showRowError(data.message || 'Erreur lors de la confirmation.');
     }
   } catch (e) {
     console.error('[order] EXCEPTION:', e);
     showRowError('Erreur : ' + e.message);
+  }
+}
+
+// --- Phase A: re-open an existing non_confirmee order as an editable draft ---
+async function editOrder(orderId) {
+  if (creatingRow) {
+    if (!confirm('Une commande est déjà en cours d\'édition. Annuler pour ouvrir celle-ci ?')) return;
+    cancelCreateRow();
+  }
+  try {
+    const data = await fetchJson(`/api/sales-orders/${orderId}/draft/`);
+    if (data.status !== 'ok') { alert(data.message || 'Erreur'); return; }
+    const o = data.order;
+    if (o.locked) {
+      alert('Cette commande n\'est plus modifiable (déjà confirmée chez Navex).');
+      return;
+    }
+    // Open the form in edit mode
+    openCreateRow({ editingId: orderId });
+    // Pre-fill all fields
+    pickedPageId = o.sales_page;
+    document.getElementById('cr-page').value = o.sales_page || '';
+    // Enable other inputs (onPagePicked does this; call it to also load offers)
+    await onPagePicked(o.sales_page);
+    document.getElementById('cr-name').value = o.name || '';
+    document.getElementById('cr-phone').value = o.phone || '';
+    document.getElementById('cr-region').value = o.region || '';
+    document.getElementById('cr-ville').value = o.ville || '';
+    document.getElementById('cr-address').value = o.address || '';
+    // Restore offers
+    modalOffers = o.offers || [];
+    // Pre-fetch each offer's detail into offerCache so the modal can re-render
+    for (const mo of modalOffers) {
+      if (mo.offer_id && !offerCache[mo.offer_id]) {
+        try {
+          const d = await fetchJson(`/api/offers/${mo.offer_id}/`);
+          if (d.status === 'ok') offerCache[mo.offer_id] = d.offer;
+        } catch(_) {}
+      }
+    }
+    updateArticlesSummary();
+    setSaveStatus('saved', 'Brouillon chargé');
+  } catch (e) {
+    alert('Erreur : ' + e.message);
   }
 }
 // ----- Inline status menu on each row -----
