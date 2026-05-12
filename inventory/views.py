@@ -2721,7 +2721,7 @@ def api_order_draft_upsert(request):
                 status="non_confirmee",
             )
             log_action(
-                request.user, AuditLog.CREATION,
+                request.user, AuditLog.CREATE,
                 description=f"Brouillon créé (auto) — {phone}",
                 request=request, target_model="Order", target_id=order.id,
             )
