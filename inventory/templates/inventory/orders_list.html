@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" data-theme="{{ user_theme|default:'dark' }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,7 +7,8 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-:root{
+/* DARK THEME (default) */
+:root, [data-theme="dark"] {
   --bg:#0f0f0d; --surface:#1a1a17; --surface2:#222220;
   --border:rgba(255,255,255,0.08); --text:#f0ede6; --muted:#8a887f;
   --green:#4ade9a; --green-dim:rgba(74,222,154,0.15);
@@ -15,7 +16,27 @@
   --red:#f87171; --red-dim:rgba(248,113,113,0.15);
   --blue:#60a5fa; --blue-dim:rgba(96,165,250,0.15);
   --purple:#a78bfa; --purple-dim:rgba(167,139,250,0.15);
+  --input-bg:rgba(255,255,255,0.05);
 }
+/* LIGHT THEME */
+[data-theme="light"] {
+  --bg:#faf9f6; --surface:#ffffff; --surface2:#f0eee8;
+  --border:rgba(0,0,0,0.10); --text:#1a1a17; --muted:#6b6a63;
+  --green:#1a9e6e; --green-dim:rgba(26,158,110,0.12);
+  --amber:#b87513; --amber-dim:rgba(184,117,19,0.12);
+  --red:#c43b3a; --red-dim:rgba(196,59,58,0.10);
+  --blue:#2363c9; --blue-dim:rgba(35,99,201,0.10);
+  --purple:#7956d6; --purple-dim:rgba(121,86,214,0.10);
+  --input-bg:rgba(0,0,0,0.03);
+}
+/* Theme toggle button */
+.theme-toggle{
+  background:transparent;border:0.5px solid var(--border);color:var(--text);
+  width:36px;height:36px;border-radius:50%;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:16px;transition:background 0.15s ease;
+}
+.theme-toggle:hover{background:var(--surface2);}
 body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
 .topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
 .brand{font-family:'DM Serif Display',serif;font-size:22px;}
@@ -32,7 +53,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .chip{padding:6px 12px;border-radius:18px;border:0.5px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
 .chip:hover{background:var(--surface2);}
 .chip.active{background:var(--text);color:var(--bg);border-color:var(--text);}
-.chip .count{background:rgba(255,255,255,0.1);padding:1px 7px;border-radius:10px;font-size:11px;}
+.chip .count{background:var(--surface2);padding:1px 7px;border-radius:10px;font-size:11px;}
 .chip.active .count{background:rgba(0,0,0,0.15);}
 .table-wrap{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;overflow-x:auto;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
@@ -109,6 +130,9 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
 <div class="topbar">
   <div class="brand">Stock Manager — Commandes</div>
   <div class="userbar">
+    <button class="theme-toggle" id="theme-toggle-btn" onclick="toggleTheme()" title="Changer le mode (clair/sombre)">
+      <span id="theme-icon">{% if user_theme == 'light' %}🌙{% else %}☀{% endif %}</span>
+    </button>
     {% if not request.user.is_superuser %}<a href="{% url 'home' %}">← Espaces</a>{% endif %}
     <a href="{% url 'logout' %}">Déconnexion</a>
   </div>
@@ -348,6 +372,28 @@ setInterval(() => {
 }, 5000);
 
 function csrfToken() { return document.cookie.split('csrftoken=')[1]?.split(';')[0] || ''; }
+
+// --- Theme toggle (light/dark) ---
+async function toggleTheme() {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  // Apply immediately for snappy UX
+  html.setAttribute('data-theme', next);
+  const icon = document.getElementById('theme-icon');
+  if (icon) icon.textContent = next === 'light' ? '🌙' : '☀';
+  // Persist on server
+  try {
+    await fetch('/api/user/theme/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+      body: JSON.stringify({ theme: next }),
+    });
+  } catch (e) {
+    // Silently fail — UI is already updated, server sync will retry next page load
+    console.warn('[theme] save failed:', e);
+  }
+}
 async function fetchJson(url, opts) { const r = await fetch(url, opts || {}); return r.json(); }
 
 function openCreateRow(opts) {

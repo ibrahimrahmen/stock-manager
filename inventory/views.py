@@ -2882,6 +2882,27 @@ def api_order_draft_get(request, pk):
     })
 
 
+# ---- User theme preference (light/dark mode) -------------------------------
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_user_theme(request):
+    """Update the logged-in user's theme preference (dark/light)."""
+    from .models import UserProfile
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error"}, status=400)
+    theme = (data.get("theme") or "").strip().lower()
+    if theme not in (UserProfile.THEME_DARK, UserProfile.THEME_LIGHT):
+        return JsonResponse({"status": "error", "message": "Theme invalide."}, status=400)
+    profile, _ = UserProfile.objects.get_or_create(user=request.user)
+    profile.theme = theme
+    profile.save(update_fields=["theme"])
+    return JsonResponse({"status": "ok", "theme": theme})
+
+
 # ---- Admin-only: manage offers ---------------------------------------------
 
 def _admin_only(view_fn):

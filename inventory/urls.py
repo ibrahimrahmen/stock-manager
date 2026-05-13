@@ -70,6 +70,8 @@ urlpatterns = [
     # Phase A — auto-save / draft flow
     path("api/sales-orders/draft/upsert/", views.api_order_draft_upsert, name="api_order_draft_upsert"),
     path("api/sales-orders/<int:pk>/draft/", views.api_order_draft_get, name="api_order_draft_get"),
+    # User theme preference (dark/light)
+    path("api/user/theme/", views.api_user_theme, name="api_user_theme"),
     path("api/sales-pages/<int:page_id>/offers/", views.api_offers_for_page, name="api_offers_for_page"),
     path("api/offers/<int:offer_id>/", views.api_offer_detail, name="api_offer_detail"),
 
