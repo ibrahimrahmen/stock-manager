@@ -2837,8 +2837,13 @@ def api_order_draft_upsert(request):
                             variant_id=line.get("variant_id") or None,
                             size=(line.get("size") or "").strip(),
                             quantity=max(int(line.get("quantity") or 1), 1),
+                            unit_price=0,  # not used inside an offer (offer.bundle_price drives the total)
                         )
             changed.append("offers")
+
+        # CRITICAL: recompute the order total after any change.
+        # Without this, Order.total stays at 0 and we'd push prix=0 to Navex.
+        order.recalc_total()
 
         return JsonResponse({
             "status": "ok",
@@ -3330,6 +3335,16 @@ def _push_order_to_navex_internal(request, order):
         return JsonResponse({"status": "error", "message": "Téléphone manquant."}, status=400)
     if not order.region:
         return JsonResponse({"status": "error", "message": "Gouvernorat manquant."}, status=400)
+
+    # Defensive: recompute total right before push, in case it was never updated.
+    # Without this, a draft created via autosave but never recalculated would push prix=0.
+    order.recalc_total()
+    order.refresh_from_db()
+    if not order.total or order.total <= 0:
+        return JsonResponse({
+            "status": "error",
+            "message": "Prix de la commande est 0. Vérifiez que des articles sont bien sélectionnés.",
+        }, status=400)
 
     designation = _build_designation(order)
     nb_article = _count_articles(order)
