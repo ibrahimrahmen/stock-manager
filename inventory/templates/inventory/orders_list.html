@@ -428,11 +428,13 @@ function openCreateRow(opts) {
       <input id="cr-phone2" type="tel" placeholder="Téléphone 2 (optionnel)" disabled style="margin-top:4px;">
     </td>
     <td>
-      <select id="cr-region" disabled>
+      <select id="cr-region" disabled onchange="onRegionPicked(this.value)">
         <option value="">— Gouvernorat * —</option>
         ${REGIONS.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
       </select>
-      <input id="cr-ville" type="text" placeholder="Ville" disabled style="margin-top:4px;">
+      <select id="cr-ville" disabled style="margin-top:4px;">
+        <option value="">— Délégation —</option>
+      </select>
       <input id="cr-address" type="text" placeholder="Adresse" disabled style="margin-top:4px;">
     </td>
     <td style="text-align:center;">
@@ -601,6 +603,27 @@ async function onPagePicked(pageId) {
       alert("Aucune offre n'est attachée à cette page. Demandez à l'admin d'en ajouter via 'Gérer les offres'.");
     }
   } catch (e) { alert('Erreur : ' + e.message); }
+}
+
+// When user picks a governorate, load its delegations into the ville dropdown.
+async function onRegionPicked(regionId) {
+  const villeEl = document.getElementById('cr-ville');
+  if (!villeEl) return;
+  // Reset
+  villeEl.innerHTML = '<option value="">— Délégation —</option>';
+  if (!regionId) return;
+  try {
+    const data = await fetchJson(`/api/regions/${regionId}/delegations/`);
+    if (data.status !== 'ok') return;
+    for (const d of (data.delegations || [])) {
+      const opt = document.createElement('option');
+      opt.value = d.name;  // Send NAME (matches existing Order.ville text field)
+      opt.textContent = d.name;
+      villeEl.appendChild(opt);
+    }
+  } catch (e) {
+    console.warn('[delegations] load failed:', e);
+  }
 }
 
 function updateArticlesSummary() {
@@ -855,6 +878,10 @@ async function editOrder(orderId) {
     document.getElementById('cr-phone').value = o.phone || '';
     document.getElementById('cr-phone2').value = o.phone2 || '';
     document.getElementById('cr-region').value = o.region || '';
+    // Load delegations for this region first, then set the ville value
+    if (o.region) {
+      await onRegionPicked(o.region);
+    }
     document.getElementById('cr-ville').value = o.ville || '';
     document.getElementById('cr-address').value = o.address || '';
     // Restore offers

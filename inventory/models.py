@@ -466,6 +466,22 @@ class Region(models.Model):
         return self.name
 
 
+class Delegation(models.Model):
+    """A sub-administrative unit (délégation) within a Region (governorate).
+    Seeded once via data migration to avoid typos when filling out orders.
+    """
+    region = models.ForeignKey(Region, on_delete=models.CASCADE, related_name="delegations")
+    name = models.CharField(max_length=120)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["region__name", "name"]
+        unique_together = ("region", "name")
+
+    def __str__(self):
+        return f"{self.region.name} — {self.name}"
+
+
 class Order(models.Model):
     """A customer order created in our system (v2)."""
     NON_CONFIRMEE = "non_confirmee"

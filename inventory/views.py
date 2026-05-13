@@ -2906,6 +2906,27 @@ def api_order_draft_get(request, pk):
     })
 
 
+# ---- Regions / Delegations (cascaded dropdown) -----------------------------
+
+@login_required(login_url="/login/")
+def api_region_delegations(request, region_id):
+    """Return the list of delegations (sub-zones) for a given governorate.
+    Used by the frontend to populate a cascaded dropdown."""
+    from .models import Region, Delegation
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error"}, status=403)
+    try:
+        region = Region.objects.get(pk=region_id)
+    except Region.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Gouvernorat introuvable."}, status=404)
+    delegations = Delegation.objects.filter(region=region, is_active=True).order_by("name")
+    return JsonResponse({
+        "status": "ok",
+        "region": {"id": region.id, "name": region.name},
+        "delegations": [{"id": d.id, "name": d.name} for d in delegations],
+    })
+
+
 # ---- User theme preference (light/dark mode) -------------------------------
 
 @csrf_exempt
