@@ -2446,11 +2446,16 @@ def orders_list(request):
     if not _orders_role_check(request):
         return redirect("home")
     from .models import Order, SalesPage, Region
-    status_filter = request.GET.get("status", "")
+    # Default behavior: show "non_confirmee" orders only.
+    # User must explicitly pick a filter (or "all") to see other orders.
+    status_filter = request.GET.get("status", None)
+    if status_filter is None:
+        status_filter = "non_confirmee"
+
     qs = Order.objects.select_related("customer", "region", "sales_page").prefetch_related(
         "lines__product", "order_offers"
     )
-    if status_filter:
+    if status_filter and status_filter != "all":
         qs = qs.filter(status=status_filter)
     orders = qs[:500]
 

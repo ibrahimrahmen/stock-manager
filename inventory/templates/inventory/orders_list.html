@@ -153,7 +153,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
   </div>
 
   <div class="chips">
-    <a href="{% url 'orders_list' %}" class="chip {% if not status_filter %}active{% endif %}">Toutes <span class="count">{{ total }}</span></a>
+    <a href="?status=all" class="chip {% if status_filter == 'all' %}active{% endif %}">Toutes <span class="count">{{ total }}</span></a>
     <a href="?status=non_confirmee" class="chip {% if status_filter == 'non_confirmee' %}active{% endif %}">Non confirmée <span class="count">{{ counts.non_confirmee|default:0 }}</span></a>
     <a href="?status=confirmee" class="chip {% if status_filter == 'confirmee' %}active{% endif %}">Confirmée <span class="count">{{ counts.confirmee|default:0 }}</span></a>
     <a href="?status=rappeler_plus_tard" class="chip {% if status_filter == 'rappeler_plus_tard' %}active{% endif %}">Rappeler <span class="count">{{ counts.rappeler_plus_tard|default:0 }}</span></a>
