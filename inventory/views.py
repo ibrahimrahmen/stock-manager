@@ -2910,7 +2910,7 @@ def api_order_draft_get(request, pk):
             "notes": order.notes,
             "offers": offers_data,
             "total": str(order.total),
-            "article_summary": order.article_summary(),
+            "article_summary": order.article_summary,
             "created_at": order.created_at.strftime("%d/%m %H:%M") if order.created_at else "",
         },
     })
