@@ -502,6 +502,68 @@ function openCreateRow(opts) {
   }
 
   document.getElementById('cr-page').focus();
+
+  // Click-outside-to-close: if user clicks anywhere outside the create row,
+  // close the panel — but only if the phone field is in a valid state
+  // (empty OR exactly 8 digits). Otherwise force them to fix it first.
+  // We bind on the next tick to avoid catching the same click that opened us.
+  setTimeout(() => {
+    document.addEventListener('mousedown', _outsideClickHandler, true);
+  }, 50);
+}
+
+// Stored handler so we can remove it later in cancelCreateRow()
+function _outsideClickHandler(ev) {
+  const createRow = document.getElementById('create-row');
+  if (!createRow) return;
+  // Don't close if click is inside the create row itself
+  if (createRow.contains(ev.target)) return;
+  // Don't close if click is inside any modal (articles picker, status menu, etc.)
+  if (ev.target.closest('.modal-overlay')) return;
+  if (ev.target.closest('.status-menu')) return;
+  // Check phone validity — only close if empty or exactly 8 digits
+  const phoneEl = document.getElementById('cr-phone');
+  if (phoneEl) {
+    const cleaned = cleanPhone(phoneEl.value);
+    if (cleaned.length > 0 && cleaned.length !== 8) {
+      // Refuse to close — force user to fix or clear
+      ev.preventDefault();
+      ev.stopPropagation();
+      phoneEl.focus();
+      setSaveStatus('error', `Téléphone : ${cleaned.length} chiffre(s). Complétez à 8 chiffres OU effacez le champ pour fermer.`);
+      return;
+    }
+  }
+  // Also check phone2 (optional but must be valid if filled)
+  const phone2El = document.getElementById('cr-phone2');
+  if (phone2El) {
+    const cleaned = cleanPhone(phone2El.value);
+    if (cleaned.length > 0 && cleaned.length !== 8) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      phone2El.focus();
+      setSaveStatus('error', `Téléphone 2 : ${cleaned.length} chiffre(s). Complétez ou effacez.`);
+      return;
+    }
+  }
+  // OK to close — draft is already saved to DB by autosave, just hide the row
+  closeDraftPanel();
+}
+
+// Close the create row WITHOUT discarding the draft (it stays in DB).
+function closeDraftPanel() {
+  document.removeEventListener('mousedown', _outsideClickHandler, true);
+  document.getElementById('create-row')?.remove();
+  document.getElementById('cr-row-error-tr')?.remove();
+  creatingRow = false;
+  pickedPageId = null;
+  offersForPage = [];
+  modalOffers = [];
+  currentDraftId = null;
+  lastSaveAt = null;
+  pendingSavePayload = null;
+  setSaveStatus('hide');
+  document.getElementById('btn-new-order').disabled = false;
 }
 
 // Clean a phone string: keep only digits.
@@ -510,7 +572,11 @@ function cleanPhone(s) {
 }
 
 function cancelCreateRow() {
+  // Same as closeDraftPanel but explicitly called by the × button.
+  // Currently identical — draft stays in DB.
+  document.removeEventListener('mousedown', _outsideClickHandler, true);
   document.getElementById('create-row')?.remove();
+  document.getElementById('cr-row-error-tr')?.remove();
   creatingRow = false;
   pickedPageId = null;
   offersForPage = [];
