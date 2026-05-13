@@ -87,6 +87,26 @@ tr.create-row input,tr.create-row select{
 tr.create-row input:disabled,tr.create-row select:disabled{opacity:0.4;cursor:not-allowed;}
 tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:var(--green);}
 .add-articles-btn{background:var(--green);color:#0a0a08;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;}
+/* Unified Region/Delegation picker */
+.loc-picker{position:relative;}
+.loc-dropdown{
+  position:absolute;top:calc(100% + 2px);left:0;right:0;
+  background:var(--surface);border:0.5px solid var(--border);
+  border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.4);
+  max-height:320px;overflow-y:auto;z-index:80;
+}
+.loc-region-header{
+  padding:8px 12px;background:var(--surface2);color:var(--muted);
+  font-size:12px;text-transform:uppercase;font-weight:600;letter-spacing:0.05em;
+  position:sticky;top:0;border-bottom:0.5px solid var(--border);
+}
+.loc-deleg-item{
+  padding:10px 16px;cursor:pointer;font-size:14px;color:var(--text);
+  border-bottom:0.5px solid var(--border);
+}
+.loc-deleg-item:hover, .loc-deleg-item.highlight{background:var(--surface2);}
+.loc-deleg-item .gov-tag{color:var(--muted);font-size:12px;margin-left:8px;}
+.loc-empty{padding:14px;color:var(--muted);font-size:13px;text-align:center;}
 .add-articles-btn:disabled{opacity:0.4;cursor:not-allowed;}
 .cancel-btn{background:transparent;border:0.5px solid var(--border);color:var(--muted);padding:5px 8px;border-radius:6px;cursor:pointer;font-size:11px;}
 .cancel-btn:hover{color:var(--red);border-color:var(--red);}
@@ -428,13 +448,13 @@ function openCreateRow(opts) {
       <input id="cr-phone2" type="tel" placeholder="Téléphone 2 (optionnel)" disabled style="margin-top:4px;">
     </td>
     <td>
-      <select id="cr-region" disabled onchange="onRegionPicked(this.value)">
-        <option value="">— Gouvernorat * —</option>
-        ${REGIONS.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}
-      </select>
-      <select id="cr-ville" disabled style="margin-top:4px;">
-        <option value="">— Délégation —</option>
-      </select>
+      <div class="loc-picker">
+        <input id="cr-loc-search" type="text" placeholder="— Gouvernorat / Délégation * —" disabled autocomplete="off">
+        <div id="cr-loc-dropdown" class="loc-dropdown" style="display:none;"></div>
+        <!-- Hidden fields holding the actual selected values -->
+        <input type="hidden" id="cr-region" value="">
+        <input type="hidden" id="cr-ville" value="">
+      </div>
       <input id="cr-address" type="text" placeholder="Adresse" disabled style="margin-top:4px;">
     </td>
     <td style="text-align:center;">
@@ -448,11 +468,13 @@ function openCreateRow(opts) {
   `;
   tbody.insertBefore(tr, tbody.firstChild);
 
-  // Attach blur listeners for auto-save on every field
-  ['cr-name','cr-phone','cr-phone2','cr-region','cr-ville','cr-address'].forEach(id => {
+  // Attach blur listeners for auto-save on every field (not the hidden region/ville fields — those autosave via pickLocation())
+  ['cr-name','cr-phone','cr-phone2','cr-address'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('blur', () => autoSaveDraft(id));
   });
+  // Init the unified region/delegation picker
+  initLocationPicker();
 
   // Phone: clean to digits-only on every keystroke / paste
   const phoneEl = document.getElementById('cr-phone');
@@ -523,6 +545,8 @@ function _outsideClickHandler(ev) {
   // Don't close if click is inside any modal (articles picker, status menu, etc.)
   if (ev.target.closest('.modal-overlay')) return;
   if (ev.target.closest('.status-menu')) return;
+  // Don't close if click is inside the location dropdown
+  if (ev.target.closest('.loc-dropdown')) return;
   // Check phone validity — only close if empty or exactly 8 digits
   const phoneEl = document.getElementById('cr-phone');
   if (phoneEl) {
@@ -593,7 +617,7 @@ function cancelCreateRow() {
 async function onPagePicked(pageId) {
   pickedPageId = pageId || null;
   const enable = !!pickedPageId;
-  ['cr-name','cr-phone','cr-phone2','cr-region','cr-ville','cr-address','cr-articles']
+  ['cr-name','cr-phone','cr-phone2','cr-loc-search','cr-address','cr-articles']
     .forEach(id => document.getElementById(id).disabled = !enable);
   if (!enable) return;
   try {
@@ -605,25 +629,75 @@ async function onPagePicked(pageId) {
   } catch (e) { alert('Erreur : ' + e.message); }
 }
 
-// When user picks a governorate, load its delegations into the ville dropdown.
-async function onRegionPicked(regionId) {
-  const villeEl = document.getElementById('cr-ville');
-  if (!villeEl) return;
-  // Reset
-  villeEl.innerHTML = '<option value="">— Délégation —</option>';
-  if (!regionId) return;
+// --- Unified Region/Delegation picker -------------------------------------
+// One input, one dropdown, search by either region or delegation name.
+// Selecting a delegation fills BOTH hidden region+ville fields.
+let _allRegionsCache = null;  // cached payload from /api/delegations/all/
+
+async function getAllRegions() {
+  if (_allRegionsCache) return _allRegionsCache;
   try {
-    const data = await fetchJson(`/api/regions/${regionId}/delegations/`);
-    if (data.status !== 'ok') return;
-    for (const d of (data.delegations || [])) {
-      const opt = document.createElement('option');
-      opt.value = d.name;  // Send NAME (matches existing Order.ville text field)
-      opt.textContent = d.name;
-      villeEl.appendChild(opt);
+    const data = await fetchJson('/api/delegations/all/');
+    if (data.status === 'ok') {
+      _allRegionsCache = data.regions || [];
+      return _allRegionsCache;
     }
-  } catch (e) {
-    console.warn('[delegations] load failed:', e);
+  } catch (e) { console.warn('[loc] fetch failed:', e); }
+  return [];
+}
+
+function renderLocDropdown(query) {
+  const dd = document.getElementById('cr-loc-dropdown');
+  if (!dd) return;
+  const regions = _allRegionsCache || [];
+  const q = (query || '').toLowerCase().trim();
+  let html = '';
+  let totalShown = 0;
+  for (const r of regions) {
+    const regionMatches = q && r.name.toLowerCase().includes(q);
+    const matchingDelegs = r.delegations.filter(d =>
+      !q || regionMatches || d.name.toLowerCase().includes(q)
+    );
+    if (matchingDelegs.length === 0) continue;
+    html += `<div class="loc-region-header">${r.name}</div>`;
+    for (const d of matchingDelegs) {
+      html += `<div class="loc-deleg-item" data-region-id="${r.id}" data-region-name="${r.name.replace(/"/g,'&quot;')}" data-deleg-name="${d.name.replace(/"/g,'&quot;')}">${d.name}<span class="gov-tag">— ${r.name}</span></div>`;
+      totalShown++;
+    }
   }
+  if (totalShown === 0) {
+    html = `<div class="loc-empty">Aucun résultat pour "${query}"</div>`;
+  }
+  dd.innerHTML = html;
+  dd.style.display = 'block';
+  // Attach click handlers
+  dd.querySelectorAll('.loc-deleg-item').forEach(el => {
+    el.addEventListener('mousedown', (ev) => {
+      ev.preventDefault();  // prevent blur before click
+      pickLocation(el.dataset.regionId, el.dataset.regionName, el.dataset.delegName);
+    });
+  });
+}
+
+function pickLocation(regionId, regionName, delegName) {
+  document.getElementById('cr-region').value = regionId;
+  document.getElementById('cr-ville').value = delegName;
+  document.getElementById('cr-loc-search').value = `${regionName} — ${delegName}`;
+  document.getElementById('cr-loc-dropdown').style.display = 'none';
+  autoSaveDraft('location');
+}
+
+async function initLocationPicker() {
+  const search = document.getElementById('cr-loc-search');
+  const dd = document.getElementById('cr-loc-dropdown');
+  if (!search || !dd) return;
+  await getAllRegions();  // pre-fetch
+  search.addEventListener('focus', () => renderLocDropdown(search.value));
+  search.addEventListener('input', () => renderLocDropdown(search.value));
+  search.addEventListener('blur', () => {
+    // Close after a short delay so click events on items still fire
+    setTimeout(() => { dd.style.display = 'none'; }, 150);
+  });
 }
 
 function updateArticlesSummary() {
@@ -877,12 +951,18 @@ async function editOrder(orderId) {
     document.getElementById('cr-name').value = o.name || '';
     document.getElementById('cr-phone').value = o.phone || '';
     document.getElementById('cr-phone2').value = o.phone2 || '';
+    // Restore the location: set hidden region+ville and display the visible search
     document.getElementById('cr-region').value = o.region || '';
-    // Load delegations for this region first, then set the ville value
-    if (o.region) {
-      await onRegionPicked(o.region);
-    }
     document.getElementById('cr-ville').value = o.ville || '';
+    if (o.region && o.ville) {
+      // Resolve region name from the cached list (or fetch)
+      const regions = await getAllRegions();
+      const reg = regions.find(r => r.id === o.region);
+      const regName = reg ? reg.name : '';
+      document.getElementById('cr-loc-search').value = regName ? `${regName} — ${o.ville}` : o.ville;
+    } else {
+      document.getElementById('cr-loc-search').value = '';
+    }
     document.getElementById('cr-address').value = o.address || '';
     // Restore offers
     modalOffers = o.offers || [];

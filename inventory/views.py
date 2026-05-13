@@ -2927,6 +2927,28 @@ def api_region_delegations(request, region_id):
     })
 
 
+@login_required(login_url="/login/")
+def api_all_delegations(request):
+    """Return ALL regions and their delegations in a single payload.
+    Used by the unified searchable dropdown.
+    """
+    from .models import Region, Delegation
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error"}, status=403)
+    regions = Region.objects.filter(is_active=True).order_by("name").prefetch_related("delegations")
+    out = []
+    for r in regions:
+        out.append({
+            "id": r.id,
+            "name": r.name,
+            "delegations": [
+                {"id": d.id, "name": d.name}
+                for d in r.delegations.filter(is_active=True).order_by("name")
+            ],
+        })
+    return JsonResponse({"status": "ok", "regions": out})
+
+
 # ---- User theme preference (light/dark mode) -------------------------------
 
 @csrf_exempt
