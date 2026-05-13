@@ -304,8 +304,10 @@ function buildCurrentPayload() {
   // Read current form values into a payload. Returns null if not enough to save yet.
   const phoneEl = document.getElementById('cr-phone');
   if (!phoneEl) return null;
-  const phone = phoneEl.value.trim();
-  if (!phone) return null; // can't create draft without phone
+  const phone = cleanPhone(phoneEl.value);
+  // Skip auto-save until phone is exactly 8 digits — prevents creating a draft
+  // with an invalid number that we'd then have to clean up later.
+  if (phone.length !== 8) return null;
   const region = document.getElementById('cr-region').value;
   return {
     order_id: currentDraftId || undefined,
@@ -448,7 +450,37 @@ function openCreateRow(opts) {
     if (el) el.addEventListener('blur', () => autoSaveDraft(id));
   });
 
+  // Phone: clean to digits-only on every keystroke / paste
+  const phoneEl = document.getElementById('cr-phone');
+  if (phoneEl) {
+    phoneEl.addEventListener('input', () => {
+      const cleaned = cleanPhone(phoneEl.value);
+      if (cleaned !== phoneEl.value) phoneEl.value = cleaned;
+      // Visual feedback: red border if not 8 digits yet
+      if (cleaned.length === 0) {
+        phoneEl.style.borderColor = '';
+      } else if (cleaned.length === 8) {
+        phoneEl.style.borderColor = 'var(--green)';
+      } else {
+        phoneEl.style.borderColor = 'var(--red)';
+      }
+    });
+    phoneEl.addEventListener('blur', () => {
+      const cleaned = cleanPhone(phoneEl.value);
+      if (cleaned.length > 0 && cleaned.length !== 8) {
+        // Hold focus until valid — refuse to let them leave
+        setTimeout(() => phoneEl.focus(), 0);
+        setSaveStatus('error', `Téléphone : ${cleaned.length} chiffre(s), 8 requis`);
+      }
+    });
+  }
+
   document.getElementById('cr-page').focus();
+}
+
+// Clean a phone string: keep only digits.
+function cleanPhone(s) {
+  return (s || '').replace(/\D/g, '');
 }
 
 function cancelCreateRow() {
@@ -671,10 +703,11 @@ async function submitNewOrder() {
   };
 
   try {
-    const phone = document.getElementById('cr-phone').value.trim();
+    const phone = cleanPhone(document.getElementById('cr-phone').value);
     const region = document.getElementById('cr-region').value;
     if (!pickedPageId) { showRowError('Page obligatoire.'); return; }
     if (!phone) { showRowError('Téléphone obligatoire.'); return; }
+    if (phone.length !== 8) { showRowError(`Téléphone invalide : ${phone.length} chiffres au lieu de 8.`); return; }
     if (!region) { showRowError('Gouvernorat obligatoire.'); return; }
     if (modalOffers.length === 0) { showRowError('Articles obligatoires — cliquez sur +.'); return; }
 

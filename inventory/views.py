@@ -2687,7 +2687,10 @@ def api_order_draft_upsert(request):
         return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
 
     order_id = data.get("order_id")
-    phone = (data.get("phone") or "").strip()
+    # Normalize phone: keep only digits (must match frontend cleanPhone()).
+    # This way "12 345 678", "12.345.678", " 12345678 " all become "12345678".
+    raw_phone = (data.get("phone") or "")
+    phone = "".join(ch for ch in raw_phone if ch.isdigit())
     name = (data.get("name") or "").strip()
 
     try:
@@ -2704,11 +2707,13 @@ def api_order_draft_upsert(request):
                     "locked": True,
                 }, status=400)
         else:
-            # CREATE new draft — require phone + sales_page
+            # CREATE new draft — require phone (8 digits, Tunisian) + sales_page
             # Return 200 with "waiting" status instead of 400 so the frontend
             # doesn't spam errors before the user has finished typing.
             if not phone:
                 return JsonResponse({"status": "waiting", "message": "Téléphone requis pour créer le brouillon."})
+            if len(phone) != 8:
+                return JsonResponse({"status": "waiting", "message": f"Téléphone invalide ({len(phone)} chiffres, 8 requis)."})
             sales_page_id = data.get("sales_page")
             if not sales_page_id:
                 return JsonResponse({"status": "waiting", "message": "Page requise pour créer le brouillon."})
