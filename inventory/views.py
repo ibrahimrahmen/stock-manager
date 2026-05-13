@@ -2712,7 +2712,19 @@ def api_order_draft_upsert(request):
             sales_page_id = data.get("sales_page")
             if not sales_page_id:
                 return JsonResponse({"status": "waiting", "message": "Page requise pour créer le brouillon."})
-            customer, _ = Customer.objects.get_or_create(phone=phone, defaults={"name": name})
+            # Normalize phone — strip whitespace, remove any hidden chars
+            # to avoid creating a "duplicate" customer with phone=" 11111111".
+            phone_norm = phone.strip()
+            customer = Customer.objects.filter(phone=phone_norm).first()
+            if customer is None:
+                # Try to create. If a race condition or normalization issue causes
+                # IntegrityError, fall back to the existing one.
+                try:
+                    customer = Customer.objects.create(phone=phone_norm, name=name)
+                except Exception:
+                    customer = Customer.objects.filter(phone=phone_norm).first()
+                    if customer is None:
+                        return JsonResponse({"status": "error", "message": f"Impossible de créer/trouver le client {phone_norm}."}, status=400)
             if name and customer.name != name:
                 customer.name = name
                 customer.save(update_fields=["name"])
@@ -2724,7 +2736,7 @@ def api_order_draft_upsert(request):
             )
             log_action(
                 request.user, AuditLog.CREATE,
-                description=f"Brouillon créé (auto) — {phone}",
+                description=f"Brouillon créé (auto) — {phone_norm}",
                 request=request, target_model="Order", target_id=order.id,
             )
 
