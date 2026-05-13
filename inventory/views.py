@@ -3686,10 +3686,10 @@ def _sync_navex_for_v2_orders(only_pending=True):
     only_pending=True (default): skip orders already in Annulée status.
     Returns (n_attempted, n_updated).
     """
-    from .models import Order
+    from .models import Order, log_action, AuditLog
     qs = Order.objects.exclude(bordereau_barcode="")
     if only_pending:
-        qs = qs.exclude(status=Order.ANNULEE)
+        qs = qs.exclude(status=Order.ANNULEE).exclude(status=Order.SUPPRIME_NAVEX)
     orders = list(qs)
     n_attempted = len(orders)
     if n_attempted == 0:
@@ -3708,18 +3708,34 @@ def _sync_navex_for_v2_orders(only_pending=True):
         parsed = items.get(o.bordereau_barcode)
         if not parsed:
             continue
-        o.navex_last_status   = (parsed.get("etat") or "")[:80]
+        new_navex_status = (parsed.get("etat") or "")[:80]
+        o.navex_last_status   = new_navex_status
         o.navex_motif         = (parsed.get("motif") or "")[:200]
         o.navex_pre_etat      = (parsed.get("pre_etat") or "")[:80]
         o.navex_livreur       = (parsed.get("livreur") or "")[:120]
         o.navex_livreur_tel   = (parsed.get("livreur_tel") or "")[:30]
         o.navex_last_status_raw = raw_str
         o.navex_last_synced_at = now
-        o.save(update_fields=[
+        update_fields = [
             "navex_last_status", "navex_motif", "navex_pre_etat",
             "navex_livreur", "navex_livreur_tel",
             "navex_last_status_raw", "navex_last_synced_at", "updated_at",
-        ])
+        ]
+        # Detect "Supprime" Navex status — means the colis was deleted on their side
+        # after our push. We auto-transition the local order to SUPPRIME_NAVEX status
+        # so it surfaces clearly (red badge + dedicated filter).
+        # Only do this when our local status is still confirmee (i.e. we hadn't
+        # already cancelled/annulled it ourselves).
+        if (new_navex_status.strip().lower() in ("supprime", "supprimé", "deleted")
+                and o.status == Order.CONFIRMEE):
+            o.status = Order.SUPPRIME_NAVEX
+            update_fields.append("status")
+            log_action(
+                None, AuditLog.STATUS_CHANGE,
+                description=f"Auto: commande #{o.id} passée en 'Supprimé Navex' (sync a détecté 'Supprime' chez Navex, bordereau {o.bordereau_barcode})",
+                target_model="Order", target_id=o.id,
+            )
+        o.save(update_fields=update_fields)
         n_updated += 1
     return n_attempted, n_updated
 

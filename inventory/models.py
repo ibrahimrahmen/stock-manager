@@ -484,20 +484,22 @@ class Delegation(models.Model):
 
 class Order(models.Model):
     """A customer order created in our system (v2)."""
-    NON_CONFIRMEE = "non_confirmee"
-    CONFIRMEE     = "confirmee"
-    INJOIGNABLE   = "injoignable"
-    PAS_SERIEUX   = "pas_serieux"
-    RAPPELER      = "rappeler_plus_tard"
-    ANNULEE       = "annulee"
+    NON_CONFIRMEE   = "non_confirmee"
+    CONFIRMEE       = "confirmee"
+    INJOIGNABLE     = "injoignable"
+    PAS_SERIEUX     = "pas_serieux"
+    RAPPELER        = "rappeler_plus_tard"
+    ANNULEE         = "annulee"
+    SUPPRIME_NAVEX  = "supprime_navex"  # Navex deleted the colis after our push
 
     STATUS_CHOICES = [
-        (NON_CONFIRMEE, "Non confirmée"),
-        (CONFIRMEE,     "Confirmée"),
-        (INJOIGNABLE,   "Injoignable"),
-        (PAS_SERIEUX,   "Pas sérieux"),
-        (RAPPELER,      "Rappeler plus tard"),
-        (ANNULEE,       "Annulée"),
+        (NON_CONFIRMEE,  "Non confirmée"),
+        (CONFIRMEE,      "Confirmée"),
+        (INJOIGNABLE,    "Injoignable"),
+        (PAS_SERIEUX,    "Pas sérieux"),
+        (RAPPELER,       "Rappeler plus tard"),
+        (ANNULEE,        "Annulée"),
+        (SUPPRIME_NAVEX, "Supprimé Navex"),
     ]
 
     # Cancellation reasons (only meaningful when status == ANNULEE)
