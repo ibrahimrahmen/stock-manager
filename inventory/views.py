@@ -3407,35 +3407,46 @@ def _push_order_to_navex_internal(request, order):
 # ---------------------------------------------------------------------------
 
 def _build_designation(order):
-    """Plain-text description of articles for Navex's 'designation' field.
-    Just the products themselves — no offer wrapper. Format:
-    "Pants ICY MAZE V2 White 1, Shirt Icy Maze #2 BLUE 3"
+    """Build the Navex 'designation' field in the format the customer expects:
+
+        "94009 Converti | polo ralph kaja summer bleu (M), polo ralph kaja summer beige (M)"
+
+    Breakdown:
+        - "94009"     → our order.id
+        - "Converti"  → name of the Facebook SalesPage attached to the order
+        - " | "       → separator
+        - products    → "{product_name} {color} ({size})", repeated once per unit
+                        (e.g. quantity=2 → product listed twice, no "2x" prefix)
     """
-    parts = []
-    # Iterate offer-grouped lines (still need to apply offer.quantity multiplier)
-    for oo in order.order_offers.all():
-        offer_mult = max(oo.quantity, 1)
-        for line in oo.lines.all():
-            seg = line.product.name
-            if line.variant:
-                seg += f" {line.variant.color_label or line.variant.color_name}"
-            if line.size:
-                seg += f" {line.size}"
-            effective_qty = line.quantity * offer_mult
-            if effective_qty > 1:
-                seg = f"{effective_qty}× {seg}"
-            parts.append(seg)
-    # Standalone lines (not part of any offer)
-    for line in order.lines.filter(order_offer__isnull=True):
+    units = []  # one string per physical unit being shipped
+
+    def render_unit(line):
         seg = line.product.name
         if line.variant:
             seg += f" {line.variant.color_label or line.variant.color_name}"
         if line.size:
-            seg += f" {line.size}"
-        if line.quantity > 1:
-            seg = f"{line.quantity}× {seg}"
-        parts.append(seg)
-    return ", ".join(parts) if parts else "Commande"
+            seg += f" ({line.size})"
+        return seg
+
+    # Lines that are part of an offer (multiply quantity by the offer's quantity)
+    for oo in order.order_offers.all():
+        offer_mult = max(oo.quantity, 1)
+        for line in oo.lines.all():
+            effective_qty = line.quantity * offer_mult
+            unit_str = render_unit(line)
+            for _ in range(effective_qty):
+                units.append(unit_str)
+
+    # Standalone lines (not part of any offer)
+    for line in order.lines.filter(order_offer__isnull=True):
+        unit_str = render_unit(line)
+        for _ in range(max(line.quantity, 1)):
+            units.append(unit_str)
+
+    products_str = ", ".join(units) if units else "Commande"
+    page_name = order.sales_page.name if order.sales_page else ""
+    prefix = f"{order.id} {page_name}".strip()
+    return f"{prefix} | {products_str}" if prefix else products_str
 
 
 def _check_order_stock_rupture(order):
