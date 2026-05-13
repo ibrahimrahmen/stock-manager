@@ -476,9 +476,9 @@ function openCreateRow(opts) {
       </select>
     </td>
     <td>
-      <input id="cr-name" type="text" placeholder="Nom" disabled autocomplete="off" name="cr-name-no-autofill">
-      <input id="cr-phone" type="tel" placeholder="Téléphone *" disabled style="margin-top:4px;" required autocomplete="off" name="cr-phone-no-autofill">
-      <input id="cr-phone2" type="tel" placeholder="Téléphone 2 (optionnel)" disabled style="margin-top:4px;" autocomplete="off" name="cr-phone2-no-autofill">
+      <input id="cr-name" type="text" placeholder="Nom" disabled autocomplete="new-password" name="nm-fld-x9k2" data-lpignore="true" data-form-type="other">
+      <input id="cr-phone" type="text" placeholder="Téléphone *" disabled style="margin-top:4px;" required autocomplete="new-password" name="ph-fld-x9k2" data-lpignore="true" data-form-type="other" inputmode="numeric">
+      <input id="cr-phone2" type="text" placeholder="Téléphone 2 (optionnel)" disabled style="margin-top:4px;" autocomplete="new-password" name="ph2-fld-x9k2" data-lpignore="true" data-form-type="other" inputmode="numeric">
     </td>
     <td>
       <div class="loc-picker">
@@ -488,7 +488,7 @@ function openCreateRow(opts) {
         <input type="hidden" id="cr-region" value="">
         <input type="hidden" id="cr-ville" value="">
       </div>
-      <input id="cr-address" type="text" placeholder="Adresse" disabled style="margin-top:4px;" autocomplete="off" name="cr-address-no-autofill">
+      <input id="cr-address" type="text" placeholder="Adresse" disabled style="margin-top:4px;" autocomplete="new-password" name="addr-fld-x9k2" data-lpignore="true" data-form-type="other">
     </td>
     <td style="text-align:center;">
       <button class="add-articles-btn" id="cr-articles" disabled onclick="openArticlesModal()" title="Ajouter des articles">+</button>
