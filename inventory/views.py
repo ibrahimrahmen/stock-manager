@@ -2916,6 +2916,69 @@ def api_order_draft_get(request, pk):
     })
 
 
+# ---- Search API ------------------------------------------------------------
+
+@login_required(login_url="/login/")
+def api_orders_search(request):
+    """Search orders across multiple fields. Returns up to 50 matches.
+
+    Search logic:
+      - If query starts with "#" → match exact order ID
+      - If query is all digits → match phone, phone2, bordereau, or ID
+      - Otherwise (text) → match customer name (case-insensitive contains)
+    """
+    from .models import Order
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error"}, status=403)
+
+    q = (request.GET.get("q") or "").strip()
+    if not q:
+        return JsonResponse({"status": "ok", "results": []})
+
+    from django.db.models import Q
+
+    qs = Order.objects.select_related("customer", "region", "sales_page")
+
+    # 1) Order ID with optional leading "#"
+    if q.startswith("#"):
+        try:
+            order_id = int(q[1:])
+            qs = qs.filter(pk=order_id)
+        except ValueError:
+            return JsonResponse({"status": "ok", "results": []})
+    # 2) All digits → phone / phone2 / bordereau / id
+    elif q.isdigit():
+        try:
+            order_id_match = int(q)
+        except ValueError:
+            order_id_match = None
+        f = Q(customer__phone__icontains=q) | Q(customer__phone2__icontains=q) | Q(bordereau_barcode__icontains=q)
+        if order_id_match is not None:
+            f |= Q(pk=order_id_match)
+        qs = qs.filter(f)
+    # 3) Text → name (case-insensitive contains)
+    else:
+        qs = qs.filter(customer__name__icontains=q)
+
+    qs = qs.order_by("-created_at")[:50]
+    results = []
+    for o in qs:
+        results.append({
+            "id": o.id,
+            "phone": o.customer.phone if o.customer else "",
+            "name": o.customer.name if o.customer else "",
+            "status": o.status,
+            "status_display": o.get_status_display(),
+            "sales_page_name": o.sales_page.name if o.sales_page else "",
+            "region_name": o.region.name if o.region else "",
+            "ville": o.ville,
+            "total": str(o.total),
+            "bordereau": o.bordereau_barcode,
+            "created_at": o.created_at.strftime("%d/%m %H:%M") if o.created_at else "",
+        })
+    return JsonResponse({"status": "ok", "results": results, "count": len(results)})
+
+
 # ---- Admin tools page (superuser only) -------------------------------------
 
 @login_required(login_url="/login/")

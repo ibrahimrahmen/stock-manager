@@ -50,6 +50,30 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .add-btn:hover{background:#3acb88;}
 .add-btn:disabled{opacity:0.6;}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;}
+/* Search bar */
+.search-bar input{
+  width:100%;padding:13px 18px;border-radius:10px;
+  background:var(--surface);border:0.5px solid var(--border);
+  color:var(--text);font-size:16px;font-family:inherit;
+}
+.search-bar input:focus{outline:none;border-color:var(--green);}
+.search-results{
+  position:absolute;top:calc(100% + 4px);left:0;right:0;
+  background:var(--surface);border:0.5px solid var(--border);
+  border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.4);
+  max-height:480px;overflow-y:auto;z-index:90;
+}
+.search-result-item{
+  padding:12px 16px;cursor:pointer;border-bottom:0.5px solid var(--border);
+  display:grid;grid-template-columns:auto 1fr auto;gap:14px;align-items:center;
+}
+.search-result-item:last-child{border-bottom:none;}
+.search-result-item:hover{background:var(--surface2);}
+.search-result-item .id{font-weight:600;color:var(--muted);font-size:14px;}
+.search-result-item .name{font-size:15px;}
+.search-result-item .meta{font-size:12px;color:var(--muted);margin-top:2px;}
+.search-result-item .right{text-align:right;font-size:13px;}
+.search-empty{padding:16px;color:var(--muted);font-size:14px;text-align:center;}
 .chip{padding:9px 16px;border-radius:18px;border:0.5px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
 .chip:hover{background:var(--surface2);}
 .chip.active{background:var(--text);color:var(--bg);border-color:var(--text);}
@@ -173,6 +197,12 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
       <button class="add-btn" id="btn-sync-navex" onclick="syncNavex()" style="background:transparent;color:var(--text);border:0.5px solid var(--border);">↻ Sync Navex</button>
       <button class="add-btn" id="btn-new-order" onclick="openCreateRow()">+ Nouvelle commande</button>
     </div>
+  </div>
+
+  <!-- Search bar -->
+  <div class="search-bar" style="margin-bottom:14px;position:relative;">
+    <input type="text" id="search-input" placeholder="🔍 Rechercher par nom, téléphone, bordereau ou #ID..." autocomplete="off">
+    <div id="search-results" class="search-results" style="display:none;"></div>
   </div>
 
   <div class="chips">
@@ -1289,7 +1319,86 @@ window.addEventListener('DOMContentLoaded', () => {
       setTimeout(() => { editOrder(parseInt(autoOpenId)); }, 100);
     }
   } catch (e) { /* sessionStorage may fail in private mode — ignore */ }
+  // Init search bar
+  initSearchBar();
 });
+
+// --- Search bar -----------------------------------------------------------
+let _searchTimer = null;
+function initSearchBar() {
+  const input = document.getElementById('search-input');
+  const results = document.getElementById('search-results');
+  if (!input || !results) return;
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    if (_searchTimer) clearTimeout(_searchTimer);
+    if (!q) {
+      results.style.display = 'none';
+      results.innerHTML = '';
+      return;
+    }
+    // Debounce: wait 200ms after user stops typing before searching
+    _searchTimer = setTimeout(() => runSearch(q), 200);
+  });
+  // Close dropdown when clicking outside
+  document.addEventListener('mousedown', (ev) => {
+    if (!ev.target.closest('.search-bar')) {
+      results.style.display = 'none';
+    }
+  });
+  // Re-open on focus if there's still a query
+  input.addEventListener('focus', () => {
+    if (input.value.trim() && results.innerHTML) {
+      results.style.display = 'block';
+    }
+  });
+}
+
+async function runSearch(q) {
+  const results = document.getElementById('search-results');
+  if (!results) return;
+  try {
+    const data = await fetchJson(`/api/sales-orders/search/?q=${encodeURIComponent(q)}`);
+    if (data.status !== 'ok') {
+      results.innerHTML = `<div class="search-empty">Erreur</div>`;
+      results.style.display = 'block';
+      return;
+    }
+    if (!data.results || data.results.length === 0) {
+      results.innerHTML = `<div class="search-empty">Aucun résultat pour "${q.replace(/</g,'&lt;')}"</div>`;
+      results.style.display = 'block';
+      return;
+    }
+    let html = '';
+    for (const o of data.results) {
+      const name = (o.name || o.phone || '—').replace(/</g,'&lt;');
+      const phone = (o.phone || '').replace(/</g,'&lt;');
+      const region = (o.region_name || '').replace(/</g,'&lt;');
+      const ville = (o.ville || '').replace(/</g,'&lt;');
+      const total = parseFloat(o.total || '0').toFixed(0);
+      const bord = o.bordereau ? `Bord. ${o.bordereau}` : '';
+      const action = (o.status === 'non_confirmee')
+        ? `onclick="editOrder(${o.id});document.getElementById('search-results').style.display='none';"`
+        : `onclick="window.location.href='/sales-orders/${o.id}/';"`;
+      html += `<div class="search-result-item" ${action}>
+        <div class="id">#${o.id}</div>
+        <div>
+          <div class="name">${name}</div>
+          <div class="meta">${phone} ${region ? '· ' + region : ''}${ville ? ' · ' + ville : ''} ${bord ? '· ' + bord : ''}</div>
+        </div>
+        <div class="right">
+          <div><span class="status status-${o.status}" style="font-size:11px;padding:3px 8px;">${o.status_display.replace(/</g,'&lt;')}</span></div>
+          <div style="font-weight:500;margin-top:3px;">${total} DT</div>
+        </div>
+      </div>`;
+    }
+    results.innerHTML = html;
+    results.style.display = 'block';
+  } catch (e) {
+    results.innerHTML = `<div class="search-empty">Erreur : ${e.message}</div>`;
+    results.style.display = 'block';
+  }
+}
 </script>
 
 </body>

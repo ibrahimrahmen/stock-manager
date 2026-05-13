@@ -72,6 +72,8 @@ urlpatterns = [
     path("api/sales-orders/<int:pk>/draft/", views.api_order_draft_get, name="api_order_draft_get"),
     # User theme preference (dark/light)
     path("api/user/theme/", views.api_user_theme, name="api_user_theme"),
+    # Search
+    path("api/sales-orders/search/", views.api_orders_search, name="api_orders_search"),
     # Admin tools (superuser only)
     path("admin-tools/", views.admin_tools, name="admin_tools"),
     path("api/admin-tools/run/<str:tool_name>/", views.api_admin_run_tool, name="api_admin_run_tool"),
