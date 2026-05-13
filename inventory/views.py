@@ -2916,6 +2916,55 @@ def api_order_draft_get(request, pk):
     })
 
 
+# ---- Admin tools page (superuser only) -------------------------------------
+
+@login_required(login_url="/login/")
+def admin_tools(request):
+    """Maintenance/repair page with one-click action buttons.
+    Only accessible to superusers."""
+    if not request.user.is_superuser:
+        return redirect("home")
+    return render(request, "inventory/admin_tools.html", {})
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_admin_run_tool(request, tool_name):
+    """Run a maintenance tool by name. Returns the captured output as JSON."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    import io
+    from django.core.management import call_command
+
+    # Whitelist of allowed tools — never call arbitrary commands
+    ALLOWED = {
+        "fix_supprime_navex_orders_dryrun": ("fix_supprime_navex_orders", []),
+        "fix_supprime_navex_orders_apply":  ("fix_supprime_navex_orders", ["--apply"]),
+        "recalc_order_totals":              ("recalc_order_totals", []),
+    }
+    if tool_name not in ALLOWED:
+        return JsonResponse({"status": "error", "message": f"Outil inconnu : {tool_name}"}, status=400)
+    cmd, cmd_args = ALLOWED[tool_name]
+    out = io.StringIO()
+    err = io.StringIO()
+    try:
+        call_command(cmd, *cmd_args, stdout=out, stderr=err)
+        return JsonResponse({
+            "status": "ok",
+            "tool": tool_name,
+            "output": out.getvalue(),
+            "errors": err.getvalue(),
+        })
+    except Exception as e:
+        return JsonResponse({
+            "status": "error",
+            "message": str(e),
+            "output": out.getvalue(),
+            "errors": err.getvalue(),
+        }, status=500)
+
+
 # ---- Regions / Delegations (cascaded dropdown) -----------------------------
 
 @login_required(login_url="/login/")

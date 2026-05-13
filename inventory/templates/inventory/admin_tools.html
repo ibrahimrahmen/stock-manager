@@ -1,0 +1,131 @@
+{% load static %}<!DOCTYPE html>
+<html lang="fr" data-theme="{{ user_theme|default:'dark' }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Outils Admin — Stock Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root, [data-theme="dark"] {
+  --bg:#0f0f0d; --surface:#1a1a17; --surface2:#222220;
+  --border:rgba(255,255,255,0.08); --text:#f0ede6; --muted:#8a887f;
+  --green:#4ade9a; --green-dim:rgba(74,222,154,0.15);
+  --amber:#f5a623; --red:#f87171; --blue:#60a5fa;
+}
+[data-theme="light"] {
+  --bg:#faf9f6; --surface:#ffffff; --surface2:#f0eee8;
+  --border:rgba(0,0,0,0.10); --text:#1a1a17; --muted:#6b6a63;
+  --green:#1a9e6e; --green-dim:rgba(26,158,110,0.12);
+  --amber:#b87513; --red:#c43b3a; --blue:#2363c9;
+}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
+.brand{font-family:'DM Serif Display',serif;font-size:22px;}
+.userbar a{color:var(--text);text-decoration:none;margin-left:18px;font-size:14px;}
+.userbar a:hover{text-decoration:underline;}
+.container{max-width:900px;margin:0 auto;padding:32px 24px;}
+.page-title{font-family:'DM Serif Display',serif;font-size:36px;margin-bottom:8px;}
+.muted{color:var(--muted);font-size:15px;}
+.tool-card{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;padding:24px;margin-top:20px;}
+.tool-title{font-size:18px;font-weight:600;margin-bottom:6px;}
+.tool-desc{color:var(--muted);font-size:14px;margin-bottom:14px;line-height:1.5;}
+.tool-buttons{display:flex;gap:10px;flex-wrap:wrap;}
+.btn{padding:10px 18px;border-radius:8px;border:0.5px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;}
+.btn:hover{background:var(--border);}
+.btn-primary{background:var(--green);color:#0a0a08;border-color:var(--green);}
+.btn-primary:hover{background:#3acb88;}
+.btn-warning{background:var(--amber);color:#0a0a08;border-color:var(--amber);}
+.btn:disabled{opacity:0.5;cursor:not-allowed;}
+.output{margin-top:16px;background:var(--bg);border:0.5px solid var(--border);border-radius:8px;padding:14px;font-family:monospace;font-size:13px;white-space:pre-wrap;max-height:400px;overflow-y:auto;color:var(--text);}
+.output.error{border-color:var(--red);color:var(--red);}
+.output.success{border-color:var(--green);}
+.output:empty{display:none;}
+.section-title{font-size:13px;text-transform:uppercase;color:var(--muted);letter-spacing:0.05em;margin-top:36px;margin-bottom:12px;}
+.warning-box{background:rgba(245,166,35,0.1);border:1px solid var(--amber);padding:14px;border-radius:8px;margin-top:16px;color:var(--text);font-size:14px;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">Outils Admin</div>
+  <div class="userbar">
+    <a href="{% url 'orders_list' %}">← Commandes</a>
+    <a href="{% url 'logout' %}">Déconnexion</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="page-title">Maintenance & Réparation</div>
+  <div class="muted">Outils administratifs pour réparer les données et lancer des opérations de maintenance.<br>Accessible uniquement aux superusers.</div>
+
+  <div class="warning-box">
+    ⚠️ Ces outils modifient directement la base de données. Utilise toujours <strong>Dry-run</strong> d'abord pour voir ce qui sera changé, puis <strong>Appliquer</strong> seulement si tout va bien.
+  </div>
+
+  <div class="section-title">Synchronisation Navex</div>
+
+  <div class="tool-card">
+    <div class="tool-title">Réparer les commandes "Supprimées" chez Navex</div>
+    <div class="tool-desc">
+      Recherche les commandes locales en statut <strong>Confirmée</strong> mais dont Navex dit qu'elles ont été <strong>Supprimées</strong>. Les fait passer au statut "Supprimé Navex" avec badge rouge.
+    </div>
+    <div class="tool-buttons">
+      <button class="btn" onclick="runTool('fix_supprime_navex_orders_dryrun', this, 'output-supprime')">🔍 Dry-run (juste voir)</button>
+      <button class="btn btn-warning" onclick="runToolWithConfirm('fix_supprime_navex_orders_apply', this, 'output-supprime', 'Appliquer les changements ? (irréversible)')">✓ Appliquer</button>
+    </div>
+    <div id="output-supprime" class="output"></div>
+  </div>
+
+  <div class="section-title">Recalculs</div>
+
+  <div class="tool-card">
+    <div class="tool-title">Recalculer le total de toutes les commandes</div>
+    <div class="tool-desc">
+      Recalcule <code>Order.total = somme offres + livraison − remise</code> pour toutes les commandes. Utile pour réparer les commandes anciennes qui avaient un total à 0 à cause d'un bug.
+    </div>
+    <div class="tool-buttons">
+      <button class="btn btn-primary" onclick="runToolWithConfirm('recalc_order_totals', this, 'output-recalc', 'Recalculer le total de TOUTES les commandes ?')">🔄 Recalculer</button>
+    </div>
+    <div id="output-recalc" class="output"></div>
+  </div>
+</div>
+
+<script>
+function csrfToken() { return document.cookie.split('csrftoken=')[1]?.split(';')[0] || ''; }
+
+async function runTool(toolName, btn, outputId) {
+  const out = document.getElementById(outputId);
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ En cours...';
+  out.className = 'output';
+  out.textContent = 'Lancement de la commande...';
+  try {
+    const res = await fetch(`/api/admin-tools/run/${toolName}/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      out.className = 'output success';
+      out.textContent = (data.output || '(pas de sortie)') + (data.errors ? '\n\n--- ERRORS ---\n' + data.errors : '');
+    } else {
+      out.className = 'output error';
+      out.textContent = '❌ ' + (data.message || 'Erreur') + '\n\n' + (data.output || '') + '\n' + (data.errors || '');
+    }
+  } catch (e) {
+    out.className = 'output error';
+    out.textContent = '❌ Erreur réseau : ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+}
+
+function runToolWithConfirm(toolName, btn, outputId, confirmMsg) {
+  if (!confirm(confirmMsg)) return;
+  runTool(toolName, btn, outputId);
+}
+</script>
+</body>
+</html>

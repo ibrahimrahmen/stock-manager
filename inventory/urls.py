@@ -72,6 +72,9 @@ urlpatterns = [
     path("api/sales-orders/<int:pk>/draft/", views.api_order_draft_get, name="api_order_draft_get"),
     # User theme preference (dark/light)
     path("api/user/theme/", views.api_user_theme, name="api_user_theme"),
+    # Admin tools (superuser only)
+    path("admin-tools/", views.admin_tools, name="admin_tools"),
+    path("api/admin-tools/run/<str:tool_name>/", views.api_admin_run_tool, name="api_admin_run_tool"),
     # Regions / delegations (cascaded dropdown)
     path("api/regions/<int:region_id>/delegations/", views.api_region_delegations, name="api_region_delegations"),
     path("api/delegations/all/", views.api_all_delegations, name="api_all_delegations"),
