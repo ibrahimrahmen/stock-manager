@@ -3359,26 +3359,25 @@ def _push_order_to_navex_internal(request, order):
 # ---------------------------------------------------------------------------
 
 def _build_designation(order):
-    """Plain-text description of articles for Navex's 'designation' field."""
+    """Plain-text description of articles for Navex's 'designation' field.
+    Just the products themselves — no offer wrapper. Format:
+    "Pants ICY MAZE V2 White 1, Shirt Icy Maze #2 BLUE 3"
+    """
     parts = []
+    # Iterate offer-grouped lines (still need to apply offer.quantity multiplier)
     for oo in order.order_offers.all():
-        offer_parts = []
+        offer_mult = max(oo.quantity, 1)
         for line in oo.lines.all():
             seg = line.product.name
             if line.variant:
                 seg += f" {line.variant.color_label or line.variant.color_name}"
             if line.size:
                 seg += f" {line.size}"
-            if line.quantity > 1:
-                seg = f"{line.quantity}× {seg}"
-            offer_parts.append(seg)
-        offer_label = oo.offer_name or "Offre"
-        if oo.quantity > 1:
-            offer_label = f"{oo.quantity}× {offer_label}"
-        if offer_parts:
-            parts.append(f"{offer_label} ({', '.join(offer_parts)})")
-        else:
-            parts.append(offer_label)
+            effective_qty = line.quantity * offer_mult
+            if effective_qty > 1:
+                seg = f"{effective_qty}× {seg}"
+            parts.append(seg)
+    # Standalone lines (not part of any offer)
     for line in order.lines.filter(order_offer__isnull=True):
         seg = line.product.name
         if line.variant:
@@ -3388,7 +3387,7 @@ def _build_designation(order):
         if line.quantity > 1:
             seg = f"{line.quantity}× {seg}"
         parts.append(seg)
-    return " | ".join(parts) if parts else "Commande"
+    return ", ".join(parts) if parts else "Commande"
 
 
 def _check_order_stock_rupture(order):
