@@ -466,7 +466,22 @@ function openCreateRow(opts) {
     <td><span class="muted" style="font-size:11px;">—</span></td>
     <td><button class="save-btn" id="cr-save" disabled onclick="submitNewOrder()" title="Confirme et envoie à Navex">✓ Confirmer pour Navex</button></td>
   `;
-  tbody.insertBefore(tr, tbody.firstChild);
+  // In EDIT mode: replace the existing row at its current position so the user
+  // doesn't lose visual context. In CREATE mode: insert at top as before.
+  let replacedOriginalHtml = null;  // remember what was there so we can restore on cancel-without-save
+  if (currentDraftId) {
+    const existing = tbody.querySelector(`tr[data-order-id="${currentDraftId}"]`);
+    if (existing) {
+      replacedOriginalHtml = existing.outerHTML;
+      existing.replaceWith(tr);
+    } else {
+      tbody.insertBefore(tr, tbody.firstChild);
+    }
+  } else {
+    tbody.insertBefore(tr, tbody.firstChild);
+  }
+  // Stash the original HTML so the close handler can restore the row's position
+  tr.dataset.editingId = currentDraftId || '';
 
   // Attach blur listeners for auto-save on every field (not the hidden region/ville fields — those autosave via pickLocation())
   ['cr-name','cr-phone','cr-phone2','cr-address'].forEach(id => {
@@ -589,8 +604,14 @@ async function closeDraftPanel() {
     try { await autoSaveDraft('close'); } catch(_) {}
   }
   document.removeEventListener('mousedown', _outsideClickHandler, true);
-  document.getElementById('create-row')?.remove();
   document.getElementById('cr-row-error-tr')?.remove();
+  // REPLACE the create-row in place with the refreshed order row, so it stays
+  // at the same position in the list (not jumping back to top).
+  if (draftIdToRefresh) {
+    await replaceCreateRowWithRefreshedRow(draftIdToRefresh);
+  } else {
+    document.getElementById('create-row')?.remove();
+  }
   creatingRow = false;
   pickedPageId = null;
   offersForPage = [];
@@ -600,9 +621,33 @@ async function closeDraftPanel() {
   pendingSavePayload = null;
   setSaveStatus('hide');
   document.getElementById('btn-new-order').disabled = false;
-  // Refresh the row (async, fire-and-forget)
-  if (draftIdToRefresh) {
-    refreshOrderRow(draftIdToRefresh).catch(e => console.warn('[refresh] failed:', e));
+}
+
+// Fetch the latest draft data, build a fresh order row, and put it where the
+// create-row was. This preserves the row's vertical position in the list.
+async function replaceCreateRowWithRefreshedRow(orderId) {
+  const createRow = document.getElementById('create-row');
+  let data;
+  try {
+    data = await fetchJson(`/api/sales-orders/${orderId}/draft/`);
+  } catch (e) {
+    // Fallback: just remove the create-row, can't refresh
+    createRow?.remove();
+    return;
+  }
+  if (data.status !== 'ok' || !createRow) {
+    createRow?.remove();
+    return;
+  }
+  const html = buildOrderRowHtml(data.order);
+  // Build a real <tr> from the HTML string
+  const tmp = document.createElement('tbody');
+  tmp.innerHTML = html;
+  const newRow = tmp.firstElementChild;
+  if (newRow) {
+    createRow.replaceWith(newRow);
+  } else {
+    createRow.remove();
   }
 }
 
@@ -690,13 +735,16 @@ function cleanPhone(s) {
 async function cancelCreateRow() {
   // Same as closeDraftPanel but explicitly called by the × button.
   const draftIdToRefresh = currentDraftId;
-  // Force a final autosave so the DB total is up-to-date.
   if (draftIdToRefresh && modalOffers.length > 0) {
     try { await autoSaveDraft('cancel'); } catch(_) {}
   }
   document.removeEventListener('mousedown', _outsideClickHandler, true);
-  document.getElementById('create-row')?.remove();
   document.getElementById('cr-row-error-tr')?.remove();
+  if (draftIdToRefresh) {
+    await replaceCreateRowWithRefreshedRow(draftIdToRefresh);
+  } else {
+    document.getElementById('create-row')?.remove();
+  }
   creatingRow = false;
   pickedPageId = null;
   offersForPage = [];
@@ -706,9 +754,6 @@ async function cancelCreateRow() {
   pendingSavePayload = null;
   setSaveStatus('hide');
   document.getElementById('btn-new-order').disabled = false;
-  if (draftIdToRefresh) {
-    refreshOrderRow(draftIdToRefresh).catch(e => console.warn('[refresh] failed:', e));
-  }
 }
 
 async function onPagePicked(pageId) {
