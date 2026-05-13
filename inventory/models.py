@@ -441,6 +441,8 @@ class SalesPage(models.Model):
 class Customer(models.Model):
     """Customer identified by phone number. Same phone = same customer."""
     phone = models.CharField(max_length=20, unique=True)
+    phone2 = models.CharField(max_length=20, blank=True, default="",
+        help_text="Numéro secondaire optionnel (ex: domicile, conjoint). Envoyé à Navex comme tel2.")
     name = models.CharField(max_length=120, blank=True, default="")
     notes = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -690,10 +692,19 @@ class UserProfile(models.Model):
         (MESSAGES, "Messages Team"),
     ]
 
+    # UI theme preferences
+    THEME_DARK  = "dark"
+    THEME_LIGHT = "light"
+    THEME_CHOICES = [
+        (THEME_DARK,  "Sombre"),
+        (THEME_LIGHT, "Clair"),
+    ]
+
     user = models.OneToOneField(
         "auth.User", on_delete=models.CASCADE, related_name="profile",
     )
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=OFFICE)
+    theme = models.CharField(max_length=10, choices=THEME_CHOICES, default=THEME_DARK)
 
     def __str__(self):
         return f"{self.user.username} — {self.get_role_display()}"

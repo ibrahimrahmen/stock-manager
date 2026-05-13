@@ -312,6 +312,7 @@ function buildCurrentPayload() {
   return {
     order_id: currentDraftId || undefined,
     phone,
+    phone2: cleanPhone(document.getElementById('cr-phone2')?.value || ''),
     name: document.getElementById('cr-name').value.trim(),
     sales_page: pickedPageId ? parseInt(pickedPageId) : null,
     region: region ? parseInt(region) : null,
@@ -424,6 +425,7 @@ function openCreateRow(opts) {
     <td>
       <input id="cr-name" type="text" placeholder="Nom" disabled>
       <input id="cr-phone" type="tel" placeholder="Téléphone *" disabled style="margin-top:4px;" required>
+      <input id="cr-phone2" type="tel" placeholder="Téléphone 2 (optionnel)" disabled style="margin-top:4px;">
     </td>
     <td>
       <select id="cr-region" disabled>
@@ -445,7 +447,7 @@ function openCreateRow(opts) {
   tbody.insertBefore(tr, tbody.firstChild);
 
   // Attach blur listeners for auto-save on every field
-  ['cr-name','cr-phone','cr-region','cr-ville','cr-address'].forEach(id => {
+  ['cr-name','cr-phone','cr-phone2','cr-region','cr-ville','cr-address'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('blur', () => autoSaveDraft(id));
   });
@@ -475,6 +477,30 @@ function openCreateRow(opts) {
     });
   }
 
+  // Phone2: same cleaning, but OPTIONAL (no hard-blocking blur — empty is OK)
+  const phone2El = document.getElementById('cr-phone2');
+  if (phone2El) {
+    phone2El.addEventListener('input', () => {
+      const cleaned = cleanPhone(phone2El.value);
+      if (cleaned !== phone2El.value) phone2El.value = cleaned;
+      if (cleaned.length === 0) {
+        phone2El.style.borderColor = '';
+      } else if (cleaned.length === 8) {
+        phone2El.style.borderColor = 'var(--green)';
+      } else {
+        phone2El.style.borderColor = 'var(--red)';
+      }
+    });
+    phone2El.addEventListener('blur', () => {
+      const cleaned = cleanPhone(phone2El.value);
+      // Only enforce 8 digits if NOT empty (since it's optional)
+      if (cleaned.length > 0 && cleaned.length !== 8) {
+        setTimeout(() => phone2El.focus(), 0);
+        setSaveStatus('error', `Téléphone 2 : ${cleaned.length} chiffre(s), 8 requis (ou laisser vide)`);
+      }
+    });
+  }
+
   document.getElementById('cr-page').focus();
 }
 
@@ -499,7 +525,7 @@ function cancelCreateRow() {
 async function onPagePicked(pageId) {
   pickedPageId = pageId || null;
   const enable = !!pickedPageId;
-  ['cr-name','cr-phone','cr-region','cr-ville','cr-address','cr-articles']
+  ['cr-name','cr-phone','cr-phone2','cr-region','cr-ville','cr-address','cr-articles']
     .forEach(id => document.getElementById(id).disabled = !enable);
   if (!enable) return;
   try {
@@ -761,6 +787,7 @@ async function editOrder(orderId) {
     await onPagePicked(o.sales_page);
     document.getElementById('cr-name').value = o.name || '';
     document.getElementById('cr-phone').value = o.phone || '';
+    document.getElementById('cr-phone2').value = o.phone2 || '';
     document.getElementById('cr-region').value = o.region || '';
     document.getElementById('cr-ville').value = o.ville || '';
     document.getElementById('cr-address').value = o.address || '';

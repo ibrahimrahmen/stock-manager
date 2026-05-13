@@ -2691,6 +2691,8 @@ def api_order_draft_upsert(request):
     # This way "12 345 678", "12.345.678", " 12345678 " all become "12345678".
     raw_phone = (data.get("phone") or "")
     phone = "".join(ch for ch in raw_phone if ch.isdigit())
+    raw_phone2 = (data.get("phone2") or "")
+    phone2 = "".join(ch for ch in raw_phone2 if ch.isdigit())
     name = (data.get("name") or "").strip()
 
     try:
@@ -2733,6 +2735,9 @@ def api_order_draft_upsert(request):
             if name and customer.name != name:
                 customer.name = name
                 customer.save(update_fields=["name"])
+            if phone2 and customer.phone2 != phone2:
+                customer.phone2 = phone2
+                customer.save(update_fields=["phone2"])
             order = Order.objects.create(
                 customer=customer,
                 sales_page_id=sales_page_id,
@@ -2756,6 +2761,14 @@ def api_order_draft_upsert(request):
             order.customer.name = name
             order.customer.save(update_fields=["name"])
             changed.append("name")
+        # Phone2 is optional — only update if the payload includes it (so blank
+        # payload doesn't accidentally wipe an existing secondary number)
+        if "phone2" in data and order.customer:
+            new_phone2 = phone2  # already cleaned to digits-only above
+            if order.customer.phone2 != new_phone2:
+                order.customer.phone2 = new_phone2
+                order.customer.save(update_fields=["phone2"])
+                changed.append("phone2")
         # Direct order fields — only update if present in payload
         if "sales_page" in data and data["sales_page"]:
             order.sales_page_id = data["sales_page"]
@@ -2872,6 +2885,7 @@ def api_order_draft_get(request, pk):
             "status": order.status,
             "locked": not _is_draft_editable(order),
             "phone": order.customer.phone if order.customer else "",
+            "phone2": order.customer.phone2 if order.customer else "",
             "name": order.customer.name if order.customer else "",
             "sales_page": order.sales_page_id,
             "region": order.region_id,
@@ -3273,7 +3287,7 @@ def _push_order_to_navex_internal(request, order):
         "ville":          order.ville or "",
         "adresse":        (order.address or order.localite or "").strip() or order.ville or "",
         "tel":            order.customer.phone,
-        "tel2":           "",
+        "tel2":           order.customer.phone2 or "",
         "designation":    designation[:500],
         "nb_article":     str(nb_article),
         "msg":            (order.notes or "")[:500],
