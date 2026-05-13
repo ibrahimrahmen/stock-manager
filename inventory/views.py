@@ -2888,12 +2888,15 @@ def api_order_draft_get(request, pk):
         "order": {
             "id": order.id,
             "status": order.status,
+            "status_display": order.get_status_display(),
             "locked": not _is_draft_editable(order),
             "phone": order.customer.phone if order.customer else "",
             "phone2": order.customer.phone2 if order.customer else "",
             "name": order.customer.name if order.customer else "",
             "sales_page": order.sales_page_id,
+            "sales_page_name": order.sales_page.name if order.sales_page else "",
             "region": order.region_id,
+            "region_name": order.region.name if order.region else "",
             "ville": order.ville,
             "localite": order.localite,
             "address": order.address,
@@ -2902,6 +2905,8 @@ def api_order_draft_get(request, pk):
             "notes": order.notes,
             "offers": offers_data,
             "total": str(order.total),
+            "article_summary": order.article_summary(),
+            "created_at": order.created_at.strftime("%d/%m %H:%M") if order.created_at else "",
         },
     })
 

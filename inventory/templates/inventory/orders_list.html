@@ -577,7 +577,11 @@ function _outsideClickHandler(ev) {
 }
 
 // Close the create row WITHOUT discarding the draft (it stays in DB).
-function closeDraftPanel() {
+async function closeDraftPanel() {
+  // If we have a draft saved in DB, refresh its row in the list before closing.
+  // This way the user sees the up-to-date Articles, Region, Total, etc. without
+  // having to reload the whole page.
+  const draftIdToRefresh = currentDraftId;
   document.removeEventListener('mousedown', _outsideClickHandler, true);
   document.getElementById('create-row')?.remove();
   document.getElementById('cr-row-error-tr')?.remove();
@@ -590,6 +594,83 @@ function closeDraftPanel() {
   pendingSavePayload = null;
   setSaveStatus('hide');
   document.getElementById('btn-new-order').disabled = false;
+  // Refresh the row (async, fire-and-forget)
+  if (draftIdToRefresh) {
+    refreshOrderRow(draftIdToRefresh).catch(e => console.warn('[refresh] failed:', e));
+  }
+}
+
+// Fetch a fresh draft and render it as a row in the table.
+// If a row already exists for this order, replace it. Otherwise insert at top.
+async function refreshOrderRow(orderId) {
+  let data;
+  try {
+    data = await fetchJson(`/api/sales-orders/${orderId}/draft/`);
+  } catch (e) { return; }
+  if (data.status !== 'ok') return;
+  const o = data.order;
+  const tbody = document.getElementById('orders-tbody');
+  if (!tbody) return;
+  const html = buildOrderRowHtml(o);
+  const existing = tbody.querySelector(`tr[data-order-id="${o.id}"]`);
+  if (existing) {
+    existing.outerHTML = html;
+  } else {
+    // New draft — insert at top
+    const tempDiv = document.createElement('tbody');
+    tempDiv.innerHTML = html;
+    const newRow = tempDiv.firstElementChild;
+    if (newRow) {
+      tbody.insertBefore(newRow, tbody.firstChild);
+      // Remove "empty list" row if it's still there
+      document.getElementById('empty-row')?.remove();
+    }
+  }
+}
+
+// Build HTML for one order row. Must match the Django template structure
+// in orders_list.html (10 cells).
+function buildOrderRowHtml(o) {
+  const name = (o.name || o.phone || '').replace(/</g,'&lt;');
+  const phone = (o.phone || '').replace(/</g,'&lt;');
+  const phone2 = (o.phone2 || '').replace(/</g,'&lt;');
+  const region = (o.region_name || '').replace(/</g,'&lt;');
+  const ville = (o.ville || '').replace(/</g,'&lt;');
+  const address = (o.address || '').replace(/</g,'&lt;');
+  const articleSummary = (o.article_summary || '—').replace(/</g,'&lt;');
+  const pageName = (o.sales_page_name || '—').replace(/</g,'&lt;');
+  const total = parseFloat(o.total || '0').toFixed(0);
+  const statusDisplay = (o.status_display || '').replace(/</g,'&lt;');
+  const created = o.created_at || '';
+
+  // Row link → editOrder if non_confirmee, else detail page
+  const idCell = (o.status === 'non_confirmee')
+    ? `<a class="row-link" href="javascript:void(0)" onclick="editOrder(${o.id})" title="Modifier le brouillon">#${o.id} <span style="font-size:10px;opacity:0.7;">✎</span></a>`
+    : `<a class="row-link" href="/sales-orders/${o.id}/">#${o.id}</a>`;
+
+  const villeBlock = ville ? ` · ${ville}` : '';
+  const addressBlock = address ? `<div class="muted" style="font-size:11px;">${address.length > 50 ? address.slice(0,50)+'…' : address}</div>` : '';
+  const phone2Block = phone2 ? `<div class="muted" style="font-size:10px;">${phone2}</div>` : '';
+
+  return `<tr data-order-id="${o.id}">
+    <td>${idCell}</td>
+    <td class="muted">${created}</td>
+    <td>${pageName}</td>
+    <td>
+      <div>${name}</div>
+      <div class="muted" style="font-size:11px;">${phone}</div>
+      ${phone2Block}
+    </td>
+    <td>
+      <div>${region}${villeBlock}</div>
+      ${addressBlock}
+    </td>
+    <td class="muted">${articleSummary}</td>
+    <td style="text-align:right;font-weight:500;">${total} DT</td>
+    <td><span class="status status-${o.status}">${statusDisplay}</span></td>
+    <td><span class="muted" style="font-size:11px;">—</span></td>
+    <td><span class="muted" style="font-size:11px;">—</span></td>
+  </tr>`;
 }
 
 // Clean a phone string: keep only digits.
@@ -599,7 +680,7 @@ function cleanPhone(s) {
 
 function cancelCreateRow() {
   // Same as closeDraftPanel but explicitly called by the × button.
-  // Currently identical — draft stays in DB.
+  const draftIdToRefresh = currentDraftId;
   document.removeEventListener('mousedown', _outsideClickHandler, true);
   document.getElementById('create-row')?.remove();
   document.getElementById('cr-row-error-tr')?.remove();
@@ -612,6 +693,9 @@ function cancelCreateRow() {
   pendingSavePayload = null;
   setSaveStatus('hide');
   document.getElementById('btn-new-order').disabled = false;
+  if (draftIdToRefresh) {
+    refreshOrderRow(draftIdToRefresh).catch(e => console.warn('[refresh] failed:', e));
+  }
 }
 
 async function onPagePicked(pageId) {
