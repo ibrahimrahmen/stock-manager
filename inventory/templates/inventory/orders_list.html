@@ -200,9 +200,8 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
   </div>
 
   <!-- Search bar -->
-  <div class="search-bar" style="margin-bottom:14px;position:relative;">
+  <div class="search-bar" style="margin-bottom:14px;">
     <input type="text" id="search-input" placeholder="🔍 Rechercher par nom, téléphone, bordereau ou #ID..." autocomplete="off">
-    <div id="search-results" class="search-results" style="display:none;"></div>
   </div>
 
   <div class="chips">
@@ -1324,79 +1323,59 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 // --- Search bar -----------------------------------------------------------
+// Filters the order list directly: when user types, we call the backend
+// to search across ALL orders (not just the 500 visible), then REPLACE the
+// table rows with the matching results. When the input is empty, the
+// original list is restored.
 let _searchTimer = null;
+let _originalTbodyHtml = null;  // snapshot of the original list
+
 function initSearchBar() {
   const input = document.getElementById('search-input');
-  const results = document.getElementById('search-results');
-  if (!input || !results) return;
+  if (!input) return;
+  // Snapshot the original list HTML so we can restore it
+  const tbody = document.getElementById('orders-tbody');
+  if (tbody) _originalTbodyHtml = tbody.innerHTML;
+
   input.addEventListener('input', () => {
     const q = input.value.trim();
     if (_searchTimer) clearTimeout(_searchTimer);
     if (!q) {
-      results.style.display = 'none';
-      results.innerHTML = '';
+      // Restore the original list
+      if (tbody && _originalTbodyHtml !== null) {
+        tbody.innerHTML = _originalTbodyHtml;
+      }
       return;
     }
     // Debounce: wait 200ms after user stops typing before searching
     _searchTimer = setTimeout(() => runSearch(q), 200);
   });
-  // Close dropdown when clicking outside
-  document.addEventListener('mousedown', (ev) => {
-    if (!ev.target.closest('.search-bar')) {
-      results.style.display = 'none';
-    }
-  });
-  // Re-open on focus if there's still a query
-  input.addEventListener('focus', () => {
-    if (input.value.trim() && results.innerHTML) {
-      results.style.display = 'block';
-    }
-  });
 }
 
 async function runSearch(q) {
-  const results = document.getElementById('search-results');
-  if (!results) return;
+  const tbody = document.getElementById('orders-tbody');
+  if (!tbody) return;
+  // Refresh snapshot if user opened/modified an inline draft (so we don't lose new rows)
+  // Note: we only re-snapshot when search is empty in initSearchBar's listener.
+
   try {
     const data = await fetchJson(`/api/sales-orders/search/?q=${encodeURIComponent(q)}`);
     if (data.status !== 'ok') {
-      results.innerHTML = `<div class="search-empty">Erreur</div>`;
-      results.style.display = 'block';
+      tbody.innerHTML = `<tr><td colspan="10" style="padding:30px;text-align:center;color:var(--muted);">Erreur de recherche</td></tr>`;
       return;
     }
     if (!data.results || data.results.length === 0) {
-      results.innerHTML = `<div class="search-empty">Aucun résultat pour "${q.replace(/</g,'&lt;')}"</div>`;
-      results.style.display = 'block';
+      tbody.innerHTML = `<tr><td colspan="10" style="padding:30px;text-align:center;color:var(--muted);">Aucun résultat pour "${q.replace(/</g,'&lt;')}"</td></tr>`;
       return;
     }
+    // Build rows using the same buildOrderRowHtml helper used elsewhere
     let html = '';
     for (const o of data.results) {
-      const name = (o.name || o.phone || '—').replace(/</g,'&lt;');
-      const phone = (o.phone || '').replace(/</g,'&lt;');
-      const region = (o.region_name || '').replace(/</g,'&lt;');
-      const ville = (o.ville || '').replace(/</g,'&lt;');
-      const total = parseFloat(o.total || '0').toFixed(0);
-      const bord = o.bordereau ? `Bord. ${o.bordereau}` : '';
-      const action = (o.status === 'non_confirmee')
-        ? `onclick="editOrder(${o.id});document.getElementById('search-results').style.display='none';"`
-        : `onclick="window.location.href='/sales-orders/${o.id}/';"`;
-      html += `<div class="search-result-item" ${action}>
-        <div class="id">#${o.id}</div>
-        <div>
-          <div class="name">${name}</div>
-          <div class="meta">${phone} ${region ? '· ' + region : ''}${ville ? ' · ' + ville : ''} ${bord ? '· ' + bord : ''}</div>
-        </div>
-        <div class="right">
-          <div><span class="status status-${o.status}" style="font-size:11px;padding:3px 8px;">${o.status_display.replace(/</g,'&lt;')}</span></div>
-          <div style="font-weight:500;margin-top:3px;">${total} DT</div>
-        </div>
-      </div>`;
+      html += buildOrderRowHtml(o);
     }
-    results.innerHTML = html;
-    results.style.display = 'block';
+    tbody.innerHTML = html;
   } catch (e) {
-    results.innerHTML = `<div class="search-empty">Erreur : ${e.message}</div>`;
-    results.style.display = 'block';
+    tbody.innerHTML = `<tr><td colspan="10" style="padding:30px;text-align:center;color:var(--red);">Erreur : ${e.message}</td></tr>`;
   }
 }
 </script>

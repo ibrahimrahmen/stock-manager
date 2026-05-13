@@ -2960,20 +2960,23 @@ def api_orders_search(request):
     else:
         qs = qs.filter(customer__name__icontains=q)
 
-    qs = qs.order_by("-created_at")[:50]
+    qs = qs.order_by("-created_at")[:200]
     results = []
     for o in qs:
         results.append({
             "id": o.id,
             "phone": o.customer.phone if o.customer else "",
+            "phone2": o.customer.phone2 if o.customer else "",
             "name": o.customer.name if o.customer else "",
             "status": o.status,
             "status_display": o.get_status_display(),
             "sales_page_name": o.sales_page.name if o.sales_page else "",
             "region_name": o.region.name if o.region else "",
             "ville": o.ville,
+            "address": o.address or "",
             "total": str(o.total),
             "bordereau": o.bordereau_barcode,
+            "article_summary": o.article_summary,
             "created_at": o.created_at.strftime("%d/%m %H:%M") if o.created_at else "",
         })
     return JsonResponse({"status": "ok", "results": results, "count": len(results)})
