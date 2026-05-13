@@ -673,7 +673,10 @@ function buildOrderRowHtml(o) {
     </td>
     <td class="muted">${articleSummary}</td>
     <td style="text-align:right;font-weight:500;">${total} DT</td>
-    <td><span class="status status-${o.status}">${statusDisplay}</span></td>
+    <td>${o.status === 'annulee'
+        ? `<span class="status status-annulee">${statusDisplay}</span>`
+        : `<button class="status status-${o.status} status-btn" onclick="openStatusMenu(this, ${o.id}, '${o.status}', false)" title="Changer le statut">${statusDisplay} <span style="opacity:0.6;">▾</span></button>`
+      }</td>
     <td><span class="muted" style="font-size:11px;">—</span></td>
     <td><span class="muted" style="font-size:11px;">—</span></td>
   </tr>`;
