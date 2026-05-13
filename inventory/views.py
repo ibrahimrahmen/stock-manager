@@ -2705,11 +2705,13 @@ def api_order_draft_upsert(request):
                 }, status=400)
         else:
             # CREATE new draft — require phone + sales_page
+            # Return 200 with "waiting" status instead of 400 so the frontend
+            # doesn't spam errors before the user has finished typing.
             if not phone:
-                return JsonResponse({"status": "error", "message": "Téléphone obligatoire pour créer le brouillon."}, status=400)
+                return JsonResponse({"status": "waiting", "message": "Téléphone requis pour créer le brouillon."})
             sales_page_id = data.get("sales_page")
             if not sales_page_id:
-                return JsonResponse({"status": "error", "message": "Page obligatoire pour créer le brouillon."}, status=400)
+                return JsonResponse({"status": "waiting", "message": "Page requise pour créer le brouillon."})
             customer, _ = Customer.objects.get_or_create(phone=phone, defaults={"name": name})
             if name and customer.name != name:
                 customer.name = name
@@ -2776,7 +2778,7 @@ def api_order_draft_upsert(request):
             with transaction.atomic():
                 # Wipe existing lines and offers, then rebuild from payload
                 order.lines.all().delete()
-                order.offers.all().delete()
+                order.order_offers.all().delete()
                 for op in data.get("offers", []):
                     offer_id = op.get("offer_id")
                     if not offer_id:
@@ -2823,13 +2825,13 @@ def api_order_draft_get(request, pk):
         return JsonResponse({"status": "error"}, status=403)
     try:
         order = Order.objects.select_related("customer", "sales_page", "region").prefetch_related(
-            "offers", "lines"
+            "order_offers", "lines"
         ).get(pk=pk)
     except Order.DoesNotExist:
         return JsonResponse({"status": "error", "message": "Commande introuvable."}, status=404)
 
     offers_data = []
-    for oo in order.offers.all():
+    for oo in order.order_offers.all():
         # Group lines belonging to this offer
         products = []
         for line in order.lines.filter(order_offer=oo):
