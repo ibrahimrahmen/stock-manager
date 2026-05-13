@@ -1195,6 +1195,16 @@ async function sendStatusChange(orderId, newStatus, cancelReason, originBtn) {
     });
     const data = await res.json();
     if (data.status === 'ok') {
+      // Special case: "Annulé pour changement" reopens the order as a draft.
+      // Instead of just reloading, jump straight into the inline editor so the
+      // user can immediately modify the order.
+      if (data.reopened && data.new_status === 'non_confirmee') {
+        // Reload first to refresh the list (filter changes, counts, etc.)
+        // then open the editor on this order
+        sessionStorage.setItem('autoOpenEditOrder', String(orderId));
+        window.location.reload();
+        return;
+      }
       window.location.reload();
     } else if (data.code === 'NOT_RUPTURE' && data.stock_details) {
       alert(data.message + '\n\n' + data.stock_details.map(d =>
@@ -1264,6 +1274,18 @@ async function syncNavex() {
     btn.disabled = false; btn.textContent = orig;
   }
 }
+
+// Auto-open editor for orders that were just "annulé pour changement"
+window.addEventListener('DOMContentLoaded', () => {
+  try {
+    const autoOpenId = sessionStorage.getItem('autoOpenEditOrder');
+    if (autoOpenId) {
+      sessionStorage.removeItem('autoOpenEditOrder');
+      // Small delay so all init code finishes first
+      setTimeout(() => { editOrder(parseInt(autoOpenId)); }, 100);
+    }
+  } catch (e) { /* sessionStorage may fail in private mode — ignore */ }
+});
 </script>
 
 </body>
