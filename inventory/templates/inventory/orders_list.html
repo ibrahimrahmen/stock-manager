@@ -37,8 +37,8 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .table-wrap{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;overflow-x:auto;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
 thead{background:var(--surface2);}
-th{text-align:left;padding:10px 12px;font-weight:500;color:var(--muted);font-size:11px;letter-spacing:0.05em;text-transform:uppercase;white-space:nowrap;}
-td{padding:10px 12px;border-top:0.5px solid var(--border);vertical-align:top;}
+th{text-align:left;padding:13px 16px;font-weight:500;color:var(--muted);font-size:12px;letter-spacing:0.05em;text-transform:uppercase;white-space:nowrap;}
+td{padding:13px 16px;border-top:0.5px solid var(--border);vertical-align:top;font-size:14px;}
 tr:hover td{background:var(--surface2);}
 a.row-link{color:var(--text);text-decoration:none;}
 a.row-link:hover{text-decoration:underline;}
@@ -318,6 +318,9 @@ async function autoSaveDraft(reason) {
       currentDraftId = data.order_id;
       lastSaveAt = new Date();
       setSaveStatus('saved');
+    } else if (data.status === 'waiting') {
+      // Not enough data yet (no phone, no page) — silently skip, no error
+      setSaveStatus('hide');
     } else {
       setSaveStatus('error', data.message || 'Erreur');
     }
