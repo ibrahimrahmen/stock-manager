@@ -582,6 +582,12 @@ async function closeDraftPanel() {
   // This way the user sees the up-to-date Articles, Region, Total, etc. without
   // having to reload the whole page.
   const draftIdToRefresh = currentDraftId;
+  // Force a final autosave to make sure Order.total is up-to-date in DB,
+  // since the backend recalculates total on every upsert. Without this, opening
+  // and immediately closing a draft would leave it with stale (often 0) total.
+  if (draftIdToRefresh && modalOffers.length > 0) {
+    try { await autoSaveDraft('close'); } catch(_) {}
+  }
   document.removeEventListener('mousedown', _outsideClickHandler, true);
   document.getElementById('create-row')?.remove();
   document.getElementById('cr-row-error-tr')?.remove();
@@ -678,9 +684,13 @@ function cleanPhone(s) {
   return (s || '').replace(/\D/g, '');
 }
 
-function cancelCreateRow() {
+async function cancelCreateRow() {
   // Same as closeDraftPanel but explicitly called by the × button.
   const draftIdToRefresh = currentDraftId;
+  // Force a final autosave so the DB total is up-to-date.
+  if (draftIdToRefresh && modalOffers.length > 0) {
+    try { await autoSaveDraft('cancel'); } catch(_) {}
+  }
   document.removeEventListener('mousedown', _outsideClickHandler, true);
   document.getElementById('create-row')?.remove();
   document.getElementById('cr-row-error-tr')?.remove();
