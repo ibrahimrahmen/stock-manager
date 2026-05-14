@@ -101,6 +101,10 @@ def stock_value(request):
         row["total_units"] += total_units
         row["buy_total"]   += buy
         row["sell_total"]  += sell
+        # Pick the first variant image we find — that's our product thumbnail
+        if not row.get("image") and variant.image:
+            row["image"] = variant.image
+            row["image_color"] = variant.color_name or ""
 
     rows = sorted(agg.values(), key=lambda r: r["product"].name.lower())
     return render(request, "inventory/stock_value.html", {

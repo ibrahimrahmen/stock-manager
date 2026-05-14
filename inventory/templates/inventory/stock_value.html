@@ -103,7 +103,11 @@
       <tr>
         <td>
           <div style="display:flex;align-items:center;">
-            <div class="variant-ph">{{ row.product.name|slice:":2" }}</div>
+            {% if row.image %}
+              <img loading="lazy" src="{{ row.image.url }}" class="variant-thumb" alt="">
+            {% else %}
+              <div class="variant-ph">{{ row.product.name|slice:":2" }}</div>
+            {% endif %}
             <div>
               <div>{{ row.product.name }}</div>
               <div style="font-size:11px;color:var(--muted);">{{ row.product.get_season_display|default:"" }}</div>
