@@ -59,26 +59,29 @@ def payment_scan(request):
 def stock_value(request):
     if not request.user.is_staff:
         return HttpResponseForbidden("Acces reserve aux administrateurs.")
+
+    # Group by PRODUCT (sum across all variants/colors/sizes).
+    from collections import defaultdict
     variants = ProductVariant.objects.select_related("product").prefetch_related("units")
-    rows = []
+    agg = defaultdict(lambda: {
+        "product": None,
+        "in_stock": 0,
+        "shipped": 0,
+        "returned": 0,
+        "total_units": 0,
+        "buy_total": Decimal("0"),
+        "sell_total": Decimal("0"),
+    })
     total_buy        = Decimal("0")
     total_sell       = Decimal("0")
     total_buy_shipped  = Decimal("0")
     total_sell_shipped = Decimal("0")
 
-    OWNED_STATUSES = (
-        ProductUnit.IN_STOCK,
-        ProductUnit.SHIPPED,
-        ProductUnit.SHIPPED,
-        ProductUnit.RETURNED,
-    )
-
     for variant in variants:
         in_stock       = variant.units.filter(status=ProductUnit.IN_STOCK).count()
-        in_order       = variant.units.filter(status=ProductUnit.SHIPPED).count()
         shipped        = variant.units.filter(status=ProductUnit.SHIPPED).count()
         pending_return = variant.units.filter(status=ProductUnit.RETURNED).count()
-        total_units    = in_stock + in_order + shipped + pending_return
+        total_units    = in_stock + shipped + pending_return
         if total_units == 0:
             continue
         buy  = variant.product.buy_price  * total_units
@@ -89,17 +92,17 @@ def stock_value(request):
         total_sell         += sell
         total_buy_shipped  += buy_shipped
         total_sell_shipped += sell_shipped
-        rows.append({
-            "variant": variant,
-            "in_stock": in_stock,
-            "shipped": in_order,
-            "shipped": shipped,
-            "returned": pending_return,
-            "total_units": total_units,
-            "buy_total": buy,
-            "sell_total": sell,
-        })
+        # Aggregate into per-product row
+        row = agg[variant.product_id]
+        row["product"] = variant.product
+        row["in_stock"]    += in_stock
+        row["shipped"]     += shipped
+        row["returned"]    += pending_return
+        row["total_units"] += total_units
+        row["buy_total"]   += buy
+        row["sell_total"]  += sell
 
+    rows = sorted(agg.values(), key=lambda r: r["product"].name.lower())
     return render(request, "inventory/stock_value.html", {
         "rows": rows,
         "total_buy": total_buy,

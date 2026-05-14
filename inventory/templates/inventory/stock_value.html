@@ -103,21 +103,16 @@
       <tr>
         <td>
           <div style="display:flex;align-items:center;">
-            {% if row.variant.image %}
-              <img loading="lazy" src="{{ row.variant.image.url }}" class="variant-thumb" alt="">
-            {% else %}
-              <div class="variant-ph">{{ row.variant.color_name|slice:":2" }}</div>
-            {% endif %}
+            <div class="variant-ph">{{ row.product.name|slice:":2" }}</div>
             <div>
-              <div>{{ row.variant.product.name }}</div>
-              <div style="font-size:11px;color:var(--muted);">{{ row.variant.color_label }}</div>
+              <div>{{ row.product.name }}</div>
+              <div style="font-size:11px;color:var(--muted);">{{ row.product.get_season_display|default:"" }}</div>
             </div>
           </div>
         </td>
         <td>
           <div class="status-pills">
             {% if row.in_stock %}<span class="pill pill-stock">{{ row.in_stock }} en stock</span>{% endif %}
-            {% if row.shipped %}<span class="pill pill-order">{{ row.shipped }} en ordre</span>{% endif %}
             {% if row.shipped %}<span class="pill pill-shipped">{{ row.shipped }} expédié</span>{% endif %}
             {% if row.returned %}<span class="pill pill-stock">{{ row.returned }} retourné</span>{% endif %}
           </div>
