@@ -2446,6 +2446,8 @@ def orders_list(request):
     if not _orders_role_check(request):
         return redirect("home")
     from .models import Order, SalesPage, Region
+    from datetime import date as _date
+    from django.db.models import Q
     # Default behavior: show "non_confirmee" orders only.
     # User must explicitly pick a filter (or "all") to see other orders.
     status_filter = request.GET.get("status", None)
@@ -2457,7 +2459,18 @@ def orders_list(request):
     )
     if status_filter and status_filter != "all":
         qs = qs.filter(status=status_filter)
+
+    # Hide orders scheduled for a future date (today's not-yet-actionable orders).
+    # NULL scheduled_for = always visible. scheduled_for <= today = visible.
+    # User can pass ?show_scheduled=1 to bypass this filter.
+    today = _date.today()
+    if request.GET.get("show_scheduled") != "1":
+        qs = qs.filter(Q(scheduled_for__isnull=True) | Q(scheduled_for__lte=today))
+
     orders = qs[:500]
+
+    # Count of currently-hidden future-scheduled orders, for an info banner
+    future_count = Order.objects.filter(scheduled_for__gt=today).count()
 
     from django.db.models import Count
     counts = dict(Order.objects.values_list("status").annotate(n=Count("id")))
@@ -2466,6 +2479,8 @@ def orders_list(request):
         "status_filter": status_filter,
         "counts": counts,
         "total": Order.objects.count(),
+        "future_count": future_count,
+        "show_scheduled": request.GET.get("show_scheduled") == "1",
         # Data needed by the inline-create row + modal
         "sales_pages": SalesPage.objects.filter(is_active=True),
         "regions": Region.objects.filter(is_active=True),
@@ -2920,6 +2935,110 @@ def api_order_draft_get(request, pk):
 
 @login_required(login_url="/login/")
 def api_orders_search(request):
+    """Search orders across multiple fields. Returns up to 200 matches.
+
+    Search logic:
+      - If query starts with "#" → match exact order ID
+      - If query is all digits → match phone, phone2, bordereau, or ID
+      - Otherwise (text) → match customer name (case-insensitive contains)
+    """
+    from .models import Order
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error"}, status=403)
+
+    q = (request.GET.get("q") or "").strip()
+    if not q:
+        return JsonResponse({"status": "ok", "results": []})
+
+    from django.db.models import Q
+
+    qs = Order.objects.select_related("customer", "region", "sales_page")
+
+    if q.startswith("#"):
+        try:
+            order_id = int(q[1:])
+            qs = qs.filter(pk=order_id)
+        except ValueError:
+            return JsonResponse({"status": "ok", "results": []})
+    elif q.isdigit():
+        try:
+            order_id_match = int(q)
+        except ValueError:
+            order_id_match = None
+        f = Q(customer__phone__icontains=q) | Q(customer__phone2__icontains=q) | Q(bordereau_barcode__icontains=q)
+        if order_id_match is not None:
+            f |= Q(pk=order_id_match)
+        qs = qs.filter(f)
+    else:
+        qs = qs.filter(customer__name__icontains=q)
+
+    qs = qs.order_by("-created_at")[:200]
+    results = []
+    for o in qs:
+        results.append({
+            "id": o.id,
+            "phone": o.customer.phone if o.customer else "",
+            "phone2": o.customer.phone2 if o.customer else "",
+            "name": o.customer.name if o.customer else "",
+            "status": o.status,
+            "status_display": o.get_status_display(),
+            "sales_page_name": o.sales_page.name if o.sales_page else "",
+            "region_name": o.region.name if o.region else "",
+            "ville": o.ville,
+            "address": o.address or "",
+            "total": str(o.total),
+            "bordereau": o.bordereau_barcode,
+            "article_summary": o.article_summary,
+            "created_at": o.created_at.strftime("%d/%m %H:%M") if o.created_at else "",
+            "scheduled_for": o.scheduled_for.strftime("%Y-%m-%d") if o.scheduled_for else "",
+        })
+    return JsonResponse({"status": "ok", "results": results, "count": len(results)})
+
+
+# ---- Schedule an order for later --------------------------------------------
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_order_set_scheduled(request, pk):
+    """Update the scheduled_for date on an order.
+    Body: {scheduled_for: "YYYY-MM-DD"} or {scheduled_for: ""} to clear.
+    """
+    from .models import Order, log_action, AuditLog
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error"}, status=403)
+    try:
+        order = Order.objects.get(pk=pk)
+    except Order.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Commande introuvable."}, status=404)
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+    raw = (data.get("scheduled_for") or "").strip()
+    from datetime import datetime, date as _date
+    new_date = None
+    if raw:
+        try:
+            new_date = datetime.strptime(raw, "%Y-%m-%d").date()
+        except ValueError:
+            return JsonResponse({"status": "error", "message": "Format de date invalide (attendu YYYY-MM-DD)."}, status=400)
+    old_date = order.scheduled_for
+    order.scheduled_for = new_date
+    order.save(update_fields=["scheduled_for", "updated_at"])
+    log_action(
+        request.user, AuditLog.EDIT,
+        description=f"Date prévue changée : {old_date} → {new_date} pour commande #{order.id}",
+        target_model="Order", target_id=order.id,
+    )
+    return JsonResponse({
+        "status": "ok",
+        "scheduled_for": new_date.strftime("%Y-%m-%d") if new_date else "",
+        "display": new_date.strftime("%d/%m") if new_date else "—",
+    })
+
+
+# ---- Admin tools page (superuser only) -------------------------------------
     """Search orders across multiple fields. Returns up to 50 matches.
 
     Search logic:

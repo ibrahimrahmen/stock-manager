@@ -563,6 +563,10 @@ class Order(models.Model):
     created_by = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="orders_created")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Optional "schedule for later" date. Defaults to today on creation.
+    # Used to hide orders that should be processed on a future day.
+    scheduled_for = models.DateField(null=True, blank=True, db_index=True,
+        help_text="Date à laquelle traiter la commande. NULL = pas de planification (= aujourd'hui).")
 
     class Meta:
         ordering = ["-created_at"]

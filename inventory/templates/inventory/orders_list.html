@@ -74,6 +74,37 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .search-result-item .meta{font-size:12px;color:var(--muted);margin-top:2px;}
 .search-result-item .right{text-align:right;font-size:13px;}
 .search-empty{padding:16px;color:var(--muted);font-size:14px;text-align:center;}
+/* Clickable date cell */
+.date-cell{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 8px;border-radius:6px;display:inline-block;}
+.date-cell:hover{background:var(--surface2);color:var(--text);}
+.scheduled-badge{background:var(--amber-dim);color:var(--amber);padding:3px 8px;border-radius:6px;font-weight:500;}
+/* Date picker mini-modal */
+.date-picker-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100;
+  display:flex;align-items:center;justify-content:center;
+}
+.date-picker-box{
+  background:var(--surface);border:0.5px solid var(--border);
+  border-radius:12px;padding:24px;min-width:340px;
+  box-shadow:0 20px 60px rgba(0,0,0,0.5);
+}
+.date-picker-title{font-size:15px;font-weight:600;margin-bottom:14px;}
+.date-picker-input{
+  width:100%;padding:11px 14px;border-radius:8px;
+  background:var(--surface2);border:0.5px solid var(--border);
+  color:var(--text);font-size:15px;font-family:inherit;
+}
+.date-picker-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}
+.date-picker-btn{padding:9px 14px;border-radius:8px;border:0.5px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;font-family:inherit;}
+.date-picker-btn:hover{background:var(--border);}
+.date-picker-btn.primary{background:var(--green);color:#0a0a08;border-color:var(--green);}
+.date-picker-btn.danger{background:transparent;color:var(--red);border-color:var(--red);}
+.date-picker-presets{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;}
+.date-picker-preset{padding:5px 12px;border-radius:14px;border:0.5px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-size:12px;}
+.date-picker-preset:hover{background:var(--surface2);}
+/* Future scheduled banner */
+.future-banner{background:var(--amber-dim);border:0.5px solid var(--amber);padding:10px 16px;border-radius:10px;margin-bottom:14px;font-size:14px;color:var(--text);display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.future-banner a{color:var(--amber);text-decoration:underline;font-weight:500;}
 .chip{padding:9px 16px;border-radius:18px;border:0.5px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;}
 .chip:hover{background:var(--surface2);}
 .chip.active{background:var(--text);color:var(--bg);border-color:var(--text);}
@@ -204,6 +235,19 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
     <input type="text" id="search-input" placeholder="🔍 Rechercher par nom, téléphone, bordereau ou #ID..." autocomplete="off">
   </div>
 
+  {% if future_count > 0 and not show_scheduled %}
+  <div class="future-banner">
+    <span>📅 {{ future_count }} commande{{ future_count|pluralize }} planifiée{{ future_count|pluralize }} pour plus tard, non affichée{{ future_count|pluralize }}.</span>
+    <a href="?status={{ status_filter }}&show_scheduled=1">Voir aussi les commandes planifiées →</a>
+  </div>
+  {% endif %}
+  {% if show_scheduled %}
+  <div class="future-banner">
+    <span>📅 Affichage de TOUTES les commandes, y compris celles planifiées pour plus tard.</span>
+    <a href="?status={{ status_filter }}">Masquer les futures</a>
+  </div>
+  {% endif %}
+
   <div class="chips">
     <a href="?status=all" class="chip {% if status_filter == 'all' %}active{% endif %}">Toutes <span class="count">{{ total }}</span></a>
     <a href="?status=non_confirmee" class="chip {% if status_filter == 'non_confirmee' %}active{% endif %}">Non confirmée <span class="count">{{ counts.non_confirmee|default:0 }}</span></a>
@@ -235,7 +279,11 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
               <a class="row-link" href="{% url 'order_view' o.pk %}">#{{ o.id }}</a>
             {% endif %}
           </td>
-          <td class="muted">{{ o.created_at|date:"d/m H:i" }}</td>
+          <td>
+            <span class="date-cell" data-order-id="{{ o.id }}" data-scheduled="{% if o.scheduled_for %}{{ o.scheduled_for|date:'Y-m-d' }}{% endif %}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">
+              {% if o.scheduled_for %}<span class="scheduled-badge">📅 {{ o.scheduled_for|date:"d/m" }}</span>{% else %}{{ o.created_at|date:"d/m H:i" }}{% endif %}
+            </span>
+          </td>
           <td>{{ o.sales_page.name|default:"—" }}</td>
           <td>
             <div>{{ o.customer.name|default:o.customer.phone }}</div>
@@ -736,9 +784,20 @@ function buildOrderRowHtml(o) {
   const addressBlock = address ? `<div class="muted" style="font-size:11px;">${address.length > 50 ? address.slice(0,50)+'…' : address}</div>` : '';
   const phone2Block = phone2 ? `<div class="muted" style="font-size:10px;">${phone2}</div>` : '';
 
+  const scheduled = o.scheduled_for || '';
+  // Format scheduled date for display: YYYY-MM-DD → DD/MM
+  let scheduledDisplay = '';
+  if (scheduled) {
+    const parts = scheduled.split('-');
+    if (parts.length === 3) scheduledDisplay = `${parts[2]}/${parts[1]}`;
+  }
+  const dateCellInner = scheduledDisplay
+    ? `<span class="scheduled-badge">📅 ${scheduledDisplay}</span>`
+    : created;
+
   return `<tr data-order-id="${o.id}">
     <td>${idCell}</td>
-    <td class="muted">${created}</td>
+    <td><span class="date-cell" data-order-id="${o.id}" data-scheduled="${scheduled}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">${dateCellInner}</span></td>
     <td>${pageName}</td>
     <td>
       <div>${name}</div>
@@ -1322,7 +1381,98 @@ window.addEventListener('DOMContentLoaded', () => {
   initSearchBar();
 });
 
-// --- Search bar -----------------------------------------------------------
+// --- Date picker for scheduling orders ------------------------------------
+function openDatePicker(cellEl) {
+  const orderId = cellEl.dataset.orderId;
+  const currentScheduled = cellEl.dataset.scheduled || '';
+
+  // Compute today + tomorrow + day-after as YYYY-MM-DD
+  const tz = new Date().getTimezoneOffset() * 60000;
+  const today = new Date(Date.now() - tz).toISOString().slice(0,10);
+  const tomorrow = new Date(Date.now() + 86400000 - tz).toISOString().slice(0,10);
+  const dayAfter = new Date(Date.now() + 86400000*2 - tz).toISOString().slice(0,10);
+
+  const overlay = document.createElement('div');
+  overlay.className = 'date-picker-overlay';
+  overlay.innerHTML = `
+    <div class="date-picker-box">
+      <div class="date-picker-title">Reporter la commande #${orderId}</div>
+      <input type="date" id="dp-input" class="date-picker-input" value="${currentScheduled}" min="${today}">
+      <div class="date-picker-presets">
+        <button class="date-picker-preset" data-date="${today}">Aujourd'hui</button>
+        <button class="date-picker-preset" data-date="${tomorrow}">Demain</button>
+        <button class="date-picker-preset" data-date="${dayAfter}">Après-demain</button>
+      </div>
+      <div class="date-picker-actions">
+        <button class="date-picker-btn primary" id="dp-save">✓ Sauver</button>
+        ${currentScheduled ? `<button class="date-picker-btn danger" id="dp-clear">✕ Effacer (aujourd'hui)</button>` : ''}
+        <button class="date-picker-btn" id="dp-cancel">Annuler</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const input = overlay.querySelector('#dp-input');
+  input.focus();
+
+  // Click outside to close
+  overlay.addEventListener('click', (ev) => {
+    if (ev.target === overlay) overlay.remove();
+  });
+  // Preset buttons
+  overlay.querySelectorAll('.date-picker-preset').forEach(b => {
+    b.addEventListener('click', () => {
+      input.value = b.dataset.date;
+    });
+  });
+  // Save
+  overlay.querySelector('#dp-save').addEventListener('click', async () => {
+    await setScheduledDate(orderId, input.value, cellEl);
+    overlay.remove();
+  });
+  // Clear
+  const clearBtn = overlay.querySelector('#dp-clear');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', async () => {
+      await setScheduledDate(orderId, '', cellEl);
+      overlay.remove();
+    });
+  }
+  // Cancel
+  overlay.querySelector('#dp-cancel').addEventListener('click', () => overlay.remove());
+}
+
+async function setScheduledDate(orderId, dateStr, cellEl) {
+  try {
+    const res = await fetch(`/api/sales-orders/${orderId}/scheduled/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+      body: JSON.stringify({ scheduled_for: dateStr }),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      // Update the cell UI in place
+      cellEl.dataset.scheduled = data.scheduled_for || '';
+      if (data.scheduled_for) {
+        cellEl.innerHTML = `<span class="scheduled-badge">📅 ${data.display}</span>`;
+      } else {
+        // Cleared — show today's creation date back (just reload to be safe)
+        window.location.reload();
+        return;
+      }
+      // If the new date is in the future, the row should disappear from the
+      // default view → reload to apply the filter
+      const today = new Date().toISOString().slice(0,10);
+      if (data.scheduled_for && data.scheduled_for > today) {
+        window.location.reload();
+      }
+    } else {
+      alert(data.message || 'Erreur');
+    }
+  } catch (e) {
+    alert('Erreur réseau : ' + e.message);
+  }
+}
 // Filters the order list directly: when user types, we call the backend
 // to search across ALL orders (not just the 500 visible), then REPLACE the
 // table rows with the matching results. When the input is empty, the
