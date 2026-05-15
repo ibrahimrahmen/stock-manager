@@ -1186,10 +1186,15 @@
     }
   }
 
-  // Start the 2-minute interval as soon as the page is ready.
-  // Use 120000 ms = 2 minutes. First run after 2 minutes (not immediately,
-  // to avoid hammering the API on page load).
-  setInterval(silentAutoRecheck, 120000);
+  // Start the auto-recheck:
+  // - First run after 30 seconds (so user sees it works)
+  // - Then every 2 minutes
+  console.log('[auto-recheck] enabled — first run in 30s, then every 2min');
+  setTimeout(function() {
+    console.log('[auto-recheck] first run');
+    silentAutoRecheck();
+    setInterval(silentAutoRecheck, 120000);
+  }, 30000);
 
   function clearSession() {
     if (!confirm('Vider la liste de la session ?')) return;

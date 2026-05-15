@@ -112,10 +112,14 @@ def _get_matched_products(designation: str) -> list:
             if not matched_product:
                 continue
 
-            # Find color in this item
+            # Find color in this item — use word boundaries so "bleu" doesn't
+            # match inside "blueline" (product name). The color word must be
+            # surrounded by spaces, punctuation, or string edges.
             matched_variant = None
             for fr, en in COLOR_MAP.items():
-                if fr in item_lower:
+                # \b matches a word boundary in Python regex
+                pattern = r"\b" + re.escape(fr) + r"\b"
+                if re.search(pattern, item_lower):
                     # Match using color_label (e.g. "BLACK", "WHITE", "BLUE")
                     all_variants = list(matched_product.variants.all())
                     en_norm = en.lower().strip()

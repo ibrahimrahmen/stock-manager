@@ -1811,27 +1811,61 @@ def api_recheck_session(request):
             except (TypeError, ValueError):
                 pass
 
-        # Designation vs scanned products
+        # Designation vs scanned products: compare with QUANTITIES.
+        # Navex sometimes lists the same product multiple times (one per unit
+        # ordered). We count how many of each product are expected vs scanned.
         if designation:
             items_in_desig = [part.strip() for part in designation.split(",")]
             if items_in_desig and "|" in items_in_desig[0]:
                 items_in_desig[0] = items_in_desig[0].split("|", 1)[1].strip()
 
-            expected = []
+            # Count expected: each item line in the designation is one unit
+            from collections import Counter
+            expected_counter = Counter()
             for item in items_in_desig:
                 item_lower = item.lower()
-                for product in all_products:
+                # Use longest product name first to handle "Polo Ling Hiver" vs "Polo Ling"
+                sorted_products = sorted(all_products, key=lambda p: len(p.name), reverse=True)
+                for product in sorted_products:
                     if product.name.lower() in item_lower:
-                        expected.append(product.name.lower())
+                        # Use the parent's name if this is a V2/V3 (so V2 counts as same SKU)
+                        canonical_name = (
+                            product.parent_product.name.lower()
+                            if product.parent_product
+                            else product.name.lower()
+                        )
+                        expected_counter[canonical_name] += 1
                         break
 
-            missing = []
-            for exp in expected:
-                first_word = exp.split()[0] if exp.split() else exp
-                if not any(first_word in s for s in scanned_lower):
-                    missing.append(exp)
-            if missing:
-                reasons.append(f"Produits manquants: {', '.join(missing)}")
+            # Count scanned: walk units we actually scanned. Use canonical name too
+            scanned_counter = Counter()
+            for n in scanned_names:
+                if not n:
+                    continue
+                # Look up the product to find its parent if any
+                canonical = n.lower()
+                for p in all_products:
+                    if p.name.lower() == n.lower() and p.parent_product:
+                        canonical = p.parent_product.name.lower()
+                        break
+                scanned_counter[canonical] += 1
+
+            # Find missing (expected but not enough scanned) and excess (scanned more than expected)
+            missing_parts = []
+            excess_parts = []
+            for product_name, exp_qty in expected_counter.items():
+                scan_qty = scanned_counter.get(product_name, 0)
+                if scan_qty < exp_qty:
+                    missing_parts.append(f"{product_name} (×{exp_qty - scan_qty})")
+            for product_name, scan_qty in scanned_counter.items():
+                exp_qty = expected_counter.get(product_name, 0)
+                if scan_qty > exp_qty:
+                    excess_parts.append(f"{product_name} (+{scan_qty - exp_qty})")
+
+            if missing_parts:
+                reasons.append(f"Produits manquants: {', '.join(missing_parts)}")
+            if excess_parts:
+                reasons.append(f"Produits en trop: {', '.join(excess_parts)}")
 
         is_correct = not reasons
         reason_text = " | ".join(reasons)
