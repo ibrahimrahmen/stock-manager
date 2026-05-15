@@ -63,11 +63,18 @@ def _get_navex_info(barcode: str):
 
 def _get_matched_products(designation: str) -> list:
     """Match products from a Navex designation string.
-    Creates one card per product+color item in the designation."""
+    Creates one card per product+color item in the designation.
+
+    For each card we also include:
+      - size: extracted from "(M)", "(L)" etc. in the designation
+      - in_stock: number of physical units currently in_stock for that
+        (product, variant, size) combo. 0 means not shippable.
+    """
     if not designation:
         return []
     try:
-        from .models import Product
+        from .models import Product, ProductUnit
+        import re
         COLOR_MAP = {
             "noir": "black", "blanc": "white", "bleu": "blue",
             "gris": "gray", "grey": "gray", "rouge": "red", "vert": "green",
@@ -120,12 +127,30 @@ def _get_matched_products(designation: str) -> list:
             if not matched_variant:
                 matched_variant = matched_product.variants.first()
 
+            # Extract size from parentheses, e.g. "(M)", "(XL)", "(36)"
+            size_match = re.search(r"\(([^)]+)\)", item)
+            extracted_size = size_match.group(1).strip().upper() if size_match else ""
+
+            # Count IN_STOCK units for this exact (variant, size) combo
+            in_stock_count = 0
+            if matched_variant:
+                qs = ProductUnit.objects.filter(
+                    variant=matched_variant,
+                    status=ProductUnit.IN_STOCK,
+                )
+                if extracted_size:
+                    qs = qs.filter(size__iexact=extracted_size)
+                in_stock_count = qs.count()
+
             matched.append({
                 "id": matched_product.id,
                 "name": matched_product.name,
                 "code": matched_product.code,
                 "color_matched": matched_variant.color_label if matched_variant else "",
                 "image_url": matched_variant.image.url if matched_variant and matched_variant.image else None,
+                "size": extracted_size,
+                "in_stock": in_stock_count,
+                "stock_ok": in_stock_count > 0,
             })
 
         return matched

@@ -964,19 +964,70 @@
     }
     navexAttente.forEach(function(colis) {
       var div = document.createElement('div');
-      div.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:#f5f4f0;border-radius:10px;font-size:13px;';
+      // Compute overall stock status: green if ALL items OK, red if any missing
+      var allOk = false;
+      var anyOk = false;
+      if (colis.matched_products && colis.matched_products.length > 0) {
+        allOk = colis.matched_products.every(function(p) { return p.stock_ok === true; });
+        anyOk = colis.matched_products.some(function(p) { return p.stock_ok === true; });
+      }
+      var bgColor = '#f5f4f0';  // default
+      var borderLeft = '';
+      if (allOk) {
+        bgColor = 'rgba(26,158,110,0.08)';
+        borderLeft = 'border-left:3px solid #1a9e6e;';
+      } else if (!anyOk && colis.matched_products && colis.matched_products.length > 0) {
+        bgColor = 'rgba(217,79,78,0.08)';
+        borderLeft = 'border-left:3px solid #d94f4e;';
+      } else if (colis.matched_products && colis.matched_products.length > 0) {
+        // Mixed (some OK, some not) — show amber
+        bgColor = 'rgba(245,166,35,0.08)';
+        borderLeft = 'border-left:3px solid #f5a623;';
+      }
+      div.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 12px;background:' + bgColor + ';border-radius:10px;font-size:13px;' + borderLeft;
 
-      // Product images
+      // Product images with stock indicator below each
       var imgsDiv = document.createElement('div');
-      imgsDiv.style.cssText = 'display:flex;gap:4px;flex-shrink:0;';
+      imgsDiv.style.cssText = 'display:flex;gap:6px;flex-shrink:0;';
       if (colis.matched_products && colis.matched_products.length > 0) {
         colis.matched_products.forEach(function(p) {
+          // Container for image + stock badge
+          var box = document.createElement('div');
+          box.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;';
+          // Image (or placeholder if missing)
           if (p.image_url) {
             var img = document.createElement('img');
             img.src = p.image_url.startsWith('http') ? p.image_url : window.location.origin + p.image_url;
             img.style.cssText = 'width:36px;height:36px;border-radius:6px;object-fit:cover;';
-            imgsDiv.appendChild(img);
+            // Add a colored border based on stock
+            if (p.stock_ok === true) {
+              img.style.boxShadow = '0 0 0 2px #1a9e6e';
+            } else if (p.stock_ok === false) {
+              img.style.boxShadow = '0 0 0 2px #d94f4e';
+            }
+            box.appendChild(img);
+          } else {
+            var ph = document.createElement('div');
+            ph.style.cssText = 'width:36px;height:36px;border-radius:6px;background:#e8e7e2;display:flex;align-items:center;justify-content:center;font-size:10px;color:#73726c;';
+            ph.textContent = (p.name || '?').slice(0,2);
+            if (p.stock_ok === true) ph.style.boxShadow = '0 0 0 2px #1a9e6e';
+            else if (p.stock_ok === false) ph.style.boxShadow = '0 0 0 2px #d94f4e';
+            box.appendChild(ph);
           }
+          // Stock badge below image: "M ✓" or "M ✗" etc.
+          var badge = document.createElement('div');
+          var sizeLabel = p.size ? p.size : '';
+          if (p.stock_ok === true) {
+            badge.style.cssText = 'font-size:10px;color:#1a9e6e;font-weight:600;';
+            badge.textContent = sizeLabel ? sizeLabel + ' ✓' : '✓ ' + p.in_stock;
+            badge.title = 'En stock : ' + p.in_stock + ' unité(s)';
+          } else {
+            badge.style.cssText = 'font-size:10px;color:#d94f4e;font-weight:600;';
+            badge.textContent = sizeLabel ? sizeLabel + ' ✗' : '✗ 0';
+            badge.title = 'Stock vide pour ' + (p.name || '?') + (sizeLabel ? ' (' + sizeLabel + ')' : '');
+          }
+          box.appendChild(badge);
+          imgsDiv.appendChild(box);
         });
       } else {
         var ph = document.createElement('div');
