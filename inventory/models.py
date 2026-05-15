@@ -24,6 +24,14 @@ class Product(models.Model):
         max_length=10, choices=SEASON_CHOICES, default=SEASON_SUMMER,
         help_text="Saison du produit — utilisée pour filtrer la liste des produits",
     )
+    # Optional link to a "parent" product: used when V2/V3 versions of a product
+    # share the same physical SKU. Stock is summed across parent + children when
+    # checking availability for shipping. Leave NULL for independent products.
+    parent_product = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="versions",
+        help_text="Si ce produit est une V2/V3 d'un autre produit (même SKU physique), choisir le produit parent ici."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

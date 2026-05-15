@@ -44,9 +44,10 @@ class ProductVariantInline(admin.TabularInline):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ("name", "code", "category", "season", "buy_price", "sell_price", "total_stock", "alert_threshold")
-    list_filter = ("season", "archived", "alert_disabled")
+    list_display = ("name", "code", "category", "season", "parent_product", "buy_price", "sell_price", "total_stock", "alert_threshold")
+    list_filter = ("season", "archived", "alert_disabled", "parent_product")
     search_fields = ("name", "code", "category")
+    autocomplete_fields = ("parent_product",)
     inlines = [ProductVariantInline]
 
     def total_stock(self, obj):

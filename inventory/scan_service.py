@@ -91,11 +91,19 @@ def _get_matched_products(designation: str) -> list:
                 item = item.split("|", 1)[1].strip()
             cleaned_items.append(item)
 
-        products = list(Product.objects.prefetch_related("variants").all())
+        # Sort products by name length DESCENDING so longest names match first.
+        # This way "Polo Ling Hiver" wins over "Polo Ling" if both fit in the item.
+        # For V2/V3 products sharing a parent, all are searched independently —
+        # the candidate_variants logic later expands the stock search to siblings.
+        products = sorted(
+            Product.objects.prefetch_related("variants").all(),
+            key=lambda p: len(p.name),
+            reverse=True,
+        )
         matched = []
         for item in cleaned_items:
             item_lower = item.lower()
-            # Find which product this item refers to
+            # Find which product this item refers to (longest match wins)
             matched_product = None
             for product in products:
                 if product.name.lower() in item_lower:
@@ -177,14 +185,34 @@ def _get_matched_products(designation: str) -> list:
             actual_variant_used = matched_variant
 
             if matched_variant:
+                # Get all candidate variants: the matched one, plus any others
+                # with the same color_label on the SAME product (handles duplicate
+                # variants per color), PLUS any variants on parent/sibling products
+                # (V2/V3 versions sharing the same physical SKU).
                 candidate_variants = [matched_variant]
-                if matched_variant.color_label:
-                    other_same_color = [
-                        v for v in matched_product.variants.all()
-                        if v.id != matched_variant.id
-                        and v.color_label.lower().strip() == matched_variant.color_label.lower().strip()
-                    ]
-                    candidate_variants.extend(other_same_color)
+
+                # Build a list of "related" products: this one's parent, this one's
+                # children (versions), and parent's other children (siblings).
+                related_products = [matched_product]
+                if matched_product.parent_product_id:
+                    related_products.append(matched_product.parent_product)
+                    # Add siblings (other children of the same parent)
+                    for sibling in matched_product.parent_product.versions.all():
+                        if sibling.id != matched_product.id:
+                            related_products.append(sibling)
+                else:
+                    # This product might BE a parent. Add its children too.
+                    for child in matched_product.versions.all():
+                        related_products.append(child)
+
+                # Now find variants with matching color_label across all related products
+                target_color = (matched_variant.color_label or "").lower().strip()
+                for related in related_products:
+                    for v in related.variants.all():
+                        if v.id == matched_variant.id:
+                            continue
+                        if target_color and v.color_label.lower().strip() == target_color:
+                            candidate_variants.append(v)
 
                 # Priority order: exact, +1, -1, +2, -2
                 # We check across all candidate variants for each level before moving on.
