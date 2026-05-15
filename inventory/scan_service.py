@@ -131,32 +131,52 @@ def _get_matched_products(designation: str) -> list:
             size_match = re.search(r"\(([^)]+)\)", item)
             extracted_size = size_match.group(1).strip().upper() if size_match else ""
 
-            # Map standard sizes to numeric sizes (used internally):
+            # Map standard sizes <-> numeric (internal storage uses numeric).
             # S=1, M=2, L=3, XL=4, XXL=5
-            # We'll try both forms when matching.
-            SIZE_TO_NUMERIC = {
-                "S":   "1",
-                "M":   "2",
-                "L":   "3",
-                "XL":  "4",
-                "XXL": "5",
-            }
-            sizes_to_try = [extracted_size]
-            if extracted_size in SIZE_TO_NUMERIC:
-                sizes_to_try.append(SIZE_TO_NUMERIC[extracted_size])
-            # Also try the reverse: if extracted is "2" try also "M"
-            reverse_map = {v: k for k, v in SIZE_TO_NUMERIC.items()}
-            if extracted_size in reverse_map:
-                sizes_to_try.append(reverse_map[extracted_size])
+            SIZE_TO_NUMERIC = {"S": 1, "M": 2, "L": 3, "XL": 4, "XXL": 5}
+            NUMERIC_TO_SIZE = {v: k for k, v in SIZE_TO_NUMERIC.items()}
 
-            # Count IN_STOCK units for this (variant, size) combo.
-            # If the matched variant has 0 stock, try OTHER variants of the same
-            # product with the same color_label (in case there are duplicates).
+            # Normalize the requested size to a numeric "index" we can math on
+            requested_idx = None
+            if extracted_size in SIZE_TO_NUMERIC:
+                requested_idx = SIZE_TO_NUMERIC[extracted_size]
+            else:
+                try:
+                    requested_idx = int(extracted_size)
+                except ValueError:
+                    requested_idx = None
+
+            def all_size_forms(idx):
+                """Return all possible string forms for a numeric size index."""
+                forms = [str(idx)]
+                if idx in NUMERIC_TO_SIZE:
+                    forms.append(NUMERIC_TO_SIZE[idx])
+                return forms
+
+            # Count IN_STOCK for a given variant + size index.
+            # Returns (count, size_label_actually_found).
+            def count_stock_for_size(variant, idx):
+                if idx is None or idx <= 0:
+                    return 0, ""
+                forms = all_size_forms(idx)
+                for sz in forms:
+                    n = ProductUnit.objects.filter(
+                        variant=variant,
+                        status=ProductUnit.IN_STOCK,
+                        size__iexact=sz,
+                    ).count()
+                    if n > 0:
+                        return n, sz
+                return 0, ""
+
+            # Find ALL variants of this product with the same color_label
+            # (handles duplicates), then for each one apply the size-tolerance rule.
             in_stock_count = 0
+            stock_status = "none"   # 'exact', 'plus1', 'minus1', 'plus2', 'minus2', 'none'
+            found_size_label = ""
             actual_variant_used = matched_variant
+
             if matched_variant:
-                # Get all candidate variants: the matched one, plus any others
-                # with the same color_label (handles duplicate variants per color)
                 candidate_variants = [matched_variant]
                 if matched_variant.color_label:
                     other_same_color = [
@@ -166,23 +186,49 @@ def _get_matched_products(designation: str) -> list:
                     ]
                     candidate_variants.extend(other_same_color)
 
-                for v in candidate_variants:
-                    base_qs = ProductUnit.objects.filter(variant=v, status=ProductUnit.IN_STOCK)
-                    if extracted_size:
-                        # Try each size form (e.g. M, 2) until we find stock
-                        for sz in sizes_to_try:
-                            count_here = base_qs.filter(size__iexact=sz).count()
-                            if count_here > 0:
-                                in_stock_count = count_here
+                # Priority order: exact, +1, -1, +2, -2
+                # We check across all candidate variants for each level before moving on.
+                if requested_idx is not None and extracted_size:
+                    priority_levels = [
+                        ("exact",  requested_idx),
+                        ("plus1",  requested_idx + 1),
+                        ("minus1", requested_idx - 1),
+                        ("plus2",  requested_idx + 2),
+                        ("minus2", requested_idx - 2),
+                    ]
+                    for level_name, level_idx in priority_levels:
+                        for v in candidate_variants:
+                            n, label = count_stock_for_size(v, level_idx)
+                            if n > 0:
+                                in_stock_count = n
+                                stock_status = level_name
+                                found_size_label = label
                                 actual_variant_used = v
                                 break
-                    else:
-                        count_here = base_qs.count()
-                        if count_here > 0:
-                            in_stock_count = count_here
+                        if in_stock_count > 0:
+                            break
+                else:
+                    # No size in designation — just count whatever's in stock
+                    for v in candidate_variants:
+                        n = ProductUnit.objects.filter(
+                            variant=v, status=ProductUnit.IN_STOCK
+                        ).count()
+                        if n > 0:
+                            in_stock_count = n
+                            stock_status = "exact"  # no size constraint = exact
                             actual_variant_used = v
-                    if in_stock_count > 0:
-                        break
+                            break
+
+            # Map status to a badge color (frontend will color accordingly)
+            STATUS_TO_COLOR = {
+                "exact":  "green",
+                "plus1":  "green",
+                "minus1": "yellow",
+                "plus2":  "orange",
+                "minus2": "red",
+                "none":   "red",
+            }
+            badge_color = STATUS_TO_COLOR.get(stock_status, "red")
 
             matched.append({
                 "id": matched_product.id,
@@ -192,7 +238,10 @@ def _get_matched_products(designation: str) -> list:
                 "image_url": actual_variant_used.image.url if actual_variant_used and actual_variant_used.image else None,
                 "size": extracted_size,
                 "in_stock": in_stock_count,
-                "stock_ok": in_stock_count > 0,
+                "stock_ok": badge_color == "green",
+                "stock_status": stock_status,   # exact/plus1/minus1/plus2/minus2/none
+                "badge_color": badge_color,     # green/yellow/orange/red
+                "found_size": found_size_label, # what size we actually found (could be different from requested)
             })
 
         return matched

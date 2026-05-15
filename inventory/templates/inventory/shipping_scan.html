@@ -989,8 +989,17 @@
       // Product images with stock indicator below each
       var imgsDiv = document.createElement('div');
       imgsDiv.style.cssText = 'display:flex;gap:6px;flex-shrink:0;';
+      // Color map for badges
+      var COLOR_MAP = {
+        green:  { border: '#1a9e6e', text: '#1a9e6e', icon: '✓' },
+        yellow: { border: '#d4a017', text: '#d4a017', icon: '!' },
+        orange: { border: '#f5a623', text: '#f5a623', icon: '!' },
+        red:    { border: '#d94f4e', text: '#d94f4e', icon: '✗' },
+      };
       if (colis.matched_products && colis.matched_products.length > 0) {
         colis.matched_products.forEach(function(p) {
+          var color = p.badge_color || (p.stock_ok ? 'green' : 'red');
+          var c = COLOR_MAP[color] || COLOR_MAP.red;
           // Container for image + stock badge
           var box = document.createElement('div');
           box.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;';
@@ -998,33 +1007,39 @@
           if (p.image_url) {
             var img = document.createElement('img');
             img.src = p.image_url.startsWith('http') ? p.image_url : window.location.origin + p.image_url;
-            img.style.cssText = 'width:36px;height:36px;border-radius:6px;object-fit:cover;';
-            // Add a colored border based on stock
-            if (p.stock_ok === true) {
-              img.style.boxShadow = '0 0 0 2px #1a9e6e';
-            } else if (p.stock_ok === false) {
-              img.style.boxShadow = '0 0 0 2px #d94f4e';
-            }
+            img.style.cssText = 'width:36px;height:36px;border-radius:6px;object-fit:cover;box-shadow:0 0 0 2px ' + c.border + ';';
             box.appendChild(img);
           } else {
             var ph = document.createElement('div');
-            ph.style.cssText = 'width:36px;height:36px;border-radius:6px;background:#e8e7e2;display:flex;align-items:center;justify-content:center;font-size:10px;color:#73726c;';
+            ph.style.cssText = 'width:36px;height:36px;border-radius:6px;background:#e8e7e2;display:flex;align-items:center;justify-content:center;font-size:10px;color:#73726c;box-shadow:0 0 0 2px ' + c.border + ';';
             ph.textContent = (p.name || '?').slice(0,2);
-            if (p.stock_ok === true) ph.style.boxShadow = '0 0 0 2px #1a9e6e';
-            else if (p.stock_ok === false) ph.style.boxShadow = '0 0 0 2px #d94f4e';
             box.appendChild(ph);
           }
-          // Stock badge below image: "M ✓" or "M ✗" etc.
+          // Stock badge below image
           var badge = document.createElement('div');
+          badge.style.cssText = 'font-size:10px;color:' + c.text + ';font-weight:600;text-align:center;';
           var sizeLabel = p.size ? p.size : '';
-          if (p.stock_ok === true) {
-            badge.style.cssText = 'font-size:10px;color:#1a9e6e;font-weight:600;';
-            badge.textContent = sizeLabel ? sizeLabel + ' ✓' : '✓ ' + p.in_stock;
-            badge.title = 'En stock : ' + p.in_stock + ' unité(s)';
-          } else {
-            badge.style.cssText = 'font-size:10px;color:#d94f4e;font-weight:600;';
-            badge.textContent = sizeLabel ? sizeLabel + ' ✗' : '✗ 0';
+          // Compose the badge text based on status:
+          //   exact      → "M ✓"
+          //   plus1/minus1/plus2/minus2 → "M (3)" — shows the actual found size
+          //   none       → "M ✗"
+          if (p.stock_status === 'exact') {
+            badge.textContent = sizeLabel ? sizeLabel + ' ' + c.icon : c.icon + ' ' + p.in_stock;
+            badge.title = 'En stock : ' + p.in_stock + ' unité(s) — taille exacte';
+          } else if (p.stock_status === 'none') {
+            badge.textContent = sizeLabel ? sizeLabel + ' ' + c.icon : c.icon;
             badge.title = 'Stock vide pour ' + (p.name || '?') + (sizeLabel ? ' (' + sizeLabel + ')' : '');
+          } else {
+            // plus1 / minus1 / plus2 / minus2 — show the size we actually have
+            var foundSize = p.found_size || '';
+            badge.textContent = sizeLabel + ' (' + foundSize + ')';
+            var explain = {
+              plus1:  'Taille +1 disponible',
+              minus1: 'Taille -1 disponible (à confirmer client)',
+              plus2:  'Taille +2 disponible (limite)',
+              minus2: 'Taille -2 disponible (forte différence)',
+            };
+            badge.title = (explain[p.stock_status] || '') + ' — ' + p.in_stock + ' unité(s)';
           }
           box.appendChild(badge);
           imgsDiv.appendChild(box);
