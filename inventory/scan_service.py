@@ -131,23 +131,65 @@ def _get_matched_products(designation: str) -> list:
             size_match = re.search(r"\(([^)]+)\)", item)
             extracted_size = size_match.group(1).strip().upper() if size_match else ""
 
-            # Count IN_STOCK units for this exact (variant, size) combo
+            # Map standard sizes to numeric sizes (used internally):
+            # S=1, M=2, L=3, XL=4, XXL=5
+            # We'll try both forms when matching.
+            SIZE_TO_NUMERIC = {
+                "S":   "1",
+                "M":   "2",
+                "L":   "3",
+                "XL":  "4",
+                "XXL": "5",
+            }
+            sizes_to_try = [extracted_size]
+            if extracted_size in SIZE_TO_NUMERIC:
+                sizes_to_try.append(SIZE_TO_NUMERIC[extracted_size])
+            # Also try the reverse: if extracted is "2" try also "M"
+            reverse_map = {v: k for k, v in SIZE_TO_NUMERIC.items()}
+            if extracted_size in reverse_map:
+                sizes_to_try.append(reverse_map[extracted_size])
+
+            # Count IN_STOCK units for this (variant, size) combo.
+            # If the matched variant has 0 stock, try OTHER variants of the same
+            # product with the same color_label (in case there are duplicates).
             in_stock_count = 0
+            actual_variant_used = matched_variant
             if matched_variant:
-                qs = ProductUnit.objects.filter(
-                    variant=matched_variant,
-                    status=ProductUnit.IN_STOCK,
-                )
-                if extracted_size:
-                    qs = qs.filter(size__iexact=extracted_size)
-                in_stock_count = qs.count()
+                # Get all candidate variants: the matched one, plus any others
+                # with the same color_label (handles duplicate variants per color)
+                candidate_variants = [matched_variant]
+                if matched_variant.color_label:
+                    other_same_color = [
+                        v for v in matched_product.variants.all()
+                        if v.id != matched_variant.id
+                        and v.color_label.lower().strip() == matched_variant.color_label.lower().strip()
+                    ]
+                    candidate_variants.extend(other_same_color)
+
+                for v in candidate_variants:
+                    base_qs = ProductUnit.objects.filter(variant=v, status=ProductUnit.IN_STOCK)
+                    if extracted_size:
+                        # Try each size form (e.g. M, 2) until we find stock
+                        for sz in sizes_to_try:
+                            count_here = base_qs.filter(size__iexact=sz).count()
+                            if count_here > 0:
+                                in_stock_count = count_here
+                                actual_variant_used = v
+                                break
+                    else:
+                        count_here = base_qs.count()
+                        if count_here > 0:
+                            in_stock_count = count_here
+                            actual_variant_used = v
+                    if in_stock_count > 0:
+                        break
 
             matched.append({
                 "id": matched_product.id,
                 "name": matched_product.name,
                 "code": matched_product.code,
-                "color_matched": matched_variant.color_label if matched_variant else "",
-                "image_url": matched_variant.image.url if matched_variant and matched_variant.image else None,
+                "color_matched": actual_variant_used.color_label if actual_variant_used else "",
+                "image_url": actual_variant_used.image.url if actual_variant_used and actual_variant_used.image else None,
                 "size": extracted_size,
                 "in_stock": in_stock_count,
                 "stock_ok": in_stock_count > 0,
