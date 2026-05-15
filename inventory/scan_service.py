@@ -76,10 +76,21 @@ def _get_matched_products(designation: str) -> list:
         from .models import Product, ProductUnit
         import re
         COLOR_MAP = {
-            "noir": "black", "blanc": "white", "bleu": "blue",
-            "gris": "gray", "grey": "gray", "rouge": "red", "vert": "green",
-            "rose": "pink", "jaune": "yellow", "orange": "orange",
-            "beige": "beige", "marron": "brown",
+            "noir": "black", "black": "black",
+            "blanc": "white", "white": "white",
+            "bleu": "blue", "blue": "blue",
+            "gris": "gray", "grey": "gray", "gray": "gray",
+            "rouge": "red", "red": "red",
+            "vert": "green", "green": "green",
+            "rose": "pink", "pink": "pink",
+            "jaune": "yellow", "yellow": "yellow",
+            "orange": "orange",
+            "beige": "beige",
+            "marron": "brown", "brown": "brown",
+            "burgundy": "burgundy", "bordeaux": "burgundy",
+            "kaki": "khaki", "khaki": "khaki",
+            "marine": "navy", "navy": "navy",
+            "violet": "purple", "purple": "purple", "mauve": "purple",
         }
 
         # Split by comma — each part is one item e.g. "Pull Camo #0326 noir (M)"
