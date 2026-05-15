@@ -1155,6 +1155,42 @@
     setTimeout(function(){ if (btn) { btn.disabled = false; btn.textContent = 'Recheck'; } }, 2000);
   }
 
+  // Silent background recheck: runs every 2 minutes without touching the UI.
+  // The team often forgets to click "Recheck" at end of day — this ensures
+  // ScanSessionLog stays in sync with Navex automatically.
+  async function silentAutoRecheck() {
+    try {
+      var res = await fetch('/api/scan-session/recheck/');
+      if (!res.ok) return;
+      var data = await res.json();
+      if (data.status === 'ok') {
+        // Only refresh the session list if something actually changed
+        if ((data.created || 0) > 0 || (data.updated || 0) > 0) {
+          await loadSession();
+        }
+        // Small subtle indicator: update the button text briefly if nothing else is happening
+        var btn = document.getElementById('recheck-btn');
+        if (btn && !btn.disabled) {
+          var originalText = btn.textContent;
+          btn.textContent = '✓ auto';
+          btn.style.opacity = '0.6';
+          setTimeout(function() {
+            btn.textContent = 'Recheck';
+            btn.style.opacity = '';
+          }, 3000);
+        }
+      }
+    } catch (e) {
+      // Silent — don't disturb the team if Navex is briefly down
+      console.warn('[auto-recheck] failed:', e);
+    }
+  }
+
+  // Start the 2-minute interval as soon as the page is ready.
+  // Use 120000 ms = 2 minutes. First run after 2 minutes (not immediately,
+  // to avoid hammering the API on page load).
+  setInterval(silentAutoRecheck, 120000);
+
   function clearSession() {
     if (!confirm('Vider la liste de la session ?')) return;
     // Just reload — can't delete from DB but resets visually
