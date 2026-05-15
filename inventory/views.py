@@ -26,6 +26,23 @@ def _user_for_request(request):
     return None
 
 
+def get_scan_session_date():
+    """Return the date that scans should be grouped under.
+
+    Normal days: today's date.
+    Sunday (weekday=6): returns Saturday's date — the shipping company doesn't
+    pick up packages on Saturday, only on Sunday. So Saturday + Sunday scans
+    are fused into a single session under the Saturday date. The session
+    only resets on Monday.
+    """
+    today = timezone.now().date()
+    if today.weekday() == 6:  # Sunday
+        # Roll back to Saturday (1 day earlier)
+        from datetime import timedelta
+        return today - timedelta(days=1)
+    return today
+
+
 # Navex API URL — token comes from env var, never hard-coded.
 # Set NAVEX_API_TOKEN in Railway variables.
 NAVEX_API_URL = (
@@ -1650,7 +1667,7 @@ def api_log_scan_session(request):
     Idempotent — same bordereau scanned twice today updates the existing row
     instead of creating a duplicate."""
     data = json.loads(request.body)
-    today = timezone.now().date()
+    today = get_scan_session_date()  # rolls Saturday session over Sunday
     bc = (data.get("bordereau") or "").strip()
     if not bc:
         return JsonResponse({"status": "error", "message": "Bordereau vide."}, status=400)
@@ -1672,7 +1689,7 @@ def api_get_scan_session(request):
     """Get today's scan session log — dedupes by bordereau (latest wins).
     Also resolves order_id for each bordereau so the UI can link to detail pages.
     """
-    today = timezone.now().date()
+    today = get_scan_session_date()  # rolls Saturday session over Sunday
     logs = ScanSessionLog.objects.filter(session_date=today).order_by("-scanned_at")
     seen = set()
     deduped = []
@@ -1715,7 +1732,7 @@ def api_recheck_session(request):
     ones — re-derives is_correct from Navex designation vs scanned products.
     """
     import urllib.request, urllib.parse
-    today = timezone.now().date()
+    today = get_scan_session_date()  # rolls Saturday session over Sunday
 
     # All orders closed today (any status that comes after CLOSED counts)
     todays_orders = list(
@@ -1952,7 +1969,7 @@ Connectez-vous pour voir les détails : https://web-production-1391c5.up.railway
 
 def _send_daily_summary_email():
     """Send daily scan summary email."""
-    today = timezone.now().date()
+    today = get_scan_session_date()  # rolls Saturday session over Sunday
     # Today's session — dedupe per bordereau (latest row per barcode wins)
     from .models import ScanSessionLog
     logs = ScanSessionLog.objects.filter(session_date=today).order_by("-scanned_at")
