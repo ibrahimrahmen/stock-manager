@@ -126,26 +126,36 @@ def _get_matched_products(designation: str) -> list:
             # Find color in this item — use word boundaries so "bleu" doesn't
             # match inside "blueline" (product name). The color word must be
             # surrounded by spaces, punctuation, or string edges.
+            # IMPORTANT: when multiple colors are present (e.g. "blanc/noir"),
+            # we pick the one that appears FIRST in the text (leftmost position),
+            # not the first one in dict order.
             matched_variant = None
+            # Find ALL color matches with their position in the text
+            color_matches = []
             for fr, en in COLOR_MAP.items():
-                # \b matches a word boundary in Python regex
                 pattern = r"\b" + re.escape(fr) + r"\b"
-                if re.search(pattern, item_lower):
-                    # Match using color_label (e.g. "BLACK", "WHITE", "BLUE")
-                    all_variants = list(matched_product.variants.all())
-                    en_norm = en.lower().strip()
-                    if en_norm == "grey": en_norm = "gray"
+                m = re.search(pattern, item_lower)
+                if m:
+                    color_matches.append((m.start(), fr, en))
+            # Sort by position in text (leftmost first)
+            color_matches.sort(key=lambda x: x[0])
+
+            for _, fr, en in color_matches:
+                # Match using color_label (e.g. "BLACK", "WHITE", "BLUE")
+                all_variants = list(matched_product.variants.all())
+                en_norm = en.lower().strip()
+                if en_norm == "grey": en_norm = "gray"
+                for v in all_variants:
+                    if v.color_label.lower().strip() == en_norm:
+                        matched_variant = v
+                        break
+                if not matched_variant:
                     for v in all_variants:
-                        if v.color_label.lower().strip() == en_norm:
+                        if en_norm in v.color_label.lower():
                             matched_variant = v
                             break
-                    if not matched_variant:
-                        for v in all_variants:
-                            if en_norm in v.color_label.lower():
-                                matched_variant = v
-                                break
-                    if matched_variant:
-                        break
+                if matched_variant:
+                    break
 
             if not matched_variant:
                 matched_variant = matched_product.variants.first()
