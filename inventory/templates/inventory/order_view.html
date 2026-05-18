@@ -130,6 +130,31 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
         <button class="btn-status danger" onclick="openCancelModal()">❌ Annuler la commande</button>
       </div>
 
+    {% elif order.status == 'livree' %}
+      <div class="muted" style="font-size:13px;color:var(--muted);margin-bottom:10px;">
+        ✓ Cette commande a été livrée par Navex.
+      </div>
+      <div class="status-actions">
+        {% if not order.exchange_of %}
+        <a href="{% url 'orders_list' %}?create_exchange={{ order.id }}" class="btn-status" style="background:var(--blue,#60a5fa);color:#0a0a08;border-color:var(--blue,#60a5fa);text-decoration:none;display:inline-block;">
+          🔄 Créer un échange
+        </a>
+        {% endif %}
+      </div>
+
+      {% if order.exchanges.exists %}
+      <div style="margin-top:14px;padding:12px;background:rgba(96,165,250,0.1);border-radius:8px;border:0.5px solid rgba(96,165,250,0.3);">
+        <div style="font-size:13px;font-weight:500;margin-bottom:6px;">🔄 Échanges créés pour cette commande :</div>
+        {% for ex in order.exchanges.all %}
+        <div style="font-size:13px;">
+          <a href="{% url 'order_view' ex.pk %}" style="color:var(--blue,#60a5fa);">#{{ ex.id }}</a>
+          — {{ ex.created_at|date:"d/m/Y H:i" }}
+          — Statut : {{ ex.get_status_display }}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
     {% elif order.status == 'annulee' %}
       <div class="muted" style="font-size:13px;color:var(--muted);">
         Commande annulée

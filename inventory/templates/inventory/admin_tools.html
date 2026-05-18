@@ -65,6 +65,18 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   <div class="section-title">Synchronisation Navex</div>
 
   <div class="tool-card">
+    <div class="tool-title">Marquer les commandes livrées (statut LIVREE)</div>
+    <div class="tool-desc">
+      Recherche les commandes locales en statut <strong>Confirmée</strong> mais dont Navex dit qu'elles ont été <strong>Livrées</strong>. Les fait passer au statut "Livrée" (vert).
+    </div>
+    <div class="tool-buttons">
+      <button class="btn" onclick="runTool('fix_livree_orders_dryrun', this, 'output-livree')">🔍 Dry-run (juste voir)</button>
+      <button class="btn btn-warning" onclick="runToolWithConfirm('fix_livree_orders_apply', this, 'output-livree', 'Appliquer les changements ? (irréversible)')">✓ Appliquer</button>
+    </div>
+    <div id="output-livree" class="output"></div>
+  </div>
+
+  <div class="tool-card">
     <div class="tool-title">Réparer les commandes "Supprimées" chez Navex</div>
     <div class="tool-desc">
       Recherche les commandes locales en statut <strong>Confirmée</strong> mais dont Navex dit qu'elles ont été <strong>Supprimées</strong>. Les fait passer au statut "Supprimé Navex" avec badge rouge.

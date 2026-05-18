@@ -133,6 +133,7 @@ a.row-link:hover{text-decoration:underline;}
 .status-pas_serieux{background:var(--purple-dim);color:var(--purple);}
 .status-rappeler_plus_tard{background:rgba(96,165,250,0.15);color:#60a5fa;}
 .status-annulee{background:rgba(120,120,120,0.2);color:var(--muted);text-decoration:line-through;}
+.status-livree{background:var(--green-dim);color:var(--green);font-weight:600;}
 .status-supprime_navex{background:var(--red);color:#fff;font-weight:600;animation:pulseRed 2s ease-in-out infinite;}
 @keyframes pulseRed{0%,100%{opacity:1;}50%{opacity:0.65;}}
 tr.create-row{background:rgba(74,222,154,0.04);}
@@ -256,6 +257,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
     <a href="?status=injoignable" class="chip {% if status_filter == 'injoignable' %}active{% endif %}">Injoignable <span class="count">{{ counts.injoignable|default:0 }}</span></a>
     <a href="?status=pas_serieux" class="chip {% if status_filter == 'pas_serieux' %}active{% endif %}">Pas sérieux <span class="count">{{ counts.pas_serieux|default:0 }}</span></a>
     <a href="?status=annulee" class="chip {% if status_filter == 'annulee' %}active{% endif %}">Annulée <span class="count">{{ counts.annulee|default:0 }}</span></a>
+    <a href="?status=livree" class="chip {% if status_filter == 'livree' %}active{% endif %}" style="border-color:var(--green);color:var(--green);">✓ Livrée <span class="count">{{ counts.livree|default:0 }}</span></a>
     <a href="?status=supprime_navex" class="chip {% if status_filter == 'supprime_navex' %}active{% endif %}" style="border-color:var(--red);color:var(--red);">⚠ Supprimé Navex <span class="count">{{ counts.supprime_navex|default:0 }}</span></a>
   </div>
 
@@ -370,6 +372,19 @@ const SALES_PAGES = [
 const REGIONS = [
   {% for r in regions %}{ id: {{ r.id }}, name: "{{ r.name|escapejs }}" },{% endfor %}
 ];
+{% if exchange_source %}
+window.EXCHANGE_SOURCE = {
+  id: {{ exchange_source.id }},
+  customer_name: "{{ exchange_source.customer.name|default:''|escapejs }}",
+  customer_phone: "{{ exchange_source.customer.phone|default:''|escapejs }}",
+  customer_phone2: "{{ exchange_source.customer.phone2|default:''|escapejs }}",
+  region_id: {{ exchange_source.region.id|default:'null' }},
+  ville: "{{ exchange_source.ville|default:''|escapejs }}",
+  address: "{{ exchange_source.address|default:''|escapejs }}",
+  sales_page_id: {{ exchange_source.sales_page.id|default:'null' }},
+  delivered_date: "{{ exchange_source.created_at|date:'d/m/Y' }}",
+};
+{% endif %}
 
 let creatingRow = false;
 let pickedPageId = null;
@@ -406,10 +421,11 @@ function buildCurrentPayload() {
   const phoneEl = document.getElementById('cr-phone');
   if (!phoneEl) return null;
   const phone = cleanPhone(phoneEl.value);
-  // Skip auto-save until phone is exactly 8 digits — prevents creating a draft
-  // with an invalid number that we'd then have to clean up later.
   if (phone.length !== 8) return null;
   const region = document.getElementById('cr-region').value;
+  // If we're creating an exchange, fetch the source ID from the row's dataset
+  const cr = document.getElementById('create-row');
+  const exchangeOfId = cr?.dataset.exchangeSourceId || null;
   return {
     order_id: currentDraftId || undefined,
     phone,
@@ -423,6 +439,7 @@ function buildCurrentPayload() {
     delivery_fee: parseFloat(document.getElementById('modal-delivery')?.value || '7') || 7,
     discount: parseFloat(document.getElementById('modal-discount')?.value || '0') || 0,
     offers: modalOffers,
+    exchange_of_id: exchangeOfId ? parseInt(exchangeOfId) : null,
   };
 }
 
@@ -564,6 +581,51 @@ function openCreateRow(opts) {
   // Stash the original HTML so the close handler can restore the row's position
   tr.dataset.editingId = currentDraftId || '';
 
+  // EXCHANGE MODE: pre-fill fields from the source order, show a banner.
+  if (opts && opts.isExchange) {
+    tr.dataset.exchangeSourceId = opts.sourceOrderId;
+    // Insert a banner before the create-row
+    const bannerTr = document.createElement('tr');
+    bannerTr.id = 'exchange-banner';
+    bannerTr.innerHTML = `
+      <td colspan="10" style="background:rgba(96,165,250,0.15);padding:10px 14px;border-bottom:0;">
+        <div style="font-size:13px;font-weight:500;color:var(--text);">
+          🔄 Création d'un ÉCHANGE — ${opts.sourceLabel || ''}
+        </div>
+      </td>`;
+    tr.parentNode.insertBefore(bannerTr, tr);
+    // Pre-fill name + phone + address (the salespage and region will be picked separately)
+    setTimeout(() => {
+      const nameEl  = document.getElementById('cr-name');
+      const phoneEl = document.getElementById('cr-phone');
+      const phone2El = document.getElementById('cr-phone2');
+      const addrEl  = document.getElementById('cr-address');
+      const pageSel = document.getElementById('cr-page');
+      if (nameEl && opts.prefillName) nameEl.value = opts.prefillName;
+      if (phoneEl && opts.prefillPhone) phoneEl.value = opts.prefillPhone;
+      if (phone2El && opts.prefillPhone2) phone2El.value = opts.prefillPhone2;
+      if (addrEl && opts.prefillAddress) addrEl.value = opts.prefillAddress;
+      // Pre-select sales page (this will trigger onPagePicked which loads offers)
+      if (pageSel && opts.prefillSalesPageId) {
+        pageSel.value = String(opts.prefillSalesPageId);
+        onPagePicked(pageSel.value);
+      }
+      // Pre-fill region/delegation in the picker
+      if (opts.prefillRegionId) {
+        const regionEl = document.getElementById('cr-region');
+        const villeEl  = document.getElementById('cr-ville');
+        if (regionEl) regionEl.value = opts.prefillRegionId;
+        if (villeEl && opts.prefillVille) villeEl.value = opts.prefillVille;
+        const locSearch = document.getElementById('cr-loc-search');
+        if (locSearch && opts.prefillVille) {
+          // Show "Region — Ville"
+          const region = REGIONS.find(r => String(r.id) === String(opts.prefillRegionId));
+          locSearch.value = (region ? region.name : '') + (opts.prefillVille ? ' — ' + opts.prefillVille : '');
+        }
+      }
+    }, 50);
+  }
+
   // Attach blur listeners for auto-save on every field (not the hidden region/ville fields — those autosave via pickLocation())
   ['cr-name','cr-phone','cr-phone2','cr-address'].forEach(id => {
     const el = document.getElementById(id);
@@ -686,6 +748,7 @@ async function closeDraftPanel() {
   }
   document.removeEventListener('mousedown', _outsideClickHandler, true);
   document.getElementById('cr-row-error-tr')?.remove();
+  document.getElementById('exchange-banner')?.remove();
   // REPLACE the create-row in place with the refreshed order row, so it stays
   // at the same position in the list (not jumping back to top).
   if (draftIdToRefresh) {
@@ -832,6 +895,7 @@ async function cancelCreateRow() {
   }
   document.removeEventListener('mousedown', _outsideClickHandler, true);
   document.getElementById('cr-row-error-tr')?.remove();
+  document.getElementById('exchange-banner')?.remove();
   if (draftIdToRefresh) {
     await replaceCreateRowWithRefreshedRow(draftIdToRefresh);
   } else {
@@ -1379,7 +1443,39 @@ window.addEventListener('DOMContentLoaded', () => {
   } catch (e) { /* sessionStorage may fail in private mode — ignore */ }
   // Init search bar
   initSearchBar();
+
+  // If the page was opened with ?create_exchange=X, the backend put the source
+  // order's data in window.EXCHANGE_SOURCE. Open a pre-filled editor row.
+  if (window.EXCHANGE_SOURCE && window.EXCHANGE_SOURCE.id) {
+    setTimeout(() => { openExchangeEditor(window.EXCHANGE_SOURCE); }, 200);
+  }
 });
+
+// Open a pre-filled inline editor for creating an exchange.
+// The new order will be linked to source.id via Order.exchange_of.
+function openExchangeEditor(source) {
+  // Strategy: open a normal create-row, but pre-fill it with the customer's
+  // info from the source order, and store source.id so the backend can link
+  // them when the draft is saved.
+  if (creatingRow) {
+    alert('Ferme d\'abord la commande en cours d\'édition.');
+    return;
+  }
+  // We'll add a banner to the create-row to make it clear it's an exchange.
+  openCreateRow({
+    isExchange: true,
+    sourceOrderId: source.id,
+    prefillName: source.customer_name || '',
+    prefillPhone: source.customer_phone || '',
+    prefillPhone2: source.customer_phone2 || '',
+    prefillRegionId: source.region_id || null,
+    prefillVille: source.ville || '',
+    prefillAddress: source.address || '',
+    prefillSalesPageId: source.sales_page_id || null,
+    // Will be displayed in a banner above the create-row
+    sourceLabel: `Échange de #${source.id} — ${source.customer_name || ''} (livrée ${source.delivered_date || ''})`,
+  });
+}
 
 // --- Date picker for scheduling orders ------------------------------------
 function openDatePicker(cellEl) {

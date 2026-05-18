@@ -497,6 +497,7 @@ class Order(models.Model):
     INJOIGNABLE     = "injoignable"
     PAS_SERIEUX     = "pas_serieux"
     RAPPELER        = "rappeler_plus_tard"
+    LIVREE          = "livree"            # Navex delivered the colis
     ANNULEE         = "annulee"
     SUPPRIME_NAVEX  = "supprime_navex"  # Navex deleted the colis after our push
 
@@ -506,6 +507,7 @@ class Order(models.Model):
         (INJOIGNABLE,    "Injoignable"),
         (PAS_SERIEUX,    "Pas sérieux"),
         (RAPPELER,       "Rappeler plus tard"),
+        (LIVREE,         "Livrée"),
         (ANNULEE,        "Annulée"),
         (SUPPRIME_NAVEX, "Supprimé Navex"),
     ]
@@ -576,6 +578,36 @@ class Order(models.Model):
     scheduled_for = models.DateField(null=True, blank=True, db_index=True,
         help_text="Date à laquelle traiter la commande. NULL = pas de planification (= aujourd'hui).")
 
+    # ---- Exchange fields -------------------------------------------------
+    # If this order is an exchange of a previously-delivered order, this points
+    # to the original Order. The original keeps its status. This new Order's
+    # designation contains the NEW products going to the customer.
+    exchange_of = models.ForeignKey(
+        "self", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="exchanges",
+        help_text="Commande livrée d'origine, si celle-ci est un échange.",
+    )
+
+    # When Navex processes an exchange, it generates a SECOND barcode for the
+    # return colis (the one that will pick up the old products). We store it here.
+    navex_return_barcode = models.CharField(max_length=80, blank=True, default="",
+        help_text="Barcode du colis de retour (généré par Navex pour les échanges).")
+
+    # Whether the exchange is due to our mistake (0 DT shipping) or
+    # the client's change of mind (7 DT shipping fees).
+    EXCHANGE_FAULT_NONE  = "none"
+    EXCHANGE_FAULT_OURS  = "ours"
+    EXCHANGE_FAULT_CLIENT = "client"
+    EXCHANGE_FAULT_CHOICES = [
+        (EXCHANGE_FAULT_NONE,  "—"),
+        (EXCHANGE_FAULT_OURS,  "Notre faute"),
+        (EXCHANGE_FAULT_CLIENT, "Faute client"),
+    ]
+    exchange_fault = models.CharField(
+        max_length=10, choices=EXCHANGE_FAULT_CHOICES, default=EXCHANGE_FAULT_NONE,
+        help_text="Pour les échanges : qui est en faute. Affecte les frais de livraison.",
+    )
+
     class Meta:
         ordering = ["-created_at"]
         indexes = [
@@ -602,6 +634,16 @@ class Order(models.Model):
             offers_sum + standalone_lines_sum + (self.delivery_fee or 0) - (self.discount or 0),
         )
         self.save(update_fields=["total", "updated_at"])
+
+    @property
+    def is_navex_delivered(self):
+        """True if Navex shows this order as delivered (paid or otherwise).
+        Used to gate the "Create Exchange" feature.
+        """
+        if not self.bordereau_barcode:
+            return False
+        s = (self.navex_last_status or "").strip().lower()
+        return s in ("livre", "livré", "livrée", "livre paye", "livré payé", "livre payé", "livrer paye")
 
     @property
     def article_summary(self):

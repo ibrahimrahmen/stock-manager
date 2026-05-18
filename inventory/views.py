@@ -2532,6 +2532,20 @@ def orders_list(request):
 
     from django.db.models import Count
     counts = dict(Order.objects.values_list("status").annotate(n=Count("id")))
+
+    # If ?create_exchange=ID is in the URL, fetch the original order so the
+    # template can pre-fill the inline editor for an exchange.
+    exchange_source = None
+    create_exchange_id = request.GET.get("create_exchange")
+    if create_exchange_id:
+        try:
+            src = Order.objects.select_related("customer", "region", "sales_page").prefetch_related("lines__product", "order_offers").get(pk=int(create_exchange_id))
+            # Only allow exchanges from delivered orders
+            if src.status == Order.LIVREE:
+                exchange_source = src
+        except (Order.DoesNotExist, ValueError):
+            pass
+
     return render(request, "inventory/orders_list.html", {
         "orders": orders,
         "status_filter": status_filter,
@@ -2542,6 +2556,8 @@ def orders_list(request):
         # Data needed by the inline-create row + modal
         "sales_pages": SalesPage.objects.filter(is_active=True),
         "regions": Region.objects.filter(is_active=True),
+        # Exchange source for pre-filling the editor
+        "exchange_source": exchange_source,
     })
 
 
@@ -2822,9 +2838,20 @@ def api_order_draft_upsert(request):
                 created_by=request.user if request.user.is_authenticated else None,
                 status="non_confirmee",
             )
+            # If this is an exchange (frontend passes exchange_of_id), link the
+            # new order to the original delivered order.
+            exchange_of_id = data.get("exchange_of_id")
+            if exchange_of_id:
+                try:
+                    src = Order.objects.get(pk=int(exchange_of_id))
+                    if src.status == Order.LIVREE:
+                        order.exchange_of_id = src.id
+                        order.save(update_fields=["exchange_of"])
+                except (Order.DoesNotExist, ValueError, TypeError):
+                    pass
             log_action(
                 request.user, AuditLog.CREATE,
-                description=f"Brouillon créé (auto) — {phone_norm}",
+                description=f"Brouillon créé (auto) — {phone_norm}" + (f" [échange de #{exchange_of_id}]" if exchange_of_id else ""),
                 request=request, target_model="Order", target_id=order.id,
             )
 
@@ -3184,6 +3211,8 @@ def api_admin_run_tool(request, tool_name):
     ALLOWED = {
         "fix_supprime_navex_orders_dryrun": ("fix_supprime_navex_orders", []),
         "fix_supprime_navex_orders_apply":  ("fix_supprime_navex_orders", ["--apply"]),
+        "fix_livree_orders_dryrun":         ("fix_livree_orders", []),
+        "fix_livree_orders_apply":          ("fix_livree_orders", ["--apply"]),
         "recalc_order_totals":              ("recalc_order_totals", []),
     }
     if tool_name not in ALLOWED:
@@ -3981,7 +4010,7 @@ def _sync_navex_for_v2_orders(only_pending=True):
     from .models import Order, log_action, AuditLog
     qs = Order.objects.exclude(bordereau_barcode="")
     if only_pending:
-        qs = qs.exclude(status=Order.ANNULEE).exclude(status=Order.SUPPRIME_NAVEX)
+        qs = qs.exclude(status=Order.ANNULEE).exclude(status=Order.SUPPRIME_NAVEX).exclude(status=Order.LIVREE)
     orders = list(qs)
     n_attempted = len(orders)
     if n_attempted == 0:
@@ -4025,6 +4054,22 @@ def _sync_navex_for_v2_orders(only_pending=True):
             log_action(
                 None, AuditLog.STATUS_CHANGE,
                 description=f"Auto: commande #{o.id} passée en 'Supprimé Navex' (sync a détecté 'Supprime' chez Navex, bordereau {o.bordereau_barcode})",
+                target_model="Order", target_id=o.id,
+            )
+        # Detect "Livré" Navex status → auto-transition to our LIVREE status.
+        # Variants: "Livré", "Livré Payé", "Livrer", "Livrer Paye", "Livree"
+        navex_lower = new_navex_status.strip().lower()
+        if (navex_lower in (
+                "livre", "livré", "livree", "livrée",
+                "livrer", "livrer paye", "livré payé", "livre paye", "livre payé",
+            )
+            and o.status == Order.CONFIRMEE):
+            o.status = Order.LIVREE
+            if "status" not in update_fields:
+                update_fields.append("status")
+            log_action(
+                None, AuditLog.STATUS_CHANGE,
+                description=f"Auto: commande #{o.id} passée en 'Livrée' (Navex etat='{new_navex_status}', bordereau {o.bordereau_barcode})",
                 target_model="Order", target_id=o.id,
             )
         o.save(update_fields=update_fields)
