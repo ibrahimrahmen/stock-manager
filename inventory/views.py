@@ -3145,27 +3145,27 @@ def api_exchange_source_items(request, pk):
 
     source = exchange.exchange_of
     items = []
-    # Walk through the original order's OrderLines + ProductUnits
-    # Group by (variant, size) so we get one card per "product variant + size"
-    # with the quantity that was in the order.
+    # Walk through the original order's OrderLines.
+    # Each OrderLine has product, variant, size, quantity directly — NO physical unit
+    # at this stage (units get attached later during scan expedition).
+    # Group by (variant, size) so we get one card per "variant + size" combo.
     from collections import OrderedDict
     grouped = OrderedDict()
     for line in source.lines.select_related("product", "variant").all():
-        if not line.unit:
-            continue
-        key = (line.unit.variant_id, line.unit.size or "")
+        variant_id = line.variant_id
+        size = line.size or ""
+        # Combine quantity across multiple lines with the same variant+size
+        key = (variant_id, size)
         if key not in grouped:
             grouped[key] = {
-                "variant_id": line.unit.variant_id,
-                "size": line.unit.size or "",
-                "product_name": line.product.name if line.product else (line.unit.variant.product.name if line.unit.variant else ""),
-                "color_label": line.unit.variant.color_label if line.unit.variant else "",
-                "image_url": line.unit.variant.image.url if line.unit.variant and line.unit.variant.image else None,
+                "variant_id": variant_id,
+                "size": size,
+                "product_name": line.product.name if line.product else "",
+                "color_label": line.variant.color_label if line.variant else "",
+                "image_url": line.variant.image.url if line.variant and line.variant.image else None,
                 "qty": 0,
-                "unit_ids": [],
             }
-        grouped[key]["qty"] += 1
-        grouped[key]["unit_ids"].append(line.unit_id)
+        grouped[key]["qty"] += line.quantity or 1
 
     items = list(grouped.values())
 
