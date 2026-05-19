@@ -3238,69 +3238,25 @@ def api_exchange_set_returns(request, pk):
 
 
 # ---- Admin tools page (superuser only) -------------------------------------
-    """Search orders across multiple fields. Returns up to 50 matches.
 
-    Search logic:
-      - If query starts with "#" → match exact order ID
-      - If query is all digits → match phone, phone2, bordereau, or ID
-      - Otherwise (text) → match customer name (case-insensitive contains)
+@login_required(login_url="/login/")
+def api_debug_navex_etat(request):
+    """Debug-only: fetch raw Navex etat response for a given bordereau.
+    Useful to discover field names like the return barcode for exchanges.
+    Usage: GET /api/debug/navex-etat/?bordereau=178436823041
     """
-    from .models import Order
-    if not _orders_role_check(request):
-        return JsonResponse({"status": "error"}, status=403)
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    bordereau = (request.GET.get("bordereau") or "").strip()
+    if not bordereau:
+        return JsonResponse({"status": "error", "message": "Bordereau requis."}, status=400)
+    ok, items, raw = _navex_fetch_many([bordereau])
+    return JsonResponse({
+        "status": "ok" if ok else "error",
+        "parsed_items": items,
+        "raw_response": raw,
+    }, json_dumps_params={"indent": 2, "ensure_ascii": False})
 
-    q = (request.GET.get("q") or "").strip()
-    if not q:
-        return JsonResponse({"status": "ok", "results": []})
-
-    from django.db.models import Q
-
-    qs = Order.objects.select_related("customer", "region", "sales_page")
-
-    # 1) Order ID with optional leading "#"
-    if q.startswith("#"):
-        try:
-            order_id = int(q[1:])
-            qs = qs.filter(pk=order_id)
-        except ValueError:
-            return JsonResponse({"status": "ok", "results": []})
-    # 2) All digits → phone / phone2 / bordereau / id
-    elif q.isdigit():
-        try:
-            order_id_match = int(q)
-        except ValueError:
-            order_id_match = None
-        f = Q(customer__phone__icontains=q) | Q(customer__phone2__icontains=q) | Q(bordereau_barcode__icontains=q)
-        if order_id_match is not None:
-            f |= Q(pk=order_id_match)
-        qs = qs.filter(f)
-    # 3) Text → name (case-insensitive contains)
-    else:
-        qs = qs.filter(customer__name__icontains=q)
-
-    qs = qs.order_by("-created_at")[:200]
-    results = []
-    for o in qs:
-        results.append({
-            "id": o.id,
-            "phone": o.customer.phone if o.customer else "",
-            "phone2": o.customer.phone2 if o.customer else "",
-            "name": o.customer.name if o.customer else "",
-            "status": o.status,
-            "status_display": o.get_status_display(),
-            "sales_page_name": o.sales_page.name if o.sales_page else "",
-            "region_name": o.region.name if o.region else "",
-            "ville": o.ville,
-            "address": o.address or "",
-            "total": str(o.total),
-            "bordereau": o.bordereau_barcode,
-            "article_summary": o.article_summary,
-            "created_at": o.created_at.strftime("%d/%m %H:%M") if o.created_at else "",
-        })
-    return JsonResponse({"status": "ok", "results": results, "count": len(results)})
-
-
-# ---- Admin tools page (superuser only) -------------------------------------
 
 @login_required(login_url="/login/")
 def admin_tools(request):
@@ -4116,10 +4072,15 @@ def _navex_fetch_many(bordereaux):
         return False, {}, {"_error": "missing token or bordereaux"}
 
     # Use the etat (read) endpoint with codes= (plural) per Navex docs.
+    # Include "include-echange=1" so Navex also returns the return-colis barcode
+    # for exchange orders (when generated).
     url = f"https://app.navex.tn/api/rashop-etat-{token}/v1/post.php"
     codes_string = ", ".join(b for b in bordereaux if b)
     try:
-        body = urllib.parse.urlencode({"codes": codes_string}).encode("utf-8")
+        body = urllib.parse.urlencode({
+            "codes": codes_string,
+            "include-echange": "1",
+        }).encode("utf-8")
         req = urllib.request.Request(url, data=body, method="POST")
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
         with urllib.request.urlopen(req, timeout=30) as resp:
@@ -4141,13 +4102,27 @@ def _navex_fetch_many(bordereaux):
                 code = str(entry.get("code", "")).strip()
                 if not code:
                     continue
+                # Try several possible field names for the return barcode.
+                # We don't know the exact name Navex uses — accept the first non-empty.
+                return_barcode = ""
+                for candidate in (
+                    "barcode_retour", "barcode_echange", "echange_barcode",
+                    "return_barcode", "barcode_return", "barcode2",
+                    "exchange_barcode", "barcode_echange_retour",
+                ):
+                    val = entry.get(candidate)
+                    if val:
+                        return_barcode = str(val).strip()
+                        break
                 items[code] = {
-                    "etat":        str(entry.get("etat") or "").strip(),
-                    "motif":       str(entry.get("motif") or "").strip(),
-                    "pre_etat":    str(entry.get("pre_etat") or "").strip(),
-                    "livreur":     str(entry.get("livreur") or "").strip(),
-                    "livreur_tel": str(entry.get("livreur_tel") or "").strip(),
-                    "found":       bool(entry.get("status") == 1),
+                    "etat":           str(entry.get("etat") or "").strip(),
+                    "motif":          str(entry.get("motif") or "").strip(),
+                    "pre_etat":       str(entry.get("pre_etat") or "").strip(),
+                    "livreur":        str(entry.get("livreur") or "").strip(),
+                    "livreur_tel":    str(entry.get("livreur_tel") or "").strip(),
+                    "found":          bool(entry.get("status") == 1),
+                    "return_barcode": return_barcode,
+                    "_raw_entry":     entry,  # keep full entry for debug
                 }
     return True, items, data
 
