@@ -3775,11 +3775,15 @@ def _push_order_to_navex_internal(request, order):
     # Without this, a draft created via autosave but never recalculated would push prix=0.
     order.recalc_total()
     order.refresh_from_db()
-    if not order.total or order.total <= 0:
-        return JsonResponse({
-            "status": "error",
-            "message": "Prix de la commande est 0. Vérifiez que des articles sont bien sélectionnés.",
-        }, status=400)
+    # For NORMAL orders, refuse if total=0 (probably no articles selected).
+    # For EXCHANGE orders, total can legitimately be 0 (notre faute → free reshipping)
+    # so we don't apply this check.
+    if not order.exchange_of_id:
+        if not order.total or order.total <= 0:
+            return JsonResponse({
+                "status": "error",
+                "message": "Prix de la commande est 0. Vérifiez que des articles sont bien sélectionnés.",
+            }, status=400)
 
     # If this is an exchange, require that return items have been selected
     if order.exchange_of_id and not order.return_items.exists():
@@ -3796,18 +3800,32 @@ def _push_order_to_navex_internal(request, order):
     # - article     : (empty, Navex doesn't need a description of returned items)
     # - nb_echange  : count of items being returned
     # - ouvrir      : "Oui" — the client can open and verify the new colis
+    # PRICE for exchange: only the delivery fee (default 7 DT) minus discount.
+    # The articles' value is NOT charged again — client already paid for those
+    # on the original delivered order.
     exchange_str = ""
     article_str = ""
     nb_echange_str = ""
     ouvrir_str = ""
+    exchange_price = None  # if set, overrides the normal order.total
     if order.exchange_of_id:
         exchange_str = str(order.exchange_of_id)
         nb_returns = order.return_items.count()
         nb_echange_str = str(nb_returns) if nb_returns else ""
         ouvrir_str = "Oui"
+        # For exchanges: only delivery_fee - discount.
+        # If our fault, the team sets discount=delivery_fee → 0 DT.
+        # If client takes a more expensive product, team raises delivery_fee.
+        from decimal import Decimal
+        exchange_price = max(
+            Decimal("0"),
+            (order.delivery_fee or Decimal("0")) - (order.discount or Decimal("0"))
+        )
+
+    prix_str = f"{exchange_price:.0f}" if exchange_price is not None else (f"{order.total:.0f}" if order.total else "0")
 
     payload = {
-        "prix":           f"{order.total:.0f}" if order.total else "0",
+        "prix":           prix_str,
         "nom":            order.customer.name or order.customer.phone,
         "gouvernerat":    order.region.name,
         "ville":          order.ville or "",
