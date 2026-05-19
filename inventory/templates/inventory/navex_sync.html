@@ -88,7 +88,8 @@
       <span class="section-title">💰 À payer</span>
       <span class="section-count count-green" id="count-payer">0</span>
       <span style="font-size:12px;color:var(--muted);">Navex dit Livrer Payé — confirmez le paiement</span>
-      <button id="pay-all-btn" onclick="payAll()" style="margin-left:auto;padding:7px 18px;background:var(--green);color:#000;border:none;border-radius:20px;font-size:13px;font-weight:500;cursor:pointer;">✓ Payer tout</button>
+      <button id="pay-matched-btn" onclick="payMatched()" style="margin-left:auto;padding:7px 18px;background:var(--green);color:#000;border:none;border-radius:20px;font-size:13px;font-weight:500;cursor:pointer;" title="Paye uniquement les ordres où le prix Navex correspond exactement au prix local">✓ Payer matched</button>
+      <button id="pay-all-btn" onclick="payAll()" style="margin-left:8px;padding:7px 18px;background:var(--orange,#fb923c);color:#000;border:none;border-radius:20px;font-size:13px;font-weight:500;cursor:pointer;" title="Paye TOUS les ordres au prix Navex, même ceux qui ne matchent pas">⚠ Payer tout</button>
     </div>
     <table>
       <thead>
@@ -284,6 +285,35 @@
   }
 
   var allPayerOrders = [];
+
+  async function payMatched() {
+    // Filter only orders where navex_prix == our_total exactly (price_match === true)
+    var matched = allPayerOrders.filter(function(o) { return o.price_match === true; });
+    if (matched.length === 0) {
+      alert("Aucun ordre 'matched' à payer (montant Navex = montant local).");
+      return;
+    }
+    if (!window.confirm("Payer " + matched.length + " ordre(s) matched ?\n(Les ordres avec montant divergent ne seront PAS payés)")) return;
+    var btn = document.getElementById('pay-matched-btn');
+    btn.disabled = true;
+    btn.textContent = 'En cours...';
+    var errors = [];
+    for (var i = 0; i < matched.length; i++) {
+      var order = matched[i];
+      try {
+        var res = await fetch('/api/orders/' + order.id + '/confirm-navex/', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({amount: order.navex_prix})
+        });
+        var data = await res.json();
+        if (data.status !== 'ok') errors.push(order.bordereau_barcode);
+      } catch(e) { errors.push(order.bordereau_barcode); }
+    }
+    if (errors.length > 0) alert('Erreurs sur : ' + errors.join(', '));
+    btn.disabled = false;
+    btn.textContent = '✓ Payer matched';
+    doSync();
+  }
 
   async function payAll() {
     if (allPayerOrders.length === 0) return;
