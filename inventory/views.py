@@ -3826,6 +3826,19 @@ def _push_order_to_navex_internal(request, order):
 
     prix_str = f"{exchange_price:.0f}" if exchange_price is not None else (f"{order.total:.0f}" if order.total else "0")
 
+    # Standard message appended to every Navex order's "msg" field.
+    # Informs the client about exchange policy: 2 days max, no refunds, only exchanges.
+    POLICY_MSG = (
+        "Les échanges sont acceptés uniquement dans un délai maximum de 2 jours "
+        "après réception du colis (échange uniquement, pas de remboursement). "
+        "Pour toute demande d'échange, veuillez nous contacter immédiatement au 26200219."
+    )
+    user_notes = (order.notes or "").strip()
+    if user_notes:
+        msg_str = f"{user_notes} | {POLICY_MSG}"
+    else:
+        msg_str = POLICY_MSG
+
     payload = {
         "prix":           prix_str,
         "nom":            order.customer.name or order.customer.phone,
@@ -3836,7 +3849,7 @@ def _push_order_to_navex_internal(request, order):
         "tel2":           order.customer.phone2 or "",
         "designation":    designation[:500],
         "nb_article":     str(nb_article),
-        "msg":            (order.notes or "")[:500],
+        "msg":            msg_str[:500],
         "echange":        exchange_str,
         "article":        article_str,
         "nb_echange":     nb_echange_str,
