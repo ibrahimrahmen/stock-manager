@@ -621,18 +621,30 @@ class Order(models.Model):
 
     def recalc_total(self):
         """Recompute total from order_offers + standalone lines + delivery − discount.
-        Saves."""
+        Saves.
+
+        EXCEPTION: for exchange orders (exchange_of != NULL), articles are NOT
+        re-charged (the customer already paid for them on the original delivered
+        order). Total = delivery_fee - discount only.
+        """
         from decimal import Decimal
-        offers_sum = sum((oo.offer_total for oo in self.order_offers.all()), Decimal("0"))
-        # Standalone lines (lines without an OrderOffer parent) — for legacy/direct entry
-        standalone_lines_sum = sum(
-            (l.line_total for l in self.lines.filter(order_offer__isnull=True)),
-            Decimal("0")
-        )
-        self.total = max(
-            Decimal("0"),
-            offers_sum + standalone_lines_sum + (self.delivery_fee or 0) - (self.discount or 0),
-        )
+        if self.exchange_of_id:
+            # Exchange: only the delivery fee, no articles re-charged
+            self.total = max(
+                Decimal("0"),
+                (self.delivery_fee or 0) - (self.discount or 0),
+            )
+        else:
+            offers_sum = sum((oo.offer_total for oo in self.order_offers.all()), Decimal("0"))
+            # Standalone lines (lines without an OrderOffer parent) — for legacy/direct entry
+            standalone_lines_sum = sum(
+                (l.line_total for l in self.lines.filter(order_offer__isnull=True)),
+                Decimal("0")
+            )
+            self.total = max(
+                Decimal("0"),
+                offers_sum + standalone_lines_sum + (self.delivery_fee or 0) - (self.discount or 0),
+            )
         self.save(update_fields=["total", "updated_at"])
 
     @property
