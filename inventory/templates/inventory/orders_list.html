@@ -1153,6 +1153,12 @@ function computeOrderTotal() {
   }, 0);
   const delivery = parseFloat(document.getElementById('modal-delivery')?.value || '7') || 0;
   const discount = parseFloat(document.getElementById('modal-discount')?.value || '0') || 0;
+  // For EXCHANGES: ignore articles (already paid on original order), only delivery - discount
+  const cr = document.getElementById('create-row');
+  const isExchange = cr && cr.dataset.exchangeSourceId;
+  if (isExchange) {
+    return Math.max(0, delivery - discount);
+  }
   return Math.max(0, articles + delivery - discount);
 }
 
