@@ -4071,15 +4071,14 @@ def _navex_fetch_many(bordereaux):
     if not token or not bordereaux:
         return False, {}, {"_error": "missing token or bordereaux"}
 
-    # Use the etat (read) endpoint with codes= (plural) per Navex docs.
-    # Include "include-echange=1" so Navex also returns the return-colis barcode
-    # for exchange orders (when generated).
+    # Include "include_echange=1" (with underscore, not hyphen — per Navex docs)
+    # so Navex also returns the return-colis "Code d'échange" for exchange orders.
     url = f"https://app.navex.tn/api/rashop-etat-{token}/v1/post.php"
     codes_string = ", ".join(b for b in bordereaux if b)
     try:
         body = urllib.parse.urlencode({
             "codes": codes_string,
-            "include-echange": "1",
+            "include_echange": "1",
         }).encode("utf-8")
         req = urllib.request.Request(url, data=body, method="POST")
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
