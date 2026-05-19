@@ -3012,6 +3012,8 @@ def api_order_draft_get(request, pk):
             "total": str(order.total),
             "article_summary": order.article_summary,
             "created_at": order.created_at.strftime("%d/%m %H:%M") if order.created_at else "",
+            "exchange_of_id": order.exchange_of_id,
+            "return_items_count": order.return_items.count() if order.exchange_of_id else 0,
         },
     })
 
@@ -3120,6 +3122,118 @@ def api_order_set_scheduled(request, pk):
         "status": "ok",
         "scheduled_for": new_date.strftime("%Y-%m-%d") if new_date else "",
         "display": new_date.strftime("%d/%m") if new_date else "—",
+    })
+
+
+# ---- Exchange: return items APIs --------------------------------------------
+
+@login_required(login_url="/login/")
+def api_exchange_source_items(request, pk):
+    """For an EXCHANGE order, returns the list of items that were in the
+    original delivered order (so the office worker can pick which ones the
+    client returns).
+    """
+    from .models import Order
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error"}, status=403)
+    try:
+        exchange = Order.objects.select_related("exchange_of").get(pk=pk)
+    except Order.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Commande introuvable."}, status=404)
+    if not exchange.exchange_of_id:
+        return JsonResponse({"status": "error", "message": "Cette commande n'est pas un échange."}, status=400)
+
+    source = exchange.exchange_of
+    items = []
+    # Walk through the original order's OrderLines + ProductUnits
+    # Group by (variant, size) so we get one card per "product variant + size"
+    # with the quantity that was in the order.
+    from collections import OrderedDict
+    grouped = OrderedDict()
+    for line in source.lines.select_related("product", "variant").all():
+        if not line.unit:
+            continue
+        key = (line.unit.variant_id, line.unit.size or "")
+        if key not in grouped:
+            grouped[key] = {
+                "variant_id": line.unit.variant_id,
+                "size": line.unit.size or "",
+                "product_name": line.product.name if line.product else (line.unit.variant.product.name if line.unit.variant else ""),
+                "color_label": line.unit.variant.color_label if line.unit.variant else "",
+                "image_url": line.unit.variant.image.url if line.unit.variant and line.unit.variant.image else None,
+                "qty": 0,
+                "unit_ids": [],
+            }
+        grouped[key]["qty"] += 1
+        grouped[key]["unit_ids"].append(line.unit_id)
+
+    items = list(grouped.values())
+
+    # Also check what's already been selected (if return_items already exist for this exchange)
+    selected = list(exchange.return_items.values_list("variant_id", "size"))
+    selected_set = set((vid, sz) for vid, sz in selected)
+    for it in items:
+        key = (it["variant_id"], it["size"])
+        it["is_selected"] = key in selected_set
+
+    return JsonResponse({
+        "status": "ok",
+        "source_order_id": source.id,
+        "items": items,
+    })
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_exchange_set_returns(request, pk):
+    """Save the list of items the customer is returning for this exchange.
+    Body: {items: [{variant_id, size, qty}, ...]}
+    """
+    from .models import Order, ExchangeReturnItem, ProductVariant
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error"}, status=403)
+    try:
+        exchange = Order.objects.select_related("exchange_of").get(pk=pk)
+    except Order.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Commande introuvable."}, status=404)
+    if not exchange.exchange_of_id:
+        return JsonResponse({"status": "error", "message": "Cette commande n'est pas un échange."}, status=400)
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+
+    raw_items = data.get("items") or []
+    # Wipe existing return_items and re-create from the new selection
+    exchange.return_items.all().delete()
+
+    created = 0
+    for it in raw_items:
+        try:
+            variant_id = int(it.get("variant_id"))
+            size = (it.get("size") or "").strip()
+            qty = int(it.get("qty") or 1)
+        except (TypeError, ValueError):
+            continue
+        try:
+            variant = ProductVariant.objects.select_related("product").get(pk=variant_id)
+        except ProductVariant.DoesNotExist:
+            continue
+        # Create N rows, one per unit expected back
+        for _ in range(qty):
+            ExchangeReturnItem.objects.create(
+                exchange_order=exchange,
+                variant=variant,
+                size=size,
+                product_name_snapshot=variant.product.name,
+            )
+            created += 1
+
+    return JsonResponse({
+        "status": "ok",
+        "created": created,
+        "total": exchange.return_items.count(),
     })
 
 

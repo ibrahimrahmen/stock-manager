@@ -786,6 +786,55 @@ class UserProfile(models.Model):
 # AUDIT LOG — records who did what, when.
 # Additive only. Every meaningful action writes one row here.
 # ---------------------------------------------------------------------------
+class ExchangeReturnItem(models.Model):
+    """Articles that the customer is returning as part of an Exchange order.
+
+    Each row is one physical ProductUnit (or one variant+size if we don't know
+    which specific unit) that is expected to come back from the customer.
+    Linked to the EXCHANGE order (not the original delivered order).
+    """
+    RECEIVED_PENDING = "pending"  # Waiting for the return colis to arrive
+    RECEIVED_OK      = "received"  # We got the unit back, it's in stock again
+    RECEIVED_MISSING = "missing"   # Customer didn't include it / lost
+
+    STATUS_CHOICES = [
+        (RECEIVED_PENDING, "En attente"),
+        (RECEIVED_OK,      "Reçu"),
+        (RECEIVED_MISSING, "Manquant"),
+    ]
+
+    exchange_order = models.ForeignKey(
+        "Order", on_delete=models.CASCADE, related_name="return_items",
+        help_text="L'Order qui est l'échange (pas la commande originale livrée).",
+    )
+    # Either point to a specific physical unit (preferred) OR to a variant
+    # if we just know "client returns 1 Pull Blueline gris M" without a specific unit
+    unit = models.ForeignKey(
+        "ProductUnit", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="exchange_returns",
+    )
+    variant = models.ForeignKey(
+        "ProductVariant", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="exchange_returns",
+    )
+    size = models.CharField(max_length=20, blank=True, default="")
+    product_name_snapshot = models.CharField(max_length=200, blank=True, default="",
+        help_text="Name at time of return creation, for display.")
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default=RECEIVED_PENDING,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["exchange_order", "status"]),
+        ]
+
+    def __str__(self):
+        return f"Return for Order #{self.exchange_order_id}: {self.product_name_snapshot} ({self.size})"
+
+
 class AuditLog(models.Model):
     """One row per significant action — login, scan, edit, status change, etc."""
     # Action categories. Add new ones over time.

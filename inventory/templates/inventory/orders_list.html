@@ -365,6 +365,29 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
   </div>
 </div>
 
+<!-- RETURNS MODAL -->
+<div class="modal-overlay" id="returns-modal">
+  <div class="modal" style="max-width:760px;">
+    <div class="modal-head">
+      <div class="modal-title" style="color:#d94f4e;">🔄 Articles que le client retourne</div>
+      <button class="modal-close" onclick="closeReturnsModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="muted" style="font-size:13px;margin-bottom:12px;">
+        Coche les articles que le client va retourner. Les images viennent de la commande livrée d'origine.
+      </div>
+      <div id="returns-error" class="error-box" style="display:none;"></div>
+      <div id="returns-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;"></div>
+    </div>
+    <div class="modal-foot">
+      <div style="flex:1;font-size:13px;color:var(--muted);">
+        <span id="returns-count">0</span> article(s) sélectionné(s)
+      </div>
+      <button class="modal-validate" onclick="validateReturns()" style="background:#d94f4e;">✓ Valider les retours</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const SALES_PAGES = [
   {% for p in sales_pages %}{ id: {{ p.id }}, name: "{{ p.name|escapejs }}" },{% endfor %}
@@ -558,6 +581,8 @@ function openCreateRow(opts) {
     <td style="text-align:center;">
       <button class="add-articles-btn" id="cr-articles" disabled onclick="openArticlesModal()" title="Ajouter des articles">+</button>
       <div id="cr-articles-summary" class="muted" style="font-size:11px;margin-top:4px;"></div>
+      <button class="add-articles-btn" id="cr-returns" style="display:none;background:#f87171;color:#fff;margin-top:6px;" onclick="openReturnsModal()" title="Articles que le client retourne">🔄 Retour</button>
+      <div id="cr-returns-summary" class="muted" style="font-size:11px;margin-top:4px;"></div>
     </td>
     <td style="text-align:right;font-weight:500;" id="cr-total">0 DT</td>
     <td><span class="status status-non_confirmee">Non confirmée</span></td>
@@ -584,6 +609,9 @@ function openCreateRow(opts) {
   // EXCHANGE MODE: pre-fill fields from the source order, show a banner.
   if (opts && opts.isExchange) {
     tr.dataset.exchangeSourceId = opts.sourceOrderId;
+    // Show the "Retour" button (hidden by default)
+    const returnsBtn = document.getElementById('cr-returns');
+    if (returnsBtn) returnsBtn.style.display = '';
     // Insert a banner before the create-row
     const bannerTr = document.createElement('tr');
     bannerTr.id = 'exchange-banner';
@@ -1275,6 +1303,16 @@ async function editOrder(orderId) {
     }
     updateArticlesSummary();
     setSaveStatus('saved', 'Brouillon chargé');
+    // If this is an exchange, show the return button and the exchange context
+    if (o.exchange_of_id) {
+      const cr = document.getElementById('create-row');
+      if (cr) cr.dataset.exchangeSourceId = o.exchange_of_id;
+      const returnsBtn = document.getElementById('cr-returns');
+      if (returnsBtn) returnsBtn.style.display = '';
+      // Update the summary label
+      const sumEl = document.getElementById('cr-returns-summary');
+      if (sumEl) sumEl.textContent = (o.return_items_count || 0) + ' article(s) en retour';
+    }
   } catch (e) {
     alert('Erreur : ' + e.message);
   }
@@ -1477,7 +1515,118 @@ function openExchangeEditor(source) {
   });
 }
 
-// --- Date picker for scheduling orders ------------------------------------
+// --- Returns modal: pick items the customer is sending back ---------------
+let returnsItemsCache = [];   // last loaded items from server
+let returnsSelected = new Map(); // key: "variant_id|size" → {variant_id, size, qty}
+
+async function openReturnsModal() {
+  if (!currentDraftId) {
+    alert('Sauvez d\'abord le brouillon avant de gérer les retours.');
+    return;
+  }
+  const modal = document.getElementById('returns-modal');
+  const grid = document.getElementById('returns-grid');
+  grid.innerHTML = '<div class="muted" style="grid-column:1/-1;text-align:center;padding:20px;">Chargement...</div>';
+  modal.classList.add('show');
+  try {
+    const data = await fetchJson(`/api/sales-orders/${currentDraftId}/exchange-source-items/`);
+    if (data.status !== 'ok') {
+      grid.innerHTML = `<div class="error-box" style="grid-column:1/-1;">${data.message || 'Erreur'}</div>`;
+      return;
+    }
+    returnsItemsCache = data.items || [];
+    // Init selected map from server's "is_selected" + quantity
+    returnsSelected.clear();
+    for (const it of returnsItemsCache) {
+      if (it.is_selected) {
+        returnsSelected.set(`${it.variant_id}|${it.size}`, {
+          variant_id: it.variant_id, size: it.size, qty: it.qty
+        });
+      }
+    }
+    renderReturnsGrid();
+  } catch (e) {
+    grid.innerHTML = `<div class="error-box" style="grid-column:1/-1;">Erreur réseau : ${e.message}</div>`;
+  }
+}
+
+function closeReturnsModal() {
+  document.getElementById('returns-modal').classList.remove('show');
+}
+
+function renderReturnsGrid() {
+  const grid = document.getElementById('returns-grid');
+  if (returnsItemsCache.length === 0) {
+    grid.innerHTML = '<div class="muted" style="grid-column:1/-1;text-align:center;padding:20px;">Aucun article dans la commande originale.</div>';
+    updateReturnsCount();
+    return;
+  }
+  let html = '';
+  for (const it of returnsItemsCache) {
+    const key = `${it.variant_id}|${it.size}`;
+    const isSelected = returnsSelected.has(key);
+    const sizeStr = it.size ? `(${it.size})` : '';
+    const imgHtml = it.image_url
+      ? `<img src="${it.image_url}" style="width:80px;height:80px;border-radius:8px;object-fit:cover;">`
+      : `<div style="width:80px;height:80px;border-radius:8px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);">${(it.product_name||'?').slice(0,2)}</div>`;
+    html += `
+      <div class="return-item" data-key="${key}" onclick="toggleReturn('${key}')" style="
+        padding:10px;border-radius:10px;cursor:pointer;
+        background:${isSelected ? 'rgba(217,79,78,0.12)' : 'var(--surface2)'};
+        border:1.5px solid ${isSelected ? '#d94f4e' : 'var(--border)'};
+        display:flex;flex-direction:column;align-items:center;gap:8px;
+      ">
+        ${imgHtml}
+        <div style="text-align:center;">
+          <div style="font-size:13px;font-weight:500;">${(it.product_name||'').replace(/</g,'&lt;')}</div>
+          <div style="font-size:11px;color:var(--muted);">${(it.color_label||'')} ${sizeStr}</div>
+          <div style="font-size:12px;margin-top:4px;">Qté: ${it.qty}</div>
+        </div>
+        <div style="font-size:18px;">${isSelected ? '✓' : '○'}</div>
+      </div>`;
+  }
+  grid.innerHTML = html;
+  updateReturnsCount();
+}
+
+function toggleReturn(key) {
+  const it = returnsItemsCache.find(x => `${x.variant_id}|${x.size}` === key);
+  if (!it) return;
+  if (returnsSelected.has(key)) {
+    returnsSelected.delete(key);
+  } else {
+    returnsSelected.set(key, { variant_id: it.variant_id, size: it.size, qty: it.qty });
+  }
+  renderReturnsGrid();
+}
+
+function updateReturnsCount() {
+  let total = 0;
+  for (const v of returnsSelected.values()) total += v.qty;
+  document.getElementById('returns-count').textContent = total;
+}
+
+async function validateReturns() {
+  if (!currentDraftId) return;
+  const items = Array.from(returnsSelected.values());
+  try {
+    const res = await fetch(`/api/sales-orders/${currentDraftId}/exchange-set-returns/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+      body: JSON.stringify({ items }),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      const sumEl = document.getElementById('cr-returns-summary');
+      if (sumEl) sumEl.textContent = (data.total || 0) + ' article(s) en retour';
+      closeReturnsModal();
+    } else {
+      alert(data.message || 'Erreur');
+    }
+  } catch (e) {
+    alert('Erreur réseau : ' + e.message);
+  }
+}
 function openDatePicker(cellEl) {
   const orderId = cellEl.dataset.orderId;
   const currentScheduled = cellEl.dataset.scheduled || '';
