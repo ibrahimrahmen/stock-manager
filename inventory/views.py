@@ -3770,6 +3770,8 @@ def _push_order_to_navex_internal(request, order):
         return JsonResponse({"status": "error", "message": "Téléphone manquant."}, status=400)
     if not order.region:
         return JsonResponse({"status": "error", "message": "Gouvernorat manquant."}, status=400)
+    if not (order.address or "").strip():
+        return JsonResponse({"status": "error", "message": "Adresse manquante."}, status=400)
 
     # Defensive: recompute total right before push, in case it was never updated.
     # Without this, a draft created via autosave but never recalculated would push prix=0.

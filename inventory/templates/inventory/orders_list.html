@@ -1164,8 +1164,16 @@ function recalcModalTotal() {
   }, 0);
   const delivery = parseFloat(document.getElementById('modal-delivery').value) || 0;
   const discount = parseFloat(document.getElementById('modal-discount').value) || 0;
-  const total = Math.max(0, articles + delivery - discount);
-  document.getElementById('modal-articles-price').value = articles.toFixed(0) + ' DT';
+  // EXCHANGE mode: total = delivery - discount (articles NOT re-charged, already paid on original)
+  const cr = document.getElementById('create-row');
+  const isExchange = cr && cr.dataset.exchangeSourceId;
+  let total;
+  if (isExchange) {
+    total = Math.max(0, delivery - discount);
+  } else {
+    total = Math.max(0, articles + delivery - discount);
+  }
+  document.getElementById('modal-articles-price').value = articles.toFixed(0) + ' DT' + (isExchange ? ' (non facturé — échange)' : '');
   document.getElementById('modal-total').textContent = total.toFixed(0) + ' DT';
 }
 
@@ -1220,10 +1228,14 @@ async function submitNewOrder() {
   try {
     const phone = cleanPhone(document.getElementById('cr-phone').value);
     const region = document.getElementById('cr-region').value;
+    const ville = (document.getElementById('cr-ville').value || '').trim();
+    const address = (document.getElementById('cr-address').value || '').trim();
     if (!pickedPageId) { showRowError('Page obligatoire.'); return; }
     if (!phone) { showRowError('Téléphone obligatoire.'); return; }
     if (phone.length !== 8) { showRowError(`Téléphone invalide : ${phone.length} chiffres au lieu de 8.`); return; }
     if (!region) { showRowError('Gouvernorat obligatoire.'); return; }
+    if (!ville) { showRowError('Ville/Délégation obligatoire.'); return; }
+    if (!address) { showRowError('Adresse obligatoire.'); return; }
     if (modalOffers.length === 0) { showRowError('Articles obligatoires — cliquez sur +.'); return; }
 
     btn.disabled = true; btn.textContent = '... sauvegarde ...';
@@ -1242,10 +1254,24 @@ async function submitNewOrder() {
       body: JSON.stringify({ status: 'confirmee' }),
     });
     const data = await res.json();
-    if (data.status === 'ok') {
+    console.log('[order] push response:', data);
+    // Treat as success if HTTP 200 AND (status='ok' OR we have a bordereau/new_status set)
+    const isSuccess = res.ok && (data.status === 'ok' || data.bordereau || data.new_status === 'confirmee');
+    if (isSuccess) {
+      // Hard reset — make sure the editor doesn't stay open even if reload fails
+      btn.textContent = '✓ Envoyé';
+      // Force unload all editor state before reload
+      try {
+        document.removeEventListener('mousedown', _outsideClickHandler, true);
+        document.getElementById('create-row')?.remove();
+        document.getElementById('exchange-banner')?.remove();
+        document.getElementById('cr-row-error-tr')?.remove();
+      } catch(_) {}
+      // Reload to refresh the list
       window.location.reload();
+      return;
     } else {
-      showRowError(data.message || 'Erreur lors de la confirmation.');
+      showRowError(data.message || `Erreur (HTTP ${res.status}) lors de la confirmation.`);
     }
   } catch (e) {
     console.error('[order] EXCEPTION:', e);
