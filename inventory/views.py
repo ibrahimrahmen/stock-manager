@@ -3781,8 +3781,51 @@ def _push_order_to_navex_internal(request, order):
             "message": "Prix de la commande est 0. Vérifiez que des articles sont bien sélectionnés.",
         }, status=400)
 
+    # If this is an exchange, require that return items have been selected
+    if order.exchange_of_id and not order.return_items.exists():
+        return JsonResponse({
+            "status": "error",
+            "message": "Cette commande est un échange mais aucun article retourné n'a été sélectionné. Cliquez sur le bouton '🔄 Retour' pour choisir les articles.",
+        }, status=400)
+
     designation = _build_designation(order)
     nb_article = _count_articles(order)
+
+    # If this is an exchange order, build the exchange-specific params.
+    # - echange     : ID of the original delivered order (for our tracking)
+    # - article     : human-readable list of products being returned
+    # - nb_echange  : count of items being returned
+    # - ouvrir      : "Non" (client cannot open before paying)
+    exchange_str = ""
+    article_str = ""
+    nb_echange_str = ""
+    ouvrir_str = ""
+    if order.exchange_of_id:
+        exchange_str = str(order.exchange_of_id)
+        # Build a description of returned items from ExchangeReturnItem
+        return_items = order.return_items.select_related("variant__product").all()
+        if return_items.exists():
+            # Group by (product, color, size) to format nicely
+            from collections import OrderedDict
+            grouped = OrderedDict()
+            for ri in return_items:
+                name = ri.product_name_snapshot or (ri.variant.product.name if ri.variant else "?")
+                color = ri.variant.color_label if ri.variant else ""
+                size = ri.size or ""
+                key = (name, color, size)
+                grouped[key] = grouped.get(key, 0) + 1
+            article_parts = []
+            for (name, color, size), qty in grouped.items():
+                # Format like the regular designation: "Pull Camo #0326 noir (M)"
+                color_part = f" {color}" if color else ""
+                size_part = f" ({size})" if size else ""
+                # Repeat the item N times to mirror designation format
+                for _ in range(qty):
+                    article_parts.append(f"{name}{color_part}{size_part}")
+            article_str = ", ".join(article_parts)[:500]
+            nb_echange_str = str(return_items.count())
+        ouvrir_str = "Non"  # default for exchanges
+
     payload = {
         "prix":           f"{order.total:.0f}" if order.total else "0",
         "nom":            order.customer.name or order.customer.phone,
@@ -3794,7 +3837,10 @@ def _push_order_to_navex_internal(request, order):
         "designation":    designation[:500],
         "nb_article":     str(nb_article),
         "msg":            (order.notes or "")[:500],
-        "echange":        "", "article": "", "nb_echange": "", "ouvrir": "",
+        "echange":        exchange_str,
+        "article":        article_str,
+        "nb_echange":     nb_echange_str,
+        "ouvrir":         ouvrir_str,
         "sender_name":    "", "sender_location": "",
     }
     url = f"https://app.navex.tn/api/rashop-{token}/v1/post.php"
@@ -3839,9 +3885,10 @@ def _push_order_to_navex_internal(request, order):
     order.status = Order.CONFIRMEE
     order.save(update_fields=["bordereau_barcode", "navex_label_url", "pushed_to_navex_at", "status", "updated_at"])
 
+    is_exchange_msg = f" [ÉCHANGE de #{order.exchange_of_id}, {order.return_items.count()} article(s) retour]" if order.exchange_of_id else ""
     log_action(
         request.user, AuditLog.NAVEX_PUSH,
-        description=f"Commande #{order.id} envoyée à Navex" + (f" — bordereau {bordereau}" if bordereau else " (bordereau manquant)"),
+        description=f"Commande #{order.id} envoyée à Navex{is_exchange_msg}" + (f" — bordereau {bordereau}" if bordereau else " (bordereau manquant)"),
         request=request, target_model="Order", target_id=order.id,
         extra=str(navex_data)[:5000],
     )
