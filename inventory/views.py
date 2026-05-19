@@ -3241,20 +3241,55 @@ def api_exchange_set_returns(request, pk):
 
 @login_required(login_url="/login/")
 def api_debug_navex_etat(request):
-    """Debug-only: fetch raw Navex etat response for a given bordereau.
-    Useful to discover field names like the return barcode for exchanges.
-    Usage: GET /api/debug/navex-etat/?bordereau=178436823041
+    """Debug-only: try multiple Navex API parameter variations to find which
+    one returns the exchange return barcode. Tries with/without include_echange,
+    different parameter formats, GET and POST.
     """
     if not request.user.is_superuser:
         return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
     bordereau = (request.GET.get("bordereau") or "").strip()
     if not bordereau:
         return JsonResponse({"status": "error", "message": "Bordereau requis."}, status=400)
-    ok, items, raw = _navex_fetch_many([bordereau])
+    import urllib.request, urllib.parse
+    token = os.environ.get("NAVEX_API_TOKEN", "")
+    if not token:
+        return JsonResponse({"status": "error", "message": "Token manquant."}, status=500)
+
+    url = f"https://app.navex.tn/api/rashop-etat-{token}/v1/post.php"
+
+    variations = [
+        ("POST without include", {"codes": bordereau}, "POST"),
+        ("POST include_echange=1", {"codes": bordereau, "include_echange": "1"}, "POST"),
+        ("POST include-echange=1", {"codes": bordereau, "include-echange": "1"}, "POST"),
+        ("POST include_echange=Oui", {"codes": bordereau, "include_echange": "Oui"}, "POST"),
+        ("POST echange=1", {"codes": bordereau, "echange": "1"}, "POST"),
+        ("GET include_echange=1", {"codes": bordereau, "include_echange": "1"}, "GET"),
+    ]
+
+    results = []
+    for label, params, method in variations:
+        try:
+            if method == "POST":
+                body = urllib.parse.urlencode(params).encode("utf-8")
+                req = urllib.request.Request(url, data=body, method="POST")
+                req.add_header("Content-Type", "application/x-www-form-urlencoded")
+            else:
+                full_url = url + "?" + urllib.parse.urlencode(params)
+                req = urllib.request.Request(full_url, method="GET")
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+                try:
+                    data = json.loads(raw)
+                except json.JSONDecodeError:
+                    data = {"_not_json": raw[:500]}
+        except Exception as e:
+            data = {"_error": str(e)}
+        results.append({"variation": label, "params": params, "method": method, "response": data})
+
     return JsonResponse({
-        "status": "ok" if ok else "error",
-        "parsed_items": items,
-        "raw_response": raw,
+        "status": "ok",
+        "bordereau": bordereau,
+        "results": results,
     }, json_dumps_params={"indent": 2, "ensure_ascii": False})
 
 
