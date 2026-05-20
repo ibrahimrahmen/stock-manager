@@ -3258,12 +3258,12 @@ def api_debug_navex_etat(request):
     url = f"https://app.navex.tn/api/rashop-etat-{token}/v1/post.php"
 
     variations = [
-        ("POST without include", {"codes": bordereau}, "POST"),
-        ("POST include_echange=1", {"codes": bordereau, "include_echange": "1"}, "POST"),
-        ("POST include-echange=1", {"codes": bordereau, "include-echange": "1"}, "POST"),
-        ("POST include_echange=Oui", {"codes": bordereau, "include_echange": "Oui"}, "POST"),
-        ("POST echange=1", {"codes": bordereau, "echange": "1"}, "POST"),
-        ("GET include_echange=1", {"codes": bordereau, "include_echange": "1"}, "GET"),
+        ("POST code=X (singular) + include_echange=1", {"code": bordereau, "include_echange": "1"}, "POST"),
+        ("POST code=X (singular) without include", {"code": bordereau}, "POST"),
+        ("POST codes=X (plural) + include_echange=1", {"codes": bordereau, "include_echange": "1"}, "POST"),
+        ("POST codes=X (plural) without include", {"codes": bordereau}, "POST"),
+        ("POST code=X + include-echange=1 (hyphen)", {"code": bordereau, "include-echange": "1"}, "POST"),
+        ("GET code=X + include_echange=1", {"code": bordereau, "include_echange": "1"}, "GET"),
     ]
 
     results = []
@@ -4097,24 +4097,27 @@ def _navex_fetch_many(bordereaux):
     """Fetch Navex status for a list of bordereaux in ONE API call.
     Returns (ok: bool, items_by_code: dict, raw_response: dict|str).
 
-    items_by_code maps {code: {"etat": "...", "motif": "...", "pre_etat": "...",
-                               "livreur": "...", "livreur_tel": "...",
-                               "found": bool}}.
+    Uses `codes=` (plural, comma-separated) + `include_echange=1` to also
+    get the exchange return barcode for orders that are exchanges.
     """
     import urllib.request, urllib.parse
     token = os.environ.get("NAVEX_API_TOKEN", "")
     if not token or not bordereaux:
         return False, {}, {"_error": "missing token or bordereaux"}
 
-    # Include "include_echange=1" (with underscore, not hyphen — per Navex docs)
-    # so Navex also returns the return-colis "Code d'échange" for exchange orders.
     url = f"https://app.navex.tn/api/rashop-etat-{token}/v1/post.php"
-    codes_string = ", ".join(b for b in bordereaux if b)
+    bordereaux = [b for b in bordereaux if b]
+    if not bordereaux:
+        return False, {}, {"_error": "no valid bordereau"}
+
+    codes_string = ", ".join(bordereaux)
+    payload_dict = {
+        "codes": codes_string,
+        "include_echange": "1",  # Navex returns code_echange + date_echange for exchanges
+    }
+
     try:
-        body = urllib.parse.urlencode({
-            "codes": codes_string,
-            "include_echange": "1",
-        }).encode("utf-8")
+        body = urllib.parse.urlencode(payload_dict).encode("utf-8")
         req = urllib.request.Request(url, data=body, method="POST")
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
         with urllib.request.urlopen(req, timeout=30) as resp:
@@ -4136,18 +4139,10 @@ def _navex_fetch_many(bordereaux):
                 code = str(entry.get("code", "")).strip()
                 if not code:
                     continue
-                # Try several possible field names for the return barcode.
-                # We don't know the exact name Navex uses — accept the first non-empty.
-                return_barcode = ""
-                for candidate in (
-                    "barcode_retour", "barcode_echange", "echange_barcode",
-                    "return_barcode", "barcode_return", "barcode2",
-                    "exchange_barcode", "barcode_echange_retour",
-                ):
-                    val = entry.get(candidate)
-                    if val:
-                        return_barcode = str(val).strip()
-                        break
+                # Navex returns "code_echange" + "date_echange" for exchange orders
+                # when include_echange=1 is in the payload.
+                code_echange = str(entry.get("code_echange") or "").strip()
+                date_echange = str(entry.get("date_echange") or "").strip()
                 items[code] = {
                     "etat":           str(entry.get("etat") or "").strip(),
                     "motif":          str(entry.get("motif") or "").strip(),
@@ -4155,8 +4150,8 @@ def _navex_fetch_many(bordereaux):
                     "livreur":        str(entry.get("livreur") or "").strip(),
                     "livreur_tel":    str(entry.get("livreur_tel") or "").strip(),
                     "found":          bool(entry.get("status") == 1),
-                    "return_barcode": return_barcode,
-                    "_raw_entry":     entry,  # keep full entry for debug
+                    "code_echange":   code_echange,
+                    "date_echange":   date_echange,
                 }
     return True, items, data
 
@@ -4175,11 +4170,18 @@ def _sync_navex_status_for_order(order, force=False):
     order.navex_livreur_tel   = (parsed.get("livreur_tel") or "")[:30]
     order.navex_last_status_raw = str(raw)[:5000]
     order.navex_last_synced_at = timezone.now()
-    order.save(update_fields=[
+    update_fields = [
         "navex_last_status", "navex_motif", "navex_pre_etat",
         "navex_livreur", "navex_livreur_tel",
         "navex_last_status_raw", "navex_last_synced_at", "updated_at",
-    ])
+    ]
+    # If Navex returned a code_echange for this order (it's an exchange),
+    # store it as the return barcode.
+    code_echange = parsed.get("code_echange") or ""
+    if code_echange and code_echange != order.navex_return_barcode:
+        order.navex_return_barcode = code_echange[:80]
+        update_fields.append("navex_return_barcode")
+    order.save(update_fields=update_fields)
     return True
 
 
@@ -4191,9 +4193,19 @@ def _sync_navex_for_v2_orders(only_pending=True):
     Returns (n_attempted, n_updated).
     """
     from .models import Order, log_action, AuditLog
+    from django.db.models import Q
     qs = Order.objects.exclude(bordereau_barcode="")
     if only_pending:
-        qs = qs.exclude(status=Order.ANNULEE).exclude(status=Order.SUPPRIME_NAVEX).exclude(status=Order.LIVREE)
+        # Skip annulees, supprime_navex, and LIVREE — EXCEPT LIVREE exchanges that
+        # still don't have their navex_return_barcode (we need to fetch the
+        # code_echange from Navex).
+        # Include: any not-final state, OR LIVREE that is an exchange missing its return barcode.
+        final_states = (Order.ANNULEE, Order.SUPPRIME_NAVEX)
+        qs = qs.exclude(status__in=final_states)
+        # For LIVREE: only keep exchanges missing the return barcode
+        qs = qs.filter(
+            ~Q(status=Order.LIVREE) | (Q(status=Order.LIVREE) & Q(exchange_of__isnull=False) & Q(navex_return_barcode=""))
+        )
     orders = list(qs)
     n_attempted = len(orders)
     if n_attempted == 0:
@@ -4225,6 +4237,17 @@ def _sync_navex_for_v2_orders(only_pending=True):
             "navex_livreur", "navex_livreur_tel",
             "navex_last_status_raw", "navex_last_synced_at", "updated_at",
         ]
+        # If Navex returned a code_echange for this order (it's an exchange),
+        # store it as the return barcode. Only update if it's new/different.
+        code_echange = (parsed.get("code_echange") or "").strip()
+        if code_echange and code_echange != o.navex_return_barcode:
+            o.navex_return_barcode = code_echange[:80]
+            update_fields.append("navex_return_barcode")
+            log_action(
+                None, AuditLog.EDIT,
+                description=f"Auto: code d'échange Navex récupéré pour #{o.id} → {code_echange}",
+                target_model="Order", target_id=o.id,
+            )
         # Detect "Supprime" Navex status — means the colis was deleted on their side
         # after our push. We auto-transition the local order to SUPPRIME_NAVEX status
         # so it surfaces clearly (red badge + dedicated filter).
