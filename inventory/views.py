@@ -69,10 +69,6 @@ def return_scan(request):
     return render(request, "inventory/return_scan.html", {})
 
 @login_required(login_url="/login/")
-def payment_scan(request):
-    return render(request, "inventory/payment_scan.html", {})
-
-@login_required(login_url="/login/")
 def stock_value(request):
     if not request.user.is_staff:
         return HttpResponseForbidden("Acces reserve aux administrateurs.")
