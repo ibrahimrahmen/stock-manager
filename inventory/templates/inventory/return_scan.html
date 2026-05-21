@@ -193,8 +193,12 @@
       });
       var data = await res.json();
       handleResult(data);
-      // Log confirmed return
-      if (data.status === 'ok') addReturnLog(data, barcode);
+      // Log confirmed return — ONLY when an actual unit return happened.
+      // 'order_multiple' just opens a modal (no return yet), so don't log it.
+      // Same for any error.
+      if (data.status === 'ok' && (data.type === 'unit_returned' || data.type === 'order_single')) {
+        addReturnLog(data, barcode);
+      }
     } catch(e) {
       // On error, put barcode back at front of queue and alert user
       returnQueue.unshift(barcode);
