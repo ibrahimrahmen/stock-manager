@@ -2574,7 +2574,7 @@ def orders_list(request):
         status_filter = "non_confirmee"
 
     qs = Order.objects.select_related("customer", "region", "sales_page").prefetch_related(
-        "lines__product", "order_offers"
+        "lines__product", "order_offers", "shipping_orders"
     )
     if status_filter and status_filter != "all":
         qs = qs.filter(status=status_filter)

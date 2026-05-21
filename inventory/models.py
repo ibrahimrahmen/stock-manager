@@ -667,6 +667,17 @@ class Order(models.Model):
         return s in ("livre", "livré", "livrée", "livre paye", "livré payé", "livre payé", "livrer paye")
 
     @property
+    def is_shipping_closed(self):
+        """True if at least one linked ShippingOrder is in a 'closed' state
+        (= all units scanned and order finalised). Used in /sales-orders/
+        to show a green ✓ next to commands that have been fully scanned.
+        """
+        for so in self.shipping_orders.all():
+            if so.status in ShippingOrder.CLOSED_STATUSES:
+                return True
+        return False
+
+    @property
     def article_summary(self):
         """Short text summary of offers + standalone products for list display."""
         parts = []

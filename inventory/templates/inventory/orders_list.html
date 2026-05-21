@@ -280,6 +280,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
             {% else %}
               <a class="row-link" href="{% url 'order_view' o.pk %}">#{{ o.id }}</a>
             {% endif %}
+            {% if o.is_shipping_closed %}<span title="Scan expédition terminé" style="color:#1a9e6e;font-size:14px;font-weight:600;margin-left:4px;">✓</span>{% endif %}
           </td>
           <td>
             <span class="date-cell" data-order-id="{{ o.id }}" data-scheduled="{% if o.scheduled_for %}{{ o.scheduled_for|date:'Y-m-d' }}{% endif %}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">
