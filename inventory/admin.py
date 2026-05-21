@@ -7,6 +7,7 @@ from .models import (
     SalesPage, Customer, AuditLog, UserProfile,
     Region, Order, OrderLine,
     Offer, OfferProduct, OrderOffer,
+    ExchangeReturnItem,
 )
 
 
@@ -222,3 +223,12 @@ class OfferAdmin(admin.ModelAdmin):
 class OrderOfferAdmin(admin.ModelAdmin):
     list_display = ("id", "order", "offer_name", "quantity", "bundle_price")
     search_fields = ("order__id", "offer_name")
+
+
+@admin.register(ExchangeReturnItem)
+class ExchangeReturnItemAdmin(admin.ModelAdmin):
+    list_display = ("id", "exchange_order", "product_name_snapshot", "size", "status", "created_at")
+    list_filter = ("status",)
+    search_fields = ("exchange_order__id", "product_name_snapshot")
+    autocomplete_fields = ("exchange_order", "variant")
+    fields = ("exchange_order", "variant", "unit", "size", "product_name_snapshot", "status")
