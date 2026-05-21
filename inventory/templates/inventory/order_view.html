@@ -218,7 +218,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
   </div>
   {% endif %}
 
-  {% if order.bordereau_barcode and order.status != 'annulee' %}
+  {% if order.bordereau_barcode %}
   <div class="card">
     <div class="card-title">Navex</div>
     <div class="row">
