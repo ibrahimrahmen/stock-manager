@@ -223,6 +223,14 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
     <div class="card-title">Navex</div>
     <div class="row">
       <div class="field-display"><label>Bordereau</label><div class="val" style="font-family:monospace;">{{ order.bordereau_barcode }}</div></div>
+      {% if order.navex_return_barcode %}
+      <div class="field-display"><label>Code d'échange (retour)</label><div class="val" style="font-family:monospace;color:#d94f4e;">{{ order.navex_return_barcode }}</div></div>
+      {% endif %}
+      {% with shipping=order.shipping_orders.first %}
+        {% if shipping %}
+        <div class="field-display"><label>Scan expédition</label><div class="val"><a href="{% url 'order_detail' shipping.pk %}" style="color:var(--blue,#60a5fa);">Voir le scan ({{ shipping.unit_count }} unité(s))</a></div></div>
+        {% endif %}
+      {% endwith %}
       {% if order.navex_last_status %}
       <div class="field-display"><label>Statut Navex</label><div class="val">{{ order.navex_last_status }}</div></div>
       {% endif %}

@@ -183,6 +183,15 @@ class ShippingOrder(models.Model):
     client_ville      = models.CharField(max_length=100, blank=True, default="")
     navex_designation = models.CharField(max_length=500, blank=True, default="")
 
+    # Link to the v2 Order this shipping was created for, if applicable.
+    # Set automatically at scan-expedition time when the bordereau matches an
+    # Order in the v2 system. Allows cross-navigation between v1 and v2.
+    order = models.ForeignKey(
+        "Order", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="shipping_orders",
+        help_text="Order v2 lié à ce ShippingOrder, si applicable.",
+    )
+
     def __str__(self):
         return f"Ordre {self.bordereau_barcode} ({self.status})"
 

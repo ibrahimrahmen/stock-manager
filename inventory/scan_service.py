@@ -350,6 +350,21 @@ def _handle_bordereau(barcode: str, user=None) -> dict:
             status=ShippingOrder.OPEN,
         )
 
+        # NEW: link to a v2 Order if one exists with this bordereau.
+        # When an Order v2 is created and pushed to Navex, Navex returns a
+        # bordereau that's stored on Order.bordereau_barcode. If the warehouse
+        # team scans that same bordereau here, we link the v1 ShippingOrder
+        # to the v2 Order so the units they scan are visible on both sides.
+        try:
+            from .models import Order as OrderV2
+            v2_order = OrderV2.objects.filter(bordereau_barcode=barcode).first()
+            if v2_order is not None:
+                new_order.order = v2_order
+                new_order.save(update_fields=["order"])
+        except Exception:
+            # Defensive — never break the scan flow even if the link lookup fails
+            pass
+
     return {
         "status": "ok", "type": "bordereau",
         "message": f"Ordre {new_order.bordereau_barcode} ouvert.",
