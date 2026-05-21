@@ -358,12 +358,77 @@ def _update_order_return_status(order):
 @require_POST
 def api_scan_return(request):
     from .barcode_parser import is_bordereau_barcode
-    from .models import log_action, AuditLog
+    from .models import log_action, AuditLog, Order, ExchangeReturnItem
     data = json.loads(request.body)
     barcode = data.get("barcode", "").strip().upper()
     if not barcode:
         return JsonResponse({"status": "error", "message": "Barcode vide."}, status=400)
 
+    # CASE 1: Check if this is an exchange return code (code_echange from Navex)
+    # An exchange's return colis has a different barcode from the original push
+    # bordereau. It's stored in Order.navex_return_barcode when Navex assigns it.
+    # We check this FIRST, before the regular ShippingOrder lookup.
+    try:
+        exchange_order = Order.objects.prefetch_related(
+            "return_items__variant__product"
+        ).get(navex_return_barcode=barcode)
+    except Order.DoesNotExist:
+        exchange_order = None
+    except Order.MultipleObjectsReturned:
+        # Defensive: if somehow two orders share the same return barcode, take the most recent
+        exchange_order = Order.objects.filter(navex_return_barcode=barcode).order_by("-created_at").first()
+
+    if exchange_order is not None:
+        # Build the items list from ExchangeReturnItem (the products the customer
+        # said they would return when the exchange was created).
+        return_items = exchange_order.return_items.all()
+        if not return_items.exists():
+            log_action(
+                request.user, AuditLog.SCAN_RETURN,
+                description=f"Retour échange : code {barcode} (commande #{exchange_order.id}) mais aucun article à retourner enregistré",
+                request=request, target_order_barcode=barcode,
+            )
+            return JsonResponse({
+                "status": "error",
+                "message": f"Échange #{exchange_order.id} reconnu, mais aucun article à retourner n'a été enregistré.",
+                "code": "EXCHANGE_NO_RETURNS",
+            })
+
+        # Format items in the same shape as the v1 scan_return response.
+        # We don't have a physical ProductUnit here (the scan of the unit will
+        # come later — at this stage we just show what's EXPECTED).
+        items_data = []
+        for ri in return_items:
+            variant = ri.variant
+            product = variant.product if variant else None
+            items_data.append({
+                # No physical barcode yet — use the ExchangeReturnItem ID as placeholder
+                "barcode": f"RETURN-{ri.id}",
+                "size": ri.size,
+                "status": "pending_return",  # Custom status: still waiting for scan
+                "product_name": product.name if product else (ri.product_name_snapshot or "?"),
+                "color_label": variant.color_label if variant else "",
+                "sell_price": str(product.sell_price) if product else "0",
+                "image_url": variant.image.url if variant and variant.image else None,
+                "exchange_return_item_id": ri.id,
+            })
+
+        log_action(
+            request.user, AuditLog.SCAN_RETURN,
+            description=f"Code d'échange retour scanné : {barcode} → commande échange #{exchange_order.id} ({len(items_data)} article(s) à recevoir)",
+            request=request, target_order_barcode=barcode,
+        )
+        return JsonResponse({
+            "status": "ok",
+            "type": "order_multiple",
+            "order_bordereau": barcode,
+            "order_id": exchange_order.id,
+            "is_exchange": True,
+            "exchange_of_id": exchange_order.exchange_of_id,
+            "items": items_data,
+        })
+
+    # CASE 2: Regular v1 ShippingOrder lookup (existing logic, unchanged)
     if is_bordereau_barcode(barcode):
         try:
             order = ShippingOrder.objects.prefetch_related("items__unit__variant__product").get(bordereau_barcode=barcode)
