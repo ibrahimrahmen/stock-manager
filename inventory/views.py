@@ -3489,6 +3489,40 @@ def api_shopify_webhook_order_created(request):
             if best:
                 region = best
 
+        # Strategy D: maybe the customer typed a CITY (delegation) instead
+        # of the governorate. Look in Delegation table and use the parent region.
+        # E.g. "Hammamet" → Delegation found → parent region = Nabeul
+        if not region and province_norm:
+            from .models import Delegation
+            all_delegations = list(Delegation.objects.filter(is_active=True).select_related("region"))
+            # First try exact normalized match on delegation name
+            for d_obj in all_delegations:
+                if _normalize(d_obj.name) == province_norm:
+                    region = d_obj.region
+                    break
+            # Then try contained
+            if not region:
+                for d_obj in all_delegations:
+                    d_norm = _normalize(d_obj.name)
+                    if d_norm and (d_norm in province_norm or province_norm in d_norm):
+                        region = d_obj.region
+                        break
+            # Then try fuzzy
+            if not region:
+                best_dleg = None
+                best_dist = 999
+                for d_obj in all_delegations:
+                    d_norm = _normalize(d_obj.name)
+                    if not d_norm:
+                        continue
+                    dd = _levenshtein(province_norm, d_norm)
+                    threshold = 2 if len(d_norm) <= 6 else 3
+                    if dd <= threshold and dd < best_dist:
+                        best_dleg = d_obj
+                        best_dist = dd
+                if best_dleg:
+                    region = best_dleg.region
+
     # 5. Get the Shopify SalesPage (or create it if missing)
     sales_page = SalesPage.objects.filter(name__iexact="Barats.tn").first()
     if not sales_page:
@@ -3551,6 +3585,61 @@ def api_shopify_webhook_order_created(request):
             created_by=None,  # No user — webhook is unauthenticated
         )
 
+    # Helper: extract size from a Shopify line item by looking at variant_title
+    # and line_item properties. Returns the matched size string or "".
+    def _extract_size(li, product):
+        # Shopify variant_title format examples:
+        #   "Blanc / XL"
+        #   "L / Bleu"
+        #   "Taille XL"
+        #   "39"  (just the number)
+        candidates = []
+        v_title = (li.get("variant_title") or "").strip()
+        if v_title:
+            # Split by common separators
+            for part in re.split(r"[/|\\,;]| - ", v_title):
+                p = part.strip()
+                if p:
+                    candidates.append(p)
+        # Also look in 'properties' (custom fields the merchant set up)
+        for prop in (li.get("properties") or []):
+            pname = (prop.get("name") or "").strip().lower()
+            pval = (prop.get("value") or "").strip()
+            if pval and any(k in pname for k in ("size", "taille", "pointure")):
+                candidates.append(pval)
+        # Also look at the variant's "option" fields (Shopify product variant)
+        # which may come through differently
+        for k in ("option1", "option2", "option3"):
+            ov = li.get(k) or ""
+            if ov:
+                candidates.append(str(ov).strip())
+
+        if not candidates:
+            return ""
+
+        # Match against known sizes for this product, if we have any
+        known_sizes = set()
+        if product:
+            for v in product.variants.all():
+                for u in v.units.all():
+                    if u.size:
+                        known_sizes.add(u.size.strip())
+        if known_sizes:
+            for cand in candidates:
+                # Exact match (case insensitive)
+                for ks in known_sizes:
+                    if cand.lower() == ks.lower():
+                        return ks  # return the canonical capitalization
+        # No known sizes or no match — just return the first non-color-looking candidate
+        # (skip strings that look like colors: long lowercase words)
+        for cand in candidates:
+            # Common Tunisian sizes: S, M, L, XL, XXL, 36, 37, ..., 46
+            if re.match(r"^(xs|s|m|l|xl|xxl|xxxl|3xl|4xl|\d{2})$", cand.lower()):
+                return cand
+        return ""
+
+    import re
+
     # 9. Map each line_item: first try matching to an Offer (bundle), then to a Product.
     # If we can't find one, we still record the line as a note for the team.
     from .models import Offer, OfferProduct, OrderOffer
@@ -3588,12 +3677,13 @@ def api_shopify_webhook_order_created(request):
                 quantity=quantity,
             )
             for op in offer.products.all():
+                size_guess = _extract_size(li, op.product)
                 OrderLine.objects.create(
                     order=order,
                     order_offer=order_offer,
                     product=op.product,
                     variant=op.product.variants.first(),  # team will fix at confirmation
-                    size="",
+                    size=size_guess,
                     quantity=op.quantity * quantity,
                     unit_price=0,
                 )
@@ -3623,11 +3713,12 @@ def api_shopify_webhook_order_created(request):
             continue
 
         variant = product.variants.first()
+        size_guess = _extract_size(li, product)
         OrderLine.objects.create(
             order=order,
             product=product,
             variant=variant,
-            size="",  # team will fill at confirmation
+            size=size_guess,
             quantity=quantity,
             unit_price=unit_price,
         )
