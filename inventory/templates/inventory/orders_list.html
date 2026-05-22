@@ -1091,7 +1091,12 @@ function renderOfferProducts(idx) {
         ${detail.products.map((p, pIdx) => {
           const pickedVariant = mo.products[pIdx]?.variant_id || '';
           const pickedSize = mo.products[pIdx]?.size || '';
-          const variant = p.variants.find(v => v.id == pickedVariant);
+          // The variants list is grouped by color (each entry has variant_ids[] for the whole family).
+          // Find the variant entry where the picked id appears in EITHER `id` or `variant_ids[]`.
+          const variant = p.variants.find(v =>
+            v.id == pickedVariant
+            || (Array.isArray(v.variant_ids) && v.variant_ids.includes(parseInt(pickedVariant)))
+          );
           const stock = variant && pickedSize ? (variant.stock_by_size[pickedSize] || 0) : null;
           let stockClass = 'stock-ok'; if (stock === 0) stockClass='stock-out'; else if (stock !== null && stock <= 3) stockClass='stock-low';
           return `
@@ -1099,9 +1104,12 @@ function renderOfferProducts(idx) {
               <td>${p.product_name} ${p.quantity > 1 ? '×' + p.quantity : ''}</td>
               <td><select onchange="onVariantPicked(${idx},${pIdx},${p.product_id},this.value)">
                 <option value="">—</option>
-                ${p.variants.map(v => `<option value="${v.id}" ${pickedVariant == v.id ? 'selected' : ''}>${v.color}</option>`).join('')}
+                ${p.variants.map(v => {
+                  const isSelected = v === variant;
+                  return `<option value="${v.id}" ${isSelected ? 'selected' : ''}>${v.color}</option>`;
+                }).join('')}
               </select></td>
-              <td><select onchange="onSizePicked(${idx},${pIdx},this.value)" ${!pickedVariant ? 'disabled' : ''}>
+              <td><select onchange="onSizePicked(${idx},${pIdx},this.value)" ${!variant ? 'disabled' : ''}>
                 <option value="">—</option>
                 ${variant ? variant.sizes.map(s => `<option value="${s}" ${pickedSize == s ? 'selected' : ''}>${s}</option>`).join('') : ''}
               </select></td>
@@ -1324,9 +1332,7 @@ async function editOrder(orderId) {
     }
     document.getElementById('cr-address').value = o.address || '';
     // Restore offers
-    console.log('[editOrder] o.offers from API =', o.offers);
     modalOffers = o.offers || [];
-    console.log('[editOrder] modalOffers now =', modalOffers);
     // Pre-fetch each offer's detail into offerCache so the modal can re-render
     for (const mo of modalOffers) {
       if (mo.offer_id && !offerCache[mo.offer_id]) {
@@ -1336,9 +1342,7 @@ async function editOrder(orderId) {
         } catch(_) {}
       }
     }
-    console.log('[editOrder] calling updateArticlesSummary, modalOffers.length =', modalOffers.length);
     updateArticlesSummary();
-    console.log('[editOrder] summary text after =', document.getElementById('cr-articles-summary')?.textContent);
     setSaveStatus('saved', 'Brouillon chargé');
     // If this is an exchange, show the return button and the exchange context
     if (o.exchange_of_id) {
