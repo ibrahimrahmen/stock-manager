@@ -3480,59 +3480,86 @@ def api_shopify_webhook_order_created(request):
             created_by=None,  # No user — webhook is unauthenticated
         )
 
-        # 9. Map each line_item to a Product by fuzzy name match.
-        # If we can't find one, we still record the line as a note for the team.
-        unmatched_items = []
-        for li in line_items:
-            title = (li.get("title") or li.get("name") or "").strip()
-            variant_title = (li.get("variant_title") or "").strip()
-            quantity = int(li.get("quantity") or 1)
-            unit_price = Decimal(str(li.get("price") or "0"))
+    # 9. Map each line_item: first try matching to an Offer (bundle), then to a Product.
+    # If we can't find one, we still record the line as a note for the team.
+    from .models import Offer, OfferProduct, OrderOffer
+    unmatched_items = []
+    for li in line_items:
+        title = (li.get("title") or li.get("name") or "").strip()
+        variant_title = (li.get("variant_title") or "").strip()
+        quantity = int(li.get("quantity") or 1)
+        unit_price = Decimal(str(li.get("price") or "0"))
 
-            if not title:
-                continue
+        if not title:
+            continue
 
-            # Try matching strategies in order:
-            # 1. Exact case-insensitive match
-            # 2. Local product name is contained INSIDE shopify title
-            #    (e.g. local "Pull Camo" matches shopify "Pull Camo ZR")
-            # 3. Try with variant_title appended
-            product = Product.objects.filter(name__iexact=title).first()
-            if not product:
-                # Find products whose name appears inside the Shopify title.
-                # We compare in lowercase to handle case differences.
-                title_lower = title.lower()
-                candidates = []
-                for p in Product.objects.all():
-                    p_name_lower = (p.name or "").strip().lower()
-                    if p_name_lower and p_name_lower in title_lower:
-                        candidates.append(p)
-                if candidates:
-                    # Prefer the longest match (most specific)
-                    product = max(candidates, key=lambda p: len(p.name))
-            if not product and variant_title:
-                full_title = f"{title} {variant_title}".lower()
-                for p in Product.objects.all():
-                    p_name_lower = (p.name or "").strip().lower()
-                    if p_name_lower and p_name_lower in full_title:
-                        product = p
-                        break
+        title_lower = title.lower()
 
-            if not product:
-                unmatched_items.append(f"{title} (qté {quantity})")
-                continue
+        # --- (A) Try to match an OFFER (bundle) by name first ---
+        offer = Offer.objects.filter(name__iexact=title, is_active=True).first()
+        if not offer:
+            # Try "offer name contained in shopify title"
+            candidates = []
+            for o in Offer.objects.filter(is_active=True):
+                o_name_lower = (o.name or "").strip().lower()
+                if o_name_lower and o_name_lower in title_lower:
+                    candidates.append(o)
+            if candidates:
+                # Prefer longest match
+                offer = max(candidates, key=lambda o: len(o.name))
 
-            # Pick the first variant of the product (we don't have enough info to
-            # pick a color/size accurately — the office team will fix this).
-            variant = product.variants.first()
-            OrderLine.objects.create(
-                order=order,
-                product=product,
-                variant=variant,
-                size="",  # team will fill at confirmation
+        if offer:
+            # Found a bundle — create OrderOffer + child OrderLines (one per product in offer)
+            order_offer = OrderOffer.objects.create(
+                order=order, offer=offer,
+                offer_name=offer.name,
+                bundle_price=offer.bundle_price,
                 quantity=quantity,
-                unit_price=unit_price,
             )
+            for op in offer.products.all():
+                OrderLine.objects.create(
+                    order=order,
+                    order_offer=order_offer,
+                    product=op.product,
+                    variant=op.product.variants.first(),  # team will fix at confirmation
+                    size="",
+                    quantity=op.quantity * quantity,
+                    unit_price=0,
+                )
+            continue  # Done with this line_item
+
+        # --- (B) Otherwise, try to match a PRODUCT ---
+        product = Product.objects.filter(name__iexact=title).first()
+        if not product:
+            # Find products whose name appears inside the Shopify title
+            candidates = []
+            for p in Product.objects.all():
+                p_name_lower = (p.name or "").strip().lower()
+                if p_name_lower and p_name_lower in title_lower:
+                    candidates.append(p)
+            if candidates:
+                product = max(candidates, key=lambda p: len(p.name))
+        if not product and variant_title:
+            full_title = f"{title} {variant_title}".lower()
+            for p in Product.objects.all():
+                p_name_lower = (p.name or "").strip().lower()
+                if p_name_lower and p_name_lower in full_title:
+                    product = p
+                    break
+
+        if not product:
+            unmatched_items.append(f"{title} (qté {quantity})")
+            continue
+
+        variant = product.variants.first()
+        OrderLine.objects.create(
+            order=order,
+            product=product,
+            variant=variant,
+            size="",  # team will fill at confirmation
+            quantity=quantity,
+            unit_price=unit_price,
+        )
 
         # 10. If there are unmatched items, add them to the notes
         if unmatched_items:
