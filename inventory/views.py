@@ -3411,12 +3411,83 @@ def api_shopify_webhook_order_created(request):
     city = (shipping.get("city") or billing.get("city") or "").strip()
     province = (shipping.get("province") or billing.get("province") or "").strip()
 
-    # 4. Map region: find a Region whose name matches the Shopify province
+    # 4. Map region: find a Region whose name matches the Shopify province.
+    # Customers type free text on Shopify, so we need to be flexible: handle
+    # accents, casing, filler words ("Governorate", "Gouvernorat"), and typos.
     region = None
     if province:
-        region = Region.objects.filter(name__iexact=province).first()
+        import unicodedata, re
+
+        def _normalize(s):
+            """Lowercase, strip accents, remove filler words & punctuation."""
+            if not s:
+                return ""
+            # NFKD decomposes "é" → "e" + combining accent, then we strip combining marks
+            s = unicodedata.normalize("NFKD", s)
+            s = "".join(c for c in s if not unicodedata.combining(c))
+            s = s.lower()
+            # Remove common filler words
+            for w in ("governorate", "gouvernorat", "gouvernement", "wilaya", "province"):
+                s = s.replace(w, "")
+            # Replace punctuation/multiple spaces with single space
+            s = re.sub(r"[^a-z0-9 ]", " ", s)
+            s = re.sub(r"\s+", " ", s).strip()
+            return s
+
+        def _levenshtein(a, b):
+            """Simple edit distance — small inputs only."""
+            if a == b:
+                return 0
+            if not a:
+                return len(b)
+            if not b:
+                return len(a)
+            prev_row = list(range(len(b) + 1))
+            for i, ca in enumerate(a):
+                cur_row = [i + 1]
+                for j, cb in enumerate(b):
+                    cost = 0 if ca == cb else 1
+                    cur_row.append(min(
+                        cur_row[j] + 1,           # insertion
+                        prev_row[j + 1] + 1,      # deletion
+                        prev_row[j] + cost,       # substitution
+                    ))
+                prev_row = cur_row
+            return prev_row[-1]
+
+        province_norm = _normalize(province)
+        all_regions = list(Region.objects.filter(is_active=True))
+
+        # Strategy A: exact match on normalized form
+        for r in all_regions:
+            if _normalize(r.name) == province_norm:
+                region = r
+                break
+
+        # Strategy B: region name contained in province text (or vice versa)
         if not region:
-            region = Region.objects.filter(name__icontains=province).first()
+            for r in all_regions:
+                r_norm = _normalize(r.name)
+                if r_norm and (r_norm in province_norm or province_norm in r_norm):
+                    region = r
+                    break
+
+        # Strategy C: fuzzy match — pick the region with smallest edit distance
+        # if the distance is reasonable (≤ 2 chars for short names, ≤ 3 for long).
+        if not region and province_norm:
+            best = None
+            best_dist = 999
+            for r in all_regions:
+                r_norm = _normalize(r.name)
+                if not r_norm:
+                    continue
+                d = _levenshtein(province_norm, r_norm)
+                threshold = 2 if len(r_norm) <= 6 else 3
+                if d <= threshold and d < best_dist:
+                    best = r
+                    best_dist = d
+            if best:
+                region = best
 
     # 5. Get the Shopify SalesPage (or create it if missing)
     sales_page = SalesPage.objects.filter(name__iexact="Barats.tn").first()
