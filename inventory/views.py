@@ -3853,16 +3853,18 @@ def api_shopify_webhook_order_created(request):
             unit_price=unit_price,
         )
 
-        # 10. If there are unmatched items, add them to the notes
-        if unmatched_items:
-            order.notes += " | ARTICLES NON RECONNUS: " + "; ".join(unmatched_items)
-            order.save(update_fields=["notes"])
+    # End of `for li in line_items:` loop
 
-        # 11. Recompute total — refresh from DB first to bust any cached
-        # relations from earlier in the transaction (otherwise the freshly-
-        # created OrderOffer might not appear in self.order_offers.all()).
-        order.refresh_from_db()
-        order.recalc_total()
+    # 10. If there are unmatched items, add them to the notes
+    if unmatched_items:
+        order.notes += " | ARTICLES NON RECONNUS: " + "; ".join(unmatched_items)
+        order.save(update_fields=["notes"])
+
+    # 11. Recompute total — refresh from DB first to bust any cached
+    # relations from earlier (otherwise the freshly-created OrderOffer might
+    # not appear in self.order_offers.all()).
+    order.refresh_from_db()
+    order.recalc_total()
 
     # 12. Audit log — put line_items first so they're not truncated.
     audit_extra = "LINE_ITEMS=" + str(line_items) + " | PAYLOAD=" + str(payload)
