@@ -3737,7 +3737,8 @@ def api_shopify_webhook_order_created(request):
         # 11. Recompute total
         order.recalc_total()
 
-    # 12. Audit log
+    # 12. Audit log — put line_items first so they're not truncated.
+    audit_extra = "LINE_ITEMS=" + str(line_items) + " | PAYLOAD=" + str(payload)
     log_action(
         None, AuditLog.CREATE,
         description=(
@@ -3745,7 +3746,7 @@ def api_shopify_webhook_order_created(request):
             f"({len(line_items)} ligne(s), {len(unmatched_items)} non reconnue(s))"
         ),
         target_model="Order", target_id=order.id,
-        extra=str(payload)[:5000],
+        extra=audit_extra[:20000],
     )
 
     return JsonResponse({
