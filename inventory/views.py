@@ -3846,7 +3846,10 @@ def api_shopify_webhook_order_created(request):
             order.notes += " | ARTICLES NON RECONNUS: " + "; ".join(unmatched_items)
             order.save(update_fields=["notes"])
 
-        # 11. Recompute total
+        # 11. Recompute total — refresh from DB first to bust any cached
+        # relations from earlier in the transaction (otherwise the freshly-
+        # created OrderOffer might not appear in self.order_offers.all()).
+        order.refresh_from_db()
         order.recalc_total()
 
     # 12. Audit log — put line_items first so they're not truncated.
