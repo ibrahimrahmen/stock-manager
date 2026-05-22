@@ -83,6 +83,8 @@ urlpatterns = [
     path("api/admin-tools/run/<str:tool_name>/", views.api_admin_run_tool, name="api_admin_run_tool"),
     # Debug: inspect raw Navex etat response (superuser only)
     path("api/debug/navex-etat/", views.api_debug_navex_etat, name="api_debug_navex_etat"),
+    # Shopify webhook: client passes order on barats.tn → auto-create v2 draft
+    path("api/shopify/webhook/orders/create/", views.api_shopify_webhook_order_created, name="api_shopify_webhook_order_created"),
     # Regions / delegations (cascaded dropdown)
     path("api/regions/<int:region_id>/delegations/", views.api_region_delegations, name="api_region_delegations"),
     path("api/delegations/all/", views.api_all_delegations, name="api_all_delegations"),

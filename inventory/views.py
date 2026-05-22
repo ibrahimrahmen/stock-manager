@@ -3324,6 +3324,226 @@ def api_exchange_set_returns(request, pk):
     })
 
 
+# ---- Shopify webhook receiver -----------------------------------------------
+
+@csrf_exempt
+@require_POST
+def api_shopify_webhook_order_created(request):
+    """Receive a Shopify 'order/create' webhook and create a v2 Order draft.
+
+    Workflow:
+      1. Verify HMAC signature (env var SHOPIFY_WEBHOOK_SECRET)
+      2. Parse Shopify's JSON order payload
+      3. Match each line item to a Product by fuzzy name (case-insensitive)
+      4. Create Customer + Order (status=non_confirmee) + OrderLines
+      5. Log to AuditLog
+
+    Auth: NONE — Shopify can't login. Trust comes from the HMAC signature.
+    """
+    import hmac, hashlib, base64
+    from .models import (
+        Customer, Order, OrderLine, Product, ProductVariant,
+        SalesPage, Region, AuditLog, log_action,
+    )
+
+    # 1. Verify HMAC signature
+    secret = os.environ.get("SHOPIFY_WEBHOOK_SECRET", "")
+    received_hmac = request.headers.get("X-Shopify-Hmac-Sha256", "")
+    if not secret:
+        # If the env var isn't set, refuse the request — never accept unsigned data
+        return JsonResponse({"status": "error", "message": "Webhook secret non configuré."}, status=503)
+    body = request.body
+    computed = base64.b64encode(
+        hmac.new(secret.encode("utf-8"), body, hashlib.sha256).digest()
+    ).decode("utf-8")
+    if not hmac.compare_digest(computed, received_hmac):
+        # Bad signature — could be an attacker
+        log_action(
+            None, AuditLog.OTHER,
+            description=f"Webhook Shopify REJETÉ : signature HMAC invalide (IP {request.META.get('REMOTE_ADDR', '?')})",
+        )
+        return JsonResponse({"status": "error", "message": "Signature invalide."}, status=401)
+
+    # 2. Parse payload
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return JsonResponse({"status": "error", "message": "Payload JSON invalide."}, status=400)
+
+    shopify_order_id = str(payload.get("id") or "")
+    shopify_order_number = str(payload.get("order_number") or payload.get("name") or "")
+
+    # 3. Extract customer info
+    # Shopify's customer object is in `customer` (registered) or `billing_address` / `shipping_address`
+    shipping = payload.get("shipping_address") or {}
+    billing = payload.get("billing_address") or {}
+    customer_data = payload.get("customer") or {}
+
+    phone_raw = (
+        shipping.get("phone")
+        or billing.get("phone")
+        or customer_data.get("phone")
+        or payload.get("phone")
+        or ""
+    )
+    # Normalize Tunisian phone: strip everything except digits, take last 8 digits
+    phone_digits = "".join(c for c in str(phone_raw) if c.isdigit())
+    if len(phone_digits) >= 8:
+        phone_norm = phone_digits[-8:]
+    else:
+        phone_norm = phone_digits
+    if not phone_norm:
+        # Without a phone we can't deliver — log and bail
+        log_action(
+            None, AuditLog.OTHER,
+            description=f"Webhook Shopify reçu pour #{shopify_order_number} mais SANS téléphone — ignoré.",
+        )
+        return JsonResponse({"status": "ok", "message": "No phone, ignored."})
+
+    name = (
+        f"{shipping.get('first_name', '')} {shipping.get('last_name', '')}".strip()
+        or f"{billing.get('first_name', '')} {billing.get('last_name', '')}".strip()
+        or f"{customer_data.get('first_name', '')} {customer_data.get('last_name', '')}".strip()
+    )
+    address1 = shipping.get("address1") or billing.get("address1") or ""
+    address2 = shipping.get("address2") or billing.get("address2") or ""
+    address = (address1 + (" " + address2 if address2 else "")).strip()
+    city = (shipping.get("city") or billing.get("city") or "").strip()
+    province = (shipping.get("province") or billing.get("province") or "").strip()
+
+    # 4. Map region: find a Region whose name matches the Shopify province
+    region = None
+    if province:
+        region = Region.objects.filter(name__iexact=province).first()
+        if not region:
+            region = Region.objects.filter(name__icontains=province).first()
+
+    # 5. Get the Shopify SalesPage (or create it if missing)
+    sales_page = SalesPage.objects.filter(name__iexact="Barats.tn").first()
+    if not sales_page:
+        sales_page = SalesPage.objects.filter(is_active=True).order_by("id").first()
+    if not sales_page:
+        log_action(
+            None, AuditLog.OTHER,
+            description=f"Webhook Shopify #{shopify_order_number} : aucune SalesPage trouvée, commande ignorée.",
+        )
+        return JsonResponse({"status": "error", "message": "Aucune SalesPage configurée."}, status=500)
+
+    # 6. Check for duplicate (Shopify retries webhooks if no 200 is returned)
+    if shopify_order_id:
+        existing = Order.objects.filter(
+            notes__contains=f"shopify_order_id={shopify_order_id}"
+        ).first()
+        if existing:
+            return JsonResponse({"status": "ok", "message": "Already processed", "order_id": existing.id})
+
+    # 7. Get-or-create the Customer
+    customer, _ = Customer.objects.get_or_create(phone=phone_norm, defaults={"name": name})
+    if name and customer.name != name:
+        customer.name = name
+        customer.save(update_fields=["name"])
+
+    # 8. Create the Order draft
+    line_items = payload.get("line_items") or []
+    notes_parts = [
+        f"shopify_order_id={shopify_order_id}",
+        f"shopify_order_number={shopify_order_number}",
+    ]
+    customer_note = payload.get("note") or ""
+    if customer_note:
+        notes_parts.append(f"note_client: {customer_note}")
+
+    from decimal import Decimal
+    delivery_fee = Decimal("7")
+    try:
+        total_shipping = sum(
+            Decimal(str(s.get("price") or "0"))
+            for s in (payload.get("shipping_lines") or [])
+        )
+        if total_shipping > 0:
+            delivery_fee = total_shipping
+    except Exception:
+        pass
+
+    with transaction.atomic():
+        order = Order.objects.create(
+            customer=customer,
+            sales_page=sales_page,
+            region=region,
+            ville=city,
+            localite="",
+            address=address,
+            delivery_fee=delivery_fee,
+            discount=Decimal("0"),
+            notes=" | ".join(notes_parts),
+            status=Order.NON_CONFIRMEE,
+            created_by=None,  # No user — webhook is unauthenticated
+        )
+
+        # 9. Map each line_item to a Product by fuzzy name match.
+        # If we can't find one, we still record the line as a note for the team.
+        unmatched_items = []
+        for li in line_items:
+            title = (li.get("title") or li.get("name") or "").strip()
+            variant_title = (li.get("variant_title") or "").strip()
+            quantity = int(li.get("quantity") or 1)
+            unit_price = Decimal(str(li.get("price") or "0"))
+
+            if not title:
+                continue
+
+            # Try exact iexact match first, then contains
+            product = (
+                Product.objects.filter(name__iexact=title).first()
+                or Product.objects.filter(name__icontains=title).first()
+            )
+            if not product:
+                # If the variant_title contains words from a product name, try that
+                if variant_title:
+                    product = Product.objects.filter(name__icontains=variant_title).first()
+
+            if not product:
+                unmatched_items.append(f"{title} (qté {quantity})")
+                continue
+
+            # Pick the first variant of the product (we don't have enough info to
+            # pick a color/size accurately — the office team will fix this).
+            variant = product.variants.first()
+            OrderLine.objects.create(
+                order=order,
+                product=product,
+                variant=variant,
+                size="",  # team will fill at confirmation
+                quantity=quantity,
+                unit_price=unit_price,
+            )
+
+        # 10. If there are unmatched items, add them to the notes
+        if unmatched_items:
+            order.notes += " | ARTICLES NON RECONNUS: " + "; ".join(unmatched_items)
+            order.save(update_fields=["notes"])
+
+        # 11. Recompute total
+        order.recalc_total()
+
+    # 12. Audit log
+    log_action(
+        None, AuditLog.CREATE,
+        description=(
+            f"Commande Shopify #{shopify_order_number} reçue → Order #{order.id} créée "
+            f"({len(line_items)} ligne(s), {len(unmatched_items)} non reconnue(s))"
+        ),
+        target_model="Order", target_id=order.id,
+        extra=str(payload)[:5000],
+    )
+
+    return JsonResponse({
+        "status": "ok",
+        "order_id": order.id,
+        "unmatched": unmatched_items,
+    })
+
+
 # ---- Admin tools page (superuser only) -------------------------------------
 
 @login_required(login_url="/login/")
