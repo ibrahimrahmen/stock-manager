@@ -3492,15 +3492,31 @@ def api_shopify_webhook_order_created(request):
             if not title:
                 continue
 
-            # Try exact iexact match first, then contains
-            product = (
-                Product.objects.filter(name__iexact=title).first()
-                or Product.objects.filter(name__icontains=title).first()
-            )
+            # Try matching strategies in order:
+            # 1. Exact case-insensitive match
+            # 2. Local product name is contained INSIDE shopify title
+            #    (e.g. local "Pull Camo" matches shopify "Pull Camo ZR")
+            # 3. Try with variant_title appended
+            product = Product.objects.filter(name__iexact=title).first()
             if not product:
-                # If the variant_title contains words from a product name, try that
-                if variant_title:
-                    product = Product.objects.filter(name__icontains=variant_title).first()
+                # Find products whose name appears inside the Shopify title.
+                # We compare in lowercase to handle case differences.
+                title_lower = title.lower()
+                candidates = []
+                for p in Product.objects.all():
+                    p_name_lower = (p.name or "").strip().lower()
+                    if p_name_lower and p_name_lower in title_lower:
+                        candidates.append(p)
+                if candidates:
+                    # Prefer the longest match (most specific)
+                    product = max(candidates, key=lambda p: len(p.name))
+            if not product and variant_title:
+                full_title = f"{title} {variant_title}".lower()
+                for p in Product.objects.all():
+                    p_name_lower = (p.name or "").strip().lower()
+                    if p_name_lower and p_name_lower in full_title:
+                        product = p
+                        break
 
             if not product:
                 unmatched_items.append(f"{title} (qté {quantity})")
