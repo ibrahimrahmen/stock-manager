@@ -4957,22 +4957,85 @@ def _sync_navex_for_v2_orders(only_pending=True):
     return n_attempted, n_updated
 
 
+def _shopify_get_access_token():
+    """Exchange the Dev Dashboard Client ID + Client Secret for a short-lived
+    Admin API access token via the OAuth client_credentials grant.
+
+    Required env vars:
+      - SHOPIFY_SHOP_DOMAIN (e.g. 'baratstunisia.myshopify.com')
+      - SHOPIFY_CLIENT_ID
+      - SHOPIFY_CLIENT_SECRET
+
+    Returns (token: str, error_msg: str). One of the two is empty.
+    Cached for ~50 minutes in module-level dict to avoid re-fetching on every call.
+    """
+    import urllib.request, urllib.parse, urllib.error, time
+    domain = os.environ.get("SHOPIFY_SHOP_DOMAIN", "").strip()
+    cid = os.environ.get("SHOPIFY_CLIENT_ID", "").strip()
+    csecret = os.environ.get("SHOPIFY_CLIENT_SECRET", "").strip()
+    if not (domain and cid and csecret):
+        return "", "SHOPIFY_SHOP_DOMAIN / SHOPIFY_CLIENT_ID / SHOPIFY_CLIENT_SECRET non configurés."
+
+    # Module-level cache to avoid OAuth roundtrip on every cancel
+    global _SHOPIFY_TOKEN_CACHE
+    try:
+        cache = _SHOPIFY_TOKEN_CACHE
+    except NameError:
+        _SHOPIFY_TOKEN_CACHE = {}
+        cache = _SHOPIFY_TOKEN_CACHE
+    now = time.time()
+    entry = cache.get(domain)
+    if entry and entry.get("expires_at", 0) > now + 60:
+        return entry["token"], ""
+
+    url = f"https://{domain}/admin/oauth/access_token"
+    body = urllib.parse.urlencode({
+        "client_id": cid,
+        "client_secret": csecret,
+        "grant_type": "client_credentials",
+    }).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            data = json.loads(raw)
+            token = data.get("access_token") or ""
+            # client_credentials grants are typically valid ~1 hour
+            expires_in = int(data.get("expires_in") or 3600)
+            cache[domain] = {"token": token, "expires_at": now + expires_in}
+            return token, "" if token else "Pas de token dans la réponse Shopify."
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", errors="replace")
+        return "", f"HTTP {e.code}: {raw[:300]}"
+    except Exception as e:
+        return "", f"Erreur réseau: {e}"
+
+
 def _shopify_cancel_order(shopify_order_id):
     """Call Shopify Admin API to cancel an order.
 
     Requires env vars:
-      - SHOPIFY_SHOP_DOMAIN (e.g. 'barats.myshopify.com')
-      - SHOPIFY_ADMIN_API_TOKEN (Admin API access token, starts with 'shpat_')
+      - SHOPIFY_SHOP_DOMAIN (e.g. 'baratstunisia.myshopify.com')
+      - SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET (preferred, OAuth flow)
+      - OR SHOPIFY_ADMIN_API_TOKEN (legacy custom-app static token)
 
     Returns (ok: bool, response_data: dict|str).
     """
     import urllib.request, urllib.error
     domain = os.environ.get("SHOPIFY_SHOP_DOMAIN", "").strip()
-    token = os.environ.get("SHOPIFY_ADMIN_API_TOKEN", "").strip()
-    if not domain or not token:
-        return False, {"_error": "SHOPIFY_SHOP_DOMAIN ou SHOPIFY_ADMIN_API_TOKEN non configuré."}
+    if not domain:
+        return False, {"_error": "SHOPIFY_SHOP_DOMAIN non configuré."}
     if not shopify_order_id:
         return False, {"_error": "Shopify order ID vide."}
+
+    # Get an access token. Prefer OAuth client_credentials (Dev Dashboard apps).
+    token, err = _shopify_get_access_token()
+    if not token:
+        # Fallback: a directly-set token (custom apps héritées only)
+        token = os.environ.get("SHOPIFY_ADMIN_API_TOKEN", "").strip()
+    if not token:
+        return False, {"_error": err or "Pas de token Shopify disponible."}
 
     # Strip any 'gid://shopify/Order/' prefix if present, keep only the numeric id
     sid = str(shopify_order_id).strip()
