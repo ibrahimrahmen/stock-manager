@@ -3593,6 +3593,56 @@ def api_shopify_webhook_order_created(request):
 
     # Helper: extract size from a Shopify line item by looking at variant_title
     # and line_item properties. Returns the matched size string or "".
+    def _extract_variant(li, product):
+        """Pick the right ProductVariant from a Shopify line_item based on the
+        color in variant_title. Falls back to the first variant if no match.
+        """
+        if not product:
+            return None
+        all_variants = list(product.variants.all())
+        if not all_variants:
+            return None
+        # Gather color candidates from variant_title and options
+        candidates = []
+        v_title = (li.get("variant_title") or "").strip()
+        if v_title:
+            for part in re.split(r"[/|\\,;]| - ", v_title):
+                p = part.strip()
+                if p:
+                    candidates.append(p)
+        for k in ("option1", "option2", "option3"):
+            ov = li.get(k) or ""
+            if ov:
+                candidates.append(str(ov).strip())
+        for prop in (li.get("properties") or []):
+            pname = (prop.get("name") or "").strip().lower()
+            pval = (prop.get("value") or "").strip()
+            if pval and any(k in pname for k in ("color", "couleur", "colour")):
+                candidates.append(pval)
+
+        if not candidates:
+            return all_variants[0]
+
+        # Try to match each candidate against color_label and color_name (case-insensitive)
+        for cand in candidates:
+            cl = cand.lower()
+            for v in all_variants:
+                if (v.color_label or "").strip().lower() == cl:
+                    return v
+                if (v.color_name or "").strip().lower() == cl:
+                    return v
+        # Partial contains match (handles "Gris foncé" matches "Gris")
+        for cand in candidates:
+            cl = cand.lower()
+            for v in all_variants:
+                lbl = (v.color_label or "").strip().lower()
+                nm = (v.color_name or "").strip().lower()
+                if lbl and (lbl in cl or cl in lbl):
+                    return v
+                if nm and (nm in cl or cl in nm):
+                    return v
+        return all_variants[0]
+
     def _extract_size(li, product):
         # Shopify variant_title format examples:
         #   "Blanc / XL"
@@ -3684,11 +3734,12 @@ def api_shopify_webhook_order_created(request):
             )
             for op in offer.products.all():
                 size_guess = _extract_size(li, op.product)
+                variant_guess = _extract_variant(li, op.product)
                 OrderLine.objects.create(
                     order=order,
                     order_offer=order_offer,
                     product=op.product,
-                    variant=op.product.variants.first(),  # team will fix at confirmation
+                    variant=variant_guess,
                     size=size_guess,
                     quantity=op.quantity * quantity,
                     unit_price=0,
@@ -3718,7 +3769,7 @@ def api_shopify_webhook_order_created(request):
             unmatched_items.append(f"{title} (qté {quantity})")
             continue
 
-        variant = product.variants.first()
+        variant = _extract_variant(li, product)
         size_guess = _extract_size(li, product)
         OrderLine.objects.create(
             order=order,
