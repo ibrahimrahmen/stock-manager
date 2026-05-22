@@ -3701,24 +3701,57 @@ def api_shopify_webhook_order_created(request):
         if not candidates:
             return ""
 
-        # Match against known sizes for this product, if we have any
+        # Collect known sizes for this product across all variants
         known_sizes = set()
         if product:
             for v in product.variants.all():
                 for u in v.units.all():
                     if u.size:
                         known_sizes.add(u.size.strip())
+
+        # LETTER → NUMBER mapping for Tunisian size convention:
+        #   1=S, 2=M, 3=L, 4=XL, 5=XXL
+        # Plus a special rule: if size "1" doesn't exist in stock, "S" falls back to "2".
+        letter_to_number = {
+            "xs": "1", "s": "1",
+            "m": "2",
+            "l": "3",
+            "xl": "4",
+            "xxl": "5", "2xl": "5",
+            "xxxl": "5", "3xl": "5",  # treat as XXL since we only go up to 5
+        }
+        # Reverse direction (rarely used here but available)
+        # number_to_letter = {"1": "S", "2": "M", "3": "L", "4": "XL", "5": "XXL"}
+
         if known_sizes:
+            # 1. Direct match (case insensitive) — handles cases where the
+            # product genuinely uses S/M/L sizes
             for cand in candidates:
-                # Exact match (case insensitive)
                 for ks in known_sizes:
                     if cand.lower() == ks.lower():
                         return ks  # return the canonical capitalization
-        # No known sizes or no match — just return the first non-color-looking candidate
-        # (skip strings that look like colors: long lowercase words)
+
+            # 2. Letter → number conversion (the common Tunisian case)
+            for cand in candidates:
+                num = letter_to_number.get(cand.lower())
+                if num is None:
+                    continue
+                if num in known_sizes:
+                    return num
+                # SPECIAL RULE: if S (= "1") is not stocked, fall back to M ("2")
+                if num == "1" and "2" in known_sizes:
+                    return "2"
+
+            # 3. Number → letter conversion (less common but possible)
+            number_to_letter = {"1": "S", "2": "M", "3": "L", "4": "XL", "5": "XXL"}
+            for cand in candidates:
+                ltr = number_to_letter.get(cand.strip())
+                if ltr and ltr in known_sizes:
+                    return ltr
+
+        # 4. No known sizes or no match — fallback: regex-look-like-a-size
         for cand in candidates:
-            # Common Tunisian sizes: S, M, L, XL, XXL, 36, 37, ..., 46
-            if re.match(r"^(xs|s|m|l|xl|xxl|xxxl|3xl|4xl|\d{2})$", cand.lower()):
+            if re.match(r"^(xs|s|m|l|xl|xxl|xxxl|3xl|4xl|\d{1,2})$", cand.lower()):
                 return cand
         return ""
 
