@@ -3411,6 +3411,12 @@ def api_shopify_webhook_order_created(request):
     city = (shipping.get("city") or billing.get("city") or "").strip()
     province = (shipping.get("province") or billing.get("province") or "").strip()
 
+    # If Shopify didn't send a province (very common — many themes don't ask for it),
+    # use the city as the location hint. It may match a Delegation that resolves
+    # to the correct region.
+    if not province and city:
+        province = city
+
     # 4. Map region: find a Region whose name matches the Shopify province.
     # Customers type free text on Shopify, so we need to be flexible: handle
     # accents, casing, filler words ("Governorate", "Gouvernorat"), and typos.
