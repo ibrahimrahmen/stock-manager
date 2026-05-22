@@ -84,7 +84,7 @@ input:focus,select:focus{outline:none;border-color:var(--green);}
         </div>
       </div>
       <div class="btn-row">
-        <button class="btn-edit" onclick='openEdit({{ offer.id }}, {{ offer.name|escapejs|safe|stringformat:"r" }}, {{ offer.bundle_price }}, {{ offer.is_active|yesno:"true,false" }}, [{% for p in offer.sales_pages.all %}{{ p.id }}{% if not forloop.last %},{% endif %}{% endfor %}], [{% for op in offer.products.all %}{ "product_id": {{ op.product.id }}, "quantity": {{ op.quantity }} }{% if not forloop.last %},{% endif %}{% endfor %}])'>Modifier</button>
+        <button class="btn-edit" data-offer-id="{{ offer.id }}" onclick="openEditFromButton(this)">Modifier</button>
         <button class="btn-del" onclick="deleteOffer({{ offer.id }}, '{{ offer.name|escapejs }}')">Supprimer</button>
       </div>
     </div>
@@ -188,6 +188,36 @@ function openEdit(id, name, price, active, pageIds, products) {
   renderProductPicks();
   document.getElementById('modal-err').style.display = 'none';
   document.getElementById('offer-modal').classList.add('show');
+}
+
+// Robust variant: fetches offer details from the API, then opens the modal.
+// Avoids escaping bugs from inline JSON in template attributes.
+async function openEditFromButton(btn) {
+  const offerId = parseInt(btn.dataset.offerId);
+  if (!offerId) return;
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = '...';
+  try {
+    const res = await fetch(`/api/offers/${offerId}/`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.status !== 'ok') throw new Error(data.message || 'Erreur API');
+    const offer = data.offer || data;
+    openEdit(
+      offer.id,
+      offer.name || '',
+      offer.bundle_price || 0,
+      !!offer.is_active,
+      (offer.sales_page_ids || (offer.sales_pages || []).map(p => p.id || p)) || [],
+      (offer.products || []).map(p => ({ product_id: p.product_id || p.product?.id, quantity: p.quantity }))
+    );
+  } catch (e) {
+    alert('Erreur lors du chargement de l\'offre : ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
 }
 
 function closeModal() { document.getElementById('offer-modal').classList.remove('show'); }

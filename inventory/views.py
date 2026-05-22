@@ -2689,6 +2689,8 @@ def api_offer_detail(request, offer_id):
         "offer": {
             "id": offer.id, "name": offer.name,
             "bundle_price": str(offer.bundle_price),
+            "is_active": offer.is_active,
+            "sales_page_ids": list(offer.sales_pages.values_list("id", flat=True)),
             "products": products_data,
         },
     })
