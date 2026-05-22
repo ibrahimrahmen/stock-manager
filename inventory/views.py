@@ -2660,22 +2660,46 @@ def api_offer_detail(request, offer_id):
     products_data = []
     for op in offer.products.all():
         product = op.product
-        variants = []
-        for v in product.variants.all():
-            # stock_by_size = how many in_stock or returned units per size
-            stock_by_size = {}
-            sizes_seen = []
-            for u in v.units.all():
-                if u.status in (ProductUnit.IN_STOCK, ProductUnit.RETURNED):
-                    stock_by_size[u.size] = stock_by_size.get(u.size, 0) + 1
-                if u.size and u.size not in sizes_seen:
-                    sizes_seen.append(u.size)
-            variants.append({
-                "id": v.id,
-                "color": v.color_label or v.color_name,
-                "sizes": sizes_seen,
-                "stock_by_size": stock_by_size,
-            })
+
+        # Build the "family" of products that share the same physical SKU.
+        # Whichever product the user picked when creating the offer (parent OR
+        # V2 OR V3), find the root (parent_product OR self) then list all
+        # products in the family.
+        from .models import Product
+        from django.db.models import Q
+        root = product.parent_product or product
+        family = Product.objects.filter(
+            Q(id=root.id) | Q(parent_product=root)
+        ).prefetch_related("variants__units")
+
+        # Group variants by color across the whole family so V2 "noir" merges
+        # with V1 "noir" — same physical color = one pick for the office user.
+        from collections import OrderedDict
+        by_color = OrderedDict()
+        for fam_p in family:
+            for v in fam_p.variants.all():
+                color_key = (v.color_label or v.color_name or "").strip().lower() or f"var{v.id}"
+                if color_key not in by_color:
+                    by_color[color_key] = {
+                        "id": v.id,  # representative variant id
+                        "color": v.color_label or v.color_name,
+                        "image_url": v.image.url if v.image else None,
+                        "sizes": [],
+                        "stock_by_size": {},
+                        "variant_ids": [],  # all variant ids merged under this color
+                    }
+                entry = by_color[color_key]
+                entry["variant_ids"].append(v.id)
+                if not entry["image_url"] and v.image:
+                    entry["image_url"] = v.image.url
+                for u in v.units.all():
+                    if u.size and u.size not in entry["sizes"]:
+                        entry["sizes"].append(u.size)
+                    if u.status in (ProductUnit.IN_STOCK, ProductUnit.RETURNED):
+                        entry["stock_by_size"][u.size] = entry["stock_by_size"].get(u.size, 0) + 1
+
+        variants = list(by_color.values())
+
         products_data.append({
             "offer_product_id": op.id,
             "product_id": product.id,
