@@ -3623,13 +3623,41 @@ def api_shopify_webhook_order_created(request):
         if not candidates:
             return all_variants[0]
 
-        # Try to match each candidate against color_label and color_name (case-insensitive)
+        # Build a list of FR/EN color synonyms so "Bleu" matches "Blue"/"BLUE",
+        # "Noir" matches "Black"/"BLACK", "Gris" matches "Gray"/"Grey", etc.
+        # The list is one-way: if a candidate equals one of the synonyms in a
+        # group, we accept any variant whose color equals ANY synonym in the same group.
+        color_aliases = [
+            {"bleu", "blue", "azul"},
+            {"noir", "black", "noire"},
+            {"blanc", "white", "blanche"},
+            {"rouge", "red", "rojo"},
+            {"vert", "green", "verte"},
+            {"gris", "gray", "grey", "grise"},
+            {"jaune", "yellow"},
+            {"orange", "naranja"},
+            {"rose", "pink"},
+            {"violet", "purple", "violet"},
+            {"marron", "brown", "marrone", "café", "cafe"},
+            {"beige", "cream", "crème", "creme"},
+            {"camo", "camouflage"},
+        ]
+
+        def _synonyms_of(word):
+            """Return the set of synonyms that contain this word (lowercased)."""
+            w = word.strip().lower()
+            for group in color_aliases:
+                if w in group:
+                    return group
+            return {w}
+
+        # Try to match each candidate against color_label and color_name
         for cand in candidates:
-            cl = cand.lower()
+            cand_syns = _synonyms_of(cand)
             for v in all_variants:
-                if (v.color_label or "").strip().lower() == cl:
-                    return v
-                if (v.color_name or "").strip().lower() == cl:
+                lbl = (v.color_label or "").strip().lower()
+                nm = (v.color_name or "").strip().lower()
+                if lbl in cand_syns or nm in cand_syns:
                     return v
         # Partial contains match (handles "Gris foncé" matches "Gris")
         for cand in candidates:
