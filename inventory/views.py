@@ -3421,6 +3421,7 @@ def api_shopify_webhook_order_created(request):
     # Customers type free text on Shopify, so we need to be flexible: handle
     # accents, casing, filler words ("Governorate", "Gouvernorat"), and typos.
     region = None
+    matched_delegation_name = None
     if province:
         import unicodedata, re
 
@@ -3498,6 +3499,8 @@ def api_shopify_webhook_order_created(request):
         # Strategy D: maybe the customer typed a CITY (delegation) instead
         # of the governorate. Look in Delegation table and use the parent region.
         # E.g. "Hammamet" → Delegation found → parent region = Nabeul
+        # Also: if a Delegation matches, OVERWRITE the city with its canonical name
+        # (e.g. customer typed "rgeb" → matches delegation "Regueb" → we store "Regueb").
         if not region and province_norm:
             from .models import Delegation
             all_delegations = list(Delegation.objects.filter(is_active=True).select_related("region"))
@@ -3505,6 +3508,7 @@ def api_shopify_webhook_order_created(request):
             for d_obj in all_delegations:
                 if _normalize(d_obj.name) == province_norm:
                     region = d_obj.region
+                    matched_delegation_name = d_obj.name
                     break
             # Then try contained
             if not region:
@@ -3512,6 +3516,7 @@ def api_shopify_webhook_order_created(request):
                     d_norm = _normalize(d_obj.name)
                     if d_norm and (d_norm in province_norm or province_norm in d_norm):
                         region = d_obj.region
+                        matched_delegation_name = d_obj.name
                         break
             # Then try fuzzy
             if not region:
@@ -3528,6 +3533,13 @@ def api_shopify_webhook_order_created(request):
                         best_dist = dd
                 if best_dleg:
                     region = best_dleg.region
+                    matched_delegation_name = best_dleg.name
+
+    # If we matched a Delegation by name (fuzzy or otherwise), replace the
+    # free-text city with the canonical Delegation name so the team sees a
+    # clean value and our existing dropdowns recognize it.
+    if matched_delegation_name:
+        city = matched_delegation_name
 
     # 5. Get the Shopify SalesPage (or create it if missing)
     sales_page = SalesPage.objects.filter(name__iexact="Barats.tn").first()
