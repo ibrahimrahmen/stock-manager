@@ -4345,12 +4345,37 @@ def api_order_change_status(request, pk):
         order.cancel_reason = cancel_reason
         order.cancelled_at = timezone.now()
         order.save(update_fields=["status", "cancel_reason", "cancelled_at", "updated_at"])
+
+        # If the order came from Shopify, also cancel it on their side so it
+        # doesn't stay "open" in their admin.
+        shopify_cancelled = False
+        shopify_id = _extract_shopify_order_id_from_notes(order.notes)
+        if shopify_id:
+            ok_sh, sh_resp = _shopify_cancel_order(shopify_id)
+            if ok_sh:
+                shopify_cancelled = True
+                log_action(
+                    request.user, AuditLog.OTHER,
+                    description=f"Shopify : commande {shopify_id} annulée (Order #{order.id})",
+                    request=request, target_model="Order", target_id=order.id,
+                    extra=str(sh_resp)[:5000],
+                )
+            else:
+                # Don't block — just log. The team can fix on Shopify manually.
+                log_action(
+                    request.user, AuditLog.OTHER,
+                    description=f"Shopify : ÉCHEC d'annulation pour {shopify_id} (Order #{order.id}) — à fixer manuellement",
+                    request=request, target_model="Order", target_id=order.id,
+                    extra=str(sh_resp)[:5000],
+                )
+
         log_action(
             request.user, AuditLog.STATUS_CHANGE,
             description=(
                 f"Commande #{order.id} annulée : "
                 f"{dict(Order.CANCEL_REASON_CHOICES).get(cancel_reason, cancel_reason)}"
                 + (" (bordereau Navex également supprimé)" if navex_was_cancelled else "")
+                + (" (Shopify également annulé)" if shopify_cancelled else "")
             ),
             request=request,
             target_model="Order", target_id=order.id,
@@ -4360,6 +4385,7 @@ def api_order_change_status(request, pk):
             "label": valid[Order.ANNULEE],
             "cancel_reason": cancel_reason,
             "navex_was_cancelled": navex_was_cancelled,
+            "shopify_was_cancelled": shopify_cancelled,
         })
 
     # ---- Other simple transitions (injoignable, pas_serieux, rappeler_plus_tard) ----
@@ -4929,6 +4955,69 @@ def _sync_navex_for_v2_orders(only_pending=True):
         o.save(update_fields=update_fields)
         n_updated += 1
     return n_attempted, n_updated
+
+
+def _shopify_cancel_order(shopify_order_id):
+    """Call Shopify Admin API to cancel an order.
+
+    Requires env vars:
+      - SHOPIFY_SHOP_DOMAIN (e.g. 'barats.myshopify.com')
+      - SHOPIFY_ADMIN_API_TOKEN (Admin API access token, starts with 'shpat_')
+
+    Returns (ok: bool, response_data: dict|str).
+    """
+    import urllib.request, urllib.error
+    domain = os.environ.get("SHOPIFY_SHOP_DOMAIN", "").strip()
+    token = os.environ.get("SHOPIFY_ADMIN_API_TOKEN", "").strip()
+    if not domain or not token:
+        return False, {"_error": "SHOPIFY_SHOP_DOMAIN ou SHOPIFY_ADMIN_API_TOKEN non configuré."}
+    if not shopify_order_id:
+        return False, {"_error": "Shopify order ID vide."}
+
+    # Strip any 'gid://shopify/Order/' prefix if present, keep only the numeric id
+    sid = str(shopify_order_id).strip()
+    if "/" in sid:
+        sid = sid.rsplit("/", 1)[-1]
+
+    url = f"https://{domain}/admin/api/2024-10/orders/{sid}/cancel.json"
+    payload = json.dumps({
+        "reason": "customer",
+        "email": False,
+        "restock": False,
+    }).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("X-Shopify-Access-Token", token)
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                data = {"_raw": raw}
+            return True, data
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", errors="replace")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = {"_raw": raw, "_http_status": e.code}
+        return False, data
+    except Exception as e:
+        return False, {"_error": f"Erreur réseau: {e}"}
+
+
+def _extract_shopify_order_id_from_notes(notes):
+    """Helper to pull the Shopify order id from the Order.notes string we set
+    when receiving the webhook (format: 'shopify_order_id=12345 | ...').
+    Returns empty string if not found.
+    """
+    if not notes:
+        return ""
+    import re
+    m = re.search(r"shopify_order_id=(\d+)", notes)
+    return m.group(1) if m else ""
 
 
 def _navex_cancel_colis(bordereau):
