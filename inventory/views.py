@@ -3400,10 +3400,25 @@ def api_shopify_webhook_order_created(request):
         )
         return JsonResponse({"status": "ok", "message": "No phone, ignored."})
 
+    def _safe_name(d):
+        """Build 'first last' from a Shopify address dict, filtering out
+        None / 'None' / empty strings (which the customer sometimes leaves)."""
+        if not d:
+            return ""
+        first = (d.get("first_name") or "").strip()
+        last = (d.get("last_name") or "").strip()
+        # Some forms send the literal string "None" or "null"
+        if first.lower() in ("none", "null"):
+            first = ""
+        if last.lower() in ("none", "null"):
+            last = ""
+        parts = [p for p in (first, last) if p]
+        return " ".join(parts)
+
     name = (
-        f"{shipping.get('first_name', '')} {shipping.get('last_name', '')}".strip()
-        or f"{billing.get('first_name', '')} {billing.get('last_name', '')}".strip()
-        or f"{customer_data.get('first_name', '')} {customer_data.get('last_name', '')}".strip()
+        _safe_name(shipping)
+        or _safe_name(billing)
+        or _safe_name(customer_data)
     )
     address1 = shipping.get("address1") or billing.get("address1") or ""
     address2 = shipping.get("address2") or billing.get("address2") or ""
@@ -3875,7 +3890,7 @@ def api_shopify_webhook_order_created(request):
             f"({len(line_items)} ligne(s), {len(unmatched_items)} non reconnue(s))"
         ),
         target_model="Order", target_id=order.id,
-        extra=audit_extra[:20000],
+        extra=audit_extra[:50000],
     )
 
     return JsonResponse({
