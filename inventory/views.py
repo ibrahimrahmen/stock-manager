@@ -3440,6 +3440,50 @@ def api_shopify_webhook_order_created(request):
     if province:
         import unicodedata, re
 
+        # Arabic-to-French translation for Tunisian governorates + common cities.
+        # Some customers type their city/governorate in Arabic; we translate
+        # before normalizing so the rest of the matching logic still works.
+        # The list covers the 24 governorates + the most common large cities.
+        arabic_to_french = {
+            # Governorates
+            "تونس": "Tunis", "أريانة": "Ariana", "اريانة": "Ariana",
+            "بن عروس": "Ben Arous", "منوبة": "Manouba",
+            "نابل": "Nabeul", "زغوان": "Zaghouan",
+            "بنزرت": "Bizerte", "باجة": "Beja", "جندوبة": "Jendouba",
+            "الكاف": "Kef", "سليانة": "Siliana",
+            "القيروان": "Kairouan", "القصرين": "Kasserine",
+            "سيدي بوزيد": "Sidi Bouzid",
+            "سوسة": "Sousse", "المنستير": "Monastir", "المهدية": "Mahdia",
+            "صفاقس": "Sfax",
+            "قفصة": "Gafsa", "ڤفصة": "Gafsa",  # ڤ is a Tunisian variant of ق
+            "توزر": "Tozeur", "قبلي": "Kebili", "ڤبلي": "Kebili",
+            "قابس": "Gabes", "ڤابس": "Gabes",
+            "مدنين": "Medenine", "تطاوين": "Tataouine",
+            # Common cities (delegations)
+            "الحمامات": "Hammamet", "نابول": "Nabeul",
+            "صفاڤس": "Sfax",
+            "جربة": "Houmt Souk", "حومة السوق": "Houmt Souk",
+            "الرڤاب": "Regueb", "الرقاب": "Regueb",
+            "أنفيدها": "Enfidha", "النفيضة": "Enfidha",
+        }
+
+        # Translate the province text if it contains Arabic chars
+        if province and any("\u0600" <= c <= "\u06ff" for c in province):
+            # Build a translated version word-by-word
+            translated_parts = []
+            for word in province.split():
+                w = word.strip()
+                if w in arabic_to_french:
+                    translated_parts.append(arabic_to_french[w])
+                else:
+                    translated_parts.append(w)  # keep original — might be a personal name
+            # Also try whole-string lookup in case it's a multi-word key
+            whole = province.strip()
+            if whole in arabic_to_french:
+                province = arabic_to_french[whole]
+            else:
+                province = " ".join(translated_parts)
+
         def _normalize(s):
             """Lowercase, strip accents, remove filler words & punctuation."""
             if not s:
