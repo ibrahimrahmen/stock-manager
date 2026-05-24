@@ -35,6 +35,7 @@ urlpatterns = [
     path("api/navex-sync/", views.api_navex_sync, name="api_navex_sync"),
     path("api/scan-session/log/", views.api_log_scan_session, name="api_log_scan_session"),
     path("api/scan-session/today/", views.api_get_scan_session, name="api_get_scan_session"),
+    path("api/scan-session/clear-today/", views.api_clear_scan_session_today, name="api_clear_scan_session_today"),
     path("api/scan-session/recheck/", views.api_recheck_session, name="api_recheck_session"),
     path("api/send-email/<str:email_type>/", views.api_send_email, name="api_send_email"),
     path("cron/morning/", views.cron_morning_email, name="cron_morning"),

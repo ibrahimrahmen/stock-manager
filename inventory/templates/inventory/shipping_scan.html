@@ -1196,10 +1196,31 @@
     setInterval(silentAutoRecheck, 120000);
   }, 30000);
 
-  function clearSession() {
-    if (!confirm('Vider la liste de la session ?')) return;
-    // Just reload — can't delete from DB but resets visually
-    renderSession([], []);
+  async function clearSession() {
+    // Double confirmation because this deletes from the DB
+    if (!confirm('⚠ Vider TOUTE la session du jour ?\n\nÇa supprime la liste de scans (corrects + erreurs) côté serveur. Les commandes scannées et les stocks ne sont PAS affectés.')) return;
+    if (!confirm('Êtes-vous sûr ? Cette action est irréversible.')) return;
+
+    try {
+      var res = await fetch('/api/scan-session/clear-today/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+      });
+      var data = await res.json();
+      if (data.status === 'ok') {
+        renderSession([], []);
+        alert('Session vidée : ' + (data.deleted || 0) + ' entrée(s) supprimée(s).');
+      } else {
+        alert('Erreur : ' + (data.message || 'inconnue'));
+      }
+    } catch(e) {
+      alert('Erreur réseau : ' + e.message);
+    }
+  }
+
+  function getCsrf() {
+    var m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : '';
   }
 
   function renderSession(correct, wrong) {

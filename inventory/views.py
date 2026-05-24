@@ -1786,6 +1786,35 @@ def api_get_scan_session(request):
     })
 
 
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_clear_scan_session_today(request):
+    """Delete all ScanSessionLog rows for today (the "Vider" button).
+
+    Does NOT touch ShippingOrders, ProductUnits, or any real shipping data —
+    only clears the display log so the warehouse team starts fresh after a
+    big pickup or a holiday batch.
+
+    Requires staff permission to avoid accidental clicks.
+    """
+    if not request.user.is_staff:
+        return JsonResponse({"status": "error", "message": "Permission refusée."}, status=403)
+
+    today = get_scan_session_date()
+    qs = ScanSessionLog.objects.filter(session_date=today)
+    deleted_count = qs.count()
+    qs.delete()
+
+    log_action(
+        request.user, AuditLog.OTHER,
+        description=f"Session scan : vidé manuellement ({deleted_count} entrée(s) supprimée(s) pour {today})",
+        request=request,
+    )
+
+    return JsonResponse({"status": "ok", "deleted": deleted_count})
+
+
 @login_required(login_url="/login/")
 def api_recheck_session(request):
     """Full reconciliation: walk every order closed today, fetch Navex info,
