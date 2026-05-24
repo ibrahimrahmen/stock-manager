@@ -2387,7 +2387,16 @@ def products_list(request):
     # Calculate low stock sizes per product (predictive: days-of-cover < 10)
     products_data = []
     for product in products:
-        stock = sum(v.total_stock for v in product.variants.all())
+        # Stock breakdown: total disponible = in_stock + returned
+        in_stock_count = 0
+        returned_count = 0
+        for variant in product.variants.all():
+            for unit in variant.units.all():
+                if unit.status == ProductUnit.IN_STOCK:
+                    in_stock_count += 1
+                elif unit.status == ProductUnit.RETURNED:
+                    returned_count += 1
+        stock = in_stock_count + returned_count
         is_low = stock <= product.alert_threshold and not product.alert_disabled
 
         # Find low/zero sizes using predictive forecast — skipped entirely for muted products
@@ -2415,6 +2424,8 @@ def products_list(request):
         products_data.append({
             "product": product,
             "stock": stock,
+            "in_stock_count": in_stock_count,
+            "returned_count": returned_count,
             "low_sizes": low_sizes,
             "zero_sizes": zero_sizes,
             "is_low": is_low,
@@ -2463,10 +2474,24 @@ def product_detail(request, pk):
             "all_units": variant.units.all(),
         })
 
+    # Stock breakdown for the whole product (across all variants/sizes)
+    in_stock_total = 0
+    returned_total = 0
+    for variant in variants:
+        for unit in variant.units.all():
+            if unit.status == ProductUnit.IN_STOCK:
+                in_stock_total += 1
+            elif unit.status == ProductUnit.RETURNED:
+                returned_total += 1
+    available_total = in_stock_total + returned_total
+
     return render(request, "inventory/product_detail.html", {
         "product": product,
         "variants": variants,
         "variants_data": variants_data,
+        "in_stock_total": in_stock_total,
+        "returned_total": returned_total,
+        "available_total": available_total,
     })
 
 

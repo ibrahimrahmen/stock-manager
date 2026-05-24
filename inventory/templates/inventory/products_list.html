@@ -144,7 +144,7 @@
         <div class="bubble-code">{{ product.code }}{% if product.category %} · {{ product.category }}{% endif %}</div>
         <div class="bubble-stats">
           <span class="bstat {% if pd.is_low or stock == 0 %}bstat-low blink{% else %}bstat-stock{% endif %}">
-            {{ stock }} en stock
+            Disponible : {{ stock }}{% if pd.returned_count %} ({{ pd.in_stock_count }} + {{ pd.returned_count }} retourné){% endif %}
           </span>
           {% if product.variants.count > 1 %}
           <span class="bstat bstat-shipped">{{ product.variants.count }} variantes</span>

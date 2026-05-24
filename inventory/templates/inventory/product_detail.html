@@ -150,6 +150,9 @@
   </div>
 
   <div class="sec">Stock par variante et taille</div>
+  <div style="margin: 0 0 12px 0; padding: 10px 14px; background: var(--card-bg, rgba(0,0,0,0.05)); border-radius: 8px; font-size: 14px;">
+    <strong>Disponible : {{ available_total }}</strong>{% if returned_total %} ({{ in_stock_total }} + {{ returned_total }} retourné){% endif %}
+  </div>
   <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;">
   <div class="variants-grid" style="flex:1;min-width:240px;">
     {% for vd in variants_data %}
