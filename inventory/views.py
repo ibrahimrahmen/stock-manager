@@ -3880,13 +3880,33 @@ def api_shopify_webhook_order_created(request):
         if not candidates:
             return ""
 
-        # Collect known sizes for this product across all variants
+        # Collect known sizes for this product AND its family (parent + V2/V3 children)
+        # across all variants. This is important because the merchant may have
+        # "Pull WaveLine" (sizes 1-4) and "Pull WaveLine V2" (sizes 2-5) and a
+        # customer who picks 2XL should land on size "5" no matter which sub-product matched.
         known_sizes = set()
         if product:
-            for v in product.variants.all():
-                for u in v.units.all():
-                    if u.size:
-                        known_sizes.add(u.size.strip())
+            # Find the root: walk up parent_product until None
+            root = product
+            while getattr(root, "parent_product", None):
+                root = root.parent_product
+            # Build family = root + all descendants
+            family = [root]
+            try:
+                from .models import Product as _Product
+                # children of root (V2)
+                for child in _Product.objects.filter(parent_product=root):
+                    family.append(child)
+                    # grandchildren (V3)
+                    for grand in _Product.objects.filter(parent_product=child):
+                        family.append(grand)
+            except Exception:
+                pass
+            for p in family:
+                for v in p.variants.all():
+                    for u in v.units.all():
+                        if u.size:
+                            known_sizes.add(u.size.strip())
 
         # LETTER → NUMBER mapping for Tunisian size convention:
         #   1=S, 2=M, 3=L, 4=XL, 5=XXL
