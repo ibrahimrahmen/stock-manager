@@ -1,64 +1,127 @@
-{% extends "inventory/base.html" %}
-{% block title %}Vente interne · Stock Manager{% endblock %}
-{% block content %}
-<style>
-  .is-page { max-width: 720px; margin: 20px auto; padding: 0 20px; }
-  .is-card { background: var(--card-bg, #fff); border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
-  .is-row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; }
-  .is-row label { color: var(--muted, #777); font-size: 14px; }
-  .is-row .val { font-weight: 600; }
-  .is-input { width: 100%; padding: 12px 14px; border: 1px solid var(--border, #ddd); border-radius: 8px; font-size: 16px; box-sizing: border-box; }
-  .is-input:focus { outline: 2px solid #5b8ef4; outline-offset: -1px; }
-  .is-btn { padding: 12px 24px; background: #16a34a; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; width: 100%; }
-  .is-btn:disabled { opacity: .5; cursor: not-allowed; }
-  .is-btn-secondary { background: #6b7280; }
-  .is-msg { padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 14px; }
-  .is-msg-ok { background: #dcfce7; color: #166534; }
-  .is-msg-err { background: #fee2e2; color: #991b1b; }
-  .is-hidden { display: none; }
-  .is-title { font-size: 22px; font-weight: 700; margin-bottom: 14px; }
-  .is-help { color: var(--muted, #777); font-size: 13px; margin-top: 4px; }
-</style>
-
-<div class="is-page">
-  <div class="is-title">🛒 Vente interne</div>
-  <div class="is-help">Scannez le code-barres unitaire d'un produit pour le vendre directement à un employé ou ami. Le prix par défaut est le prix de revient.</div>
-
-  <!-- Step 1: scan barcode -->
-  <div class="is-card">
-    <label for="barcode-input"><b>Code-barres unité</b></label>
-    <input id="barcode-input" class="is-input" placeholder="Scannez ou tapez le code..." autofocus style="margin-top: 8px;" />
-    <div id="lookup-msg" class="is-msg is-hidden"></div>
+{% load inventory_tags %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vente interne — Stock Manager</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+      background: #0f0f0d;
+      color: #f0ede6;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .topbar {
+      max-width: 720px;
+      margin: 0 auto 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .topbar a { color: #8a887f; text-decoration: none; font-size: 14px; }
+    .topbar a:hover { color: #f0ede6; }
+    .is-page { max-width: 720px; margin: 0 auto; }
+    .is-card {
+      background: #1a1a17;
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 14px;
+      padding: 22px;
+      margin-bottom: 18px;
+    }
+    .is-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .is-row:last-child { border-bottom: none; }
+    .is-row label { color: #8a887f; font-size: 14px; }
+    .is-row .val { font-weight: 600; color: #f0ede6; }
+    .is-input {
+      width: 100%;
+      padding: 12px 14px;
+      background: #222220;
+      color: #f0ede6;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      font-size: 16px;
+      font-family: inherit;
+    }
+    .is-input:focus { outline: 2px solid #4ade9a; outline-offset: -1px; }
+    .is-btn {
+      padding: 13px 24px;
+      background: #4ade9a;
+      color: #0f0f0d;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      font-family: inherit;
+    }
+    .is-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .is-btn-secondary { background: #2f2f2c; color: #f0ede6; }
+    .is-msg { padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 14px; }
+    .is-msg-ok { background: rgba(74,222,154,0.12); color: #4ade9a; }
+    .is-msg-err { background: rgba(248,113,113,0.12); color: #f87171; }
+    .is-hidden { display: none; }
+    .is-title {
+      font-family: 'DM Serif Display', serif;
+      font-size: 28px;
+      margin-bottom: 6px;
+    }
+    .is-help { color: #8a887f; font-size: 14px; margin-bottom: 18px; }
+    .is-label { display: block; font-size: 13px; color: #8a887f; margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="{% url 'dashboard' %}">← Dashboard</a>
+    <span style="color:#8a887f;font-size:13px;">Admin</span>
   </div>
 
-  <!-- Step 2: confirm sale (hidden until lookup succeeds) -->
-  <div id="confirm-card" class="is-card is-hidden">
-    <div class="is-row"><label>Produit</label><span class="val" id="info-product">—</span></div>
-    <div class="is-row"><label>Couleur</label><span class="val" id="info-color">—</span></div>
-    <div class="is-row"><label>Taille</label><span class="val" id="info-size">—</span></div>
-    <div class="is-row"><label>Statut actuel</label><span class="val" id="info-status">—</span></div>
-    <div class="is-row"><label>Prix d'achat</label><span class="val" id="info-buy">—</span></div>
-    <div class="is-row"><label>Prix de vente normal</label><span class="val" id="info-sell">—</span></div>
+  <div class="is-page">
+    <div class="is-title">🛒 Vente interne</div>
+    <div class="is-help">Scannez le code-barres d'une unité pour vendre à un employé / ami. Prix par défaut = prix d'achat.</div>
 
-    <div style="margin-top: 16px;">
-      <label for="price-input"><b>Prix de vente (DT)</b></label>
-      <input id="price-input" class="is-input" type="number" step="0.001" style="margin-top: 6px;" />
-      <div class="is-help">Par défaut = prix d'achat. Modifiez si nécessaire.</div>
+    <div class="is-card">
+      <label for="barcode-input" class="is-label">CODE-BARRES UNITÉ</label>
+      <input id="barcode-input" class="is-input" placeholder="Scannez ou tapez le code..." autofocus />
+      <div id="lookup-msg" class="is-msg is-hidden"></div>
     </div>
 
-    <div style="margin-top: 12px;">
-      <label for="note-input"><b>Note (optionnel)</b></label>
-      <input id="note-input" class="is-input" placeholder="ex: vendu à Ahmed (employé)" style="margin-top: 6px;" />
-    </div>
+    <div id="confirm-card" class="is-card is-hidden">
+      <div class="is-row"><label>Produit</label><span class="val" id="info-product">—</span></div>
+      <div class="is-row"><label>Couleur</label><span class="val" id="info-color">—</span></div>
+      <div class="is-row"><label>Taille</label><span class="val" id="info-size">—</span></div>
+      <div class="is-row"><label>Statut actuel</label><span class="val" id="info-status">—</span></div>
+      <div class="is-row"><label>Prix d'achat</label><span class="val" id="info-buy">—</span></div>
+      <div class="is-row"><label>Prix de vente normal</label><span class="val" id="info-sell">—</span></div>
 
-    <div id="confirm-msg" class="is-msg is-hidden"></div>
+      <div style="margin-top: 18px;">
+        <label for="price-input" class="is-label">PRIX DE VENTE (DT)</label>
+        <input id="price-input" class="is-input" type="number" step="0.001" />
+      </div>
 
-    <div style="display: flex; gap: 10px; margin-top: 16px;">
-      <button id="cancel-btn" class="is-btn is-btn-secondary" onclick="cancelSale()">Annuler</button>
-      <button id="confirm-btn" class="is-btn" onclick="confirmSale()">Valider la vente</button>
+      <div style="margin-top: 14px;">
+        <label for="note-input" class="is-label">NOTE (optionnel)</label>
+        <input id="note-input" class="is-input" placeholder="ex: vendu à Ahmed (employé)" />
+      </div>
+
+      <div id="confirm-msg" class="is-msg is-hidden"></div>
+
+      <div style="display: flex; gap: 10px; margin-top: 18px;">
+        <button id="cancel-btn" class="is-btn is-btn-secondary" onclick="cancelSale()">Annuler</button>
+        <button id="confirm-btn" class="is-btn" onclick="confirmSale()">Valider la vente</button>
+      </div>
     </div>
   </div>
-</div>
 
 <script>
   function getCsrf() {
@@ -101,7 +164,6 @@
       document.getElementById('info-status').textContent = data.unit.status_raw;
       document.getElementById('info-buy').textContent = data.unit.buy_price + ' DT';
       document.getElementById('info-sell').textContent = data.unit.sell_price + ' DT';
-      // Default sale price = buy_price (cost)
       document.getElementById('price-input').value = data.unit.buy_price;
       document.getElementById('note-input').value = '';
       hideMsg('confirm-msg');
@@ -154,7 +216,6 @@
     hideMsg('lookup-msg');
   }
 
-  // Listen for Enter on barcode input
   document.getElementById('barcode-input').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -162,4 +223,5 @@
     }
   });
 </script>
-{% endblock %}
+</body>
+</html>
