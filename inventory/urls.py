@@ -8,6 +8,10 @@ urlpatterns = [
     path("logout/", views.logout_view, name="logout"),
     path("scan/shipping/", views.shipping_scan, name="shipping_scan"),
     path("scan/return/", views.return_scan, name="return_scan"),
+    # Internal sale (employee / friend) — admin only
+    path("scan/internal-sale/", views.internal_sale_view, name="internal_sale"),
+    path("api/internal-sale/lookup/", views.api_internal_sale_lookup, name="api_internal_sale_lookup"),
+    path("api/internal-sale/confirm/", views.api_internal_sale_confirm, name="api_internal_sale_confirm"),
     path("stock-value/", views.stock_value, name="stock_value"),
     path("api/scan/shipping/", views.api_scan_shipping, name="api_scan_shipping"),
     path("api/orders/<int:pk>/state/", views.api_get_order_state, name="api_get_order_state"),

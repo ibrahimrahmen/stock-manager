@@ -68,6 +68,110 @@ def reception_scan(request):
 def return_scan(request):
     return render(request, "inventory/return_scan.html", {})
 
+
+# ---- Internal sale (employee / friend) -------------------------------------
+
+@login_required(login_url="/login/")
+def internal_sale_view(request):
+    """Page where admin scans a unit barcode and sells it at cost price (or custom)."""
+    if not request.user.is_staff:
+        return HttpResponseForbidden("Accès réservé aux administrateurs.")
+    return render(request, "inventory/internal_sale.html", {})
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_internal_sale_lookup(request):
+    """Look up a ProductUnit by barcode. Returns its info + prices."""
+    if not request.user.is_staff:
+        return JsonResponse({"status": "error", "message": "Permission refusée."}, status=403)
+    data = json.loads(request.body)
+    barcode = (data.get("barcode") or "").strip().upper()
+    if not barcode:
+        return JsonResponse({"status": "error", "message": "Code-barres vide."})
+    try:
+        unit = ProductUnit.objects.select_related("variant", "variant__product").get(barcode=barcode)
+    except ProductUnit.DoesNotExist:
+        return JsonResponse({"status": "error", "message": f"Unité {barcode} introuvable."})
+
+    product = unit.variant.product
+    return JsonResponse({
+        "status": "ok",
+        "unit": {
+            "barcode": unit.barcode,
+            "status_raw": unit.status,
+            "product_name": product.name,
+            "color_label": unit.variant.color_label or "",
+            "size": unit.size or "",
+            "buy_price": str(product.buy_price),
+            "sell_price": str(product.sell_price),
+        }
+    })
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_internal_sale_confirm(request):
+    """Mark a unit as PAID at a custom price. Creates StockMovement + AuditLog."""
+    if not request.user.is_staff:
+        return JsonResponse({"status": "error", "message": "Permission refusée."}, status=403)
+    from .models import log_action, AuditLog
+    data = json.loads(request.body)
+    barcode = (data.get("barcode") or "").strip().upper()
+    sale_price_raw = (data.get("sale_price") or "").strip()
+    note = (data.get("note") or "").strip()
+
+    if not barcode:
+        return JsonResponse({"status": "error", "message": "Code-barres vide."})
+    try:
+        sale_price = Decimal(sale_price_raw)
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Prix invalide."})
+
+    try:
+        unit = ProductUnit.objects.select_related("variant", "variant__product").get(barcode=barcode)
+    except ProductUnit.DoesNotExist:
+        return JsonResponse({"status": "error", "message": f"Unité {barcode} introuvable."})
+
+    if unit.status == ProductUnit.PAID:
+        return JsonResponse({"status": "error", "message": f"Unité {barcode} déjà vendue."})
+    if unit.status == ProductUnit.SHIPPED:
+        return JsonResponse({"status": "error", "message": f"Unité {barcode} déjà expédiée — utilise le scan paiement normal."})
+
+    old_status = unit.status
+    unit.status = ProductUnit.PAID
+    unit.save(update_fields=["status"])
+
+    StockMovement.objects.create(
+        unit=unit,
+        movement_type=StockMovement.PAID,
+        reference=f"VENTE INTERNE - {note}" if note else "VENTE INTERNE",
+        user=request.user,
+    )
+
+    log_action(
+        request.user, AuditLog.OTHER,
+        description=(
+            f"Vente interne : {unit.variant.product.name} ({unit.variant.color_label or '?'}, "
+            f"taille {unit.size or '?'}) vendu à {sale_price} DT"
+            + (f" — Note: {note}" if note else "")
+            + f" (ancien statut: {old_status})"
+        ),
+        request=request,
+        target_unit_barcode=barcode,
+    )
+
+    return JsonResponse({
+        "status": "ok",
+        "message": f"Unité {barcode} vendue à {sale_price} DT.",
+        "product_name": unit.variant.product.name,
+        "color": unit.variant.color_label or "",
+        "size": unit.size or "",
+    })
+
+
 @login_required(login_url="/login/")
 def stock_value(request):
     if not request.user.is_staff:

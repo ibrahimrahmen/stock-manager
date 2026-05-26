@@ -1,0 +1,165 @@
+{% extends "inventory/base.html" %}
+{% block title %}Vente interne · Stock Manager{% endblock %}
+{% block content %}
+<style>
+  .is-page { max-width: 720px; margin: 20px auto; padding: 0 20px; }
+  .is-card { background: var(--card-bg, #fff); border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  .is-row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; }
+  .is-row label { color: var(--muted, #777); font-size: 14px; }
+  .is-row .val { font-weight: 600; }
+  .is-input { width: 100%; padding: 12px 14px; border: 1px solid var(--border, #ddd); border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+  .is-input:focus { outline: 2px solid #5b8ef4; outline-offset: -1px; }
+  .is-btn { padding: 12px 24px; background: #16a34a; color: #fff; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; width: 100%; }
+  .is-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .is-btn-secondary { background: #6b7280; }
+  .is-msg { padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 14px; }
+  .is-msg-ok { background: #dcfce7; color: #166534; }
+  .is-msg-err { background: #fee2e2; color: #991b1b; }
+  .is-hidden { display: none; }
+  .is-title { font-size: 22px; font-weight: 700; margin-bottom: 14px; }
+  .is-help { color: var(--muted, #777); font-size: 13px; margin-top: 4px; }
+</style>
+
+<div class="is-page">
+  <div class="is-title">🛒 Vente interne</div>
+  <div class="is-help">Scannez le code-barres unitaire d'un produit pour le vendre directement à un employé ou ami. Le prix par défaut est le prix de revient.</div>
+
+  <!-- Step 1: scan barcode -->
+  <div class="is-card">
+    <label for="barcode-input"><b>Code-barres unité</b></label>
+    <input id="barcode-input" class="is-input" placeholder="Scannez ou tapez le code..." autofocus style="margin-top: 8px;" />
+    <div id="lookup-msg" class="is-msg is-hidden"></div>
+  </div>
+
+  <!-- Step 2: confirm sale (hidden until lookup succeeds) -->
+  <div id="confirm-card" class="is-card is-hidden">
+    <div class="is-row"><label>Produit</label><span class="val" id="info-product">—</span></div>
+    <div class="is-row"><label>Couleur</label><span class="val" id="info-color">—</span></div>
+    <div class="is-row"><label>Taille</label><span class="val" id="info-size">—</span></div>
+    <div class="is-row"><label>Statut actuel</label><span class="val" id="info-status">—</span></div>
+    <div class="is-row"><label>Prix d'achat</label><span class="val" id="info-buy">—</span></div>
+    <div class="is-row"><label>Prix de vente normal</label><span class="val" id="info-sell">—</span></div>
+
+    <div style="margin-top: 16px;">
+      <label for="price-input"><b>Prix de vente (DT)</b></label>
+      <input id="price-input" class="is-input" type="number" step="0.001" style="margin-top: 6px;" />
+      <div class="is-help">Par défaut = prix d'achat. Modifiez si nécessaire.</div>
+    </div>
+
+    <div style="margin-top: 12px;">
+      <label for="note-input"><b>Note (optionnel)</b></label>
+      <input id="note-input" class="is-input" placeholder="ex: vendu à Ahmed (employé)" style="margin-top: 6px;" />
+    </div>
+
+    <div id="confirm-msg" class="is-msg is-hidden"></div>
+
+    <div style="display: flex; gap: 10px; margin-top: 16px;">
+      <button id="cancel-btn" class="is-btn is-btn-secondary" onclick="cancelSale()">Annuler</button>
+      <button id="confirm-btn" class="is-btn" onclick="confirmSale()">Valider la vente</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function getCsrf() {
+    var m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? m[1] : '';
+  }
+
+  var currentBarcode = '';
+
+  function showMsg(elId, kind, text) {
+    var el = document.getElementById(elId);
+    el.className = 'is-msg ' + (kind === 'ok' ? 'is-msg-ok' : 'is-msg-err');
+    el.textContent = text;
+    el.classList.remove('is-hidden');
+  }
+  function hideMsg(elId) {
+    document.getElementById(elId).classList.add('is-hidden');
+  }
+
+  async function lookupBarcode() {
+    var barcode = document.getElementById('barcode-input').value.trim().toUpperCase();
+    if (!barcode) return;
+    hideMsg('lookup-msg');
+    try {
+      var res = await fetch("{% url 'api_internal_sale_lookup' %}", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+        body: JSON.stringify({ barcode: barcode }),
+      });
+      var data = await res.json();
+      if (data.status !== 'ok') {
+        showMsg('lookup-msg', 'err', data.message || 'Erreur');
+        document.getElementById('confirm-card').classList.add('is-hidden');
+        return;
+      }
+      currentBarcode = data.unit.barcode;
+      document.getElementById('info-product').textContent = data.unit.product_name;
+      document.getElementById('info-color').textContent = data.unit.color_label || '—';
+      document.getElementById('info-size').textContent = data.unit.size || '—';
+      document.getElementById('info-status').textContent = data.unit.status_raw;
+      document.getElementById('info-buy').textContent = data.unit.buy_price + ' DT';
+      document.getElementById('info-sell').textContent = data.unit.sell_price + ' DT';
+      // Default sale price = buy_price (cost)
+      document.getElementById('price-input').value = data.unit.buy_price;
+      document.getElementById('note-input').value = '';
+      hideMsg('confirm-msg');
+      document.getElementById('confirm-card').classList.remove('is-hidden');
+      document.getElementById('price-input').focus();
+      document.getElementById('price-input').select();
+    } catch(e) {
+      showMsg('lookup-msg', 'err', 'Erreur réseau : ' + e.message);
+    }
+  }
+
+  async function confirmSale() {
+    var price = document.getElementById('price-input').value.trim();
+    var note = document.getElementById('note-input').value.trim();
+    if (!price || isNaN(parseFloat(price))) {
+      showMsg('confirm-msg', 'err', 'Prix invalide.');
+      return;
+    }
+    if (!confirm('Confirmer la vente de ' + currentBarcode + ' à ' + price + ' DT ?')) return;
+
+    document.getElementById('confirm-btn').disabled = true;
+    try {
+      var res = await fetch("{% url 'api_internal_sale_confirm' %}", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrf() },
+        body: JSON.stringify({ barcode: currentBarcode, sale_price: price, note: note }),
+      });
+      var data = await res.json();
+      if (data.status !== 'ok') {
+        showMsg('confirm-msg', 'err', data.message || 'Erreur');
+        return;
+      }
+      showMsg('lookup-msg', 'ok', '✓ ' + data.message);
+      document.getElementById('confirm-card').classList.add('is-hidden');
+      document.getElementById('barcode-input').value = '';
+      document.getElementById('barcode-input').focus();
+      currentBarcode = '';
+    } catch(e) {
+      showMsg('confirm-msg', 'err', 'Erreur réseau : ' + e.message);
+    } finally {
+      document.getElementById('confirm-btn').disabled = false;
+    }
+  }
+
+  function cancelSale() {
+    document.getElementById('confirm-card').classList.add('is-hidden');
+    document.getElementById('barcode-input').value = '';
+    document.getElementById('barcode-input').focus();
+    currentBarcode = '';
+    hideMsg('lookup-msg');
+  }
+
+  // Listen for Enter on barcode input
+  document.getElementById('barcode-input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      lookupBarcode();
+    }
+  });
+</script>
+{% endblock %}
