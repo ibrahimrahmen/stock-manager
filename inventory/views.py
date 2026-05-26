@@ -3474,183 +3474,237 @@ def api_shopify_webhook_order_created(request):
         or _safe_name(billing)
         or _safe_name(customer_data)
     )
-    address1 = shipping.get("address1") or billing.get("address1") or ""
-    address2 = shipping.get("address2") or billing.get("address2") or ""
+    address1_raw = shipping.get("address1") or billing.get("address1") or ""
+    address2_raw = shipping.get("address2") or billing.get("address2") or ""
+    city_raw = (shipping.get("city") or billing.get("city") or "").strip()
+    province_raw = (shipping.get("province") or billing.get("province") or "").strip()
+
+    # ---- Arabic → French translation (covers ALL fields, not just province) ----
+    # The customer may type the region/city in any field, in Arabic or French.
+    # We translate everything first, then search for a matching Region/Delegation
+    # across ALL fields (province, city, address1, address2).
+    import unicodedata, re
+
+    arabic_to_french = {
+        # === 24 Governorates ===
+        "تونس": "Tunis", "أريانة": "Ariana", "اريانة": "Ariana",
+        "بن عروس": "Ben Arous", "بنعروس": "Ben Arous",
+        "منوبة": "Manouba", "منوّبة": "Manouba",
+        "نابل": "Nabeul", "زغوان": "Zaghouan",
+        "بنزرت": "Bizerte", "باجة": "Beja", "جندوبة": "Jendouba",
+        "الكاف": "Kef", "سليانة": "Siliana",
+        "القيروان": "Kairouan", "القصرين": "Kasserine",
+        "سيدي بوزيد": "Sidi Bouzid", "سيديبوزيد": "Sidi Bouzid",
+        "سوسة": "Sousse", "المنستير": "Monastir", "المهدية": "Mahdia",
+        "صفاقس": "Sfax", "صفاڤس": "Sfax",
+        "قفصة": "Gafsa", "ڤفصة": "Gafsa",
+        "توزر": "Tozeur", "قبلي": "Kebili", "ڤبلي": "Kebili",
+        "قابس": "Gabes", "ڤابس": "Gabes",
+        "مدنين": "Medenine", "تطاوين": "Tataouine",
+        # === Delegations / common cities ===
+        "الحمامات": "Hammamet", "نابول": "Nabeul",
+        "جربة": "Houmt Souk", "حومة السوق": "Houmt Souk",
+        "الرڤاب": "Regueb", "الرقاب": "Regueb",
+        "أنفيدها": "Enfidha", "النفيضة": "Enfidha",
+        "نفطة": "Nefta", "النفطة": "Nefta",
+        "دوز": "Douz", "زرزيس": "Zarzis", "جرجيس": "Zarzis",
+        "بن قردان": "Ben Gardane", "بنقردان": "Ben Gardane",
+        "المرسى": "La Marsa", "قرطاج": "Carthage",
+        "سيدي بوسعيد": "Sidi Bou Said", "قمرت": "Gammarth",
+        "حلق الوادي": "La Goulette", "رادس": "Rades",
+        "حمام الأنف": "Hammam Lif", "حمام الشط": "Hammam Chatt",
+        "حمام سوسة": "Hammam Sousse", "أكودة": "Akouda",
+        "هرڤلة": "Hergla", "بوفيشة": "Bouficha",
+        "سيدي بوعلي": "Sidi Bou Ali", "المساكن": "Msaken",
+        "القنطاوي": "Port El Kantaoui",
+        "متلوي": "Metlaoui", "أم العرائس": "Oum Larayes",
+        "الرديف": "Redeyef",
+        "بوسالم": "Bou Salem", "طبرقة": "Tabarka",
+        "عين دراهم": "Ain Draham",
+        "تستور": "Testour", "ماطر": "Mateur",
+        "منزل بورقيبة": "Menzel Bourguiba", "منزل جميل": "Menzel Jemil",
+        "غار الملح": "Ghar El Melh",
+        "رأس الجبل": "Ras Jebel",
+        "قليبية": "Kelibia", "منزل تميم": "Menzel Temime",
+        "قربة": "Korba", "بني خلاد": "Beni Khalled",
+        "سليمان": "Soliman", "قرمبالية": "Grombalia",
+        "دار شعبان الفهري": "Dar Chaabane",
+        "بنبلة": "Bembla", "جمال": "Jemmal",
+        "قصور الساف": "Ksour Essef", "الجم": "El Jem",
+        "بومرداس": "Boumerdes",
+        "مكنين": "Moknine", "تبلبة": "Teboulba",
+        "جبنيانة": "Jebeniana",
+        "الحامة": "El Hamma", "مارث": "Mareth",
+        "متماطة": "Matmata",
+        "المظيلة": "Mdhilla", "السند": "Sened",
+        "الڤطار": "El Guettar",
+        "الذكارة": "Dkhara",
+        "سيدي صالح": "Sidi Saleh",
+    }
+
+    def _translate_arabic(text):
+        """Replace any Arabic word in `text` with its French equivalent if known.
+        Words we don't know stay as-is (might be a person's name or a street).
+        Tries multi-word keys first (longest match) before falling back to per-word.
+        """
+        if not text:
+            return ""
+        # If no Arabic chars, return as-is
+        if not any("\u0600" <= c <= "\u06ff" for c in text):
+            return text
+        # Try whole-string match first (for multi-word keys like "سيدي بوزيد")
+        stripped = text.strip()
+        if stripped in arabic_to_french:
+            return arabic_to_french[stripped]
+        # Multi-word substring replacement (e.g. "سيدي بوزيد المدينة" → "Sidi Bouzid المدينة")
+        result = text
+        # Sort keys by length desc so multi-word keys win over single-word
+        for k in sorted(arabic_to_french.keys(), key=lambda x: -len(x)):
+            if k in result:
+                result = result.replace(k, " " + arabic_to_french[k] + " ")
+        # Clean up extra spaces
+        result = re.sub(r"\s+", " ", result).strip()
+        return result
+
+    # Translate ALL location fields
+    province = _translate_arabic(province_raw)
+    city = _translate_arabic(city_raw)
+    address1 = _translate_arabic(address1_raw)
+    address2 = _translate_arabic(address2_raw)
     address = (address1 + (" " + address2 if address2 else "")).strip()
-    city = (shipping.get("city") or billing.get("city") or "").strip()
-    province = (shipping.get("province") or billing.get("province") or "").strip()
 
-    # If Shopify didn't send a province (very common — many themes don't ask for it),
-    # use the city as the location hint. It may match a Delegation that resolves
-    # to the correct region.
-    if not province and city:
-        province = city
-
-    # 4. Map region: find a Region whose name matches the Shopify province.
-    # Customers type free text on Shopify, so we need to be flexible: handle
-    # accents, casing, filler words ("Governorate", "Gouvernorat"), and typos.
+    # 4. Map region: find a Region/Delegation matching ANY of the location
+    # fields (province, city, address1, address2). All fields have already
+    # been translated from Arabic above, so matching is purely text-based.
     region = None
     matched_delegation_name = None
-    if province:
-        import unicodedata, re
 
-        # Arabic-to-French translation for Tunisian governorates + common cities.
-        # Some customers type their city/governorate in Arabic; we translate
-        # before normalizing so the rest of the matching logic still works.
-        # The list covers the 24 governorates + the most common large cities.
-        arabic_to_french = {
-            # Governorates
-            "تونس": "Tunis", "أريانة": "Ariana", "اريانة": "Ariana",
-            "بن عروس": "Ben Arous", "منوبة": "Manouba",
-            "نابل": "Nabeul", "زغوان": "Zaghouan",
-            "بنزرت": "Bizerte", "باجة": "Beja", "جندوبة": "Jendouba",
-            "الكاف": "Kef", "سليانة": "Siliana",
-            "القيروان": "Kairouan", "القصرين": "Kasserine",
-            "سيدي بوزيد": "Sidi Bouzid",
-            "سوسة": "Sousse", "المنستير": "Monastir", "المهدية": "Mahdia",
-            "صفاقس": "Sfax",
-            "قفصة": "Gafsa", "ڤفصة": "Gafsa",  # ڤ is a Tunisian variant of ق
-            "توزر": "Tozeur", "قبلي": "Kebili", "ڤبلي": "Kebili",
-            "قابس": "Gabes", "ڤابس": "Gabes",
-            "مدنين": "Medenine", "تطاوين": "Tataouine",
-            # Common cities (delegations)
-            "الحمامات": "Hammamet", "نابول": "Nabeul",
-            "صفاڤس": "Sfax",
-            "جربة": "Houmt Souk", "حومة السوق": "Houmt Souk",
-            "الرڤاب": "Regueb", "الرقاب": "Regueb",
-            "أنفيدها": "Enfidha", "النفيضة": "Enfidha",
-        }
+    def _normalize(s):
+        """Lowercase, strip accents, remove filler words & punctuation."""
+        if not s:
+            return ""
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(c for c in s if not unicodedata.combining(c))
+        s = s.lower()
+        for w in ("governorate", "gouvernorat", "gouvernement", "wilaya", "province"):
+            s = s.replace(w, "")
+        s = re.sub(r"[^a-z0-9 ]", " ", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
 
-        # Translate the province text if it contains Arabic chars
-        if province and any("\u0600" <= c <= "\u06ff" for c in province):
-            # Build a translated version word-by-word
-            translated_parts = []
-            for word in province.split():
-                w = word.strip()
-                if w in arabic_to_french:
-                    translated_parts.append(arabic_to_french[w])
-                else:
-                    translated_parts.append(w)  # keep original — might be a personal name
-            # Also try whole-string lookup in case it's a multi-word key
-            whole = province.strip()
-            if whole in arabic_to_french:
-                province = arabic_to_french[whole]
-            else:
-                province = " ".join(translated_parts)
+    def _levenshtein(a, b):
+        if a == b:
+            return 0
+        if not a:
+            return len(b)
+        if not b:
+            return len(a)
+        prev_row = list(range(len(b) + 1))
+        for i, ca in enumerate(a):
+            cur_row = [i + 1]
+            for j, cb in enumerate(b):
+                cost = 0 if ca == cb else 1
+                cur_row.append(min(cur_row[j] + 1, prev_row[j + 1] + 1, prev_row[j] + cost))
+            prev_row = cur_row
+        return prev_row[-1]
 
-        def _normalize(s):
-            """Lowercase, strip accents, remove filler words & punctuation."""
-            if not s:
-                return ""
-            # NFKD decomposes "é" → "e" + combining accent, then we strip combining marks
-            s = unicodedata.normalize("NFKD", s)
-            s = "".join(c for c in s if not unicodedata.combining(c))
-            s = s.lower()
-            # Remove common filler words
-            for w in ("governorate", "gouvernorat", "gouvernement", "wilaya", "province"):
-                s = s.replace(w, "")
-            # Replace punctuation/multiple spaces with single space
-            s = re.sub(r"[^a-z0-9 ]", " ", s)
-            s = re.sub(r"\s+", " ", s).strip()
-            return s
+    # Collect all candidate texts (translated) — try province first since it's
+    # the most reliable signal, then city, then addresses.
+    candidate_texts = [t for t in (province, city, address1, address2) if t]
+    candidate_texts_norm = [_normalize(t) for t in candidate_texts]
 
-        def _levenshtein(a, b):
-            """Simple edit distance — small inputs only."""
-            if a == b:
-                return 0
-            if not a:
-                return len(b)
-            if not b:
-                return len(a)
-            prev_row = list(range(len(b) + 1))
-            for i, ca in enumerate(a):
-                cur_row = [i + 1]
-                for j, cb in enumerate(b):
-                    cost = 0 if ca == cb else 1
-                    cur_row.append(min(
-                        cur_row[j] + 1,           # insertion
-                        prev_row[j + 1] + 1,      # deletion
-                        prev_row[j] + cost,       # substitution
-                    ))
-                prev_row = cur_row
-            return prev_row[-1]
+    all_regions = list(Region.objects.filter(is_active=True))
+    from .models import Delegation
+    all_delegations = list(Delegation.objects.filter(is_active=True).select_related("region"))
 
-        province_norm = _normalize(province)
-        all_regions = list(Region.objects.filter(is_active=True))
-
-        # Strategy A: exact match on normalized form
+    # Strategy A: exact match on a Region name in any candidate
+    for cand_norm in candidate_texts_norm:
+        if not cand_norm:
+            continue
         for r in all_regions:
-            if _normalize(r.name) == province_norm:
+            if _normalize(r.name) == cand_norm:
                 region = r
                 break
+        if region:
+            break
 
-        # Strategy B: region name contained in province text (or vice versa)
-        if not region:
+    # Strategy B: Region name contained in a candidate (or candidate contains Region)
+    if not region:
+        for cand_norm in candidate_texts_norm:
+            if not cand_norm:
+                continue
             for r in all_regions:
                 r_norm = _normalize(r.name)
-                if r_norm and (r_norm in province_norm or province_norm in r_norm):
+                if r_norm and (r_norm in cand_norm or cand_norm in r_norm):
                     region = r
                     break
+            if region:
+                break
 
-        # Strategy C: fuzzy match — pick the region with smallest edit distance
-        # if the distance is reasonable (≤ 2 chars for short names, ≤ 3 for long).
-        if not region and province_norm:
-            best = None
-            best_dist = 999
-            for r in all_regions:
-                r_norm = _normalize(r.name)
-                if not r_norm:
-                    continue
-                d = _levenshtein(province_norm, r_norm)
-                threshold = 2 if len(r_norm) <= 6 else 3
-                if d <= threshold and d < best_dist:
-                    best = r
-                    best_dist = d
-            if best:
-                region = best
-
-        # Strategy D: maybe the customer typed a CITY (delegation) instead
-        # of the governorate. Look in Delegation table and use the parent region.
-        # E.g. "Hammamet" → Delegation found → parent region = Nabeul
-        # Also: if a Delegation matches, OVERWRITE the city with its canonical name
-        # (e.g. customer typed "rgeb" → matches delegation "Regueb" → we store "Regueb").
-        if not region and province_norm:
-            from .models import Delegation
-            all_delegations = list(Delegation.objects.filter(is_active=True).select_related("region"))
-            # First try exact normalized match on delegation name
+    # Strategy C: exact match on a Delegation name in any candidate
+    if not region:
+        for cand_norm in candidate_texts_norm:
+            if not cand_norm:
+                continue
             for d_obj in all_delegations:
-                if _normalize(d_obj.name) == province_norm:
+                if _normalize(d_obj.name) == cand_norm:
                     region = d_obj.region
                     matched_delegation_name = d_obj.name
                     break
-            # Then try contained
-            if not region:
-                for d_obj in all_delegations:
-                    d_norm = _normalize(d_obj.name)
-                    if d_norm and (d_norm in province_norm or province_norm in d_norm):
-                        region = d_obj.region
-                        matched_delegation_name = d_obj.name
-                        break
-            # Then try fuzzy
-            if not region:
-                best_dleg = None
-                best_dist = 999
-                for d_obj in all_delegations:
-                    d_norm = _normalize(d_obj.name)
-                    if not d_norm:
-                        continue
-                    dd = _levenshtein(province_norm, d_norm)
-                    threshold = 2 if len(d_norm) <= 6 else 3
-                    if dd <= threshold and dd < best_dist:
-                        best_dleg = d_obj
-                        best_dist = dd
-                if best_dleg:
-                    region = best_dleg.region
-                    matched_delegation_name = best_dleg.name
+            if region:
+                break
 
-    # If we matched a Delegation by name (fuzzy or otherwise), replace the
-    # free-text city with the canonical Delegation name so the team sees a
-    # clean value and our existing dropdowns recognize it.
+    # Strategy D: Delegation name contained in a candidate (or vice versa)
+    if not region:
+        for cand_norm in candidate_texts_norm:
+            if not cand_norm:
+                continue
+            for d_obj in all_delegations:
+                d_norm = _normalize(d_obj.name)
+                if d_norm and len(d_norm) >= 3 and (d_norm in cand_norm or cand_norm in d_norm):
+                    region = d_obj.region
+                    matched_delegation_name = d_obj.name
+                    break
+            if region:
+                break
+
+    # Strategy E: fuzzy match (typos) — try Regions first, then Delegations,
+    # only on the primary candidate (province) to avoid false positives.
+    if not region and candidate_texts_norm and candidate_texts_norm[0]:
+        primary = candidate_texts_norm[0]
+        # Regions
+        best = None
+        best_dist = 999
+        for r in all_regions:
+            r_norm = _normalize(r.name)
+            if not r_norm:
+                continue
+            d = _levenshtein(primary, r_norm)
+            threshold = 2 if len(r_norm) <= 6 else 3
+            if d <= threshold and d < best_dist:
+                best = r
+                best_dist = d
+        if best:
+            region = best
+        else:
+            # Delegations
+            best_dleg = None
+            best_dist = 999
+            for d_obj in all_delegations:
+                d_norm = _normalize(d_obj.name)
+                if not d_norm:
+                    continue
+                dd = _levenshtein(primary, d_norm)
+                threshold = 2 if len(d_norm) <= 6 else 3
+                if dd <= threshold and dd < best_dist:
+                    best_dleg = d_obj
+                    best_dist = dd
+            if best_dleg:
+                region = best_dleg.region
+                matched_delegation_name = best_dleg.name
+
+    # If we matched a Delegation by name, replace the free-text city with the
+    # canonical Delegation name so the team sees a clean value.
     if matched_delegation_name:
         city = matched_delegation_name
 
