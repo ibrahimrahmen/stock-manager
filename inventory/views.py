@@ -3876,9 +3876,11 @@ def api_shopify_webhook_order_created(request):
 
     # Helper: extract size from a Shopify line item by looking at variant_title
     # and line_item properties. Returns the matched size string or "".
-    def _extract_variant(li, product):
+    def _extract_variant(li, product, strict=False):
         """Pick the right ProductVariant from a Shopify line_item based on the
-        color in variant_title. Falls back to the first variant if no match.
+        color in variant_title. Falls back to the first variant if no match,
+        UNLESS strict=True (used for bundles where a wrong fallback would create
+        a fake order line with the wrong color).
         """
         if not product:
             return None
@@ -3904,7 +3906,7 @@ def api_shopify_webhook_order_created(request):
                 candidates.append(pval)
 
         if not candidates:
-            return all_variants[0]
+            return None if strict else all_variants[0]
 
         # Build a list of FR/EN color synonyms so "Bleu" matches "Blue"/"BLUE",
         # "Noir" matches "Black"/"BLACK", "Gris" matches "Gray"/"Grey", etc.
@@ -3952,7 +3954,10 @@ def api_shopify_webhook_order_created(request):
                     return v
                 if nm and (nm in cl or cl in nm):
                     return v
-        return all_variants[0]
+        # No color matched any variant of this product.
+        # - In strict mode (bundles): return None so the team picks manually.
+        # - In normal mode: fall back to first variant.
+        return None if strict else all_variants[0]
 
     def _extract_size(li, product):
         # Shopify variant_title format examples:
@@ -4089,16 +4094,41 @@ def api_shopify_webhook_order_created(request):
                 offer = max(candidates, key=lambda o: len(o.name))
 
         if offer:
-            # Found a bundle — create OrderOffer + child OrderLines (one per product in offer)
+            # Found a bundle — create OrderOffer + child OrderLines (one per product in offer).
+            # The merchant uses Shopify variant titles like "Gris/Blanc" where
+            # each part (split on "/") corresponds, IN ORDER, to a sub-product
+            # of the offer. So we split the variant title and pass each part
+            # to the matching sub-product.
             order_offer = OrderOffer.objects.create(
                 order=order, offer=offer,
                 offer_name=offer.name,
                 bundle_price=offer.bundle_price,
                 quantity=quantity,
             )
-            for op in offer.products.all():
-                size_guess = _extract_size(li, op.product)
-                variant_guess = _extract_variant(li, op.product)
+            # Split variant_title by "/" to get one color per sub-product
+            v_title_full = (li.get("variant_title") or "").strip()
+            parts = [p.strip() for p in v_title_full.split("/") if p.strip()]
+            # NOTE: the LAST part is often the size (S/M/L/...). If the number
+            # of parts > number of sub-products, treat the trailing parts as size.
+            offer_products = list(offer.products.all())
+            n_subs = len(offer_products)
+            # Separate parts into colors (first n_subs) and size (the rest, if any)
+            color_parts = parts[:n_subs] if len(parts) >= n_subs else parts
+            size_parts = parts[n_subs:] if len(parts) > n_subs else []
+            shared_size_hint = size_parts[-1] if size_parts else ""
+
+            for i, op in enumerate(offer_products):
+                # Build a fake mini line_item for this sub-product so the
+                # variant/size extractors only see THIS sub's color + the shared size.
+                color_for_this = color_parts[i] if i < len(color_parts) else ""
+                synthetic_title = (color_for_this + "/" + shared_size_hint) if shared_size_hint else color_for_this
+                synthetic_li = dict(li)  # shallow copy preserving other fields
+                synthetic_li["variant_title"] = synthetic_title
+
+                size_guess = _extract_size(synthetic_li, op.product)
+                # strict=True so we don't silently pick the wrong color if our sub
+                # doesn't have the requested color.
+                variant_guess = _extract_variant(synthetic_li, op.product, strict=True)
                 OrderLine.objects.create(
                     order=order,
                     order_offer=order_offer,
