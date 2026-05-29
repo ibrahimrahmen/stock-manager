@@ -3881,6 +3881,47 @@ def api_shopify_webhook_order_created(request):
                 region = best_dleg.region
                 matched_delegation_name = best_dleg.name
 
+    # Strategy F: we have a region but no matched delegation yet (e.g. province
+    # had the gov name directly, like "SFAX"). Look in the other fields for
+    # a delegation that BELONGS to that region — that's likely the city.
+    # E.g. province="SFAX" + address1="jbenyana" → find Delegation "Jebeniana"
+    # in Sfax region (via fuzzy match) and use that as ville.
+    if region and not matched_delegation_name and candidate_texts_norm:
+        # Skip the first candidate (province) since we already used it for the region.
+        # Look at city, address1, address2.
+        region_delegations = [d for d in all_delegations if d.region_id == region.id]
+        # First: exact / contained
+        for cand_norm in candidate_texts_norm[1:]:
+            if not cand_norm:
+                continue
+            for d_obj in region_delegations:
+                d_norm = _normalize(d_obj.name)
+                if not d_norm:
+                    continue
+                if d_norm == cand_norm or (len(d_norm) >= 3 and (d_norm in cand_norm or cand_norm in d_norm)):
+                    matched_delegation_name = d_obj.name
+                    break
+            if matched_delegation_name:
+                break
+        # Then: fuzzy
+        if not matched_delegation_name:
+            best_match = None
+            best_score = 999
+            for cand_norm in candidate_texts_norm[1:]:
+                if not cand_norm or len(cand_norm) < 3:
+                    continue
+                for d_obj in region_delegations:
+                    d_norm = _normalize(d_obj.name)
+                    if not d_norm or len(d_norm) < 3:
+                        continue
+                    dist = _levenshtein(cand_norm, d_norm)
+                    threshold = 2 if len(d_norm) <= 6 else 3
+                    if dist <= threshold and dist < best_score:
+                        best_match = d_obj
+                        best_score = dist
+            if best_match:
+                matched_delegation_name = best_match.name
+
     # If we matched a Delegation by name, replace the free-text city with the
     # canonical Delegation name so the team sees a clean value.
     if matched_delegation_name:
