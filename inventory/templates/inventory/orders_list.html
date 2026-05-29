@@ -980,10 +980,55 @@ function renderLocDropdown(query) {
   if (!dd) return;
   // Read the currently picked region/ville (so we can highlight the active row)
   const currentRegionId = document.getElementById('cr-region')?.value || '';
-  const currentVille = (document.getElementById('cr-ville')?.value || '').toLowerCase().trim();
+  const currentVilleRaw = (document.getElementById('cr-ville')?.value || '').toLowerCase().trim();
+
+  // Normalize for comparison: lowercase, strip accents, remove non-alpha
+  function normForCompare(s) {
+    if (!s) return '';
+    // Decompose accents and strip them
+    return s.toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '');
+  }
+  const currentVilleNorm = normForCompare(currentVilleRaw);
 
   const regions = _allRegionsCache || [];
   const q = (query || '').toLowerCase().trim();
+
+  // First pass: find the BEST matching delegation in the current region
+  // (so even "Jbeniana" matches "Jebeniana" loosely).
+  let bestSelectedKey = null; // string "regionId|delegName"
+  if (currentRegionId && currentVilleNorm) {
+    const currentRegion = regions.find(r => String(r.id) === String(currentRegionId));
+    if (currentRegion) {
+      let bestDeleg = null;
+      let bestScore = -1;
+      for (const d of currentRegion.delegations) {
+        const dNorm = normForCompare(d.name);
+        let score = -1;
+        if (dNorm === currentVilleNorm) score = 100;            // exact
+        else if (dNorm.includes(currentVilleNorm) || currentVilleNorm.includes(dNorm)) {
+          // substring match — score based on how close the lengths are
+          score = 50 + Math.min(dNorm.length, currentVilleNorm.length);
+        } else {
+          // simple character-overlap heuristic for typos
+          let common = 0;
+          for (const ch of currentVilleNorm) if (dNorm.includes(ch)) common++;
+          const ratio = common / Math.max(currentVilleNorm.length, dNorm.length);
+          if (ratio > 0.7) score = Math.floor(ratio * 40);
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          bestDeleg = d;
+        }
+      }
+      if (bestDeleg && bestScore > 0) {
+        bestSelectedKey = String(currentRegionId) + '|' + bestDeleg.name.toLowerCase();
+      }
+    }
+  }
+
   let html = '';
   let totalShown = 0;
   for (const r of regions) {
@@ -994,7 +1039,8 @@ function renderLocDropdown(query) {
     if (matchingDelegs.length === 0) continue;
     html += `<div class="loc-region-header">${r.name}</div>`;
     for (const d of matchingDelegs) {
-      const isSelected = (String(r.id) === String(currentRegionId) && d.name.toLowerCase() === currentVille);
+      const key = String(r.id) + '|' + d.name.toLowerCase();
+      const isSelected = (key === bestSelectedKey);
       const cls = 'loc-deleg-item' + (isSelected ? ' selected' : '');
       const dataAttr = isSelected ? ' data-is-selected="1"' : '';
       html += `<div class="${cls}" data-region-id="${r.id}" data-region-name="${r.name.replace(/"/g,'&quot;')}" data-deleg-name="${d.name.replace(/"/g,'&quot;')}"${dataAttr}>${d.name}<span class="gov-tag">— ${r.name}</span></div>`;
@@ -1013,19 +1059,28 @@ function renderLocDropdown(query) {
       pickLocation(el.dataset.regionId, el.dataset.regionName, el.dataset.delegName);
     });
   });
-  // Scroll the currently-selected item into view (so opening on Sfax shows Sfax,
-  // not Ariana at the top of the list).
-  const sel = dd.querySelector('.loc-deleg-item.selected');
-  if (sel) {
-    // Wait one frame so the browser has computed offsetTop after the innerHTML reset
+  // Scroll the currently-selected item into view. Fall back to the region
+  // header if no delegation matched (e.g. ville stored as "Sfax" with no
+  // delegation called exactly Sfax).
+  let scrollTarget = dd.querySelector('.loc-deleg-item.selected');
+  if (!scrollTarget && currentRegionId) {
+    const regionName = (regions.find(r => String(r.id) === String(currentRegionId)) || {}).name;
+    if (regionName) {
+      const headers = dd.querySelectorAll('.loc-region-header');
+      for (const h of headers) {
+        if (h.textContent.trim() === regionName) {
+          scrollTarget = h;
+          break;
+        }
+      }
+    }
+  }
+  if (scrollTarget) {
     requestAnimationFrame(() => {
-      // sel.offsetTop is the distance from the top of the scrollable container (dd).
-      // We want to position the selected row in the middle of the visible area.
-      const target = sel.offsetTop - (dd.clientHeight / 2) + (sel.clientHeight / 2);
+      const target = scrollTarget.offsetTop - (dd.clientHeight / 2) + (scrollTarget.clientHeight / 2);
       dd.scrollTop = Math.max(0, target);
     });
   } else {
-    // No selection — make sure we start from the top
     dd.scrollTop = 0;
   }
 }
