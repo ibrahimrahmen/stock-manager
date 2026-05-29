@@ -3720,10 +3720,53 @@ def api_shopify_webhook_order_created(request):
         "سيدي صالح": "Sidi Saleh",
     }
 
+    # Arabic letter → Latin transliteration (Tunisian-style).
+    # Used as a FALLBACK after the named-place dictionary, so unknown words
+    # (street names, neighborhoods, family names) are written in latin script
+    # instead of being left in Arabic.
+    arabic_translit = {
+        # Hamzas / alif variants
+        "ء": "'", "آ": "a", "أ": "a", "ؤ": "u", "إ": "i", "ئ": "i", "ا": "a",
+        # Letters
+        "ب": "b", "ة": "a", "ت": "t", "ث": "th",
+        "ج": "j", "ح": "h", "خ": "kh",
+        "د": "d", "ذ": "dh",
+        "ر": "r", "ز": "z",
+        "س": "s", "ش": "ch",
+        "ص": "s", "ض": "dh",
+        "ط": "t", "ظ": "dh",
+        "ع": "a", "غ": "gh",
+        "ف": "f",
+        "ق": "k", "ڨ": "g", "ڤ": "g",  # Tunisian Q→G variants
+        "ك": "k",
+        "ل": "l", "م": "m", "ن": "n",
+        "ه": "h",
+        "و": "w", "ى": "a", "ي": "y",
+        # Diacritics — strip
+        "َ": "", "ُ": "", "ِ": "", "ّ": "", "ْ": "", "ً": "", "ٌ": "", "ٍ": "",
+        # Arabic-Indic digits
+        "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
+        "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+        # Common punctuation
+        "،": ",", "؛": ";", "؟": "?", "ـ": "",
+    }
+
+    def _transliterate_arabic_chars(text):
+        """Convert any remaining Arabic letters to their latin equivalents."""
+        if not text:
+            return ""
+        out = []
+        for ch in text:
+            if "\u0600" <= ch <= "\u06ff":
+                out.append(arabic_translit.get(ch, ""))
+            else:
+                out.append(ch)
+        return "".join(out)
+
     def _translate_arabic(text):
         """Replace any Arabic word in `text` with its French equivalent if known.
-        Words we don't know stay as-is (might be a person's name or a street).
-        Tries multi-word keys first (longest match) before falling back to per-word.
+        Words we don't know are then TRANSLITERATED to latin letters so the
+        team can read them.
         """
         if not text:
             return ""
@@ -3740,6 +3783,10 @@ def api_shopify_webhook_order_created(request):
         for k in sorted(arabic_to_french.keys(), key=lambda x: -len(x)):
             if k in result:
                 result = result.replace(k, " " + arabic_to_french[k] + " ")
+        # FALLBACK: transliterate any remaining Arabic characters so the team
+        # always sees latin text. E.g. "قرية الفردوس" → "karyaa alfrdws"
+        if any("\u0600" <= c <= "\u06ff" for c in result):
+            result = _transliterate_arabic_chars(result)
         # Clean up extra spaces
         result = re.sub(r"\s+", " ", result).strip()
         return result
@@ -3750,6 +3797,8 @@ def api_shopify_webhook_order_created(request):
     address1 = _translate_arabic(address1_raw)
     address2 = _translate_arabic(address2_raw)
     address = (address1 + (" " + address2 if address2 else "")).strip()
+    # Also transliterate the customer name if it was given in Arabic
+    name = _translate_arabic(name)
 
     # 4. Map region: find a Region/Delegation matching ANY of the location
     # fields (province, city, address1, address2). All fields have already
