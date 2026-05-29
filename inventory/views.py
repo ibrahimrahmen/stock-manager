@@ -3790,7 +3790,7 @@ def api_shopify_webhook_order_created(request):
         }
         base_url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            "gemini-2.0-flash:generateContent"
+            "gemini-2.5-flash-lite:generateContent"
         )
         data = _json.dumps(body).encode("utf-8")
 
@@ -3808,28 +3808,36 @@ def api_shopify_webhook_order_created(request):
 
         last_error = None
         for mode, url, headers in attempts:
-            try:
-                req = _ureq.Request(url, data=data, method="POST")
-                req.add_header("Content-Type", "application/json")
-                if headers:
-                    for h, v in headers.items():
-                        req.add_header(h, v)
-                with _ureq.urlopen(req, timeout=8) as resp:
-                    resp_data = _json.loads(resp.read().decode("utf-8"))
-                candidates = resp_data.get("candidates") or []
-                if not candidates:
-                    last_error = "no candidates"
-                    continue
-                parts = candidates[0].get("content", {}).get("parts") or []
-                if not parts:
-                    last_error = "no parts"
-                    continue
-                result = (parts[0].get("text") or "").strip()
-                if result:
-                    return result
-            except Exception as e:
-                last_error = f"{mode}: {type(e).__name__}: {e}"
-                continue
+            # Try up to 2 times with backoff on 429
+            for retry_attempt in range(2):
+                try:
+                    req = _ureq.Request(url, data=data, method="POST")
+                    req.add_header("Content-Type", "application/json")
+                    if headers:
+                        for h, v in headers.items():
+                            req.add_header(h, v)
+                    with _ureq.urlopen(req, timeout=8) as resp:
+                        resp_data = _json.loads(resp.read().decode("utf-8"))
+                    candidates = resp_data.get("candidates") or []
+                    if not candidates:
+                        last_error = "no candidates"
+                        break
+                    parts = candidates[0].get("content", {}).get("parts") or []
+                    if not parts:
+                        last_error = "no parts"
+                        break
+                    result = (parts[0].get("text") or "").strip()
+                    if result:
+                        return result
+                    break
+                except Exception as e:
+                    last_error = f"{mode}: {type(e).__name__}: {e}"
+                    # If 429, wait briefly and retry once
+                    if "429" in str(e) and retry_attempt == 0:
+                        import time as _time
+                        _time.sleep(2)
+                        continue
+                    break
 
         # All attempts failed
         try:
