@@ -1017,11 +1017,18 @@ function renderLocDropdown(query) {
   // not Ariana at the top of the list).
   const sel = dd.querySelector('.loc-deleg-item.selected');
   if (sel) {
-    // Scroll within the dropdown, not the page
-    const ddRect = dd.getBoundingClientRect();
-    const selRect = sel.getBoundingClientRect();
-    const offset = selRect.top - ddRect.top - 40; // 40px so the region header above is also visible
-    dd.scrollTop += offset;
+    // Use scrollIntoView with block:'center' so the row appears in the middle
+    // of the visible dropdown. Wrapped in setTimeout to ensure layout is done.
+    setTimeout(() => {
+      try {
+        sel.scrollIntoView({ block: 'center', inline: 'nearest' });
+      } catch(e) {
+        // Fallback for older browsers
+        const ddRect = dd.getBoundingClientRect();
+        const selRect = sel.getBoundingClientRect();
+        dd.scrollTop += (selRect.top - ddRect.top) - (dd.clientHeight / 2);
+      }
+    }, 0);
   }
 }
 
