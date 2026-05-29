@@ -3752,7 +3752,8 @@ def api_shopify_webhook_order_created(request):
     }
 
     def _transliterate_arabic_chars(text):
-        """Convert any remaining Arabic letters to their latin equivalents."""
+        """Convert any remaining Arabic letters to their latin equivalents
+        (mechanical fallback when Gemini is unavailable)."""
         if not text:
             return ""
         out = []
@@ -3763,10 +3764,58 @@ def api_shopify_webhook_order_created(request):
                 out.append(ch)
         return "".join(out)
 
+    def _gemini_transliterate(text):
+        """Call Google Gemini API to transliterate Arabic → Latin (Tunisian style).
+        Returns the transliterated text, or None on failure (caller falls back).
+        Uses the free tier of Gemini Flash 2.0.
+        """
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key or not text:
+            return None
+        import urllib.request as _ureq
+        import urllib.error as _uerr
+        import json as _json
+        prompt = (
+            "Translitère ce texte arabe (tunisien) en lettres latines lisibles "
+            "(style phonétique français). N'ajoute aucun commentaire, aucune ponctuation "
+            "supplémentaire, aucune explication. Réponds UNIQUEMENT avec le texte translittéré. "
+            "Si une partie est déjà en latin, garde-la telle quelle.\n\n"
+            f"Texte : {text}"
+        )
+        body = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.1,
+                "maxOutputTokens": 256,
+            },
+        }
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            "gemini-2.0-flash:generateContent?key=" + api_key
+        )
+        try:
+            data = _json.dumps(body).encode("utf-8")
+            req = _ureq.Request(url, data=data, method="POST")
+            req.add_header("Content-Type", "application/json")
+            with _ureq.urlopen(req, timeout=8) as resp:
+                resp_data = _json.loads(resp.read().decode("utf-8"))
+            candidates = resp_data.get("candidates") or []
+            if not candidates:
+                return None
+            parts = candidates[0].get("content", {}).get("parts") or []
+            if not parts:
+                return None
+            result = (parts[0].get("text") or "").strip()
+            return result or None
+        except Exception:
+            # Network error, quota exceeded, malformed response, etc.
+            # Caller will fall back to mechanical transliteration.
+            return None
+
     def _translate_arabic(text):
         """Replace any Arabic word in `text` with its French equivalent if known.
-        Words we don't know are then TRANSLITERATED to latin letters so the
-        team can read them.
+        Words we don't know are TRANSLITERATED via Gemini (or mechanical fallback)
+        so the team always sees latin text.
         """
         if not text:
             return ""
@@ -3777,16 +3826,19 @@ def api_shopify_webhook_order_created(request):
         stripped = text.strip()
         if stripped in arabic_to_french:
             return arabic_to_french[stripped]
-        # Multi-word substring replacement (e.g. "سيدي بوزيد المدينة" → "Sidi Bouzid المدينة")
+        # Multi-word substring replacement
         result = text
-        # Sort keys by length desc so multi-word keys win over single-word
         for k in sorted(arabic_to_french.keys(), key=lambda x: -len(x)):
             if k in result:
                 result = result.replace(k, " " + arabic_to_french[k] + " ")
-        # FALLBACK: transliterate any remaining Arabic characters so the team
-        # always sees latin text. E.g. "قرية الفردوس" → "karyaa alfrdws"
+        # FALLBACK: if any Arabic chars remain, try Gemini first, then mechanical
         if any("\u0600" <= c <= "\u06ff" for c in result):
-            result = _transliterate_arabic_chars(result)
+            gemini_result = _gemini_transliterate(result)
+            if gemini_result and not any("\u0600" <= c <= "\u06ff" for c in gemini_result):
+                result = gemini_result
+            else:
+                # Gemini failed or didn't fully transliterate — use mechanical
+                result = _transliterate_arabic_chars(result)
         # Clean up extra spaces
         result = re.sub(r"\s+", " ", result).strip()
         return result
