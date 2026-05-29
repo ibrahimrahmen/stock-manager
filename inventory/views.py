@@ -2485,6 +2485,7 @@ def products_list(request):
     total_available = ProductUnit.objects.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)).count()
     total_shipped = ProductUnit.objects.filter(status=ProductUnit.SHIPPED).count()
     total_paid = ProductUnit.objects.filter(status=ProductUnit.PAID).count()
+    total_early_return = ProductUnit.objects.filter(status=ProductUnit.EARLY_RETURN).count()
 
     from .models import compute_size_forecast
 
@@ -2494,12 +2495,15 @@ def products_list(request):
         # Stock breakdown: total disponible = in_stock + returned
         in_stock_count = 0
         returned_count = 0
+        early_return_count = 0
         for variant in product.variants.all():
             for unit in variant.units.all():
                 if unit.status == ProductUnit.IN_STOCK:
                     in_stock_count += 1
                 elif unit.status == ProductUnit.RETURNED:
                     returned_count += 1
+                elif unit.status == ProductUnit.EARLY_RETURN:
+                    early_return_count += 1
         stock = in_stock_count + returned_count
         is_low = stock <= product.alert_threshold and not product.alert_disabled
 
@@ -2530,6 +2534,7 @@ def products_list(request):
             "stock": stock,
             "in_stock_count": in_stock_count,
             "returned_count": returned_count,
+            "early_return_count": early_return_count,
             "low_sizes": low_sizes,
             "zero_sizes": zero_sizes,
             "is_low": is_low,
@@ -2542,6 +2547,7 @@ def products_list(request):
         "total_available": total_available,
         "total_shipped": total_shipped,
         "total_paid": total_paid,
+        "total_early_return": total_early_return,
         "show_archived": show_archived,
         "season": season,
         "archived_count": Product.objects.filter(archived=True).count(),
@@ -2581,12 +2587,15 @@ def product_detail(request, pk):
     # Stock breakdown for the whole product (across all variants/sizes)
     in_stock_total = 0
     returned_total = 0
+    early_return_total = 0
     for variant in variants:
         for unit in variant.units.all():
             if unit.status == ProductUnit.IN_STOCK:
                 in_stock_total += 1
             elif unit.status == ProductUnit.RETURNED:
                 returned_total += 1
+            elif unit.status == ProductUnit.EARLY_RETURN:
+                early_return_total += 1
     available_total = in_stock_total + returned_total
 
     return render(request, "inventory/product_detail.html", {
@@ -2595,6 +2604,7 @@ def product_detail(request, pk):
         "variants_data": variants_data,
         "in_stock_total": in_stock_total,
         "returned_total": returned_total,
+        "early_return_total": early_return_total,
         "available_total": available_total,
     })
 
@@ -5273,9 +5283,53 @@ def _sync_navex_for_v2_orders(only_pending=True):
                 description=f"Auto: commande #{o.id} passée en 'Livrée' (Navex etat='{new_navex_status}', bordereau {o.bordereau_barcode})",
                 target_model="Order", target_id=o.id,
             )
+
+        # Detect "Rtn client/agence" → mark the order's ProductUnits as EARLY_RETURN
+        # (the customer refused; the parcel is on its way back to us).
+        # Only flip units that are currently SHIPPED — don't touch PAID/RETURNED.
+        if navex_lower in ("rtn client/agence", "rtn client", "rtn agence", "retour anticipe", "retour anticipé"):
+            _flip_order_units_status(o, ProductUnit.SHIPPED, ProductUnit.EARLY_RETURN, "early_return")
+
+        # Detect confirmed return → physical unit is back. Promote EARLY_RETURN → RETURNED.
+        if navex_lower in ("retour recu", "retour reçu", "retourne", "retourné", "retour confirme", "retour confirmé"):
+            _flip_order_units_status(o, ProductUnit.EARLY_RETURN, ProductUnit.RETURNED, "returned")
+
         o.save(update_fields=update_fields)
         n_updated += 1
     return n_attempted, n_updated
+
+
+def _flip_order_units_status(order, from_status, to_status, movement_type):
+    """For all ProductUnits linked to the v2 Order (via ShippingOrder.order),
+    if currently in `from_status`, flip to `to_status` and record a StockMovement.
+
+    Used by the Navex sync to auto-mark units as 'early_return' or 'returned'
+    based on the order's Navex status, so the warehouse team sees the correct
+    physical state without scanning each unit one by one.
+    """
+    n_flipped = 0
+    for so in order.shipping_orders.all():
+        for item in so.items.select_related("unit"):
+            unit = item.unit
+            if unit and unit.status == from_status:
+                unit.status = to_status
+                unit.save(update_fields=["status", "updated_at"])
+                StockMovement.objects.create(
+                    unit=unit,
+                    movement_type=movement_type,
+                    reference=f"Auto sync Navex — commande v2 #{order.id}",
+                )
+                n_flipped += 1
+    if n_flipped:
+        log_action(
+            None, AuditLog.STATUS_CHANGE,
+            description=(
+                f"Auto Navex sync: {n_flipped} unité(s) passées de {from_status} → {to_status} "
+                f"pour la commande #{order.id} (bordereau {order.bordereau_barcode})"
+            ),
+            target_model="Order", target_id=order.id,
+        )
+    return n_flipped
 
 
 def _shopify_get_access_token():

@@ -95,6 +95,7 @@
     <div class="stat"><div class="stat-label">Produits</div><div class="stat-val">{{ products|length }}</div></div>
     <div class="stat"><div class="stat-label">Disponibles</div><div class="stat-val g">{{ total_available }}</div></div>
     <div class="stat"><div class="stat-label">Expédiés</div><div class="stat-val a">{{ total_shipped }}</div></div>
+    {% if total_early_return %}<div class="stat"><div class="stat-label">Retour anticipé</div><div class="stat-val" style="color:var(--red);">{{ total_early_return }}</div></div>{% endif %}
     <div class="stat"><div class="stat-label">Payés</div><div class="stat-val">{{ total_paid }}</div></div>
   </div>
 
@@ -146,6 +147,9 @@
           <span class="bstat {% if pd.is_low or stock == 0 %}bstat-low blink{% else %}bstat-stock{% endif %}">
             Disponible : {{ stock }}{% if pd.returned_count %} ({{ pd.in_stock_count }} + {{ pd.returned_count }} retourné){% endif %}
           </span>
+          {% if pd.early_return_count %}
+          <span class="bstat bstat-low" style="background:var(--red-dim);color:var(--red);">↩ {{ pd.early_return_count }} retour ant.</span>
+          {% endif %}
           {% if product.variants.count > 1 %}
           <span class="bstat bstat-shipped">{{ product.variants.count }} variantes</span>
           {% endif %}

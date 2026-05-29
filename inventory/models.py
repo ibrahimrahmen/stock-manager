@@ -113,16 +113,18 @@ def _resize_image_in_place(path, max_size=1200, quality=80):
 
 
 class ProductUnit(models.Model):
-    IN_STOCK  = "in_stock"
-    SHIPPED   = "shipped"
-    PAID      = "paid"
-    RETURNED  = "returned"
+    IN_STOCK      = "in_stock"
+    SHIPPED       = "shipped"
+    PAID          = "paid"
+    RETURNED      = "returned"
+    EARLY_RETURN  = "early_return"  # Navex returned status "Rtn client/agence" — customer refused, en route back
 
     STATUS_CHOICES = [
-        (IN_STOCK,  "En stock"),
-        (SHIPPED,   "Expédié"),
-        (PAID,      "Payé"),
-        (RETURNED,  "Retourné"),
+        (IN_STOCK,     "En stock"),
+        (SHIPPED,      "Expédié"),
+        (PAID,         "Payé"),
+        (RETURNED,     "Retourné"),
+        (EARLY_RETURN, "Retour anticipé"),
     ]
 
     variant = models.ForeignKey(ProductVariant, on_delete=models.PROTECT, related_name="units")
@@ -298,16 +300,18 @@ class NavexSyncLog(models.Model):
 
 
 class StockMovement(models.Model):
-    RECEIVED = "received"
-    SHIPPED  = "shipped"
-    PAID     = "paid"
-    RETURNED = "returned"
+    RECEIVED     = "received"
+    SHIPPED      = "shipped"
+    PAID         = "paid"
+    RETURNED     = "returned"
+    EARLY_RETURN = "early_return"
 
     TYPE_CHOICES = [
-        (RECEIVED, "Réception"),
-        (SHIPPED,  "Expédition"),
-        (PAID,     "Payé"),
-        (RETURNED, "Retour"),
+        (RECEIVED,     "Réception"),
+        (SHIPPED,      "Expédition"),
+        (PAID,         "Payé"),
+        (RETURNED,     "Retour"),
+        (EARLY_RETURN, "Retour anticipé"),
     ]
 
     unit          = models.ForeignKey(ProductUnit, on_delete=models.PROTECT, related_name="movements")
