@@ -3767,13 +3767,12 @@ def api_shopify_webhook_order_created(request):
     def _gemini_transliterate(text):
         """Call Google Gemini API to transliterate Arabic → Latin (Tunisian style).
         Returns the transliterated text, or None on failure (caller falls back).
-        Uses the free tier of Gemini Flash 2.0.
+        Supports both classic API keys (AIza...) and new-format ones (AQ...).
         """
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key or not text:
             return None
         import urllib.request as _ureq
-        import urllib.error as _uerr
         import json as _json
         prompt = (
             "Translitère ce texte arabe (tunisien) en lettres latines lisibles "
@@ -3789,28 +3788,56 @@ def api_shopify_webhook_order_created(request):
                 "maxOutputTokens": 256,
             },
         }
-        url = (
+        base_url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            "gemini-2.0-flash:generateContent?key=" + api_key
+            "gemini-2.0-flash:generateContent"
         )
+        data = _json.dumps(body).encode("utf-8")
+
+        # Decide auth scheme based on key prefix.
+        # - "AIza..." → classic API key, passed via ?key=
+        # - "AQ..." or anything else → OAuth-style token, passed via Authorization: Bearer
+        attempts = []
+        if api_key.startswith("AIza"):
+            attempts.append(("query", base_url + "?key=" + api_key, None))
+        else:
+            # Try Bearer first, then x-goog-api-key header as fallback
+            attempts.append(("bearer", base_url, {"Authorization": "Bearer " + api_key}))
+            attempts.append(("header", base_url, {"x-goog-api-key": api_key}))
+            attempts.append(("query", base_url + "?key=" + api_key, None))
+
+        last_error = None
+        for mode, url, headers in attempts:
+            try:
+                req = _ureq.Request(url, data=data, method="POST")
+                req.add_header("Content-Type", "application/json")
+                if headers:
+                    for h, v in headers.items():
+                        req.add_header(h, v)
+                with _ureq.urlopen(req, timeout=8) as resp:
+                    resp_data = _json.loads(resp.read().decode("utf-8"))
+                candidates = resp_data.get("candidates") or []
+                if not candidates:
+                    last_error = "no candidates"
+                    continue
+                parts = candidates[0].get("content", {}).get("parts") or []
+                if not parts:
+                    last_error = "no parts"
+                    continue
+                result = (parts[0].get("text") or "").strip()
+                if result:
+                    return result
+            except Exception as e:
+                last_error = f"{mode}: {type(e).__name__}: {e}"
+                continue
+
+        # All attempts failed
         try:
-            data = _json.dumps(body).encode("utf-8")
-            req = _ureq.Request(url, data=data, method="POST")
-            req.add_header("Content-Type", "application/json")
-            with _ureq.urlopen(req, timeout=8) as resp:
-                resp_data = _json.loads(resp.read().decode("utf-8"))
-            candidates = resp_data.get("candidates") or []
-            if not candidates:
-                return None
-            parts = candidates[0].get("content", {}).get("parts") or []
-            if not parts:
-                return None
-            result = (parts[0].get("text") or "").strip()
-            return result or None
+            import logging
+            logging.getLogger(__name__).warning("Gemini transliteration failed: %s", last_error)
         except Exception:
-            # Network error, quota exceeded, malformed response, etc.
-            # Caller will fall back to mechanical transliteration.
-            return None
+            pass
+        return None
 
     def _translate_arabic(text):
         """Replace any Arabic word in `text` with its French equivalent if known.
