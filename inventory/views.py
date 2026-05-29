@@ -4179,29 +4179,49 @@ def api_shopify_webhook_order_created(request):
                 bundle_price=offer.bundle_price,
                 quantity=quantity,
             )
-            # Split variant_title by "/" to get one color per sub-product
+            # Split variant_title by "/" to get one color (or size) per slot.
+            # We do NOT assume order matches our sub-products order. Instead, for
+            # each sub-product, we try ALL color candidates in the title and
+            # pick the one that actually matches one of its variants. If a
+            # candidate is "claimed" by one sub-product, the others can still
+            # use it (e.g. two sub-products with the same Gray variant).
             v_title_full = (li.get("variant_title") or "").strip()
             parts = [p.strip() for p in v_title_full.split("/") if p.strip()]
-            # NOTE: the LAST part is often the size (S/M/L/...). If the number
-            # of parts > number of sub-products, treat the trailing parts as size.
             offer_products = list(offer.products.all())
-            n_subs = len(offer_products)
-            # Separate parts into colors (first n_subs) and size (the rest, if any)
-            color_parts = parts[:n_subs] if len(parts) >= n_subs else parts
-            size_parts = parts[n_subs:] if len(parts) > n_subs else []
+            # Heuristic to separate the size token from color tokens.
+            # A size token is short and matches "S/M/L/XL/XXL/2XL/3XL" or just digits.
+            import re as _re_local
+            def _looks_like_size(tok):
+                t = (tok or "").strip().lower()
+                if not t:
+                    return False
+                return bool(_re_local.match(r"^(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|4xl|\d{1,2})$", t))
+            color_parts = [p for p in parts if not _looks_like_size(p)]
+            size_parts  = [p for p in parts if _looks_like_size(p)]
             shared_size_hint = size_parts[-1] if size_parts else ""
 
+            # Track which color candidates have been "claimed" so we don't
+            # assign the same color to two sub-products if there's a better match.
+            # First pass: prefer assigning each sub-product a color UNIQUE to it.
+            # Fallback pass: if a sub-product has no unique match, allow shared.
+            assignments = [None] * len(offer_products)  # color string for each sub
             for i, op in enumerate(offer_products):
-                # Build a fake mini line_item for this sub-product so the
-                # variant/size extractors only see THIS sub's color + the shared size.
-                color_for_this = color_parts[i] if i < len(color_parts) else ""
+                # Find which of color_parts matches a variant of this sub-product
+                synthetic_li_test = dict(li)
+                for cand in color_parts:
+                    synthetic_li_test["variant_title"] = cand
+                    match = _extract_variant(synthetic_li_test, op.product, strict=True)
+                    if match is not None:
+                        assignments[i] = cand
+                        break
+
+            for i, op in enumerate(offer_products):
+                color_for_this = assignments[i] or ""
                 synthetic_title = (color_for_this + "/" + shared_size_hint) if shared_size_hint else color_for_this
-                synthetic_li = dict(li)  # shallow copy preserving other fields
+                synthetic_li = dict(li)
                 synthetic_li["variant_title"] = synthetic_title
 
                 size_guess = _extract_size(synthetic_li, op.product)
-                # strict=True so we don't silently pick the wrong color if our sub
-                # doesn't have the requested color.
                 variant_guess = _extract_variant(synthetic_li, op.product, strict=True)
                 OrderLine.objects.create(
                     order=order,
