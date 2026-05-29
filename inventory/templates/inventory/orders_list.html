@@ -163,6 +163,8 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
   border-bottom:0.5px solid var(--border);
 }
 .loc-deleg-item:hover, .loc-deleg-item.highlight{background:var(--surface2);}
+.loc-deleg-item.selected{background:var(--green-dim);color:var(--green);font-weight:600;}
+.loc-deleg-item.selected:hover{background:var(--green-dim);}
 .loc-deleg-item .gov-tag{color:var(--muted);font-size:12px;margin-left:8px;}
 .loc-empty{padding:14px;color:var(--muted);font-size:13px;text-align:center;}
 .add-articles-btn:disabled{opacity:0.4;cursor:not-allowed;}
@@ -976,6 +978,10 @@ async function getAllRegions() {
 function renderLocDropdown(query) {
   const dd = document.getElementById('cr-loc-dropdown');
   if (!dd) return;
+  // Read the currently picked region/ville (so we can highlight the active row)
+  const currentRegionId = document.getElementById('cr-region')?.value || '';
+  const currentVille = (document.getElementById('cr-ville')?.value || '').toLowerCase().trim();
+
   const regions = _allRegionsCache || [];
   const q = (query || '').toLowerCase().trim();
   let html = '';
@@ -988,7 +994,10 @@ function renderLocDropdown(query) {
     if (matchingDelegs.length === 0) continue;
     html += `<div class="loc-region-header">${r.name}</div>`;
     for (const d of matchingDelegs) {
-      html += `<div class="loc-deleg-item" data-region-id="${r.id}" data-region-name="${r.name.replace(/"/g,'&quot;')}" data-deleg-name="${d.name.replace(/"/g,'&quot;')}">${d.name}<span class="gov-tag">— ${r.name}</span></div>`;
+      const isSelected = (String(r.id) === String(currentRegionId) && d.name.toLowerCase() === currentVille);
+      const cls = 'loc-deleg-item' + (isSelected ? ' selected' : '');
+      const dataAttr = isSelected ? ' data-is-selected="1"' : '';
+      html += `<div class="${cls}" data-region-id="${r.id}" data-region-name="${r.name.replace(/"/g,'&quot;')}" data-deleg-name="${d.name.replace(/"/g,'&quot;')}"${dataAttr}>${d.name}<span class="gov-tag">— ${r.name}</span></div>`;
       totalShown++;
     }
   }
@@ -1004,6 +1013,16 @@ function renderLocDropdown(query) {
       pickLocation(el.dataset.regionId, el.dataset.regionName, el.dataset.delegName);
     });
   });
+  // Scroll the currently-selected item into view (so opening on Sfax shows Sfax,
+  // not Ariana at the top of the list).
+  const sel = dd.querySelector('.loc-deleg-item.selected');
+  if (sel) {
+    // Scroll within the dropdown, not the page
+    const ddRect = dd.getBoundingClientRect();
+    const selRect = sel.getBoundingClientRect();
+    const offset = selRect.top - ddRect.top - 40; // 40px so the region header above is also visible
+    dd.scrollTop += offset;
+  }
 }
 
 function pickLocation(regionId, regionName, delegName) {
