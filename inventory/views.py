@@ -2384,12 +2384,63 @@ def api_navex_sync(request):
 
         # Merge our orders with navex data
         merged = []
+        n_early_returned = 0
+        n_returned_confirmed = 0
         for order in orders:
             bc = order["bordereau_barcode"]
             navex = navex_map.get(bc, None)
             navex_etat = navex.get("etat", "Introuvable") if navex and navex.get("status") == 1 else "Introuvable"
             needs_attention = navex_etat in ("Livrer Paye", "Livré", "Livrée", "Livré Payé")
             is_anomaly = navex_etat in ("Retourné", "Retourne", "Annulé", "Annule")
+
+            # Auto-flip ProductUnit statuses for v1 ShippingOrder based on Navex etat.
+            # - "Rtn client/agence" → SHIPPED units become EARLY_RETURN
+            # - "Retour recu" / "Retourné" → EARLY_RETURN units become RETURNED
+            navex_lower = navex_etat.strip().lower()
+            try:
+                so = ShippingOrder.objects.get(pk=order["id"])
+                if navex_lower in ("rtn client/agence", "rtn client", "rtn agence", "retour anticipe", "retour anticipé"):
+                    flipped = 0
+                    for item in so.items.select_related("unit"):
+                        if item.unit and item.unit.status == ProductUnit.SHIPPED:
+                            item.unit.status = ProductUnit.EARLY_RETURN
+                            item.unit.save(update_fields=["status", "updated_at"])
+                            StockMovement.objects.create(
+                                unit=item.unit,
+                                movement_type=StockMovement.EARLY_RETURN,
+                                reference=f"Auto sync Navex — bordereau {bc}",
+                                user=request.user,
+                            )
+                            flipped += 1
+                    if flipped:
+                        n_early_returned += flipped
+                        log_action(
+                            request.user, AuditLog.STATUS_CHANGE,
+                            description=f"Auto sync Navex: {flipped} unité(s) SHIPPED → EARLY_RETURN (bordereau {bc}, etat '{navex_etat}')",
+                            request=request,
+                        )
+                elif navex_lower in ("retour recu", "retour reçu", "retourne", "retourné", "retour confirme", "retour confirmé"):
+                    flipped = 0
+                    for item in so.items.select_related("unit"):
+                        if item.unit and item.unit.status == ProductUnit.EARLY_RETURN:
+                            item.unit.status = ProductUnit.RETURNED
+                            item.unit.save(update_fields=["status", "updated_at"])
+                            StockMovement.objects.create(
+                                unit=item.unit,
+                                movement_type=StockMovement.RETURNED,
+                                reference=f"Auto sync Navex — bordereau {bc}",
+                                user=request.user,
+                            )
+                            flipped += 1
+                    if flipped:
+                        n_returned_confirmed += flipped
+                        log_action(
+                            request.user, AuditLog.STATUS_CHANGE,
+                            description=f"Auto sync Navex: {flipped} unité(s) EARLY_RETURN → RETURNED (bordereau {bc}, etat '{navex_etat}')",
+                            request=request,
+                        )
+            except ShippingOrder.DoesNotExist:
+                pass
 
             # Check if order is closed for more than 24h and not yet delivered
             if not needs_attention and not is_anomaly:
