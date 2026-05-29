@@ -838,6 +838,32 @@ def api_confirm_payment(request):
         target_order_barcode=order.bordereau_barcode,
         target_model="ShippingOrder", target_id=order.id,
     )
+
+    # If linked to a Shopify-originating v2 Order, mark it paid on Shopify too.
+    try:
+        v2 = order.order
+        if v2 and v2.notes:
+            shopify_id = _extract_shopify_order_id_from_notes(v2.notes)
+            if shopify_id:
+                ok_sh, sh_resp = _shopify_mark_paid(shopify_id, amount_collected, "TND")
+                if ok_sh:
+                    log_action(
+                        request.user, AuditLog.PAYMENT,
+                        description=f"Shopify : commande {shopify_id} marquée payée ({amount_collected} TND, Order v2 #{v2.id})",
+                        request=request,
+                        target_model="Order", target_id=v2.id,
+                    )
+                else:
+                    err_msg = sh_resp.get("_error") if isinstance(sh_resp, dict) else str(sh_resp)
+                    log_action(
+                        request.user, AuditLog.PAYMENT,
+                        description=f"Shopify : ÉCHEC mark paid pour {shopify_id} (Order v2 #{v2.id}) — {err_msg}",
+                        request=request,
+                        target_model="Order", target_id=v2.id,
+                    )
+    except Exception:
+        pass
+
     return JsonResponse({
         "status": "ok",
         "message": f"Paiement confirmé. {len(sold_barcodes)} vendu(s), {pending_count} en attente de retour physique.",
@@ -1457,6 +1483,34 @@ def api_confirm_payment_from_navex(request, pk):
         target_order_barcode=order.bordereau_barcode,
         target_model="ShippingOrder", target_id=order.id,
     )
+
+    # If this ShippingOrder is linked to a v2 Order that came from Shopify,
+    # mirror the PAID status back to Shopify (creates a successful transaction
+    # so the merchant dashboard shows the order as Paid instead of Pending).
+    try:
+        v2 = order.order
+        if v2 and v2.notes:
+            shopify_id = _extract_shopify_order_id_from_notes(v2.notes)
+            if shopify_id:
+                ok_sh, sh_resp = _shopify_mark_paid(shopify_id, amount, "TND")
+                if ok_sh:
+                    log_action(
+                        request.user, AuditLog.PAYMENT,
+                        description=f"Shopify : commande {shopify_id} marquée payée ({amount} TND, Order v2 #{v2.id})",
+                        request=request,
+                        target_model="Order", target_id=v2.id,
+                    )
+                else:
+                    err_msg = sh_resp.get("_error") if isinstance(sh_resp, dict) else str(sh_resp)
+                    log_action(
+                        request.user, AuditLog.PAYMENT,
+                        description=f"Shopify : ÉCHEC mark paid pour {shopify_id} (Order v2 #{v2.id}) — {err_msg}",
+                        request=request,
+                        target_model="Order", target_id=v2.id,
+                    )
+    except Exception as _e:
+        # Never let Shopify sync break our local payment confirmation
+        pass
 
     return JsonResponse({"status": "ok", "message": f"Ordre {order.bordereau_barcode} marque comme paye — {amount} TND."})
 
@@ -5749,6 +5803,70 @@ def _shopify_cancel_order(shopify_order_id):
         "restock": False,
     }).encode("utf-8")
     req = urllib.request.Request(url, data=payload, method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("X-Shopify-Access-Token", token)
+
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                data = {"_raw": raw}
+            return True, data
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", errors="replace")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = {"_raw": raw, "_http_status": e.code}
+        return False, data
+    except Exception as e:
+        return False, {"_error": f"Erreur réseau: {e}"}
+
+
+def _shopify_mark_paid(shopify_order_id, amount, currency="TND"):
+    """Call Shopify Admin API to mark an order as paid by creating a
+    successful transaction. Useful for Cash on Delivery (COD) orders that
+    started as 'pending' — once we collect cash from Navex, we mirror that
+    payment status to Shopify so it shows 'Paid' in the merchant dashboard.
+
+    Note: this does NOT actually move money; it's a bookkeeping update.
+
+    Returns (ok: bool, response_data: dict|str).
+    """
+    import urllib.request, urllib.error
+    domain = os.environ.get("SHOPIFY_SHOP_DOMAIN", "").strip()
+    if not domain:
+        return False, {"_error": "SHOPIFY_SHOP_DOMAIN non configuré."}
+    if not shopify_order_id:
+        return False, {"_error": "Shopify order ID vide."}
+
+    token, err = _shopify_get_access_token()
+    if not token:
+        token = os.environ.get("SHOPIFY_ADMIN_API_TOKEN", "").strip()
+    if not token:
+        return False, {"_error": err or "Pas de token Shopify disponible."}
+
+    sid = str(shopify_order_id).strip()
+    if "/" in sid:
+        sid = sid.rsplit("/", 1)[-1]
+
+    # POST /admin/api/2024-10/orders/{id}/transactions.json
+    # kind="sale" + status="success" mark the order as Paid in Shopify.
+    # gateway="manual" indicates the payment was collected outside Shopify
+    # (e.g. cash via the delivery service).
+    url = f"https://{domain}/admin/api/2024-10/orders/{sid}/transactions.json"
+    body = json.dumps({
+        "transaction": {
+            "kind": "sale",
+            "status": "success",
+            "amount": str(amount),
+            "currency": currency,
+            "gateway": "manual",
+        }
+    }).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Content-Type", "application/json")
     req.add_header("X-Shopify-Access-Token", token)
 
