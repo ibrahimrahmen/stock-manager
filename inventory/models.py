@@ -118,6 +118,7 @@ class ProductUnit(models.Model):
     PAID          = "paid"
     RETURNED      = "returned"
     EARLY_RETURN  = "early_return"  # Navex returned status "Rtn client/agence" — customer refused, en route back
+    AT_DEPOT      = "at_depot"      # Navex "Retour Depot Navex" — arrived at Navex hub, waiting for our physical pickup
 
     STATUS_CHOICES = [
         (IN_STOCK,     "En stock"),
@@ -125,6 +126,7 @@ class ProductUnit(models.Model):
         (PAID,         "Payé"),
         (RETURNED,     "Retourné"),
         (EARLY_RETURN, "Retour anticipé"),
+        (AT_DEPOT,     "Retour en dépôt Navex"),
     ]
 
     variant = models.ForeignKey(ProductVariant, on_delete=models.PROTECT, related_name="units")
@@ -305,6 +307,7 @@ class StockMovement(models.Model):
     PAID         = "paid"
     RETURNED     = "returned"
     EARLY_RETURN = "early_return"
+    AT_DEPOT     = "at_depot"
 
     TYPE_CHOICES = [
         (RECEIVED,     "Réception"),
@@ -312,6 +315,7 @@ class StockMovement(models.Model):
         (PAID,         "Payé"),
         (RETURNED,     "Retour"),
         (EARLY_RETURN, "Retour anticipé"),
+        (AT_DEPOT,     "Retour en dépôt Navex"),
     ]
 
     unit          = models.ForeignKey(ProductUnit, on_delete=models.PROTECT, related_name="movements")

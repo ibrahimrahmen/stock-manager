@@ -155,6 +155,9 @@
     {% if early_return_total %}
     <span style="color:#e05050;">↩ Retour anticipé : {{ early_return_total }}</span>
     {% endif %}
+    {% if at_depot_total %}
+    <span style="color:#5090e0;">🏬 En dépôt Navex : {{ at_depot_total }}</span>
+    {% endif %}
   </div>
   <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;">
   <div class="variants-grid" style="flex:1;min-width:240px;">

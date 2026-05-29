@@ -2394,8 +2394,10 @@ def api_navex_sync(request):
             is_anomaly = navex_etat in ("Retourné", "Retourne", "Annulé", "Annule")
 
             # Auto-flip ProductUnit statuses for v1 ShippingOrder based on Navex etat.
-            # - "Rtn client/agence" → SHIPPED units become EARLY_RETURN
-            # - "Retour recu" / "Retourné" → EARLY_RETURN units become RETURNED
+            # Workflow:
+            #   SHIPPED → EARLY_RETURN  (Navex "Rtn client/agence" — customer refused, on way back)
+            #   EARLY_RETURN → AT_DEPOT  (Navex "Retour Depot Navex" — arrived at hub, waiting for our pickup)
+            #   AT_DEPOT → RETURNED      (we physically scan it back at our warehouse — done elsewhere)
             navex_lower = navex_etat.strip().lower()
             try:
                 so = ShippingOrder.objects.get(pk=order["id"])
@@ -2419,26 +2421,31 @@ def api_navex_sync(request):
                             description=f"Auto sync Navex: {flipped} unité(s) SHIPPED → EARLY_RETURN (bordereau {bc}, etat '{navex_etat}')",
                             request=request,
                         )
-                elif navex_lower in ("retour recu", "retour reçu", "retourne", "retourné", "retour confirme", "retour confirmé"):
+                elif navex_lower in ("retour depot navex", "retour dépôt navex", "retour depot", "retour dépôt", "depot navex"):
+                    # Unit has arrived at Navex hub, waiting for our physical pickup
                     flipped = 0
                     for item in so.items.select_related("unit"):
-                        if item.unit and item.unit.status == ProductUnit.EARLY_RETURN:
-                            item.unit.status = ProductUnit.RETURNED
+                        if item.unit and item.unit.status in (ProductUnit.SHIPPED, ProductUnit.EARLY_RETURN):
+                            item.unit.status = ProductUnit.AT_DEPOT
                             item.unit.save(update_fields=["status", "updated_at"])
                             StockMovement.objects.create(
                                 unit=item.unit,
-                                movement_type=StockMovement.RETURNED,
+                                movement_type=StockMovement.AT_DEPOT,
                                 reference=f"Auto sync Navex — bordereau {bc}",
                                 user=request.user,
                             )
                             flipped += 1
                     if flipped:
-                        n_returned_confirmed += flipped
                         log_action(
                             request.user, AuditLog.STATUS_CHANGE,
-                            description=f"Auto sync Navex: {flipped} unité(s) EARLY_RETURN → RETURNED (bordereau {bc}, etat '{navex_etat}')",
+                            description=f"Auto sync Navex: {flipped} unité(s) → AT_DEPOT (bordereau {bc}, etat '{navex_etat}')",
                             request=request,
                         )
+                elif navex_lower in ("retour recu", "retour reçu", "retourne", "retourné", "retour confirme", "retour confirmé"):
+                    # NOTE: don't auto-promote to RETURNED here. The team scans
+                    # the physical unit back in the warehouse, which marks it RETURNED.
+                    # If we did it here, we'd say "back in stock" before it's actually back.
+                    pass
             except ShippingOrder.DoesNotExist:
                 pass
 
@@ -2537,6 +2544,7 @@ def products_list(request):
     total_shipped = ProductUnit.objects.filter(status=ProductUnit.SHIPPED).count()
     total_paid = ProductUnit.objects.filter(status=ProductUnit.PAID).count()
     total_early_return = ProductUnit.objects.filter(status=ProductUnit.EARLY_RETURN).count()
+    total_at_depot = ProductUnit.objects.filter(status=ProductUnit.AT_DEPOT).count()
 
     from .models import compute_size_forecast
 
@@ -2547,6 +2555,7 @@ def products_list(request):
         in_stock_count = 0
         returned_count = 0
         early_return_count = 0
+        at_depot_count = 0
         for variant in product.variants.all():
             for unit in variant.units.all():
                 if unit.status == ProductUnit.IN_STOCK:
@@ -2555,6 +2564,8 @@ def products_list(request):
                     returned_count += 1
                 elif unit.status == ProductUnit.EARLY_RETURN:
                     early_return_count += 1
+                elif unit.status == ProductUnit.AT_DEPOT:
+                    at_depot_count += 1
         stock = in_stock_count + returned_count
         is_low = stock <= product.alert_threshold and not product.alert_disabled
 
@@ -2586,6 +2597,7 @@ def products_list(request):
             "in_stock_count": in_stock_count,
             "returned_count": returned_count,
             "early_return_count": early_return_count,
+            "at_depot_count": at_depot_count,
             "low_sizes": low_sizes,
             "zero_sizes": zero_sizes,
             "is_low": is_low,
@@ -2599,6 +2611,7 @@ def products_list(request):
         "total_shipped": total_shipped,
         "total_paid": total_paid,
         "total_early_return": total_early_return,
+        "total_at_depot": total_at_depot,
         "show_archived": show_archived,
         "season": season,
         "archived_count": Product.objects.filter(archived=True).count(),
@@ -2639,6 +2652,7 @@ def product_detail(request, pk):
     in_stock_total = 0
     returned_total = 0
     early_return_total = 0
+    at_depot_total = 0
     for variant in variants:
         for unit in variant.units.all():
             if unit.status == ProductUnit.IN_STOCK:
@@ -2647,6 +2661,8 @@ def product_detail(request, pk):
                 returned_total += 1
             elif unit.status == ProductUnit.EARLY_RETURN:
                 early_return_total += 1
+            elif unit.status == ProductUnit.AT_DEPOT:
+                at_depot_total += 1
     available_total = in_stock_total + returned_total
 
     return render(request, "inventory/product_detail.html", {
@@ -2656,6 +2672,7 @@ def product_detail(request, pk):
         "in_stock_total": in_stock_total,
         "returned_total": returned_total,
         "early_return_total": early_return_total,
+        "at_depot_total": at_depot_total,
         "available_total": available_total,
     })
 
@@ -5341,9 +5358,16 @@ def _sync_navex_for_v2_orders(only_pending=True):
         if navex_lower in ("rtn client/agence", "rtn client", "rtn agence", "retour anticipe", "retour anticipé"):
             _flip_order_units_status(o, ProductUnit.SHIPPED, ProductUnit.EARLY_RETURN, "early_return")
 
-        # Detect confirmed return → physical unit is back. Promote EARLY_RETURN → RETURNED.
-        if navex_lower in ("retour recu", "retour reçu", "retourne", "retourné", "retour confirme", "retour confirmé"):
-            _flip_order_units_status(o, ProductUnit.EARLY_RETURN, ProductUnit.RETURNED, "returned")
+        # Detect "Retour Depot Navex" → unit at Navex hub, waiting for our physical pickup.
+        if navex_lower in ("retour depot navex", "retour dépôt navex", "retour depot", "retour dépôt", "depot navex"):
+            _flip_order_units_status(o, ProductUnit.EARLY_RETURN, ProductUnit.AT_DEPOT, "at_depot")
+            # Also catch cases where the SHIPPED→EARLY_RETURN step was skipped
+            # (Navex jumped straight to "depot") — flip those too.
+            _flip_order_units_status(o, ProductUnit.SHIPPED, ProductUnit.AT_DEPOT, "at_depot")
+
+        # NOTE: confirmed return (etat "Retour recu" / "Retourné") is NOT auto-promoted to
+        # RETURNED here. The team scans the physical unit at our warehouse, which marks
+        # it RETURNED. Otherwise we'd report the unit "back in stock" before it's actually back.
 
         o.save(update_fields=update_fields)
         n_updated += 1
