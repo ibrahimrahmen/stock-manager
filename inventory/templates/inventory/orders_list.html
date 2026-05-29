@@ -1019,7 +1019,18 @@ async function initLocationPicker() {
   const dd = document.getElementById('cr-loc-dropdown');
   if (!search || !dd) return;
   await getAllRegions();  // pre-fetch
-  search.addEventListener('focus', () => renderLocDropdown(search.value));
+  search.addEventListener('focus', () => {
+    // If the field already shows a finalized selection (e.g. "Ariana — Ariana"),
+    // show the FULL list on focus (empty filter) so the user can scroll/re-pick.
+    // Once they start typing, the input listener takes over with normal filtering.
+    const v = (search.value || '').trim();
+    const isFinalSelection = v.includes('—');
+    renderLocDropdown(isFinalSelection ? '' : v);
+    // Select all text so typing replaces the old selection
+    if (isFinalSelection) {
+      setTimeout(() => search.select(), 0);
+    }
+  });
   search.addEventListener('input', () => renderLocDropdown(search.value));
   search.addEventListener('blur', () => {
     // Close after a short delay so click events on items still fire
