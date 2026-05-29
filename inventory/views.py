@@ -3841,8 +3841,8 @@ def api_shopify_webhook_order_created(request):
 
     def _translate_arabic(text):
         """Replace any Arabic word in `text` with its French equivalent if known.
-        Words we don't know are TRANSLITERATED via Gemini (or mechanical fallback)
-        so the team always sees latin text.
+        Words we don't know are TRANSLITERATED via Gemini (batched per webhook,
+        see _gemini_batch_translit) or mechanical fallback.
         """
         if not text:
             return ""
@@ -3858,26 +3858,83 @@ def api_shopify_webhook_order_created(request):
         for k in sorted(arabic_to_french.keys(), key=lambda x: -len(x)):
             if k in result:
                 result = result.replace(k, " " + arabic_to_french[k] + " ")
-        # FALLBACK: if any Arabic chars remain, try Gemini first, then mechanical
-        if any("\u0600" <= c <= "\u06ff" for c in result):
-            gemini_result = _gemini_transliterate(result)
-            if gemini_result and not any("\u0600" <= c <= "\u06ff" for c in gemini_result):
-                result = gemini_result
-            else:
-                # Gemini failed or didn't fully transliterate — use mechanical
-                result = _transliterate_arabic_chars(result)
-        # Clean up extra spaces
+        # Don't call Gemini per-field here. The webhook will batch all remaining
+        # Arabic fields in ONE call (see _batch_transliterate below) to stay
+        # under per-second quota.
         result = re.sub(r"\s+", " ", result).strip()
         return result
 
-    # Translate ALL location fields
+    def _batch_transliterate(fields_dict):
+        """Take a dict {name: text} where some texts may contain Arabic.
+        Make ONE Gemini call with all Arabic fields, then for each field that
+        was still Arabic, replace it with the AI result.
+        Fallback to mechanical translit if Gemini fails.
+
+        Returns the updated dict (only Arabic-containing fields are modified).
+        """
+        # Filter out fields that don't contain Arabic
+        arabic_items = [(k, v) for k, v in fields_dict.items()
+                        if v and any("\u0600" <= c <= "\u06ff" for c in v)]
+        if not arabic_items:
+            return fields_dict
+        # Build a single prompt with numbered items
+        numbered = "\n".join(f"{i+1}. {v}" for i, (_, v) in enumerate(arabic_items))
+        prompt = (
+            "Translitère les textes arabes (tunisiens) suivants en lettres latines "
+            "lisibles (style phonétique français). Garde le numéro et l'ordre. "
+            "N'ajoute aucun commentaire, aucune explication. "
+            "Si une partie est déjà en latin, garde-la telle quelle.\n\n"
+            f"{numbered}"
+        )
+        ai_response = _gemini_transliterate(prompt)
+        if ai_response:
+            # Parse the numbered response back
+            translated_by_idx = {}
+            for line in ai_response.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                m = re.match(r"^(\d+)\.\s*(.+)$", line)
+                if m:
+                    translated_by_idx[int(m.group(1))] = m.group(2).strip()
+            # Apply translations if we got the right count
+            for i, (k, _v) in enumerate(arabic_items):
+                idx = i + 1
+                if idx in translated_by_idx:
+                    candidate = translated_by_idx[idx]
+                    # Only use Gemini result if it actually removed Arabic
+                    if not any("\u0600" <= c <= "\u06ff" for c in candidate):
+                        fields_dict[k] = candidate
+                        continue
+                # Fallback mechanical
+                fields_dict[k] = _transliterate_arabic_chars(fields_dict[k])
+        else:
+            # Gemini failed entirely — mechanical for all
+            for k, _v in arabic_items:
+                fields_dict[k] = _transliterate_arabic_chars(fields_dict[k])
+        return fields_dict
+
+    # Translate ALL location fields (dictionary pass)
     province = _translate_arabic(province_raw)
     city = _translate_arabic(city_raw)
     address1 = _translate_arabic(address1_raw)
     address2 = _translate_arabic(address2_raw)
-    address = (address1 + (" " + address2 if address2 else "")).strip()
-    # Also transliterate the customer name if it was given in Arabic
+    # Also handle the customer name
     name = _translate_arabic(name)
+    # Batch Gemini call for any remaining Arabic across all fields
+    _batched = _batch_transliterate({
+        "name": name,
+        "province": province,
+        "city": city,
+        "address1": address1,
+        "address2": address2,
+    })
+    name = _batched["name"]
+    province = _batched["province"]
+    city = _batched["city"]
+    address1 = _batched["address1"]
+    address2 = _batched["address2"]
+    address = (address1 + (" " + address2 if address2 else "")).strip()
 
     # 4. Map region: find a Region/Delegation matching ANY of the location
     # fields (province, city, address1, address2). All fields have already
