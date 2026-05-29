@@ -2421,8 +2421,9 @@ def api_navex_sync(request):
                             description=f"Auto sync Navex: {flipped} unité(s) SHIPPED → EARLY_RETURN (bordereau {bc}, etat '{navex_etat}')",
                             request=request,
                         )
-                elif navex_lower in ("retour depot navex", "retour dépôt navex", "retour depot", "retour dépôt", "depot navex"):
-                    # Unit has arrived at Navex hub, waiting for our physical pickup
+                elif navex_lower in ("retour recu", "retour reçu", "retourne", "retourné", "retour confirme", "retour confirmé"):
+                    # Unit has arrived at Navex hub, waiting for our physical pickup.
+                    # Flip SHIPPED and EARLY_RETURN units → AT_DEPOT.
                     flipped = 0
                     for item in so.items.select_related("unit"):
                         if item.unit and item.unit.status in (ProductUnit.SHIPPED, ProductUnit.EARLY_RETURN):
@@ -2441,11 +2442,6 @@ def api_navex_sync(request):
                             description=f"Auto sync Navex: {flipped} unité(s) → AT_DEPOT (bordereau {bc}, etat '{navex_etat}')",
                             request=request,
                         )
-                elif navex_lower in ("retour recu", "retour reçu", "retourne", "retourné", "retour confirme", "retour confirmé"):
-                    # NOTE: don't auto-promote to RETURNED here. The team scans
-                    # the physical unit back in the warehouse, which marks it RETURNED.
-                    # If we did it here, we'd say "back in stock" before it's actually back.
-                    pass
             except ShippingOrder.DoesNotExist:
                 pass
 
@@ -5358,16 +5354,16 @@ def _sync_navex_for_v2_orders(only_pending=True):
         if navex_lower in ("rtn client/agence", "rtn client", "rtn agence", "retour anticipe", "retour anticipé"):
             _flip_order_units_status(o, ProductUnit.SHIPPED, ProductUnit.EARLY_RETURN, "early_return")
 
-        # Detect "Retour Depot Navex" → unit at Navex hub, waiting for our physical pickup.
-        if navex_lower in ("retour depot navex", "retour dépôt navex", "retour depot", "retour dépôt", "depot navex"):
+        # Detect "Retour recu" → unit at Navex hub, waiting for our physical pickup.
+        # Flip EARLY_RETURN and SHIPPED units → AT_DEPOT.
+        if navex_lower in ("retour recu", "retour reçu", "retourne", "retourné", "retour confirme", "retour confirmé"):
             _flip_order_units_status(o, ProductUnit.EARLY_RETURN, ProductUnit.AT_DEPOT, "at_depot")
             # Also catch cases where the SHIPPED→EARLY_RETURN step was skipped
-            # (Navex jumped straight to "depot") — flip those too.
+            # (Navex jumped straight to "Retour recu") — flip those too.
             _flip_order_units_status(o, ProductUnit.SHIPPED, ProductUnit.AT_DEPOT, "at_depot")
 
-        # NOTE: confirmed return (etat "Retour recu" / "Retourné") is NOT auto-promoted to
-        # RETURNED here. The team scans the physical unit at our warehouse, which marks
-        # it RETURNED. Otherwise we'd report the unit "back in stock" before it's actually back.
+        # NOTE: confirmed return → RETURNED happens via physical scan in the warehouse,
+        # not from Navex sync. Otherwise we'd report "back in stock" before it's actually back.
 
         o.save(update_fields=update_fields)
         n_updated += 1
