@@ -4541,6 +4541,34 @@ def api_shopify_webhook_order_created(request):
                     product = p
                     break
 
+        # FALLBACK: ask Gemini AI to identify the right Product among our catalog.
+        # Useful for typos, alternate names, language variants. Only called when
+        # all classic matching has failed (no candidate found by exact or
+        # substring matching) — keeps quota usage low.
+        if not product:
+            all_products = list(Product.objects.all())
+            product_names = [p.name for p in all_products if p.name]
+            if product_names:
+                # Build a single AI prompt asking which product matches the Shopify title
+                prompt = (
+                    "Tu es assistant pour matcher un titre de produit Shopify à un produit de notre catalogue. "
+                    "Réponds UNIQUEMENT avec le nom EXACT d'un produit de la liste, ou 'NONE' si aucun ne correspond.\n\n"
+                    f"Titre Shopify : {title}\n"
+                    f"Variante : {variant_title or '(aucune)'}\n\n"
+                    "Liste des produits :\n"
+                    + "\n".join(f"- {n}" for n in product_names)
+                    + "\n\nRéponse (nom exact ou NONE) :"
+                )
+                ai_response = _gemini_transliterate(prompt)  # reuse same Gemini helper
+                if ai_response:
+                    ai_response = ai_response.strip().strip('"').strip("'")
+                    if ai_response.upper() != "NONE":
+                        # Find matching product (case-insensitive)
+                        for p in all_products:
+                            if p.name and p.name.strip().lower() == ai_response.lower():
+                                product = p
+                                break
+
         if not product:
             unmatched_items.append(f"{title} (qté {quantity})")
             continue
