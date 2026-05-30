@@ -4182,10 +4182,16 @@ def api_shopify_webhook_order_created(request):
             if best_match:
                 matched_delegation_name = best_match.name
 
-    # Strategy G: AI fallback — if we still don't have a clear region+ville,
-    # ask Gemini to pick from our list. Only invoked when classic matching
-    # genuinely failed, to save API quota.
-    if not region or not matched_delegation_name:
+    # Strategy G: AI fallback — invoked when:
+    # - We don't have a clear region+ville (classic failed), OR
+    # - Shopify province exists but matched region disagrees (mismatch).
+    province_conflict = False
+    if region and province:
+        prov_norm = _normalize(province)
+        reg_norm = _normalize(region.name)
+        if prov_norm and reg_norm and prov_norm != reg_norm and prov_norm not in reg_norm and reg_norm not in prov_norm:
+            province_conflict = True
+    if not region or not matched_delegation_name or province_conflict:
         try:
             # Build the catalog of options. Group delegations under their region.
             options_lines = []
@@ -4201,10 +4207,18 @@ def api_shopify_webhook_order_created(request):
                     "Tu es assistant pour matcher une adresse Shopify à notre liste de gouvernorats (régions) et délégations (villes) tunisiens. "
                     "Choisis le couple REGION + VILLE qui correspond le mieux aux champs Shopify. "
                     "Tu DOIS choisir un nom EXACT de la liste fournie. "
+                    "IMPORTANT : Les Tunisiens utilisent souvent des transcriptions avec chiffres (3=ع, 5=خ, 7=ح, 9=ق, 2=ء). "
+                    "Exemples de transcriptions courantes :\n"
+                    "  '9ar9na', 'gargana', 'karkenna' → Kerkennah\n"
+                    "  '9afsa', 'gafsa' → Gafsa\n"
+                    "  '3in dra7em' → Ain Draham\n"
+                    "  'jbenyana', 'jebniana' → Jebeniana\n"
+                    "  'nef6a', 'nafta' → Nefta\n"
                     "Si rien ne correspond clairement, réponds 'NONE'. "
                     "Réponds UNIQUEMENT au format : 'REGION: nom | VILLE: nom' ou 'NONE'.\n\n"
-                    "Exemples :\n"
+                    "Plus d'exemples :\n"
                     "  Champs 'SFAX / jbenyana' → 'REGION: Sfax | VILLE: Jebeniana'\n"
+                    "  Champs 'Sfax / 9ar9na ramla' → 'REGION: Sfax | VILLE: Kerkennah'\n"
                     "  Champs 'Tozeur / Nefta' → 'REGION: Tozeur | VILLE: Nefta'\n\n"
                     f"Champs Shopify :\n"
                     f"  Province : {province}\n"
