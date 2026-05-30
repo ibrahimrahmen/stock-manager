@@ -3851,7 +3851,7 @@ def api_shopify_webhook_order_created(request):
         body = {
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {
-                "temperature": 0.1,
+                "temperature": 0,
                 "maxOutputTokens": 256,
             },
         }
@@ -4256,11 +4256,36 @@ def api_shopify_webhook_order_created(request):
         color in variant_title. Falls back to the first variant if no match,
         UNLESS strict=True (used for bundles where a wrong fallback would create
         a fake order line with the wrong color).
+
+        Searches across the whole product family (parent + V2/V3 children) so
+        even if the parent has 'Gray' but the V2 sub-product doesn't, we still
+        find it.
         """
         if not product:
             return None
-        all_variants = list(product.variants.all())
-        if not all_variants:
+
+        # Build family: root + all descendants (mirrors _extract_size).
+        root = product
+        while getattr(root, "parent_product", None):
+            root = root.parent_product
+        family = [root]
+        try:
+            from .models import Product as _Product
+            for child in _Product.objects.filter(parent_product=root):
+                family.append(child)
+                for grand in _Product.objects.filter(parent_product=child):
+                    family.append(grand)
+        except Exception:
+            pass
+
+        # Collect all variants across the family. Track which variant belongs
+        # to the specifically-requested product (preferred) vs family fallback.
+        all_variants_self = list(product.variants.all())
+        all_variants_family = []
+        for p in family:
+            for v in p.variants.all():
+                all_variants_family.append(v)
+        if not all_variants_family:
             return None
         # Gather color candidates from variant_title and options
         candidates = []
@@ -4281,7 +4306,7 @@ def api_shopify_webhook_order_created(request):
                 candidates.append(pval)
 
         if not candidates:
-            return None if strict else all_variants[0]
+            return None if strict else (all_variants_self[0] if all_variants_self else all_variants_family[0])
 
         # Build a list of FR/EN color synonyms so "Bleu" matches "Blue"/"BLUE",
         # "Noir" matches "Black"/"BLACK", "Gris" matches "Gray"/"Grey", etc.
@@ -4311,28 +4336,33 @@ def api_shopify_webhook_order_created(request):
                     return group
             return {w}
 
-        # Try to match each candidate against color_label and color_name
-        for cand in candidates:
-            cand_syns = _synonyms_of(cand)
-            for v in all_variants:
-                lbl = (v.color_label or "").strip().lower()
-                nm = (v.color_name or "").strip().lower()
-                if lbl in cand_syns or nm in cand_syns:
-                    return v
-        # Partial contains match (handles "Gris foncé" matches "Gris")
-        for cand in candidates:
-            cl = cand.lower()
-            for v in all_variants:
-                lbl = (v.color_label or "").strip().lower()
-                nm = (v.color_name or "").strip().lower()
-                if lbl and (lbl in cl or cl in lbl):
-                    return v
-                if nm and (nm in cl or cl in nm):
-                    return v
-        # No color matched any variant of this product.
+        # Try to match each candidate against color_label and color_name.
+        # Two passes: first the product's own variants, then the family.
+        for variant_pool in (all_variants_self, all_variants_family):
+            for cand in candidates:
+                cand_syns = _synonyms_of(cand)
+                for v in variant_pool:
+                    lbl = (v.color_label or "").strip().lower()
+                    nm = (v.color_name or "").strip().lower()
+                    if lbl in cand_syns or nm in cand_syns:
+                        return v
+            # Partial contains match (handles "Gris foncé" matches "Gris")
+            for cand in candidates:
+                cl = cand.lower()
+                for v in variant_pool:
+                    lbl = (v.color_label or "").strip().lower()
+                    nm = (v.color_name or "").strip().lower()
+                    if lbl and (lbl in cl or cl in lbl):
+                        return v
+                    if nm and (nm in cl or cl in nm):
+                        return v
+
+        # No color matched any variant of this product (or its family).
         # - In strict mode (bundles): return None so the team picks manually.
-        # - In normal mode: fall back to first variant.
-        return None if strict else all_variants[0]
+        # - In normal mode: fall back to first variant of the product itself.
+        if strict:
+            return None
+        return all_variants_self[0] if all_variants_self else all_variants_family[0]
 
     def _extract_size(li, product):
         # Shopify variant_title format examples:
@@ -4510,12 +4540,15 @@ def api_shopify_webhook_order_created(request):
                     prompt = (
                         "Tu es assistant pour matcher un titre de commande Shopify à notre catalogue. "
                         "Notre catalogue a deux types : OFFRE (pack/ensemble de produits) et PRODUIT (article seul). "
-                        "RÈGLE IMPORTANTE : choisis l'élément du catalogue dont le nom est le PLUS SIMILAIRE au titre Shopify. "
-                        "Compare mot par mot. Ne suppose JAMAIS qu'un ensemble correspond à un produit isolé : "
-                        "si Shopify dit 'Pull X', cherche d'abord une OFFRE 'Pull X' ou un PRODUIT 'Pull X', "
-                        "PAS un 'Ensemble X' (qui contient plusieurs produits). "
+                        "RÈGLE ABSOLUE : choisis l'élément dont le NOM commence par le même mot que le titre Shopify. "
+                        "Un 'Pull X' ou 'Polo X' doit matcher 'Pull X' ou similaire, JAMAIS un 'Ensemble' ou 'Tenue'. "
+                        "Un 'Ensemble X' doit matcher 'Ensemble X', JAMAIS un 'Pull' seul. "
                         "Si rien ne correspond clairement, réponds 'NONE'. "
                         "Réponds UNIQUEMENT par : 'OFFRE: nom' ou 'PRODUIT: nom' ou 'NONE'.\n\n"
+                        "Exemples :\n"
+                        "  Titre 'Pull Polo Crochet Blueline' → 'OFFRE: Pull BlueLine' (les deux commencent par 'Pull')\n"
+                        "  Titre 'Ensemble Camo ZR' → 'OFFRE: Ensemble Camo ZR'\n"
+                        "  Titre 'Pull Vintage' → 'PRODUIT: PULL VINTAGE'\n\n"
                         f"Titre Shopify : {title}\n"
                         f"Variante : {variant_title or '(aucune)'}\n\n"
                         "Catalogue :\n"
