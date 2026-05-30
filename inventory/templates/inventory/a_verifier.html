@@ -20,7 +20,7 @@
     nav a{font-size:13px;color:var(--muted);text-decoration:none;}
     nav a:hover{color:var(--text);}
     .nav-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:600;}
-    .page{max-width:1000px;margin:0 auto;padding:32px 24px;}
+    .page{max-width:1100px;margin:0 auto;padding:32px 24px;}
 
     .stats{display:flex;gap:12px;margin-bottom:32px;}
     .stat{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:14px 20px;}
@@ -37,7 +37,7 @@
     .order-link{color:#5090e0;text-decoration:none;font-family:monospace;font-size:12px;}
     .order-link:hover{text-decoration:underline;}
 
-    .hours-badge{font-size:11px;padding:3px 9px;border-radius:8px;background:var(--amber-dim);color:var(--amber);}
+    .hours-badge{font-size:11px;padding:3px 9px;border-radius:8px;background:var(--amber-dim);color:var(--amber);white-space:nowrap;}
     .hours-badge.late{background:var(--red-dim);color:var(--red);}
 
     .btn-traiter{padding:7px 16px;background:var(--red-dim);color:var(--red);border:0.5px solid rgba(224,80,80,0.3);border-radius:var(--radius-sm);font-size:12px;font-weight:500;cursor:pointer;transition:all .2s;min-width:90px;}
@@ -77,6 +77,7 @@
     <thead>
       <tr>
         <th>Bordereau</th>
+        <th>Client</th>
         <th>Expédié le</th>
         <th>Délai</th>
         <th>Navex</th>
@@ -95,7 +96,7 @@
           {% if row.order.client_ville %}<div style="font-size:11px;color:var(--muted);">{{ row.order.client_ville }}</div>{% endif %}
           {% if not row.order.client_name and not row.order.client_phone %}<span style="color:var(--muted);font-size:12px;">—</span>{% endif %}
         </td>
-        <td style="color:var(--muted);font-size:12px;">{{ row.order.closed_at|date:"d/m/Y à H:i" }}</td>
+        <td style="color:var(--muted);font-size:12px;white-space:nowrap;">{{ row.order.closed_at|date:"d/m/Y à H:i" }}</td>
         <td>
           <span class="hours-badge {% if row.hours_since > 48 %}late{% endif %}">
             {{ row.hours_since|floatformat:0 }}h / {{ row.limit_hours }}h max
@@ -109,7 +110,7 @@
           {% else %}<span style="font-size:11px;color:var(--muted);">{{ row.navex_etat }}</span>{% endif %}
         </td>
         <td>{{ row.order.items.count }}</td>
-        <td style="color:var(--green);">{% if row.order.amount_collected is not None %}{{ row.order.amount_collected|floatformat:3 }} TND{% else %}—{% endif %}</td>
+        <td style="color:var(--green);white-space:nowrap;">{% if row.order.amount_collected is not None %}{{ row.order.amount_collected|floatformat:3 }} TND{% else %}—{% endif %}</td>
         <td style="text-align:right;">
           <button
             id="btn-{{ row.order.pk }}"
