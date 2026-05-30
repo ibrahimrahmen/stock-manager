@@ -3361,6 +3361,18 @@ def api_order_draft_get(request, pk):
             "products": products,
         })
 
+    # Standalone product lines (no order_offer) — typically from Shopify webhook
+    # when a single product (not a bundle) was purchased.
+    standalone_lines = []
+    for line in order.lines.filter(order_offer__isnull=True):
+        standalone_lines.append({
+            "product_id": line.product_id,
+            "variant_id": line.variant_id,
+            "size": line.size,
+            "quantity": line.quantity,
+            "unit_price": str(line.unit_price) if line.unit_price else "0",
+        })
+
     return JsonResponse({
         "status": "ok",
         "order": {
@@ -3382,6 +3394,7 @@ def api_order_draft_get(request, pk):
             "discount": str(order.discount),
             "notes": order.notes,
             "offers": offers_data,
+            "standalone_lines": standalone_lines,
             "total": str(order.total),
             "article_summary": order.article_summary,
             "created_at": order.created_at.strftime("%d/%m %H:%M") if order.created_at else "",
@@ -4496,7 +4509,10 @@ def api_shopify_webhook_order_created(request):
                 if not (exact_offer_match or exact_product_match):
                     prompt = (
                         "Tu es assistant pour matcher un titre de commande Shopify à notre catalogue. "
-                        "Choisis L'OFFRE OU LE PRODUIT qui correspond EXACTEMENT au titre Shopify donné. "
+                        "Notre catalogue a deux types : OFFRE (pack de produits) et PRODUIT (article seul). "
+                        "RÈGLE IMPORTANTE : si à la fois une OFFRE et un PRODUIT correspondent, "
+                        "préfère toujours l'OFFRE (car notre système traite mieux les offres). "
+                        "Choisis L'OFFRE OU LE PRODUIT qui correspond le mieux au titre Shopify. "
                         "Si rien ne correspond clairement, réponds 'NONE'. "
                         "Réponds UNIQUEMENT par : 'OFFRE: nom' ou 'PRODUIT: nom' ou 'NONE'.\n\n"
                         f"Titre Shopify : {title}\n"
