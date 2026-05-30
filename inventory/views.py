@@ -1697,6 +1697,59 @@ def api_save_navex_info(request, pk):
         return JsonResponse({"status": "error", "message": str(e)})
 
 
+def api_check_duplicate_client(request):
+    """Check whether a phone number has other ShippingOrders still in the
+    delivery cycle (OPEN or CLOSED — i.e. not yet PAID/RETURNED).
+
+    Used to warn the warehouse team when they're about to ship a SECOND
+    parcel to a client who already has an in-flight first parcel — common
+    pattern of duplicate orders across multiple sales pages.
+
+    GET ?phone=12345678&exclude_id=NNN
+    """
+    phone_raw = (request.GET.get("phone") or "").strip()
+    exclude_id = request.GET.get("exclude_id") or ""
+
+    if not phone_raw:
+        return JsonResponse({"status": "ok", "duplicates": []})
+
+    # Normalize: keep digits only (handles "+216 12-345-678" → "21612345678")
+    import re as _re
+    digits = _re.sub(r"\D", "", phone_raw)
+    if len(digits) < 6:
+        return JsonResponse({"status": "ok", "duplicates": []})
+
+    # Match by suffix to tolerate +216 prefix variations.
+    # We only return non-finalized orders (still in delivery cycle).
+    suffix = digits[-8:]  # last 8 digits = TN phone number
+    qs = ShippingOrder.objects.filter(client_phone__icontains=suffix)
+    if exclude_id:
+        try:
+            qs = qs.exclude(pk=int(exclude_id))
+        except Exception:
+            pass
+    # Only orders still in delivery cycle (not paid, not returned, not cancelled)
+    qs = qs.exclude(status__in=(
+        ShippingOrder.PAID,
+        ShippingOrder.PARTIAL_PAID,
+        ShippingOrder.RETURNED,
+        ShippingOrder.CANCELLED,
+    ))
+    qs = qs.order_by("-created_at")[:5]
+
+    duplicates = []
+    for o in qs:
+        duplicates.append({
+            "id": o.id,
+            "bordereau_barcode": o.bordereau_barcode,
+            "client_name": o.client_name,
+            "status": o.get_status_display(),
+            "created_at": o.created_at.strftime("%d/%m/%Y %H:%M"),
+            "designation": o.navex_designation[:120] if o.navex_designation else "",
+        })
+    return JsonResponse({"status": "ok", "duplicates": duplicates})
+
+
 def api_get_order_amount(request, pk):
     """Get amount for an order — from DB or fetch from Navex."""
     try:

@@ -46,6 +46,7 @@ urlpatterns = [
     path("cron/evening/", views.cron_evening_email, name="cron_evening"),
     path("api/orders/<int:pk>/save-navex/", views.api_save_navex_info, name="api_save_navex_info"),
     path("api/orders/<int:pk>/amount/", views.api_get_order_amount, name="api_get_order_amount"),
+    path("api/check-duplicate-client/", views.api_check_duplicate_client, name="api_check_duplicate_client"),
     path("api/navex-attente/", views.api_navex_en_attente, name="api_navex_attente"),
     path("api/orders/<int:pk>/confirm-navex/", views.api_confirm_payment_from_navex, name="api_confirm_payment_from_navex"),
     path("products/", views.products_list, name="products_list"),
