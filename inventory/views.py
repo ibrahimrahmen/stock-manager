@@ -4182,6 +4182,66 @@ def api_shopify_webhook_order_created(request):
             if best_match:
                 matched_delegation_name = best_match.name
 
+    # Strategy G: AI fallback — if we still don't have a clear region+ville,
+    # ask Gemini to pick from our list. Only invoked when classic matching
+    # genuinely failed, to save API quota.
+    if not region or not matched_delegation_name:
+        try:
+            # Build the catalog of options. Group delegations under their region.
+            options_lines = []
+            for r in all_regions:
+                r_dlgs = [d for d in all_delegations if d.region_id == r.id]
+                if r_dlgs:
+                    options_lines.append(f"{r.name}: " + ", ".join(d.name for d in r_dlgs))
+                else:
+                    options_lines.append(r.name)
+            # Only ask Gemini if we have data
+            if options_lines:
+                prompt = (
+                    "Tu es assistant pour matcher une adresse Shopify à notre liste de gouvernorats (régions) et délégations (villes) tunisiens. "
+                    "Choisis le couple REGION + VILLE qui correspond le mieux aux champs Shopify. "
+                    "Tu DOIS choisir un nom EXACT de la liste fournie. "
+                    "Si rien ne correspond clairement, réponds 'NONE'. "
+                    "Réponds UNIQUEMENT au format : 'REGION: nom | VILLE: nom' ou 'NONE'.\n\n"
+                    "Exemples :\n"
+                    "  Champs 'SFAX / jbenyana' → 'REGION: Sfax | VILLE: Jebeniana'\n"
+                    "  Champs 'Tozeur / Nefta' → 'REGION: Tozeur | VILLE: Nefta'\n\n"
+                    f"Champs Shopify :\n"
+                    f"  Province : {province}\n"
+                    f"  City : {city}\n"
+                    f"  Address1 : {address1}\n"
+                    f"  Address2 : {address2}\n\n"
+                    "Liste des régions et délégations :\n"
+                    + "\n".join(options_lines)
+                    + "\n\nRéponse :"
+                )
+                ai_response = _gemini_transliterate(prompt)
+                try:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "Gemini region-match for province=%r city=%r address1=%r: response=%r",
+                        province, city, address1, ai_response
+                    )
+                except Exception:
+                    pass
+                if ai_response and ai_response.strip().upper() != "NONE":
+                    m = re.match(r"REGION:\s*(.+?)\s*\|\s*VILLE:\s*(.+)", ai_response.strip(), re.IGNORECASE)
+                    if m:
+                        region_name_ai = m.group(1).strip()
+                        ville_name_ai = m.group(2).strip()
+                        # Find region exactly
+                        for r in all_regions:
+                            if r.name.lower() == region_name_ai.lower():
+                                region = r
+                                # Find delegation exactly
+                                for d in all_delegations:
+                                    if d.region_id == r.id and d.name.lower() == ville_name_ai.lower():
+                                        matched_delegation_name = d.name
+                                        break
+                                break
+        except Exception:
+            pass
+
     # If we matched a Delegation by name, replace the free-text city with the
     # canonical Delegation name so the team sees a clean value.
     if matched_delegation_name:
