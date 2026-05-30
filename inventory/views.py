@@ -4506,13 +4506,24 @@ def api_shopify_webhook_order_created(request):
                         + "\n\nRéponse :"
                     )
                     ai_response = _gemini_transliterate(prompt)
+                    # Log what Gemini returned for debugging
+                    try:
+                        import logging
+                        logging.getLogger(__name__).warning(
+                            "Gemini product-match for title=%r: response=%r",
+                            title, ai_response
+                        )
+                    except Exception:
+                        pass
                     if ai_response:
                         ai_response = ai_response.strip().strip('"').strip("'")
-                        if ai_response.upper() == "NONE":
-                            # Gemini says nothing matches → drop the classic match
+                        # Tolerate response without prefix (e.g. just "Pull Polo")
+                        # Try OFFRE/PRODUIT prefix first, then fall back to fuzzy lookup
+                        upper = ai_response.upper()
+                        if upper == "NONE":
                             offer = None
                             product = None
-                        elif ai_response.upper().startswith("OFFRE:"):
+                        elif upper.startswith("OFFRE:"):
                             target_name = ai_response[6:].strip()
                             for o in all_offers:
                                 if o.name and o.name.strip().lower() == target_name.lower():
@@ -4520,7 +4531,7 @@ def api_shopify_webhook_order_created(request):
                                     product = None
                                     gemini_pick = "offer"
                                     break
-                        elif ai_response.upper().startswith("PRODUIT:"):
+                        elif upper.startswith("PRODUIT:"):
                             target_name = ai_response[8:].strip()
                             for p in all_products:
                                 if p.name and p.name.strip().lower() == target_name.lower():
@@ -4528,6 +4539,24 @@ def api_shopify_webhook_order_created(request):
                                     offer = None
                                     gemini_pick = "product"
                                     break
+                        else:
+                            # Gemini answered without prefix — search the name in both lists
+                            name_lower = ai_response.lower()
+                            found = False
+                            for p in all_products:
+                                if p.name and p.name.strip().lower() == name_lower:
+                                    product = p
+                                    offer = None
+                                    gemini_pick = "product_no_prefix"
+                                    found = True
+                                    break
+                            if not found:
+                                for o in all_offers:
+                                    if o.name and o.name.strip().lower() == name_lower:
+                                        offer = o
+                                        product = None
+                                        gemini_pick = "offer_no_prefix"
+                                        break
         except Exception:
             # If Gemini fails for any reason, fall back to the classic match
             pass
