@@ -4690,17 +4690,22 @@ def api_shopify_webhook_order_created(request):
                 exact_product_match = bool(Product.objects.filter(name__iexact=title).first())
                 if not (exact_offer_match or exact_product_match):
                     prompt = (
-                        "Tu es assistant pour matcher un titre de commande Shopify à notre catalogue. "
-                        "Notre catalogue a deux types : OFFRE (pack/ensemble de produits) et PRODUIT (article seul). "
-                        "RÈGLE ABSOLUE : choisis l'élément dont le NOM commence par le même mot que le titre Shopify. "
-                        "Un 'Pull X' ou 'Polo X' doit matcher 'Pull X' ou similaire, JAMAIS un 'Ensemble' ou 'Tenue'. "
-                        "Un 'Ensemble X' doit matcher 'Ensemble X', JAMAIS un 'Pull' seul. "
-                        "Si rien ne correspond clairement, réponds 'NONE'. "
+                        "Tu es assistant pour matcher un titre de commande Shopify à notre catalogue.\n"
+                        "Notre catalogue a deux types : OFFRE (pack/ensemble de produits) et PRODUIT (article seul).\n\n"
+                        "RÈGLE PRIMORDIALE : le PREMIER MOT du titre Shopify détermine le type d'article.\n"
+                        "  - Titre commence par 'Pull' → cherche 'Pull X' dans le catalogue (OFFRE ou PRODUIT)\n"
+                        "  - Titre commence par 'Polo' → cherche 'Polo X'\n"
+                        "  - Titre commence par 'Pants' → cherche 'Pants X'\n"
+                        "  - Titre commence par 'Veste' → cherche 'Veste X'\n"
+                        "  - Titre commence par 'Ensemble' ou 'Tenue' → cherche 'Ensemble X' ou 'Tenue X'\n"
+                        "JAMAIS un 'Pull X' ne doit matcher un 'Ensemble X' ou inversement.\n\n"
+                        "Si rien ne correspond clairement, réponds 'NONE'.\n"
                         "Réponds UNIQUEMENT par : 'OFFRE: nom' ou 'PRODUIT: nom' ou 'NONE'.\n\n"
-                        "Exemples :\n"
-                        "  Titre 'Pull Polo Crochet Blueline' → 'OFFRE: Pull BlueLine' (les deux commencent par 'Pull')\n"
-                        "  Titre 'Ensemble Camo ZR' → 'OFFRE: Ensemble Camo ZR'\n"
-                        "  Titre 'Pull Vintage' → 'PRODUIT: PULL VINTAGE'\n\n"
+                        "Exemples critiques :\n"
+                        "  'Pull Camo ZR' → 'OFFRE: Pull Camo' (PAS 'Ensemble Camo ZR' — c'est un Pull seul, pas un ensemble)\n"
+                        "  'Pull Polo Crochet Blueline' → 'OFFRE: Pull BlueLine' (PAS 'Ensemble Blueline')\n"
+                        "  'Ensemble Camo ZR' → 'OFFRE: Ensemble Camo ZR' (commence par Ensemble)\n"
+                        "  'Pull Vintage' → 'PRODUIT: PULL VINTAGE'\n\n"
                         f"Titre Shopify : {title}\n"
                         f"Variante : {variant_title or '(aucune)'}\n\n"
                         "Catalogue :\n"
@@ -4761,6 +4766,82 @@ def api_shopify_webhook_order_created(request):
                                         break
         except Exception:
             # If Gemini fails for any reason, fall back to the classic match
+            pass
+
+        # Safety guard: if Gemini picked an OFFRE/PRODUIT whose first word
+        # mismatches the Shopify title's first word (e.g. 'Pull Camo ZR' →
+        # 'Ensemble Camo ZR'), reject Gemini's pick to avoid wrong matching.
+        # Common boundary: 'Pull'/'Polo'/'Pants'/'Veste'/'Shirt'/'Short' should NOT
+        # become 'Ensemble' or 'Tenue', and vice versa.
+        try:
+            single_keywords = {"pull", "polo", "pants", "pant", "veste", "shirt", "short", "doudoune", "gillet", "5 pieces"}
+            bundle_keywords = {"ensemble", "tenue"}
+            title_first = title.strip().lower().split()[0] if title.strip() else ""
+            picked_obj = offer or product
+            picked_name = (picked_obj.name if picked_obj else "")
+            picked_first = picked_name.strip().lower().split()[0] if picked_name else ""
+            title_is_single = title_first in single_keywords
+            title_is_bundle = title_first in bundle_keywords
+            picked_is_single = picked_first in single_keywords
+            picked_is_bundle = picked_first in bundle_keywords
+            if (title_is_single and picked_is_bundle) or (title_is_bundle and picked_is_single):
+                # Reject Gemini pick — it crossed the boundary
+                try:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "Gemini cross-boundary pick REJECTED: title=%r → pick=%r (type mismatch)",
+                        title, picked_name
+                    )
+                except Exception:
+                    pass
+                # Try to find a same-type alternative
+                title_words = set(title.lower().split())
+                alt_found = False
+                if title_is_single:
+                    # Score each candidate by how many words from the title overlap
+                    best_score = 0
+                    best_offer = None
+                    best_product = None
+                    for o in all_offers:
+                        if not o.name:
+                            continue
+                        o_first = o.name.strip().lower().split()[0]
+                        if o_first not in single_keywords:
+                            continue
+                        # Word overlap (excluding common words)
+                        o_words = set(o.name.lower().split())
+                        score = len(o_words & title_words)
+                        if score > best_score:
+                            best_score = score
+                            best_offer = o
+                            best_product = None
+                    for p in all_products:
+                        if not p.name:
+                            continue
+                        p_first = p.name.strip().lower().split()[0]
+                        if p_first not in single_keywords:
+                            continue
+                        p_words = set(p.name.lower().split())
+                        score = len(p_words & title_words)
+                        if score > best_score:
+                            best_score = score
+                            best_product = p
+                            best_offer = None
+                    if best_offer:
+                        offer = best_offer
+                        product = None
+                        gemini_pick = "guard_fix_offer"
+                        alt_found = True
+                    elif best_product:
+                        product = best_product
+                        offer = None
+                        gemini_pick = "guard_fix_product"
+                        alt_found = True
+                if not alt_found:
+                    # No safer alternative — drop the bad pick
+                    offer = None
+                    product = None
+        except Exception:
             pass
 
         # --- (D) Process the final pick ---
