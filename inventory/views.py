@@ -4509,10 +4509,11 @@ def api_shopify_webhook_order_created(request):
                 if not (exact_offer_match or exact_product_match):
                     prompt = (
                         "Tu es assistant pour matcher un titre de commande Shopify à notre catalogue. "
-                        "Notre catalogue a deux types : OFFRE (pack de produits) et PRODUIT (article seul). "
-                        "RÈGLE IMPORTANTE : si à la fois une OFFRE et un PRODUIT correspondent, "
-                        "préfère toujours l'OFFRE (car notre système traite mieux les offres). "
-                        "Choisis L'OFFRE OU LE PRODUIT qui correspond le mieux au titre Shopify. "
+                        "Notre catalogue a deux types : OFFRE (pack/ensemble de produits) et PRODUIT (article seul). "
+                        "RÈGLE IMPORTANTE : choisis l'élément du catalogue dont le nom est le PLUS SIMILAIRE au titre Shopify. "
+                        "Compare mot par mot. Ne suppose JAMAIS qu'un ensemble correspond à un produit isolé : "
+                        "si Shopify dit 'Pull X', cherche d'abord une OFFRE 'Pull X' ou un PRODUIT 'Pull X', "
+                        "PAS un 'Ensemble X' (qui contient plusieurs produits). "
                         "Si rien ne correspond clairement, réponds 'NONE'. "
                         "Réponds UNIQUEMENT par : 'OFFRE: nom' ou 'PRODUIT: nom' ou 'NONE'.\n\n"
                         f"Titre Shopify : {title}\n"
