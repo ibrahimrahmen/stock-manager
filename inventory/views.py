@@ -4243,16 +4243,41 @@ def api_shopify_webhook_order_created(request):
                     if m:
                         region_name_ai = m.group(1).strip()
                         ville_name_ai = m.group(2).strip()
-                        # Find region exactly
+                        # Find region: try exact (case-insensitive), then fuzzy
+                        region_match = None
                         for r in all_regions:
                             if r.name.lower() == region_name_ai.lower():
-                                region = r
-                                # Find delegation exactly
-                                for d in all_delegations:
-                                    if d.region_id == r.id and d.name.lower() == ville_name_ai.lower():
-                                        matched_delegation_name = d.name
-                                        break
+                                region_match = r
                                 break
+                        if not region_match:
+                            # Fuzzy: closest by Levenshtein
+                            best_dist = 999
+                            for r in all_regions:
+                                d_ = _levenshtein(_normalize(r.name), _normalize(region_name_ai))
+                                if d_ < best_dist and d_ <= 3:
+                                    region_match = r
+                                    best_dist = d_
+                        if region_match:
+                            region = region_match
+                            # Find delegation: exact, then fuzzy within this region
+                            ville_match = None
+                            for d in all_delegations:
+                                if d.region_id == region_match.id and d.name.lower() == ville_name_ai.lower():
+                                    ville_match = d
+                                    break
+                            if not ville_match:
+                                # Fuzzy: closest within this region
+                                best_dist = 999
+                                v_norm = _normalize(ville_name_ai)
+                                for d in all_delegations:
+                                    if d.region_id != region_match.id:
+                                        continue
+                                    d_ = _levenshtein(_normalize(d.name), v_norm)
+                                    if d_ < best_dist and d_ <= 3:
+                                        ville_match = d
+                                        best_dist = d_
+                            if ville_match:
+                                matched_delegation_name = ville_match.name
         except Exception:
             pass
 
