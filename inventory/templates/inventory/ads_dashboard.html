@@ -1,0 +1,129 @@
+{% load humanize %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dépenses Meta Ads</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0e0e0c;--surface:#161614;--surface2:#1e1e1b;
+      --border:rgba(255,255,255,0.06);--text:#f0ede6;--muted:#7a7870;
+      --green:#3dba8a;--green-dim:rgba(61,186,138,0.1);
+      --amber:#e8a020;--amber-dim:rgba(232,160,32,0.12);
+      --red:#e05050;--red-dim:rgba(224,80,80,0.1);
+      --blue:#5090e0;--blue-dim:rgba(80,144,224,0.1);
+      --radius:14px;--radius-sm:8px;
+    }
+    body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+    nav{display:flex;align-items:center;gap:16px;padding:18px 32px;border-bottom:0.5px solid var(--border);}
+    nav a{font-size:13px;color:var(--muted);text-decoration:none;}
+    nav a:hover{color:var(--text);}
+    .nav-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:600;}
+    .page{max-width:1200px;margin:0 auto;padding:32px 24px;}
+
+    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:32px;}
+    .stat{background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius);padding:18px 22px;}
+    .stat-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px;}
+    .stat-val{font-size:26px;font-weight:500;}
+    .stat-sub{font-size:12px;color:var(--muted);margin-top:4px;}
+    .stat-val.red{color:var(--red);}
+    .stat-val.green{color:var(--green);}
+    .stat-val.amber{color:var(--amber);}
+    .stat-val.blue{color:var(--blue);}
+
+    .section-title{font-family:'Syne',sans-serif;font-size:18px;font-weight:600;margin:32px 0 12px;}
+
+    table{width:100%;border-collapse:collapse;background:var(--surface);border-radius:var(--radius);border:0.5px solid var(--border);overflow:hidden;}
+    th{text-align:left;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;padding:11px 14px;border-bottom:0.5px solid var(--border);}
+    td{font-size:13px;padding:11px 14px;border-bottom:0.5px solid var(--border);vertical-align:middle;}
+    tr:last-child td{border-bottom:none;}
+    td.num{text-align:right;font-variant-numeric:tabular-nums;}
+    th.num{text-align:right;}
+    .profit-pos{color:var(--green);}
+    .profit-neg{color:var(--red);}
+    .roas-good{color:var(--green);font-weight:500;}
+    .roas-mid{color:var(--amber);}
+    .roas-bad{color:var(--red);}
+
+    .config-warn{background:var(--amber-dim);border:0.5px solid rgba(232,160,32,0.3);border-radius:var(--radius-sm);padding:14px 20px;color:var(--amber);font-size:13px;margin-bottom:24px;}
+    .empty{text-align:center;padding:60px;color:var(--muted);}
+  </style>
+</head>
+<body>
+<nav>
+  <a href="{% url 'dashboard' %}">← Dashboard</a>
+  <span class="nav-title">Dépenses Meta Ads</span>
+  <span style="font-size:12px;color:var(--muted);margin-left:8px;">Période : {{ start }} → {{ end }}</span>
+</nav>
+
+<div class="page">
+
+{% if not has_token or not has_account %}
+<div class="config-warn">
+  ⚠️ Configuration incomplète. Définis sur Railway :
+  {% if not has_token %}<code>META_ACCESS_TOKEN</code>{% endif %}
+  {% if not has_account %}<code>META_AD_ACCOUNT_ID</code>{% endif %}
+</div>
+{% endif %}
+
+<div class="stats-grid">
+  <div class="stat">
+    <div class="stat-label">Dépense aujourd'hui</div>
+    <div class="stat-val red">{{ today_spend|floatformat:3 }} TND</div>
+    <div class="stat-sub">ROAS {{ roas_today|floatformat:2 }}× · Ventes {{ today_revenue|floatformat:3 }} TND</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Dépense ce mois</div>
+    <div class="stat-val red">{{ month_spend|floatformat:3 }} TND</div>
+    <div class="stat-sub">ROAS {{ roas_month|floatformat:2 }}× · Ventes {{ month_revenue|floatformat:3 }} TND</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Total période</div>
+    <div class="stat-val">{{ total_spend|floatformat:3 }} TND</div>
+    <div class="stat-sub">Ventes {{ total_revenue|floatformat:3 }} TND</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">ROAS période</div>
+    <div class="stat-val {% if roas_total >= 2 %}green{% elif roas_total >= 1 %}amber{% else %}red{% endif %}">{{ roas_total|floatformat:2 }}×</div>
+    <div class="stat-sub">ROI {{ roi_total|floatformat:0 }}%</div>
+  </div>
+</div>
+
+<div class="section-title">Détail jour par jour</div>
+
+{% if rows %}
+<table>
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th class="num">Dépense</th>
+      <th class="num">Ventes</th>
+      <th class="num">Profit</th>
+      <th class="num">ROAS</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.date }}</td>
+      <td class="num">{{ row.spend|floatformat:3 }} TND</td>
+      <td class="num">{{ row.revenue|floatformat:3 }} TND</td>
+      <td class="num {% if row.profit >= 0 %}profit-pos{% else %}profit-neg{% endif %}">
+        {{ row.profit|floatformat:3 }} TND
+      </td>
+      <td class="num {% if row.roas >= 2 %}roas-good{% elif row.roas >= 1 %}roas-mid{% else %}roas-bad{% endif %}">
+        {{ row.roas|floatformat:2 }}×
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">Aucune donnée pour cette période.</div>
+{% endif %}
+
+</div>
+</body>
+</html>

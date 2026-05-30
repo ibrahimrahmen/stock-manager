@@ -6376,3 +6376,158 @@ def unit_detail(request, barcode):
         "movements": movements,
         "order_items": order_items,
     })
+
+
+# ============================================================================
+#                          META ADS SPENDING
+# ============================================================================
+# Reads ad spend data from Facebook Marketing API and combines it with our
+# sales data to compute ROI. Requires env vars:
+#   META_ACCESS_TOKEN  — long-lived access token with ads_read permission
+#   META_AD_ACCOUNT_ID — ad account id (without 'act_' prefix)
+# ============================================================================
+
+def _meta_fetch_spend(start_date, end_date):
+    """Fetch ad spend from Meta Marketing API between two dates (inclusive).
+    Returns a dict {date_string: spend_amount} like {'2026-05-30': 12.50, ...}
+    Returns empty dict on any error.
+    """
+    import urllib.request, urllib.parse, urllib.error
+    token = os.environ.get("META_ACCESS_TOKEN", "").strip()
+    account_id = os.environ.get("META_AD_ACCOUNT_ID", "").strip()
+    if not token or not account_id:
+        return {}
+    # Meta wants 'act_<id>' format
+    if not account_id.startswith("act_"):
+        account_id = f"act_{account_id}"
+
+    # Use the /insights endpoint with daily breakdown
+    url = (
+        f"https://graph.facebook.com/v18.0/{account_id}/insights"
+        f"?fields=spend"
+        f"&time_range={{'since':'{start_date}','until':'{end_date}'}}"
+        f"&time_increment=1"
+        f"&access_token={token}"
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            data = json.loads(raw)
+            result = {}
+            for entry in data.get("data", []):
+                date_start = entry.get("date_start", "")
+                spend = entry.get("spend", "0")
+                try:
+                    result[date_start] = float(spend)
+                except (ValueError, TypeError):
+                    result[date_start] = 0.0
+            return result
+    except Exception:
+        return {}
+
+
+@login_required
+def ads_dashboard(request):
+    """Dashboard showing Meta ad spend vs sales revenue."""
+    from datetime import date, timedelta
+    today = date.today()
+    first_of_month = today.replace(day=1)
+    # Default: last 30 days
+    start = today - timedelta(days=29)
+
+    # Allow ?month=YYYY-MM filter
+    month_filter = request.GET.get("month", "").strip()
+    if month_filter:
+        try:
+            y, m = month_filter.split("-")
+            start = date(int(y), int(m), 1)
+            # End of month
+            if int(m) == 12:
+                end_of_month = date(int(y), 12, 31)
+            else:
+                end_of_month = date(int(y), int(m) + 1, 1) - timedelta(days=1)
+            end_date = min(end_of_month, today)
+        except Exception:
+            end_date = today
+    else:
+        end_date = today
+
+    start_str = start.strftime("%Y-%m-%d")
+    end_str = end_date.strftime("%Y-%m-%d")
+
+    # Fetch from Meta
+    spend_by_day = _meta_fetch_spend(start_str, end_str)
+
+    # Compute totals
+    total_spend = sum(spend_by_day.values())
+    today_spend = spend_by_day.get(today.strftime("%Y-%m-%d"), 0.0)
+    month_spend = sum(
+        v for d, v in spend_by_day.items()
+        if d.startswith(today.strftime("%Y-%m"))
+    )
+
+    # Fetch sales (paid ShippingOrders) for the same range
+    paid_orders = ShippingOrder.objects.filter(
+        status=ShippingOrder.PAID,
+        closed_at__date__gte=start,
+        closed_at__date__lte=end_date,
+    )
+    total_revenue = sum(
+        float(o.amount_collected or 0) for o in paid_orders
+    )
+
+    today_orders = paid_orders.filter(closed_at__date=today)
+    today_revenue = sum(float(o.amount_collected or 0) for o in today_orders)
+
+    month_orders = paid_orders.filter(closed_at__date__gte=first_of_month)
+    month_revenue = sum(float(o.amount_collected or 0) for o in month_orders)
+
+    # ROAS = revenue / spend (multiplier). ROI = (revenue - spend) / spend (%)
+    def safe_div(a, b):
+        return (a / b) if b else 0
+    roas_total = safe_div(total_revenue, total_spend)
+    roi_total = safe_div(total_revenue - total_spend, total_spend) * 100
+    roas_today = safe_div(today_revenue, today_spend)
+    roas_month = safe_div(month_revenue, month_spend)
+
+    # Build daily rows for the table — combine spend + revenue per day
+    revenue_by_day = {}
+    for o in paid_orders:
+        if not o.closed_at:
+            continue
+        d = o.closed_at.strftime("%Y-%m-%d")
+        revenue_by_day[d] = revenue_by_day.get(d, 0) + float(o.amount_collected or 0)
+
+    all_dates = sorted(set(list(spend_by_day.keys()) + list(revenue_by_day.keys())), reverse=True)
+    rows = []
+    for d in all_dates:
+        s = spend_by_day.get(d, 0)
+        r = revenue_by_day.get(d, 0)
+        rows.append({
+            "date": d,
+            "spend": s,
+            "revenue": r,
+            "roas": safe_div(r, s),
+            "profit": r - s,
+        })
+
+    has_token = bool(os.environ.get("META_ACCESS_TOKEN", "").strip())
+    has_account = bool(os.environ.get("META_AD_ACCOUNT_ID", "").strip())
+
+    return render(request, "inventory/ads_dashboard.html", {
+        "rows": rows,
+        "total_spend": total_spend,
+        "total_revenue": total_revenue,
+        "today_spend": today_spend,
+        "today_revenue": today_revenue,
+        "month_spend": month_spend,
+        "month_revenue": month_revenue,
+        "roas_total": roas_total,
+        "roi_total": roi_total,
+        "roas_today": roas_today,
+        "roas_month": roas_month,
+        "start": start_str,
+        "end": end_str,
+        "has_token": has_token,
+        "has_account": has_account,
+    })
