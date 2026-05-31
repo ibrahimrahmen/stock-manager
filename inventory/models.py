@@ -470,6 +470,12 @@ class Customer(models.Model):
         help_text="Numéro secondaire optionnel (ex: domicile, conjoint). Envoyé à Navex comme tel2.")
     name = models.CharField(max_length=120, blank=True, default="")
     notes = models.TextField(blank=True, default="")
+    # Messenger Page-Scoped ID. Permanent linking key for DM conversations.
+    # Kept forever (it is tiny); NOT subject to the 10-day conversation purge.
+    # Lets n8n/webhook recognise a returning customer and re-attach a fresh
+    # conversation to a new order.
+    customer_psid = models.CharField(max_length=64, blank=True, default="", db_index=True,
+        help_text="ID Messenger (PSID) du client. Sert à relier les conversations DM.")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -587,6 +593,15 @@ class Order(models.Model):
     navex_livreur_tel = models.CharField(max_length=30, blank=True, default="")
 
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_WEBFORM)
+    # ---- DM conversation (Messenger) -------------------------------------
+    # Snapshot of the customer's chat, used by the team to verify a DM order
+    # without leaving the app. Bulky text is PURGED after 10 days by a cron
+    # (the customer's PSID lives on Customer and is kept). If the customer
+    # messages again, n8n/webhook re-attaches a fresh conversation here.
+    conversation_text = models.TextField(blank=True, default="",
+        help_text="Conversation Messenger capturée pour vérifier la commande. Supprimée après 10 jours.")
+    conversation_updated_at = models.DateTimeField(null=True, blank=True,
+        help_text="Date de la dernière capture/mise à jour de la conversation.")
     created_by = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="orders_created")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -3564,6 +3564,62 @@ def api_order_set_scheduled(request, pk):
     })
 
 
+# ---- DM conversation: refresh / fetch latest --------------------------------
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_order_refresh_conversation(request, pk):
+    """Return the latest stored Messenger conversation for this order.
+
+    For now this simply returns what is stored on the order. It is the hook
+    where a live re-fetch will plug in later: when the Messenger webhook /
+    n8n integration is live, this endpoint can call out to pull the current
+    conversation for the customer's PSID and update conversation_text.
+
+    Honest constraint (see v2 spec): a live re-fetch only reliably works when
+    the customer has sent a recent message (open messaging window). It cannot
+    pull an arbitrary silent old conversation on demand.
+    """
+    from .models import Order
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    try:
+        order = Order.objects.select_related("customer").get(pk=pk)
+    except Order.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Commande introuvable."}, status=404)
+
+    psid = (order.customer.customer_psid or "").strip() if order.customer_id else ""
+
+    # --- Live re-fetch hook (future) ---------------------------------------
+    # When the Messenger integration is live, attempt a fresh pull here, e.g.:
+    #     new_text = _messenger_fetch_conversation(psid)
+    #     if new_text:
+    #         order.conversation_text = new_text
+    #         order.conversation_updated_at = timezone.now()
+    #         order.save(update_fields=["conversation_text",
+    #                                   "conversation_updated_at", "updated_at"])
+    # For now we just return whatever is stored.
+
+    if order.conversation_text:
+        return JsonResponse({
+            "status": "ok",
+            "conversation_text": order.conversation_text,
+            "updated_at": order.conversation_updated_at.strftime("%d/%m/%Y %H:%M") if order.conversation_updated_at else "",
+        })
+    if psid:
+        return JsonResponse({
+            "status": "ok",
+            "conversation_text": "",
+            "message": "Aucune conversation enregistrée. Elle réapparaîtra si le client envoie un nouveau message.",
+        })
+    return JsonResponse({
+        "status": "ok",
+        "conversation_text": "",
+        "message": "Cette commande n'est pas liée à une conversation Messenger.",
+    })
+
+
 # ---- Exchange: return items APIs --------------------------------------------
 
 @login_required(login_url="/login/")

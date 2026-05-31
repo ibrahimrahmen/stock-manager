@@ -182,6 +182,32 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
     {% endif %}
   </div>
 
+  <!-- CONVERSATION (Messenger) -->
+  <div class="card" id="conv-card">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Conversation</span>
+      <button type="button" onclick="refreshConversation(this)"
+              style="font-size:12px;padding:4px 10px;border-radius:8px;background:transparent;border:0.5px solid var(--border);color:var(--muted);cursor:pointer;">
+        ↻ Rafraîchir
+      </button>
+    </div>
+    {% if order.conversation_text %}
+      <div id="conv-text" style="white-space:pre-wrap;font-size:13px;line-height:1.5;max-height:340px;overflow-y:auto;padding:12px;background:var(--bg,#0a0a08);border:0.5px solid var(--border);border-radius:10px;">{{ order.conversation_text }}</div>
+      <div class="muted" style="font-size:11px;color:var(--muted);margin-top:8px;">
+        Capturée le {{ order.conversation_updated_at|date:"d/m/Y H:i"|default:"—" }}
+        — peut ne pas inclure les messages plus récents.
+      </div>
+    {% else %}
+      <div id="conv-text" class="muted" style="font-size:13px;color:var(--muted);padding:8px 0;">
+        {% if order.customer.customer_psid %}
+          Aucune conversation enregistrée. Elle réapparaîtra si le client envoie un nouveau message.
+        {% else %}
+          Cette commande n'est pas liée à une conversation Messenger.
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
   <!-- ARTICLES -->
   <div class="card">
     <div class="card-title">Articles</div>
@@ -273,6 +299,36 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 
 <script>
 const csrf = () => document.cookie.split('csrftoken=')[1]?.split(';')[0] || '';
+
+async function refreshConversation(btn) {
+  const orig = btn.textContent;
+  btn.textContent = '…';
+  btn.disabled = true;
+  try {
+    const res = await fetch("{% url 'api_order_refresh_conversation' order.pk %}", {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      const box = document.getElementById('conv-text');
+      if (data.conversation_text) {
+        box.style.whiteSpace = 'pre-wrap';
+        box.style.color = '';
+        box.textContent = data.conversation_text;
+      } else {
+        box.textContent = data.message || "Aucune conversation disponible.";
+      }
+    } else {
+      alert(data.message || "Impossible de rafraîchir la conversation.");
+    }
+  } catch (e) {
+    alert("Erreur réseau lors du rafraîchissement.");
+  } finally {
+    btn.textContent = orig;
+    btn.disabled = false;
+  }
+}
 
 async function changeStatus(newStatus, btn, extra) {
   if (btn && btn.classList.contains('current')) return;
