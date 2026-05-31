@@ -283,6 +283,8 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
               <a class="row-link" href="{% url 'order_view' o.pk %}">#{{ o.id }}</a>
             {% endif %}
             {% if o.is_shipping_closed %}<span title="Scan expédition terminé" style="color:#1a9e6e;font-size:14px;font-weight:600;margin-left:4px;">✓</span>{% endif %}
+            <button class="conv-btn" onclick="openConversation(event, {{ o.id }})" title="Voir la conversation"
+                    style="margin-left:6px;border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;opacity:0.7;">💬</button>
           </td>
           <td>
             <span class="date-cell" data-order-id="{{ o.id }}" data-scheduled="{% if o.scheduled_for %}{{ o.scheduled_for|date:'Y-m-d' }}{% endif %}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">
@@ -364,6 +366,22 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
         <div class="foot-total" id="modal-total">7 DT</div>
       </div>
       <button class="modal-validate" onclick="validateArticles()">✓ Valider</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONVERSATION MODAL -->
+<div class="modal-overlay" id="conversation-modal">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-head">
+      <div class="modal-title">Conversation <span id="conv-order-id" style="color:var(--muted);font-weight:400;"></span></div>
+      <button class="modal-close" onclick="closeConversationModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="conv-modal-body" style="white-space:pre-wrap;font-size:13px;line-height:1.55;max-height:55vh;overflow-y:auto;padding:12px;background:var(--bg,#0a0a08);border:0.5px solid var(--border);border-radius:10px;min-height:80px;">
+        Chargement…
+      </div>
+      <div id="conv-modal-meta" class="muted" style="font-size:11px;margin-top:8px;"></div>
     </div>
   </div>
 </div>
@@ -1143,6 +1161,42 @@ function openArticlesModal() {
   recalcModalTotal();
 }
 function closeArticlesModal() { document.getElementById('articles-modal').classList.remove('show'); }
+
+async function openConversation(ev, orderId) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const modal = document.getElementById('conversation-modal');
+  const body = document.getElementById('conv-modal-body');
+  const meta = document.getElementById('conv-modal-meta');
+  document.getElementById('conv-order-id').textContent = '#' + orderId;
+  body.textContent = 'Chargement…';
+  body.style.color = 'var(--muted)';
+  meta.textContent = '';
+  modal.classList.add('show');
+  try {
+    const res = await fetch('/api/sales-orders/' + orderId + '/refresh-conversation/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+    });
+    const data = await res.json();
+    if (data.status === 'ok' && data.conversation_text) {
+      body.style.color = '';
+      body.textContent = data.conversation_text;
+      meta.textContent = data.updated_at ? ('Capturée le ' + data.updated_at + ' — peut ne pas inclure les messages plus récents.') : '';
+    } else {
+      body.style.color = 'var(--muted)';
+      body.textContent = data.message || "Aucune conversation enregistrée pour cette commande.";
+    }
+  } catch (e) {
+    body.style.color = 'var(--muted)';
+    body.textContent = "Erreur réseau lors du chargement de la conversation.";
+  }
+}
+function closeConversationModal() { document.getElementById('conversation-modal').classList.remove('show'); }
+document.addEventListener('DOMContentLoaded', function() {
+  var cm = document.getElementById('conversation-modal');
+  if (cm) { cm.addEventListener('click', function(ev) { if (ev.target === cm) closeConversationModal(); }); }
+});
+
 function addOfferBlock() { modalOffers.push({ offer_id: null, quantity: 1, products: [] }); renderOfferBlocks(); }
 function removeOfferBlock(idx) { modalOffers.splice(idx, 1); renderOfferBlocks(); }
 
