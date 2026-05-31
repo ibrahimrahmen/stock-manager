@@ -626,6 +626,80 @@ def api_scan_return(request):
 
 @csrf_exempt
 @require_POST
+def api_exchange_mark_received(request):
+    """Phase 2.5b: mark exchange return item(s) as RECEIVED when the return
+    colis from an exchange is scanned/confirmed.
+
+    Body (either form):
+      {"exchange_return_item_id": 12}                 # mark one item received
+      {"exchange_return_item_ids": [12, 13]}          # mark several
+      {"missing_ids": [14]}                           # optionally flag missing
+
+    For each item marked received: if it is linked to a physical ProductUnit,
+    that unit is returned to stock (status IN_STOCK + a StockMovement), mirroring
+    the normal return flow.
+    """
+    from .models import log_action, AuditLog, ExchangeReturnItem, ProductUnit, StockMovement
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+
+    ids = data.get("exchange_return_item_ids")
+    if not ids:
+        single = data.get("exchange_return_item_id")
+        ids = [single] if single else []
+    missing_ids = data.get("missing_ids") or []
+
+    if not ids and not missing_ids:
+        return JsonResponse({"status": "error", "message": "Aucun article à marquer."}, status=400)
+
+    received_count = 0
+    restocked = 0
+    with transaction.atomic():
+        # Mark received
+        for ri in ExchangeReturnItem.objects.select_related("unit").filter(id__in=[int(i) for i in ids]):
+            if ri.status != ExchangeReturnItem.RECEIVED_OK:
+                ri.status = ExchangeReturnItem.RECEIVED_OK
+                ri.save(update_fields=["status", "updated_at"])
+                received_count += 1
+                # If we know the physical unit, mark it returned (back from the
+                # customer, sellable but flagged as a return for visibility).
+                if ri.unit_id:
+                    unit = ri.unit
+                    if unit.status != ProductUnit.RETURNED:
+                        unit.status = ProductUnit.RETURNED
+                        unit.save(update_fields=["status"])
+                        StockMovement.objects.create(
+                            unit=unit, movement_type=StockMovement.RECEIVED,
+                            reference=f"RETOUR ÉCHANGE #{ri.exchange_order_id}",
+                            user=_user_for_request(request),
+                        )
+                        restocked += 1
+        # Mark missing
+        marked_missing = 0
+        for ri in ExchangeReturnItem.objects.filter(id__in=[int(i) for i in missing_ids]):
+            if ri.status != ExchangeReturnItem.RECEIVED_MISSING:
+                ri.status = ExchangeReturnItem.RECEIVED_MISSING
+                ri.save(update_fields=["status", "updated_at"])
+                marked_missing += 1
+
+    log_action(
+        request.user, AuditLog.SCAN_RETURN,
+        description=f"Retour échange : {received_count} article(s) reçu(s), {restocked} remis en stock"
+                    + (f", {marked_missing} manquant(s)" if missing_ids else ""),
+        request=request,
+    )
+    return JsonResponse({
+        "status": "ok",
+        "received": received_count,
+        "restocked": restocked,
+        "missing": len(missing_ids),
+    })
+
+
+@csrf_exempt
+@require_POST
 def api_return_multiple(request):
     from .models import log_action, AuditLog
     data = json.loads(request.body)
@@ -3322,6 +3396,22 @@ def api_order_draft_upsert(request):
                 changed.append("delivery_fee")
             except Exception:
                 pass
+        # Phase 2.2: exchange fault toggle. "ours" → free shipping (0 DT);
+        # "client" → standard 7 DT. Setting the fault auto-adjusts delivery_fee
+        # unless the payload also explicitly set delivery_fee in the same call.
+        if "exchange_fault" in data:
+            fault = (data.get("exchange_fault") or "").strip()
+            valid_faults = dict(Order.EXCHANGE_FAULT_CHOICES)
+            if fault in valid_faults:
+                order.exchange_fault = fault
+                changed.append("exchange_fault")
+                if "delivery_fee" not in data:
+                    if fault == Order.EXCHANGE_FAULT_OURS:
+                        order.delivery_fee = Decimal("0")
+                        changed.append("delivery_fee")
+                    elif fault == Order.EXCHANGE_FAULT_CLIENT:
+                        order.delivery_fee = Decimal("7")
+                        changed.append("delivery_fee")
         if "discount" in data:
             try:
                 order.discount = Decimal(str(data["discount"]))

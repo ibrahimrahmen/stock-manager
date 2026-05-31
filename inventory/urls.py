@@ -18,6 +18,7 @@ urlpatterns = [
     path("api/scan/reception/", views.api_scan_reception, name="api_scan_reception"),
     path("api/scan/return/", views.api_scan_return, name="api_scan_return"),
     path("api/scan/return/multiple/", views.api_return_multiple, name="api_return_multiple"),
+    path("api/scan/return/exchange-received/", views.api_exchange_mark_received, name="api_exchange_mark_received"),
     path("api/scan/payment/", views.api_scan_payment, name="api_scan_payment"),
     path("api/scan/payment/confirm/", views.api_confirm_payment, name="api_confirm_payment"),
     path("api/order/remove-unit/", views.api_remove_from_order, name="api_remove_from_order"),
