@@ -3714,47 +3714,40 @@ def _sync_ads_from_meta(start_date, end_date):
 
 @login_required(login_url="/login/")
 def ads_offers_dashboard(request):
-    """Unified ads page: Meta spend per campaign, linked to offers, with
-    cross-source paid revenue (orders from web + DM + manual using that offer),
-    filtered by order creation date.
+    """Ads page: shows ONE day (latest/today by default), with each campaign
+    listed underneath its spend, a dropdown to link each campaign to an offer,
+    and cross-source paid revenue per linked offer (web + DM + manual).
     """
     if not _orders_role_check(request):
         return redirect("home")
-    from datetime import date, timedelta, datetime
-    from .models import Ad, Offer, Order, OrderOffer
+    from datetime import date, datetime
+    from .models import Ad, Offer, Order
 
-    # Date range (by order creation date). Default: last 30 days.
+    # Single day. Default: today. ?day=YYYY-MM-DD to pick another day.
     today = date.today()
     try:
-        df = request.GET.get("date_from", "")
-        dt = request.GET.get("date_to", "")
-        date_from = datetime.strptime(df, "%Y-%m-%d").date() if df else (today - timedelta(days=29))
-        date_to = datetime.strptime(dt, "%Y-%m-%d").date() if dt else today
+        day = datetime.strptime(request.GET.get("day", ""), "%Y-%m-%d").date()
     except ValueError:
-        date_from, date_to = today - timedelta(days=29), today
+        day = today
+    day_str = day.strftime("%Y-%m-%d")
 
-    # Auto-sync spend from Meta for the selected window.
-    _sync_ads_from_meta(date_from.strftime("%Y-%m-%d"), date_to.strftime("%Y-%m-%d"))
+    # Sync that day's per-campaign spend from Meta.
+    _sync_ads_from_meta(day_str, day_str)
 
     ads = list(Ad.objects.select_related("offer").all())
     offers = list(Offer.objects.filter(is_active=True).order_by("name"))
 
-    # Paid orders created in range, grouped by offer (all sources).
-    paid_orders = (Order.objects
-                   .filter(status=Order.LIVREE, created_at__date__gte=date_from,
-                           created_at__date__lte=date_to)
-                   .prefetch_related("order_offers"))
-    # offer_id -> {"orders": set(order ids), "revenue": Decimal}
+    # Paid orders CREATED on that day, grouped by offer (all sources).
     from collections import defaultdict
+    paid_orders = (Order.objects
+                   .filter(status=Order.LIVREE, created_at__date=day)
+                   .prefetch_related("order_offers"))
     offer_orders = defaultdict(set)
     offer_revenue = defaultdict(lambda: Decimal("0"))
     for o in paid_orders:
-        for oo in o.order_offers.all():
-            if oo.offer_id:
-                offer_orders[oo.offer_id].add(o.id)
-        # Attribute the order's total to each distinct offer it contains.
         distinct_offers = {oo.offer_id for oo in o.order_offers.all() if oo.offer_id}
         for oid in distinct_offers:
+            offer_orders[oid].add(o.id)
             offer_revenue[oid] += (o.total or Decimal("0"))
 
     rows = []
@@ -3767,22 +3760,22 @@ def ads_offers_dashboard(request):
         revenue = offer_revenue.get(ad.offer_id, Decimal("0")) if ad.offer_id else Decimal("0")
         if ad.offer_id:
             total_revenue += revenue
-        cost_per_order = (spend / order_count) if order_count else None
-        profit = revenue - spend
         rows.append({
             "ad": ad, "spend": spend, "order_count": order_count,
-            "revenue": revenue, "cost_per_order": cost_per_order, "profit": profit,
+            "revenue": revenue, "profit": revenue - spend,
         })
+    # Sort by spend desc (highest spenders first).
+    rows.sort(key=lambda r: r["spend"], reverse=True)
 
     return render(request, "inventory/ads_offers.html", {
         "rows": rows,
         "offers": offers,
+        "day": day_str,
+        "is_today": day == today,
         "total_spend": total_spend,
         "total_revenue": total_revenue,
         "total_profit": total_revenue - total_spend,
         "unlinked": sum(1 for a in ads if not a.offer_id),
-        "date_from": date_from.strftime("%Y-%m-%d"),
-        "date_to": date_to.strftime("%Y-%m-%d"),
     })
 
 
