@@ -778,6 +778,32 @@ class OfferProduct(models.Model):
 
 
 # ---------------------------------------------------------------------------
+# ADS — Meta/Facebook ad campaigns synced from the Google Sheet (n8n fills it).
+# Each ad links to ONE offer; an offer can have MANY ads. Spend is synced from
+# the sheet; the offer link is set manually in the ads interface.
+# ---------------------------------------------------------------------------
+class Ad(models.Model):
+    # campaign_name from the sheet is the unique key we match/sync on.
+    campaign_name = models.CharField(max_length=200, unique=True,
+        help_text="Nom de la campagne (clé de synchronisation avec le Google Sheet).")
+    spend = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+        help_text="Dépense synchronisée depuis le Google Sheet (devise du compte).")
+    offer = models.ForeignKey(Offer, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="ads",
+        help_text="Offre liée à cette publicité (une offre peut avoir plusieurs pubs).")
+    last_synced_at = models.DateTimeField(null=True, blank=True,
+        help_text="Dernière synchronisation de la dépense depuis le Sheet.")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-spend"]
+
+    def __str__(self):
+        return f"{self.campaign_name} ({self.spend})"
+
+
+# ---------------------------------------------------------------------------
 # ORDER OFFERS — when an order picks an offer, this row stores
 # the snapshot of the offer + its bundle price. The lines (one per product
 # inside the offer with chosen variant/size) link to it via OrderLine.order_offer.

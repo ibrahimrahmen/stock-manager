@@ -3654,6 +3654,167 @@ def api_order_set_scheduled(request, pk):
     })
 
 
+# ---- Ads dashboard: spend (from Meta, per campaign) linked to offers --------
+
+def _meta_fetch_spend_by_campaign(start_date, end_date):
+    """Fetch ad spend PER CAMPAIGN from Meta between two dates (inclusive).
+    Returns a dict {campaign_name: spend_float}. Empty dict on any error.
+
+    Reuses the same env vars as the existing daily-total fetch:
+    META_ACCESS_TOKEN and META_AD_ACCOUNT_ID.
+    """
+    import urllib.request
+    token = os.environ.get("META_ACCESS_TOKEN", "").strip()
+    account_id = os.environ.get("META_AD_ACCOUNT_ID", "").strip()
+    if not token or not account_id:
+        return {}
+    if not account_id.startswith("act_"):
+        account_id = f"act_{account_id}"
+    url = (
+        f"https://graph.facebook.com/v18.0/{account_id}/insights"
+        f"?level=campaign&fields=campaign_name,spend"
+        f"&time_range={{'since':'{start_date}','until':'{end_date}'}}"
+        f"&limit=200&access_token={token}"
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        result = {}
+        for entry in data.get("data", []):
+            name = entry.get("campaign_name", "")
+            if not name:
+                continue
+            try:
+                result[name] = float(entry.get("spend", "0"))
+            except (ValueError, TypeError):
+                result[name] = 0.0
+        return result
+    except Exception:
+        return {}
+
+
+def _sync_ads_from_meta(start_date, end_date):
+    """Upsert Ad rows from Meta per-campaign spend. Returns (ok, message, n)."""
+    from decimal import Decimal
+    from django.utils import timezone
+    from .models import Ad
+    spend_map = _meta_fetch_spend_by_campaign(start_date, end_date)
+    if not spend_map:
+        return False, "Aucune donnée Meta (vérifier le token / la période).", 0
+    now = timezone.now()
+    n = 0
+    for name, spend in spend_map.items():
+        ad, _ = Ad.objects.get_or_create(campaign_name=name)
+        ad.spend = Decimal(str(round(spend, 2)))
+        ad.last_synced_at = now
+        ad.save(update_fields=["spend", "last_synced_at", "updated_at"])
+        n += 1
+    return True, f"{n} publicité(s) synchronisée(s) depuis Meta.", n
+
+
+@login_required(login_url="/login/")
+def ads_offers_dashboard(request):
+    """Unified ads page: Meta spend per campaign, linked to offers, with
+    cross-source paid revenue (orders from web + DM + manual using that offer),
+    filtered by order creation date.
+    """
+    if not _orders_role_check(request):
+        return redirect("home")
+    from datetime import date, timedelta, datetime
+    from .models import Ad, Offer, Order, OrderOffer
+
+    # Date range (by order creation date). Default: last 30 days.
+    today = date.today()
+    try:
+        df = request.GET.get("date_from", "")
+        dt = request.GET.get("date_to", "")
+        date_from = datetime.strptime(df, "%Y-%m-%d").date() if df else (today - timedelta(days=29))
+        date_to = datetime.strptime(dt, "%Y-%m-%d").date() if dt else today
+    except ValueError:
+        date_from, date_to = today - timedelta(days=29), today
+
+    # Auto-sync spend from Meta for the selected window.
+    _sync_ads_from_meta(date_from.strftime("%Y-%m-%d"), date_to.strftime("%Y-%m-%d"))
+
+    ads = list(Ad.objects.select_related("offer").all())
+    offers = list(Offer.objects.filter(is_active=True).order_by("name"))
+
+    # Paid orders created in range, grouped by offer (all sources).
+    paid_orders = (Order.objects
+                   .filter(status=Order.LIVREE, created_at__date__gte=date_from,
+                           created_at__date__lte=date_to)
+                   .prefetch_related("order_offers"))
+    # offer_id -> {"orders": set(order ids), "revenue": Decimal}
+    from collections import defaultdict
+    offer_orders = defaultdict(set)
+    offer_revenue = defaultdict(lambda: Decimal("0"))
+    for o in paid_orders:
+        for oo in o.order_offers.all():
+            if oo.offer_id:
+                offer_orders[oo.offer_id].add(o.id)
+        # Attribute the order's total to each distinct offer it contains.
+        distinct_offers = {oo.offer_id for oo in o.order_offers.all() if oo.offer_id}
+        for oid in distinct_offers:
+            offer_revenue[oid] += (o.total or Decimal("0"))
+
+    rows = []
+    total_spend = Decimal("0")
+    total_revenue = Decimal("0")
+    for ad in ads:
+        spend = ad.spend or Decimal("0")
+        total_spend += spend
+        order_count = len(offer_orders.get(ad.offer_id, set())) if ad.offer_id else 0
+        revenue = offer_revenue.get(ad.offer_id, Decimal("0")) if ad.offer_id else Decimal("0")
+        if ad.offer_id:
+            total_revenue += revenue
+        cost_per_order = (spend / order_count) if order_count else None
+        profit = revenue - spend
+        rows.append({
+            "ad": ad, "spend": spend, "order_count": order_count,
+            "revenue": revenue, "cost_per_order": cost_per_order, "profit": profit,
+        })
+
+    return render(request, "inventory/ads_offers.html", {
+        "rows": rows,
+        "offers": offers,
+        "total_spend": total_spend,
+        "total_revenue": total_revenue,
+        "total_profit": total_revenue - total_spend,
+        "unlinked": sum(1 for a in ads if not a.offer_id),
+        "date_from": date_from.strftime("%Y-%m-%d"),
+        "date_to": date_to.strftime("%Y-%m-%d"),
+    })
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_ad_link_offer(request, pk):
+    """Link (or unlink) an Ad to an Offer. Body: {"offer_id": <id> or null}."""
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import Ad, Offer
+    try:
+        ad = Ad.objects.get(pk=pk)
+    except Ad.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Publicité introuvable."}, status=404)
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+    offer_id = data.get("offer_id")
+    if offer_id in (None, "", "none"):
+        ad.offer = None
+    else:
+        try:
+            ad.offer = Offer.objects.get(pk=int(offer_id))
+        except (Offer.DoesNotExist, ValueError, TypeError):
+            return JsonResponse({"status": "error", "message": "Offre invalide."}, status=400)
+    ad.save(update_fields=["offer", "updated_at"])
+    return JsonResponse({"status": "ok", "ad_id": ad.id, "offer_id": ad.offer_id,
+                         "offer_name": ad.offer.name if ad.offer_id else ""})
+
+
 # ---- DM order intake (called by n8n / Messenger pipeline) -------------------
 
 @csrf_exempt
