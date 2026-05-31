@@ -83,6 +83,7 @@ urlpatterns = [
     # Scheduling: set the "to be processed on" date
     path("api/sales-orders/<int:pk>/scheduled/", views.api_order_set_scheduled, name="api_order_set_scheduled"),
     path("api/sales-orders/<int:pk>/refresh-conversation/", views.api_order_refresh_conversation, name="api_order_refresh_conversation"),
+    path("api/dm/create-order/", views.api_n8n_create_order_from_dm, name="api_n8n_create_order_from_dm"),
     # Exchange: get the items from the source delivered order, save return selection
     path("api/sales-orders/<int:pk>/exchange-source-items/", views.api_exchange_source_items, name="api_exchange_source_items"),
     path("api/sales-orders/<int:pk>/exchange-set-returns/", views.api_exchange_set_returns, name="api_exchange_set_returns"),

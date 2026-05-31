@@ -3564,6 +3564,108 @@ def api_order_set_scheduled(request, pk):
     })
 
 
+# ---- DM order intake (called by n8n / Messenger pipeline) -------------------
+
+@csrf_exempt
+@require_POST
+def api_n8n_create_order_from_dm(request):
+    """Create a PENDING order from a Messenger DM, called by n8n.
+
+    This is machine-to-machine (no user login). It is protected by a shared
+    secret header instead: n8n must send  X-DM-Token: <DM_INTAKE_TOKEN>
+    matching the env var, otherwise the request is rejected.
+
+    Expected JSON:
+    {
+      "phone": "29876313",            # required (customer key)
+      "name": "Alaeddine",            # optional
+      "psid": "PSID_123",             # Messenger Page-Scoped ID (linking key)
+      "conversation": "full chat...", # the conversation text to attach
+      "source_ad": "120244285501770755",  # optional ad id for attribution
+      "sales_page": <id>              # optional; falls back to default if omitted
+    }
+
+    Deliberate design:
+    - Creates a NON_CONFIRMEE (pending) order only. NEVER auto-confirmed — a
+      human reviews and completes it. This is the spec's golden rule for COD.
+    - Stores conversation_text + conversation_updated_at on the order, and
+      customer_psid on the customer (permanent linking key).
+    - Does NOT try to build order lines here. It captures the customer +
+      conversation + ad source as a pending draft; the team completes the
+      articles. (AI line-item extraction is a later, separate layer.)
+    """
+    import os
+    from django.utils import timezone
+    from .models import Order, Customer, SalesPage, log_action, AuditLog
+
+    # --- auth: shared secret header ---
+    expected = (os.environ.get("DM_INTAKE_TOKEN") or "").strip()
+    provided = (request.headers.get("X-DM-Token") or "").strip()
+    if not expected or provided != expected:
+        return JsonResponse({"status": "error", "message": "Unauthorized."}, status=401)
+
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+
+    phone = (data.get("phone") or "").strip()
+    if not phone:
+        return JsonResponse({"status": "error", "message": "Téléphone obligatoire."}, status=400)
+
+    name = (data.get("name") or "").strip()
+    psid = (data.get("psid") or "").strip()
+    conversation = (data.get("conversation") or "").strip()
+    source_ad = (data.get("source_ad") or "").strip()
+
+    try:
+        # Customer: same phone = same customer. Update name/psid if provided.
+        customer, _created = Customer.objects.get_or_create(phone=phone, defaults={"name": name})
+        changed = []
+        if name and customer.name != name:
+            customer.name = name; changed.append("name")
+        if psid and customer.customer_psid != psid:
+            customer.customer_psid = psid; changed.append("customer_psid")
+        if changed:
+            customer.save(update_fields=changed)
+
+        # Sales page: use provided, else first available (best-effort default).
+        sales_page_id = data.get("sales_page")
+        if not sales_page_id:
+            sp = SalesPage.objects.first()
+            sales_page_id = sp.id if sp else None
+
+        # Note line records the ad source for traceability even before a
+        # dedicated attribution field exists.
+        note_bits = ["[Commande créée depuis Messenger]"]
+        if source_ad:
+            note_bits.append(f"Ad source: {source_ad}")
+
+        order = Order.objects.create(
+            customer=customer,
+            sales_page_id=sales_page_id,
+            status=Order.NON_CONFIRMEE,
+            notes="\n".join(note_bits),
+            conversation_text=conversation,
+            conversation_updated_at=timezone.now() if conversation else None,
+            created_by=None,
+        )
+
+        log_action(
+            None, AuditLog.CREATE,
+            description=f"Commande #{order.id} créée depuis Messenger pour {customer} (en attente de confirmation)",
+            target_model="Order", target_id=order.id,
+        )
+        return JsonResponse({
+            "status": "ok",
+            "order_id": order.id,
+            "customer_id": customer.id,
+            "message": "Commande en attente créée.",
+        })
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=400)
+
+
 # ---- DM conversation: refresh / fetch latest --------------------------------
 
 @csrf_exempt
