@@ -4317,37 +4317,44 @@ def api_shopify_webhook_order_created(request):
             if region:
                 break
 
-    # Strategy E: fuzzy match (typos) — try Regions first, then Delegations,
-    # only on the primary candidate (province) to avoid false positives.
-    if not region and candidate_texts_norm and candidate_texts_norm[0]:
-        primary = candidate_texts_norm[0]
-        # Regions
+    # Strategy E: fuzzy match (typos) — try Regions first, then Delegations.
+    # Checks ALL candidate fields (province, city, address1, address2), not just
+    # province, because the governorate name sometimes lands in the city/address
+    # field (e.g. city="Mednine" — a spelling variant of "Médenine").
+    if not region and candidate_texts_norm:
+        # Regions: best fuzzy match across every candidate field.
         best = None
         best_dist = 999
-        for r in all_regions:
-            r_norm = _normalize(r.name)
-            if not r_norm:
+        for cand_norm in candidate_texts_norm:
+            if not cand_norm:
                 continue
-            d = _levenshtein(primary, r_norm)
-            threshold = 2 if len(r_norm) <= 6 else 3
-            if d <= threshold and d < best_dist:
-                best = r
-                best_dist = d
+            for r in all_regions:
+                r_norm = _normalize(r.name)
+                if not r_norm:
+                    continue
+                d = _levenshtein(cand_norm, r_norm)
+                threshold = 2 if len(r_norm) <= 6 else 3
+                if d <= threshold and d < best_dist:
+                    best = r
+                    best_dist = d
         if best:
             region = best
         else:
-            # Delegations
+            # Delegations: best fuzzy match across every candidate field.
             best_dleg = None
             best_dist = 999
-            for d_obj in all_delegations:
-                d_norm = _normalize(d_obj.name)
-                if not d_norm:
+            for cand_norm in candidate_texts_norm:
+                if not cand_norm:
                     continue
-                dd = _levenshtein(primary, d_norm)
-                threshold = 2 if len(d_norm) <= 6 else 3
-                if dd <= threshold and dd < best_dist:
-                    best_dleg = d_obj
-                    best_dist = dd
+                for d_obj in all_delegations:
+                    d_norm = _normalize(d_obj.name)
+                    if not d_norm:
+                        continue
+                    dd = _levenshtein(cand_norm, d_norm)
+                    threshold = 2 if len(d_norm) <= 6 else 3
+                    if dd <= threshold and dd < best_dist:
+                        best_dleg = d_obj
+                        best_dist = dd
             if best_dleg:
                 region = best_dleg.region
                 matched_delegation_name = best_dleg.name
@@ -4496,6 +4503,13 @@ def api_shopify_webhook_order_created(request):
     # canonical Delegation name so the team sees a clean value.
     if matched_delegation_name:
         city = matched_delegation_name
+    elif region:
+        # No precise delegation matched (customer gave no clean city, or only a
+        # street). Avoid dumping messy street text into Ville — fall back to the
+        # region name so Ville shows a clean, meaningful value (the full street
+        # is still preserved in the address fields). The team can refine the
+        # delegation from the dropdown if needed.
+        city = region.name
 
     # 5. Get the Shopify SalesPage (or create it if missing)
     sales_page = SalesPage.objects.filter(name__iexact="Barats.tn").first()
