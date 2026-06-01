@@ -277,7 +277,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
         {% for o in orders %}
         <tr data-order-id="{{ o.id }}">
           <td>
-            {% if o.status == 'non_confirmee' %}
+            {% if o.status != 'confirmee' and o.status != 'livree' and not o.bordereau_barcode %}
               <a class="row-link" href="javascript:void(0)" onclick="editOrder({{ o.id }})" title="Modifier le brouillon">#{{ o.id }} <span style="font-size:10px;opacity:0.7;">✎</span></a>
             {% else %}
               <a class="row-link" href="{% url 'order_view' o.pk %}">#{{ o.id }}</a>
@@ -887,8 +887,13 @@ function buildOrderRowHtml(o) {
   const statusDisplay = (o.status_display || '').replace(/</g,'&lt;');
   const created = o.created_at || '';
 
-  // Row link → editOrder if non_confirmee, else detail page
-  const idCell = (o.status === 'non_confirmee')
+  // Row link → editOrder for editable statuses, else detail page.
+  // Editable = everything except confirmée / livrée (and anything already
+  // pushed to Navex, which carries a bordereau). Mirrors the backend
+  // _is_draft_editable check so the UI matches what the server allows.
+  const lockedStatuses = ['confirmee', 'livree'];
+  const isEditable = !lockedStatuses.includes(o.status) && !o.bordereau_barcode;
+  const idCell = isEditable
     ? `<a class="row-link" href="javascript:void(0)" onclick="editOrder(${o.id})" title="Modifier le brouillon">#${o.id} <span style="font-size:10px;opacity:0.7;">✎</span></a>`
     : `<a class="row-link" href="/sales-orders/${o.id}/">#${o.id}</a>`;
 
