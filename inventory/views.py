@@ -2,7 +2,7 @@ import json
 import os
 from decimal import Decimal
 from django.shortcuts import render, get_object_or_404, redirect
-from django.http import JsonResponse, HttpResponseForbidden
+from django.http import JsonResponse, HttpResponseForbidden, HttpResponse
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
@@ -3101,7 +3101,9 @@ def api_offer_detail(request, offer_id):
                 if color_key not in by_color:
                     by_color[color_key] = {
                         "id": v.id,  # representative variant id
-                        "color": v.color_label or v.color_name,
+                        # A single-colour product may have a blank colour; show
+                        # "Unique" rather than an empty "—" so it's selectable.
+                        "color": (v.color_label or v.color_name or "").strip() or "Unique",
                         "image_url": v.image.url if v.image else None,
                         "sizes": [],
                         "stock_by_size": {},
@@ -3819,6 +3821,55 @@ def api_ad_link_offer(request, pk):
     ad.save(update_fields=["offer", "updated_at"])
     return JsonResponse({"status": "ok", "ad_id": ad.id, "offer_id": ad.offer_id,
                          "offer_name": ad.offer.name if ad.offer_id else ""})
+
+
+@login_required(login_url="/login/")
+def diagnose_offer_web(request):
+    """TEMPORARY admin-only diagnostic. Open /diagnose-offer/?name=Icy%20Maze
+    (or ?offer_id=NN) in a browser. Prints offer -> product -> family ->
+    variants -> unit counts by size as plain text. Remove after debugging."""
+    if not _orders_role_check(request):
+        return HttpResponse("Accès refusé.", status=403, content_type="text/plain; charset=utf-8")
+    from .models import Offer, Product, ProductUnit
+    from django.db.models import Q
+
+    name = (request.GET.get("name") or "").strip()
+    offer_id = (request.GET.get("offer_id") or "").strip()
+    qs = Offer.objects.all()
+    if offer_id.isdigit():
+        qs = qs.filter(id=int(offer_id))
+    elif name:
+        qs = qs.filter(name__icontains=name)
+    else:
+        return HttpResponse("Ajoutez ?name=Icy Maze ou ?offer_id=NN à l'URL.",
+                            content_type="text/plain; charset=utf-8")
+
+    lines = []
+    for offer in qs:
+        lines.append(f"=== OFFER #{offer.id}: {offer.name} (active={offer.is_active}) ===")
+        ops = offer.products.all()
+        if not ops:
+            lines.append("  (offer has NO products linked)")
+        for op in ops:
+            p = op.product
+            root = p.parent_product or p
+            family = Product.objects.filter(Q(id=root.id) | Q(parent_product=root))
+            lines.append(f"  OfferProduct -> product #{p.id} '{p.name}' "
+                         f"(parent={p.parent_product_id}) qty={op.quantity}")
+            lines.append(f"    root=#{root.id} '{root.name}'  family size={family.count()}")
+            for fam_p in family:
+                variants = fam_p.variants.all()
+                lines.append(f"      product #{fam_p.id} '{fam_p.name}' -> {variants.count()} variant(s)")
+                for v in variants:
+                    by_size = {}
+                    for u in v.units.all():
+                        by_size[u.size] = by_size.get(u.size, 0) + 1
+                    lines.append(f"        variant #{v.id} color='{v.color_label or v.color_name}' "
+                                 f"units={v.units.count()} by_size={by_size}")
+        lines.append("")
+    if not lines:
+        lines = [f"No offer matched name='{name}' offer_id='{offer_id}'."]
+    return HttpResponse("\n".join(lines), content_type="text/plain; charset=utf-8")
 
 
 # ---- DM order intake (called by n8n / Messenger pipeline) -------------------
@@ -4868,6 +4919,16 @@ def api_shopify_webhook_order_created(request):
                 all_variants_family.append(v)
         if not all_variants_family:
             return None
+
+        # RULE: a product with exactly ONE colour/variant has no ambiguity —
+        # whether or not Shopify sent a colour. Always use that single variant.
+        # (Shopify omits the colour for single-colour products, e.g. Icy Maze
+        # whose variant_title is just "S".)
+        if len(all_variants_self) == 1:
+            return all_variants_self[0]
+        if len(all_variants_family) == 1:
+            return all_variants_family[0]
+
         # Gather color candidates from variant_title and options
         candidates = []
         v_title = (li.get("variant_title") or "").strip()
