@@ -148,10 +148,10 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
 /* Unified Region/Delegation picker */
 .loc-picker{position:relative;}
 .loc-dropdown{
-  position:absolute;top:calc(100% + 2px);left:0;right:0;
+  position:fixed;
   background:var(--surface);border:0.5px solid var(--border);
   border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.4);
-  max-height:320px;overflow-y:auto;z-index:80;
+  max-height:320px;overflow-y:auto;z-index:9999;
 }
 .loc-region-header{
   padding:8px 12px;background:var(--surface2);color:var(--muted);
@@ -1075,6 +1075,7 @@ function renderLocDropdown(query) {
   }
   dd.innerHTML = html;
   dd.style.display = 'block';
+  positionLocDropdown();
   // Attach click handlers
   dd.querySelectorAll('.loc-deleg-item').forEach(el => {
     el.addEventListener('mousedown', (ev) => {
@@ -1115,6 +1116,25 @@ function pickLocation(regionId, regionName, delegName) {
   document.getElementById('cr-loc-dropdown').style.display = 'none';
   autoSaveDraft('location');
 }
+
+// Position the fixed-position location dropdown directly under its input.
+// Using position:fixed (set in CSS) lets it escape the table's overflow
+// clipping; this function keeps it aligned to the input box.
+function positionLocDropdown() {
+  const search = document.getElementById('cr-loc-search');
+  const dd = document.getElementById('cr-loc-dropdown');
+  if (!search || !dd || dd.style.display === 'none') return;
+  const r = search.getBoundingClientRect();
+  dd.style.left = r.left + 'px';
+  dd.style.top = (r.bottom + 2) + 'px';
+  dd.style.width = r.width + 'px';
+  // If it would overflow the bottom of the viewport, cap its height.
+  const spaceBelow = window.innerHeight - r.bottom - 12;
+  dd.style.maxHeight = Math.max(160, Math.min(320, spaceBelow)) + 'px';
+}
+// Keep it aligned while open if the page scrolls or resizes.
+window.addEventListener('scroll', positionLocDropdown, true);
+window.addEventListener('resize', positionLocDropdown);
 
 async function initLocationPicker() {
   const search = document.getElementById('cr-loc-search');
