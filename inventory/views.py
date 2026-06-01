@@ -551,7 +551,8 @@ def api_scan_return(request):
         # (e.g. unit reused in another order) leaving the snapshot intact.
         # We also accept legacy items where snapshots are missing (display_status
         # falls back to unit.status).
-        RETURNABLE_STATUSES = {"shipped", "paid", "expédié", "expedie"}
+        RETURNABLE_STATUSES = {"shipped", "paid", "expédié", "expedie",
+                               "early_return", "at_depot"}
         returnable = [i for i in items if (i.display_status or "").strip().lower() in RETURNABLE_STATUSES]
         if not returnable:
             # Build a clearer error message — list what state each item is in
@@ -566,6 +567,8 @@ def api_scan_return(request):
                     "paid": "Payé",
                     "returned": "Déjà retourné",
                     "defective": "Défectueux",
+                    "early_return": "Retour anticipé",
+                    "at_depot": "Retour en dépôt Navex",
                 }
                 item_states = []
                 for i in items:
@@ -602,7 +605,8 @@ def api_scan_return(request):
             request=request, target_unit_barcode=barcode,
         )
         return JsonResponse({"status": "error", "message": f"Unite introuvable : {barcode}"})
-    if unit.status not in (ProductUnit.SHIPPED, ProductUnit.PAID):
+    if unit.status not in (ProductUnit.SHIPPED, ProductUnit.PAID,
+                           ProductUnit.EARLY_RETURN, ProductUnit.AT_DEPOT):
         msgs = {
             ProductUnit.IN_STOCK: "déjà en stock",
             ProductUnit.RETURNED: "déjà retournée",
@@ -711,7 +715,8 @@ def api_return_multiple(request):
     for barcode in barcodes:
         try:
             unit = ProductUnit.objects.select_related("variant__product").get(barcode=barcode)
-            if unit.status in (ProductUnit.SHIPPED, ProductUnit.PAID):
+            if unit.status in (ProductUnit.SHIPPED, ProductUnit.PAID,
+                               ProductUnit.EARLY_RETURN, ProductUnit.AT_DEPOT):
                 unit_data, reconciliation = _do_return_unit(unit, user=_user_for_request(request))
                 returned_units.append(unit_data)
                 if reconciliation:
@@ -1912,7 +1917,8 @@ def api_return_unit_to_order(request, pk):
     except ProductUnit.DoesNotExist:
         return JsonResponse({"status": "error", "message": f"Unité {barcode} introuvable."})
     
-    if unit.status not in (ProductUnit.SHIPPED, ProductUnit.PAID):
+    if unit.status not in (ProductUnit.SHIPPED, ProductUnit.PAID,
+                           ProductUnit.EARLY_RETURN, ProductUnit.AT_DEPOT):
         return JsonResponse({"status": "error", "message": f"Cette unité ne peut pas être retournée (statut: {unit.status})."})
     
     # Find original order
@@ -3253,9 +3259,16 @@ def api_create_order_inline(request):
 # All edits are refused once status != non_confirmee (server-enforced lock).
 
 def _is_draft_editable(order):
-    """An order is editable as long as it hasn't been pushed to Navex.
-    The lock happens at confirmation time (status changes to 'confirmee')."""
-    return order.status == "non_confirmee" and not order.bordereau_barcode
+    """An order stays editable through the early call-center statuses
+    (non confirmée, injoignable, pas sérieux, rappeler, annulée…).
+    It locks only once it is CONFIRMÉE or LIVRÉE, or once it has been pushed
+    to Navex (has a bordereau barcode)."""
+    LOCKED_STATUSES = {"confirmee", "livree"}
+    if order.status in LOCKED_STATUSES:
+        return False
+    if order.bordereau_barcode:
+        return False
+    return True
 
 
 @csrf_exempt
