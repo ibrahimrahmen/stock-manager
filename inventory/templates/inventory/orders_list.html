@@ -131,15 +131,18 @@ a.row-link:hover{text-decoration:underline;}
 .status-menu .danger{color:var(--red);}
 .status-menu .confirm{color:var(--green);}
 .status-menu .sep{height:0.5px;background:var(--border);margin:4px 0;}
-.note-wrap{display:inline-block;}
-.note-icon{background:transparent;border:none;cursor:pointer;font-size:13px;padding:0;margin-top:2px;opacity:0.35;filter:grayscale(1);transition:opacity .15s;line-height:1;}
-.note-icon:hover{opacity:0.9;}
-.note-icon.has-note{opacity:1;filter:none;}
-.note-pop{position:absolute;z-index:60;background:var(--surface);border:0.5px solid var(--border);border-radius:8px;padding:8px;box-shadow:0 8px 20px rgba(0,0,0,0.4);width:240px;}
-.note-pop textarea{width:100%;box-sizing:border-box;background:var(--surface2);color:var(--text);border:0.5px solid var(--border);border-radius:6px;padding:6px;font-family:inherit;font-size:12px;resize:vertical;min-height:60px;}
-.note-pop .note-actions{display:flex;gap:6px;justify-content:flex-end;margin-top:6px;}
-.note-pop button{padding:5px 10px;border-radius:6px;border:0.5px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:12px;font-family:inherit;}
-.note-pop button.save{background:#15803d;color:#fff;border-color:#15803d;}
+.note-wrap{display:inline-flex;vertical-align:middle;margin-left:4px;}
+.note-icon{position:relative;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:transparent;border:0.5px solid var(--border);border-radius:6px;cursor:pointer;padding:0;color:var(--muted);transition:all .15s;}
+.note-icon svg{width:13px;height:13px;display:block;}
+.note-icon:hover{color:var(--text);border-color:var(--text);background:var(--surface2);}
+.note-icon.has-note{color:#d97706;border-color:#d9770655;background:rgba(217,119,6,0.10);}
+.note-icon.has-note::after{content:"";position:absolute;top:-3px;right:-3px;width:7px;height:7px;border-radius:50%;background:#d97706;border:1.5px solid var(--surface);}
+.note-pop{position:absolute;z-index:60;background:var(--surface);border:0.5px solid var(--border);border-radius:10px;padding:10px;box-shadow:0 10px 28px rgba(0,0,0,0.45);width:250px;}
+.note-pop textarea{width:100%;box-sizing:border-box;background:var(--surface2);color:var(--text);border:0.5px solid var(--border);border-radius:8px;padding:8px;font-family:inherit;font-size:12.5px;resize:vertical;min-height:64px;outline:none;}
+.note-pop textarea:focus{border-color:#d97706;}
+.note-pop .note-actions{display:flex;gap:6px;justify-content:flex-end;margin-top:8px;}
+.note-pop button{padding:6px 12px;border-radius:7px;border:0.5px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:12px;font-family:inherit;}
+.note-pop button.save{background:#d97706;color:#fff;border-color:#d97706;font-weight:600;}
 .status-non_confirmee{background:var(--red-dim);color:var(--red);}
 .status-confirmee{background:var(--green-dim);color:var(--green);}
 .status-injoignable{background:var(--amber-dim);color:var(--amber);}
@@ -319,7 +322,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
           </td>
           <td>{{ o.sales_page.name|default:"—" }}
             <div class="note-wrap">
-              <button class="note-icon {% if o.status_note %}has-note{% endif %}" onclick="openNoteEditor(this, {{ o.id }})" title="{% if o.status_note %}{{ o.status_note }}{% else %}Ajouter une note{% endif %}" data-note="{{ o.status_note|escape }}">📝</button>
+              <button class="note-icon {% if o.status_note %}has-note{% endif %}" onclick="openNoteEditor(this, {{ o.id }})" title="{% if o.status_note %}{{ o.status_note }}{% else %}Ajouter une note{% endif %}" data-note="{{ o.status_note|escape }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></button>
             </div>
           </td>
           <td>
@@ -978,7 +981,7 @@ function buildOrderRowHtml(o) {
     <td><span class="date-cell" data-order-id="${o.id}" data-scheduled="${scheduled}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">${dateCellInner}</span></td>
     <td>${pageName}
       <div class="note-wrap">
-        <button class="note-icon ${o.status_note ? 'has-note' : ''}" onclick="openNoteEditor(this, ${o.id})" title="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : 'Ajouter une note'}" data-note="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : ''}">📝</button>
+        <button class="note-icon ${o.status_note ? 'has-note' : ''}" onclick="openNoteEditor(this, ${o.id})" title="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : 'Ajouter une note'}" data-note="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></button>
       </div>
     </td>
     <td>
@@ -1676,6 +1679,10 @@ function openStatusMenu(btn, orderId, currentStatus, hasBordereau) {
     options = [
       {label: '✓ Confirmée (envoie à Navex)', cls: 'confirm', action: 'confirm'},
     ];
+    // From injoignable / rappeler, allow returning to Non confirmée.
+    if (currentStatus === 'injoignable' || currentStatus === 'rappeler_plus_tard') {
+      options.push({label: '↩ Remettre en Non confirmée', action: 'set:non_confirmee'});
+    }
     if (currentStatus !== 'rappeler_plus_tard') options.push({label: '📞 Rappeler plus tard', action: 'set:rappeler_plus_tard'});
     if (currentStatus !== 'injoignable')        options.push({label: '📵 Injoignable',        action: 'set:injoignable'});
     if (currentStatus !== 'pas_serieux')        options.push({label: '🚫 Pas sérieux',        action: 'set:pas_serieux'});

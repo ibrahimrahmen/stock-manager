@@ -6112,8 +6112,8 @@ def api_order_change_status(request, pk):
     # Valid transitions table
     allowed_transitions = {
         Order.NON_CONFIRMEE: [Order.INJOIGNABLE, Order.PAS_SERIEUX, Order.RAPPELER, Order.ANNULEE],
-        Order.RAPPELER:      [Order.INJOIGNABLE, Order.PAS_SERIEUX, Order.ANNULEE],
-        Order.INJOIGNABLE:   [Order.RAPPELER, Order.PAS_SERIEUX, Order.ANNULEE],
+        Order.RAPPELER:      [Order.NON_CONFIRMEE, Order.INJOIGNABLE, Order.PAS_SERIEUX, Order.ANNULEE],
+        Order.INJOIGNABLE:   [Order.NON_CONFIRMEE, Order.RAPPELER, Order.PAS_SERIEUX, Order.ANNULEE],
         Order.PAS_SERIEUX:   [Order.ANNULEE],
         Order.CONFIRMEE:     [Order.ANNULEE],   # only via cancellation flow above
         Order.ANNULEE:       [],                # frozen (admin only)
