@@ -6632,38 +6632,43 @@ def _sync_navex_for_v2_orders(only_pending=True):
                 target_model="Order", target_id=o.id,
             )
         # Detect "Livré" Navex status → auto-transition to our LIVREE status.
-        # Variants: "Livré", "Livré Payé", "Livrer", "Livrer Paye", "Livree"
+        # Variants: "Livré", "Livré Payé", "Livrer", "Livrer Paye", "Livree".
+        # Allowed from any forward in-transit state (Confirmée / En cours /
+        # Au magasin) — the colis can be delivered after passing through those.
         navex_lower = new_navex_status.strip().lower()
         if (navex_lower in (
                 "livre", "livré", "livree", "livrée",
                 "livrer", "livrer paye", "livré payé", "livre paye", "livre payé",
             )
-            and o.status == Order.CONFIRMEE):
+            and o.status in (Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN)):
+            old_label = dict(Order.STATUS_CHOICES).get(o.status, o.status)
             o.status = Order.LIVREE
             if "status" not in update_fields:
                 update_fields.append("status")
             log_action(
                 None, AuditLog.STATUS_CHANGE,
-                description=f"Auto: commande #{o.id} passée en 'Livrée' (Navex etat='{new_navex_status}', bordereau {o.bordereau_barcode})",
+                description=f"Auto: commande #{o.id} {old_label} → 'Livrée' (Navex etat='{new_navex_status}', bordereau {o.bordereau_barcode})",
                 target_model="Order", target_id=o.id,
             )
 
-        # Detect "Au magasin" / "En cours" → move the order from Confirmée into
-        # that status (so it jumps from the Confirmée tab to its own tab).
-        # Only from Confirmée; don't disturb other states.
-        if o.status == Order.CONFIRMEE:
+        # Detect "Au magasin" / "En cours" → set the in-transit status. Allowed
+        # from Confirmée or between the two in-transit states themselves
+        # (the colis can bounce en_cours <-> au_magasin). Don't disturb final
+        # or return states.
+        if o.status in (Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN):
             new_v2_status = None
             if navex_lower in ("au magasin", "au-magasin", "au magasin navex"):
                 new_v2_status = Order.AU_MAGASIN
             elif navex_lower in ("en cours", "en-cours", "en cours de livraison"):
                 new_v2_status = Order.EN_COURS
-            if new_v2_status:
+            if new_v2_status and new_v2_status != o.status:
+                old_label = dict(Order.STATUS_CHOICES).get(o.status, o.status)
                 o.status = new_v2_status
                 if "status" not in update_fields:
                     update_fields.append("status")
                 log_action(
                     None, AuditLog.STATUS_CHANGE,
-                    description=f"Auto: commande #{o.id} → '{dict(Order.STATUS_CHOICES)[new_v2_status]}' "
+                    description=f"Auto: commande #{o.id} {old_label} → '{dict(Order.STATUS_CHOICES)[new_v2_status]}' "
                                 f"(Navex etat='{new_navex_status}', bordereau {o.bordereau_barcode})",
                     target_model="Order", target_id=o.id,
                 )
