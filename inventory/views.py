@@ -457,6 +457,28 @@ def _update_order_return_status(order):
             order.status = ShippingOrder.PARTIAL_RETURNED
     order.save(update_fields=["status"])
 
+    # Propagate to the linked v2 Order: if this v1 ShippingOrder is now
+    # RETURNED or PARTIAL_RETURNED and is linked to a v2 Order, move that v2
+    # Order to RETURNED ("Retourné", final). It then drops out of the active
+    # lists and the Navex sync.
+    if order.status in (ShippingOrder.RETURNED, ShippingOrder.PARTIAL_RETURNED):
+        try:
+            from .models import Order as _V2Order, log_action, AuditLog
+            v2 = getattr(order, "order", None)
+            if v2 is not None and v2.status != _V2Order.RETURNED:
+                old_label = dict(_V2Order.STATUS_CHOICES).get(v2.status, v2.status)
+                v2.status = _V2Order.RETURNED
+                v2.save(update_fields=["status", "updated_at"])
+                log_action(
+                    None, AuditLog.STATUS_CHANGE,
+                    description=f"Auto: commande v2 #{v2.id} {old_label} → 'Retourné' "
+                                f"(scan retour v1, bordereau {order.bordereau_barcode})",
+                    target_model="Order", target_id=v2.id,
+                )
+        except Exception:
+            # Never let v2 propagation break the v1 return flow.
+            pass
+
 
 @csrf_exempt
 @require_POST
