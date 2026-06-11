@@ -5915,6 +5915,22 @@ def api_order_change_status(request, pk):
             "code": "LOCKED_BY_NAVEX",
         }, status=400)
 
+    # ---- Cancellation is only allowed from CONFIRMEE (or pre-Navex states). ----
+    # Once an order is en route / at depot / returning / returned / delivered /
+    # paid, it can no longer be cancelled — it's out of our hands at Navex.
+    if new_status == Order.ANNULEE:
+        cancellable_from = (
+            Order.NON_CONFIRMEE, Order.CONFIRMEE, Order.RAPPELER,
+            Order.INJOIGNABLE, Order.PAS_SERIEUX,
+        )
+        if old_status not in cancellable_from:
+            return JsonResponse({
+                "status": "error",
+                "message": f"Impossible d'annuler une commande au statut « {old_label} ». "
+                           f"Seules les commandes confirmées (ou non encore expédiées) peuvent être annulées.",
+                "code": "NOT_CANCELLABLE",
+            }, status=400)
+
     # ---- Confirmée → auto-push to Navex ----
     if new_status == Order.CONFIRMEE:
         if order.bordereau_barcode:

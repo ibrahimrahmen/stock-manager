@@ -1592,9 +1592,16 @@ function openStatusMenu(btn, orderId, currentStatus, hasBordereau) {
   closeStatusMenu();
   // Decide which transitions are allowed (mirror server-side rules)
   let options = [];
-  if (hasBordereau) {
-    // Confirmée with barcode → only annulation allowed
+  // Statuses that are already in Navex's hands or finalised — no manual status
+  // change from here (can't cancel an order that's en route, delivered, paid,
+  // returning or returned).
+  const lockedStatuses = ['en_cours', 'au_magasin', 'returning', 'returned', 'livree', 'payee', 'supprime_navex', 'annulee'];
+  if (currentStatus === 'confirmee') {
+    // Confirmée (sent to Navex) → only annulation allowed
     options = [{label: '❌ Annuler la commande', cls: 'danger', action: 'cancel'}];
+  } else if (lockedStatuses.includes(currentStatus)) {
+    // Locked: nothing to do from the status menu
+    options = [];
   } else if (currentStatus === 'pas_serieux') {
     options = [{label: '❌ Annuler', cls: 'danger', action: 'cancel'}];
   } else {
@@ -1609,10 +1616,16 @@ function openStatusMenu(btn, orderId, currentStatus, hasBordereau) {
     options.push({label: '❌ Annuler', cls: 'danger', action: 'cancel'});
   }
 
+  if (options.length === 0) {
+    // Nothing actionable — show a small disabled note instead of an empty menu.
+    options = [{label: 'Aucune action disponible', cls: 'muted', disabled: true}];
+  }
+
   const menu = document.createElement('div');
   menu.className = 'status-menu';
   menu.innerHTML = options.map(o => {
     if (o.type === 'sep') return '<div class="sep"></div>';
+    if (o.disabled) return `<div class="${o.cls || ''}" style="padding:8px 12px;font-size:12px;opacity:0.6;cursor:default;">${o.label}</div>`;
     return `<button class="${o.cls || ''}" data-action="${o.action}">${o.label}</button>`;
   }).join('');
   document.body.appendChild(menu);
