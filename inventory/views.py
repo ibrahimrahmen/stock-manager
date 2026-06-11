@@ -3639,6 +3639,8 @@ def api_orders_search(request):
             "address": o.address or "",
             "total": str(o.total),
             "bordereau": o.bordereau_barcode,
+            "navex_last_status": o.navex_last_status or "",
+            "navex_last_synced_at": o.navex_last_synced_at.strftime("%d/%m %H:%M") if o.navex_last_synced_at else "",
             "article_summary": o.article_summary,
             "created_at": o.created_at.strftime("%d/%m %H:%M") if o.created_at else "",
             "scheduled_for": o.scheduled_for.strftime("%Y-%m-%d") if o.scheduled_for else "",

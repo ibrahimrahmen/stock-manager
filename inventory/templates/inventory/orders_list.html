@@ -933,8 +933,11 @@ function buildOrderRowHtml(o) {
         ? `<span class="status status-annulee">${statusDisplay}</span>`
         : `<button class="status status-${o.status} status-btn" onclick="openStatusMenu(this, ${o.id}, '${o.status}', false)" title="Changer le statut">${statusDisplay} <span style="opacity:0.6;">▾</span></button>`
       }</td>
-    <td><span class="muted" style="font-size:11px;">—</span></td>
-    <td><span class="muted" style="font-size:11px;">—</span></td>
+    <td>${o.navex_last_status
+        ? `<span class="muted" style="font-size:11px;">${o.navex_last_status}</span>${o.navex_last_synced_at ? `<div class="muted" style="font-size:10px;">${o.navex_last_synced_at}</div>` : ''}`
+        : `<span class="muted" style="font-size:11px;">—</span>`
+      }</td>
+    <td class="muted" style="font-family:monospace;font-size:11px;">${o.status === 'annulee' ? '—' : (o.bordereau || o.bordereau_barcode || '—')}</td>
   </tr>`;
 }
 
