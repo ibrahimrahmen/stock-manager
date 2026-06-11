@@ -525,6 +525,7 @@ class Order(models.Model):
     RETURNING       = "returning"         # En retour: Navex "Retour Expéditeur" or "Rtn client/agence"
     RETURNED        = "returned"          # Retourné (final): set when the return is scanned in v1
     LIVREE          = "livree"            # Navex delivered the colis
+    PAYEE           = "payee"             # Payée: v1 ShippingOrder marked PAID (Payer matched/tout)
     ANNULEE         = "annulee"
     SUPPRIME_NAVEX  = "supprime_navex"  # Navex deleted the colis after our push
 
@@ -539,6 +540,7 @@ class Order(models.Model):
         (RETURNING,      "En retour"),
         (RETURNED,       "Retourné"),
         (LIVREE,         "Livrée"),
+        (PAYEE,          "Payée"),
         (ANNULEE,        "Annulée"),
         (SUPPRIME_NAVEX, "Supprimé Navex"),
     ]

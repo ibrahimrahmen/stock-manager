@@ -1578,11 +1578,18 @@ def api_confirm_payment_from_navex(request, pk):
                     reference=order.bordereau_barcode, user=_user_for_request(request))
         # Mirror the collected amount onto the linked v2 Order (if any) so the
         # v2 list reflects what was actually collected. Only the collected
-        # amount is synced — the computed `total` is left untouched.
+        # amount is synced — the computed `total` is left untouched. Also flip
+        # the v2 status to PAYEE ("Payée") — but never override a return
+        # (RETURNED stays final).
         v2 = getattr(order, "order", None)
         if v2 is not None:
+            from .models import Order as _V2Order
             v2.amount_collected = amount
-            v2.save(update_fields=["amount_collected", "updated_at"])
+            fields = ["amount_collected", "updated_at"]
+            if v2.status != _V2Order.RETURNED and v2.status != _V2Order.PAYEE:
+                v2.status = _V2Order.PAYEE
+                fields.append("status")
+            v2.save(update_fields=fields)
 
     log_action(
         request.user, AuditLog.PAYMENT,
@@ -6552,7 +6559,7 @@ def _sync_navex_for_v2_orders(only_pending=True):
         # been paid for more than 24h is considered settled — drop it from the
         # sync even if no return barcode ever came. This keeps the polling set
         # from growing forever with normal deliveries.
-        final_states = (Order.ANNULEE, Order.SUPPRIME_NAVEX, Order.RETURNED)
+        final_states = (Order.ANNULEE, Order.SUPPRIME_NAVEX, Order.RETURNED, Order.PAYEE)
         qs = qs.exclude(status__in=final_states)
         paid_cutoff = timezone.now() - timedelta(hours=24)
         # A LIVREE order is "settled" once any linked paid ShippingOrder was

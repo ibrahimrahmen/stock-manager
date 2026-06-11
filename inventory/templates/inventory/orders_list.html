@@ -139,6 +139,7 @@ a.row-link:hover{text-decoration:underline;}
 .status-supprime_navex{background:var(--red);color:#fff;font-weight:600;animation:pulseRed 2s ease-in-out infinite;}
 .status-returning{background:rgba(234,88,12,0.15);color:#ea580c;}
 .status-returned{background:rgba(120,120,120,0.2);color:var(--muted);}
+.status-payee{background:rgba(21,128,61,0.18);color:#15803d;font-weight:600;}
 @keyframes pulseRed{0%,100%{opacity:1;}50%{opacity:0.65;}}
 tr.create-row{background:rgba(74,222,154,0.04);}
 tr.create-row td{border-top:0.5px solid var(--green);}
@@ -268,6 +269,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
     <a href="?status=pas_serieux" class="chip {% if status_filter == 'pas_serieux' %}active{% endif %}">Pas sérieux <span class="count">{{ counts.pas_serieux|default:0 }}</span></a>
     <a href="?status=annulee" class="chip {% if status_filter == 'annulee' %}active{% endif %}">Annulée <span class="count">{{ counts.annulee|default:0 }}</span></a>
     <a href="?status=livree" class="chip {% if status_filter == 'livree' %}active{% endif %}" style="border-color:var(--green);color:var(--green);">✓ Livrée <span class="count">{{ counts.livree|default:0 }}</span></a>
+    <a href="?status=payee" class="chip {% if status_filter == 'payee' %}active{% endif %}" style="border-color:#15803d;color:#15803d;background:rgba(21,128,61,0.08);">💰 Payée <span class="count">{{ counts.payee|default:0 }}</span></a>
     <a href="?status=supprime_navex" class="chip {% if status_filter == 'supprime_navex' %}active{% endif %}" style="border-color:var(--red);color:var(--red);">⚠ Supprimé Navex <span class="count">{{ counts.supprime_navex|default:0 }}</span></a>
   </div>
 
