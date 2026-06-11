@@ -131,11 +131,18 @@ a.row-link:hover{text-decoration:underline;}
 .status-menu .danger{color:var(--red);}
 .status-menu .confirm{color:var(--green);}
 .status-menu .sep{height:0.5px;background:var(--border);margin:4px 0;}
-.note-wrap{display:inline-flex;vertical-align:middle;margin-left:6px;}
-.note-icon{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:transparent;border:none;cursor:pointer;padding:0;color:var(--border);transition:color .15s;}
-.note-icon svg{width:14px;height:14px;display:block;}
-.note-icon:hover{color:var(--muted);}
-.note-icon.has-note{color:#d97706;}
+.note-wrap{display:block;margin-top:6px;}
+.note-icon{display:inline-flex;align-items:flex-start;text-align:left;cursor:pointer;padding:6px 8px;border:none;font-family:inherit;
+  width:96px;min-height:54px;border-radius:2px 2px 2px 10px;
+  background:linear-gradient(135deg,#fff6b0 0%,#ffe98a 100%);
+  color:#6b5800;font-size:10.5px;line-height:1.25;
+  box-shadow:1px 2px 5px rgba(0,0,0,0.25);
+  transform:rotate(-2deg);transition:transform .12s, box-shadow .12s;
+  overflow:hidden;position:relative;}
+.note-icon:hover{transform:rotate(-2deg) scale(1.04);box-shadow:2px 4px 9px rgba(0,0,0,0.32);}
+.note-icon .note-text{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;word-break:break-word;}
+.note-icon .note-empty{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;color:#a8922f;font-style:italic;opacity:0.85;}
+.note-icon.has-note{background:linear-gradient(135deg,#fff09a 0%,#ffdf5e 100%);}
 .note-pop{position:absolute;z-index:60;background:var(--surface);border:0.5px solid var(--border);border-radius:10px;padding:10px;box-shadow:0 10px 28px rgba(0,0,0,0.45);width:250px;}
 .note-pop textarea{width:100%;box-sizing:border-box;background:var(--surface2);color:var(--text);border:0.5px solid var(--border);border-radius:8px;padding:8px;font-family:inherit;font-size:12.5px;resize:vertical;min-height:64px;outline:none;}
 .note-pop textarea:focus{border-color:#d97706;}
@@ -321,7 +328,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
           </td>
           <td>{{ o.sales_page.name|default:"—" }}
             <div class="note-wrap">
-              <button class="note-icon {% if o.status_note %}has-note{% endif %}" onclick="openNoteEditor(this, {{ o.id }})" title="{% if o.status_note %}{{ o.status_note }}{% else %}Ajouter une note{% endif %}" data-note="{{ o.status_note|escape }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></button>
+              <button class="note-icon {% if o.status_note %}has-note{% endif %}" onclick="openNoteEditor(this, {{ o.id }})" title="{% if o.status_note %}{{ o.status_note }}{% else %}Ajouter une note{% endif %}" data-note="{{ o.status_note|escape }}">{% if o.status_note %}<span class="note-text">{{ o.status_note }}</span>{% else %}<span class="note-empty">+ note</span>{% endif %}</button>
             </div>
           </td>
           <td>
@@ -979,7 +986,7 @@ function buildOrderRowHtml(o) {
     <td><span class="date-cell" data-order-id="${o.id}" data-scheduled="${scheduled}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">${dateCellInner}</span></td>
     <td>${pageName}
       <div class="note-wrap">
-        <button class="note-icon ${o.status_note ? 'has-note' : ''}" onclick="openNoteEditor(this, ${o.id})" title="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : 'Ajouter une note'}" data-note="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></button>
+        <button class="note-icon ${o.status_note ? 'has-note' : ''}" onclick="openNoteEditor(this, ${o.id})" title="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : 'Ajouter une note'}" data-note="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : ''}">${o.status_note ? `<span class="note-text">${String(o.status_note).replace(/</g,'&lt;')}</span>` : '<span class="note-empty">+ note</span>'}</button>
       </div>
     </td>
     <td>
@@ -1648,6 +1655,9 @@ function openNoteEditor(btn, orderId) {
         btn.setAttribute('data-note', data.note);
         btn.setAttribute('title', data.note || 'Ajouter une note');
         btn.classList.toggle('has-note', !!data.note);
+        btn.innerHTML = data.note
+          ? `<span class="note-text">${String(data.note).replace(/</g,'&lt;')}</span>`
+          : '<span class="note-empty">+ note</span>';
         close();
       } else {
         alert(data.message || 'Erreur.');
