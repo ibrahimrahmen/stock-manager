@@ -3027,6 +3027,19 @@ def orders_list(request):
 
     orders = qs[:500]
 
+    # For each displayed order, how many TOTAL v2 orders share the same phone
+    # number (i.e. same customer). Shown as a badge so staff can spot repeat
+    # customers / possible duplicates. Computed in one query, no N+1.
+    from django.db.models import Count as _Count
+    customer_ids = {o.customer_id for o in orders if o.customer_id}
+    order_counts = {}
+    if customer_ids:
+        for row in (Order.objects.filter(customer_id__in=customer_ids)
+                    .values("customer_id").annotate(n=_Count("id"))):
+            order_counts[row["customer_id"]] = row["n"]
+    for o in orders:
+        o.phone_order_count = order_counts.get(o.customer_id, 1)
+
     # Count of currently-hidden future-scheduled orders, for an info banner
     future_count = Order.objects.filter(scheduled_for__gt=today).count()
 
@@ -3624,12 +3637,21 @@ def api_orders_search(request):
         qs = qs.filter(customer__name__icontains=q)
 
     qs = qs.order_by("-created_at")[:200]
+    # Count total orders per customer (for the repeat-customer badge).
+    from django.db.models import Count as _Count2
+    cust_ids = {o.customer_id for o in qs if o.customer_id}
+    pcounts = {}
+    if cust_ids:
+        for row in (Order.objects.filter(customer_id__in=cust_ids)
+                    .values("customer_id").annotate(n=_Count2("id"))):
+            pcounts[row["customer_id"]] = row["n"]
     results = []
     for o in qs:
         results.append({
             "id": o.id,
             "phone": o.customer.phone if o.customer else "",
             "phone2": o.customer.phone2 if o.customer else "",
+            "phone_order_count": pcounts.get(o.customer_id, 1),
             "name": o.customer.name if o.customer else "",
             "status": o.status,
             "status_display": o.get_status_display(),

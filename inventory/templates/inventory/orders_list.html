@@ -296,7 +296,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
           <td>{{ o.sales_page.name|default:"—" }}</td>
           <td>
             <div>{{ o.customer.name|default:o.customer.phone }}</div>
-            <div class="muted" style="font-size:11px;">{{ o.customer.phone }}</div>
+            <div class="muted" style="font-size:11px;">{{ o.customer.phone }}{% if o.phone_order_count > 1 %} <span title="Ce numéro a {{ o.phone_order_count }} commandes" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;">{{ o.phone_order_count }} cmd</span>{% endif %}</div>
           </td>
           <td>
             <div>{{ o.region.name|default:"" }}{% if o.ville %} · {{ o.ville }}{% endif %}</div>
@@ -944,7 +944,7 @@ function buildOrderRowHtml(o) {
     <td>${pageName}</td>
     <td>
       <div>${name}</div>
-      <div class="muted" style="font-size:11px;">${phone}</div>
+      <div class="muted" style="font-size:11px;">${phone}${(o.phone_order_count && o.phone_order_count > 1) ? ` <span title="Ce numéro a ${o.phone_order_count} commandes" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;">${o.phone_order_count} cmd</span>` : ''}</div>
       ${phone2Block}
     </td>
     <td>
