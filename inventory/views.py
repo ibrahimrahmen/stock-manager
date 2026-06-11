@@ -3035,6 +3035,7 @@ def orders_list(request):
     order_counts = {}
     if customer_ids:
         for row in (Order.objects.filter(customer_id__in=customer_ids)
+                    .exclude(status="annulee")
                     .values("customer_id").annotate(n=_Count("id"))):
             order_counts[row["customer_id"]] = row["n"]
     for o in orders:
@@ -3643,6 +3644,7 @@ def api_orders_search(request):
     pcounts = {}
     if cust_ids:
         for row in (Order.objects.filter(customer_id__in=cust_ids)
+                    .exclude(status="annulee")
                     .values("customer_id").annotate(n=_Count2("id"))):
             pcounts[row["customer_id"]] = row["n"]
     results = []
