@@ -2530,7 +2530,7 @@ def navex_sync(request):
 @csrf_exempt
 def api_navex_sync(request):
     """Call Navex API for multiple barcodes at once."""
-    from .models import log_action, AuditLog
+    from .models import log_action, AuditLog, Order
     import urllib.request
     import urllib.parse
 
@@ -2630,23 +2630,23 @@ def api_navex_sync(request):
                             request=request,
                         )
 
-                # v2 Order status: when Navex reports "Au magasin" or "En cours",
-                # move the linked v2 Order out of Confirmée into that status.
-                # ONLY from Confirmée (don't disturb other states).
+                # v2 Order status: Navex "Au magasin" / "En cours" → move the
+                # linked v2 Order out of Confirmée into that status. Only from
+                # Confirmée. (Order is imported at the top of this function.)
                 linked_order = getattr(so, "order", None)
                 if linked_order and linked_order.status == Order.CONFIRMEE:
-                    new_status = None
+                    new_v2_status = None
                     if navex_lower in ("au magasin", "au-magasin", "au magasin navex"):
-                        new_status = Order.AU_MAGASIN
+                        new_v2_status = Order.AU_MAGASIN
                     elif navex_lower in ("en cours", "en-cours", "en cours de livraison"):
-                        new_status = Order.EN_COURS
-                    if new_status:
-                        linked_order.status = new_status
+                        new_v2_status = Order.EN_COURS
+                    if new_v2_status:
+                        linked_order.status = new_v2_status
                         linked_order.save(update_fields=["status", "updated_at"])
                         log_action(
                             request.user, AuditLog.STATUS_CHANGE,
                             description=f"Auto sync Navex: commande #{linked_order.id} Confirmée → "
-                                        f"{dict(Order.STATUS_CHOICES)[new_status]} (bordereau {bc}, etat '{navex_etat}')",
+                                        f"{dict(Order.STATUS_CHOICES)[new_v2_status]} (bordereau {bc}, etat '{navex_etat}')",
                             request=request,
                         )
             except ShippingOrder.DoesNotExist:
@@ -6538,6 +6538,26 @@ def _sync_navex_for_v2_orders(only_pending=True):
                 target_model="Order", target_id=o.id,
             )
 
+        # Detect "Au magasin" / "En cours" → move the order from Confirmée into
+        # that status (so it jumps from the Confirmée tab to its own tab).
+        # Only from Confirmée; don't disturb other states.
+        if o.status == Order.CONFIRMEE:
+            new_v2_status = None
+            if navex_lower in ("au magasin", "au-magasin", "au magasin navex"):
+                new_v2_status = Order.AU_MAGASIN
+            elif navex_lower in ("en cours", "en-cours", "en cours de livraison"):
+                new_v2_status = Order.EN_COURS
+            if new_v2_status:
+                o.status = new_v2_status
+                if "status" not in update_fields:
+                    update_fields.append("status")
+                log_action(
+                    None, AuditLog.STATUS_CHANGE,
+                    description=f"Auto: commande #{o.id} → '{dict(Order.STATUS_CHOICES)[new_v2_status]}' "
+                                f"(Navex etat='{new_navex_status}', bordereau {o.bordereau_barcode})",
+                    target_model="Order", target_id=o.id,
+                )
+
         # Detect "Rtn client/agence" → mark the order's ProductUnits as EARLY_RETURN
         # (the customer refused; the parcel is on its way back to us).
         # Only flip units that are currently SHIPPED — don't touch PAID/RETURNED.
@@ -6568,6 +6588,7 @@ def _flip_order_units_status(order, from_status, to_status, movement_type):
     based on the order's Navex status, so the warehouse team sees the correct
     physical state without scanning each unit one by one.
     """
+    from .models import log_action, AuditLog, StockMovement
     n_flipped = 0
     for so in order.shipping_orders.all():
         for item in so.items.select_related("unit"):
