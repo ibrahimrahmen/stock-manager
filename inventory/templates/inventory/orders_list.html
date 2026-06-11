@@ -49,9 +49,9 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .add-btn{background:var(--green);color:#0a0a08;padding:11px 18px;border-radius:10px;border:none;font-weight:500;font-size:15px;cursor:pointer;}
 .add-btn:hover{background:#3acb88;}
 .add-btn:disabled{opacity:0.6;}
-.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;justify-content:space-between;align-items:flex-start;}
-.chip-group{display:flex;gap:8px;flex-wrap:wrap;}
-.chip-group-right{justify-content:flex-end;}
+.chips{display:flex;gap:8px;flex-wrap:nowrap;margin-bottom:18px;align-items:flex-start;}
+.chip-group{display:flex;gap:8px;flex-wrap:wrap;min-width:0;}
+.chip-group-right{margin-left:auto;justify-content:flex-end;flex-shrink:0;}
 /* Search bar */
 .search-bar input{
   width:100%;padding:13px 18px;border-radius:10px;
