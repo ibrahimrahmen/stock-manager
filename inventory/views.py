@@ -6058,7 +6058,7 @@ def _push_order_to_navex_internal(request, order):
     exchange_str = ""
     article_str = ""
     nb_echange_str = ""
-    ouvrir_str = ""
+    ouvrir_str = "Oui"  # clients are allowed to open & verify the colis before paying
     exchange_price = None  # if set, overrides the normal order.total
     if order.exchange_of_id:
         exchange_str = str(order.exchange_of_id)
