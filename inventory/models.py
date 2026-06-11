@@ -637,6 +637,11 @@ class Order(models.Model):
     amount_collected     = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True,
         help_text="Montant réellement encaissé (synchronisé depuis v1 lors du paiement Navex).")
 
+    # Free-text reason captured when a non-confirmée order is set to
+    # injoignable / rappeler / pas sérieux — so the reason is known later.
+    status_note          = models.CharField(max_length=300, blank=True, default="",
+        help_text="Note/raison saisie lors d'un changement de statut (injoignable, rappeler, pas sérieux).")
+
     # When Navex processes an exchange, it generates a SECOND barcode for the
     # return colis (the one that will pick up the old products). We store it here.
     navex_return_barcode = models.CharField(max_length=80, blank=True, default="",

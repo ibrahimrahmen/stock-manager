@@ -327,6 +327,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
               <button class="status status-{{ o.status }} status-btn" onclick="openStatusMenu(this, {{ o.id }}, '{{ o.status }}', {{ o.bordereau_barcode|yesno:'true,false' }})" title="Changer le statut">
                 {{ o.get_status_display }} <span style="opacity:0.6;">▾</span>
               </button>
+              {% if o.status_note %}<div class="muted" style="font-size:10px;margin-top:2px;" title="Note">📝 {{ o.status_note }}</div>{% endif %}
             {% endif %}
           </td>
           <td>
@@ -1645,15 +1646,29 @@ function openStatusMenu(btn, orderId, currentStatus, hasBordereau) {
       } else if (action === 'cancel') {
         openInlineCancelModal(orderId, btn);
       } else if (action.startsWith('set:')) {
-        await sendStatusChange(orderId, action.slice(4), null, btn);
+        const newStatus = action.slice(4);
+        // These statuses require a note explaining the reason.
+        const noteRequired = ['injoignable', 'rappeler_plus_tard', 'pas_serieux'];
+        if (noteRequired.includes(newStatus)) {
+          const note = prompt('Raison / note (obligatoire) :', '');
+          if (note === null) return;            // cancelled
+          if (!note.trim()) {
+            alert('Une note est obligatoire pour ce statut.');
+            return;
+          }
+          await sendStatusChange(orderId, newStatus, null, btn, note.trim());
+        } else {
+          await sendStatusChange(orderId, newStatus, null, btn);
+        }
       }
     });
   });
 }
 
-async function sendStatusChange(orderId, newStatus, cancelReason, originBtn) {
+async function sendStatusChange(orderId, newStatus, cancelReason, originBtn, statusNote) {
   const body = {status: newStatus};
   if (cancelReason) body.cancel_reason = cancelReason;
+  if (statusNote) body.status_note = statusNote;
   try {
     const res = await fetch(`/api/sales-orders/${orderId}/status/`, {
       method: 'POST',

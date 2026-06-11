@@ -6099,11 +6099,26 @@ def api_order_change_status(request, pk):
             "code": "INVALID_TRANSITION",
         }, status=400)
 
+    # These statuses require a note explaining the reason.
+    note_required = (Order.INJOIGNABLE, Order.RAPPELER, Order.PAS_SERIEUX)
+    status_note = (data.get("status_note") or "").strip()
+    if new_status in note_required and not status_note:
+        return JsonResponse({
+            "status": "error",
+            "message": "Une note est obligatoire pour ce statut.",
+            "code": "NOTE_REQUIRED",
+        }, status=400)
+
     order.status = new_status
-    order.save(update_fields=["status", "updated_at"])
+    update_fields = ["status", "updated_at"]
+    if status_note:
+        order.status_note = status_note[:300]
+        update_fields.append("status_note")
+    order.save(update_fields=update_fields)
     log_action(
         request.user, AuditLog.STATUS_CHANGE,
-        description=f"Commande #{order.id} : {old_label} → {valid[new_status]}",
+        description=f"Commande #{order.id} : {old_label} → {valid[new_status]}"
+                    + (f" — note: {status_note}" if status_note else ""),
         request=request,
         target_model="Order", target_id=order.id,
     )
