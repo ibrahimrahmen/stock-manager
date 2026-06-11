@@ -49,7 +49,9 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .add-btn{background:var(--green);color:#0a0a08;padding:11px 18px;border-radius:10px;border:none;font-weight:500;font-size:15px;cursor:pointer;}
 .add-btn:hover{background:#3acb88;}
 .add-btn:disabled{opacity:0.6;}
-.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;justify-content:space-between;align-items:flex-start;}
+.chip-group{display:flex;gap:8px;flex-wrap:wrap;}
+.chip-group-right{justify-content:flex-end;}
 /* Search bar */
 .search-bar input{
   width:100%;padding:13px 18px;border-radius:10px;
@@ -257,6 +259,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
   {% endif %}
 
   <div class="chips">
+    <div class="chip-group chip-group-left">
     <a href="?status=all" class="chip {% if status_filter == 'all' %}active{% endif %}">Toutes <span class="count">{{ total }}</span></a>
     <a href="?status=non_confirmee" class="chip {% if status_filter == 'non_confirmee' %}active{% endif %}">Non confirmée <span class="count">{{ counts.non_confirmee|default:0 }}</span></a>
     <a href="?status=confirmee" class="chip {% if status_filter == 'confirmee' %}active{% endif %}">Confirmée <span class="count">{{ counts.confirmee|default:0 }}</span></a>
@@ -265,14 +268,16 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
     <a href="?status=pas_serieux" class="chip {% if status_filter == 'pas_serieux' %}active{% endif %}">Pas sérieux <span class="count">{{ counts.pas_serieux|default:0 }}</span></a>
     <a href="?status=annulee" class="chip {% if status_filter == 'annulee' %}active{% endif %}">Annulée <span class="count">{{ counts.annulee|default:0 }}</span></a>
     <a href="?status=supprime_navex" class="chip {% if status_filter == 'supprime_navex' %}active{% endif %}" style="border-color:var(--red);color:var(--red);">⚠ Supprimé Navex <span class="count">{{ counts.supprime_navex|default:0 }}</span></a>
+    </div>
 
-    <a href="?status=en_cours" class="chip {% if status_filter == 'en_cours' %}active{% endif %}" style="margin-left:auto;">En cours <span class="count">{{ counts.en_cours|default:0 }}</span></a>
+    <div class="chip-group chip-group-right">
+    <a href="?status=en_cours" class="chip {% if status_filter == 'en_cours' %}active{% endif %}">En cours <span class="count">{{ counts.en_cours|default:0 }}</span></a>
     <a href="?status=au_magasin" class="chip {% if status_filter == 'au_magasin' %}active{% endif %}" style="border-color:var(--amber);color:var(--amber);">Au magasin <span class="count">{{ counts.au_magasin|default:0 }}</span></a>
     <a href="?status=returning" class="chip {% if status_filter == 'returning' %}active{% endif %}" style="border-color:#ea580c;color:#ea580c;">↩ En retour <span class="count">{{ counts.returning|default:0 }}</span></a>
     <a href="?status=returned" class="chip {% if status_filter == 'returned' %}active{% endif %}">↩ Retourné <span class="count">{{ counts.returned|default:0 }}</span></a>
     <a href="?status=livree" class="chip {% if status_filter == 'livree' %}active{% endif %}" style="border-color:var(--green);color:var(--green);">✓ Livrée <span class="count">{{ counts.livree|default:0 }}</span></a>
     <a href="?status=payee" class="chip {% if status_filter == 'payee' %}active{% endif %}" style="border-color:#15803d;color:#15803d;background:rgba(21,128,61,0.08);">💰 Payée <span class="count">{{ counts.payee|default:0 }}</span></a>
-    <a href="?status=supprime_navex" class="chip {% if status_filter == 'supprime_navex' %}active{% endif %}" style="border-color:var(--red);color:var(--red);">⚠ Supprimé Navex <span class="count">{{ counts.supprime_navex|default:0 }}</span></a>
+    </div>
   </div>
 
   <div class="table-wrap">
