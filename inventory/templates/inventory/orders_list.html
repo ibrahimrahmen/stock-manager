@@ -78,6 +78,8 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .date-cell{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 8px;border-radius:6px;display:inline-block;}
 .date-cell:hover{background:var(--surface2);color:var(--text);}
 .scheduled-badge{background:var(--amber-dim);color:var(--amber);padding:3px 8px;border-radius:6px;font-weight:500;}
+tr.exchange-row > td{background:#fff8d6;}
+[data-theme="dark"] tr.exchange-row > td{background:rgba(245,224,80,0.10);}
 /* Date picker mini-modal */
 .date-picker-overlay{
   position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100;
@@ -277,7 +279,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
       </thead>
       <tbody id="orders-tbody">
         {% for o in orders %}
-        <tr data-order-id="{{ o.id }}">
+        <tr data-order-id="{{ o.id }}"{% if o.exchange_of_id %} class="exchange-row"{% endif %}>
           <td>
             {% if o.status != 'confirmee' and o.status != 'livree' and not o.bordereau_barcode %}
               <a class="row-link" href="javascript:void(0)" onclick="editOrder({{ o.id }})" title="Modifier le brouillon">#{{ o.id }} <span style="font-size:10px;opacity:0.7;">✎</span></a>
@@ -938,7 +940,7 @@ function buildOrderRowHtml(o) {
     ? `<span class="scheduled-badge">📅 ${scheduledDisplay}</span>`
     : created;
 
-  return `<tr data-order-id="${o.id}">
+  return `<tr data-order-id="${o.id}"${(o.is_exchange || o.exchange_of_id) ? ' class="exchange-row"' : ''}>
     <td>${idCell}</td>
     <td><span class="date-cell" data-order-id="${o.id}" data-scheduled="${scheduled}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">${dateCellInner}</span></td>
     <td>${pageName}</td>

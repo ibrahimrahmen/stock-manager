@@ -3668,6 +3668,7 @@ def api_orders_search(request):
             "article_summary": o.article_summary,
             "created_at": o.created_at.strftime("%d/%m %H:%M") if o.created_at else "",
             "scheduled_for": o.scheduled_for.strftime("%Y-%m-%d") if o.scheduled_for else "",
+            "is_exchange": bool(o.exchange_of_id),
         })
     return JsonResponse({"status": "ok", "results": results, "count": len(results)})
 
