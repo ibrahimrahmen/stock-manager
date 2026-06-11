@@ -2631,9 +2631,11 @@ def api_navex_sync(request):
                         )
 
                 # v2 Order status: Navex "Au magasin" / "En cours" / return
-                # states → move the linked v2 Order into that status. From
-                # Confirmée (forward delivery) or from any in-transit state
-                # (for the return states). (Order is imported at top of func.)
+                # states → move the linked v2 Order into that status. Forward
+                # states only from Confirmée; "En retour" (Navex "Retour
+                # Expéditeur" or "Rtn client/agence") from any in-transit state.
+                # NOTE: "Retourné" (final) is NOT set here — it is set when the
+                # return is physically scanned in v1.
                 linked_order = getattr(so, "order", None)
                 if linked_order:
                     new_v2_status = None
@@ -2642,13 +2644,11 @@ def api_navex_sync(request):
                             new_v2_status = Order.AU_MAGASIN
                         elif navex_lower in ("en cours", "en-cours", "en cours de livraison"):
                             new_v2_status = Order.EN_COURS
-                    # Return-in-transit states can come from Confirmée or any
-                    # in-transit status (en_cours / au_magasin).
                     if linked_order.status in (Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN):
-                        if navex_lower in ("retour expediteur", "retour expéditeur", "retour vers expediteur", "retour vers expéditeur"):
-                            new_v2_status = Order.RETOUR_EXPEDITEUR
-                        elif navex_lower in ("rtn client/agence", "rtn client", "rtn agence"):
-                            new_v2_status = Order.RTN_CLIENT_AGENCE
+                        if navex_lower in ("retour expediteur", "retour expéditeur",
+                                           "retour vers expediteur", "retour vers expéditeur",
+                                           "rtn client/agence", "rtn client", "rtn agence"):
+                            new_v2_status = Order.RETURNING
                     if new_v2_status and new_v2_status != linked_order.status:
                         old_label = dict(Order.STATUS_CHOICES).get(linked_order.status, linked_order.status)
                         linked_order.status = new_v2_status
@@ -6522,7 +6522,7 @@ def _sync_navex_for_v2_orders(only_pending=True):
         # been paid for more than 24h is considered settled — drop it from the
         # sync even if no return barcode ever came. This keeps the polling set
         # from growing forever with normal deliveries.
-        final_states = (Order.ANNULEE, Order.SUPPRIME_NAVEX)
+        final_states = (Order.ANNULEE, Order.SUPPRIME_NAVEX, Order.RETURNED)
         qs = qs.exclude(status__in=final_states)
         paid_cutoff = timezone.now() - timedelta(hours=24)
         # A LIVREE order is "settled" once any linked paid ShippingOrder was
