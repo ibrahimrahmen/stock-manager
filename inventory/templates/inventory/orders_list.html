@@ -429,6 +429,13 @@ window.EXCHANGE_SOURCE = {
   address: "{{ exchange_source.address|default:''|escapejs }}",
   sales_page_id: {{ exchange_source.sales_page.id|default:'null' }},
   delivered_date: "{{ exchange_source.created_at|date:'d/m/Y' }}",
+  // Offers from the original order, so the exchange defaults to the same offer
+  // (exchanges are usually a size change on the same product).
+  offers: [
+    {% for oo in exchange_source.order_offers.all %}
+    { offer_id: {{ oo.offer_id|default:'null' }}, quantity: {{ oo.quantity|default:1 }} }{% if not forloop.last %},{% endif %}
+    {% endfor %}
+  ],
 };
 {% endif %}
 
@@ -659,7 +666,24 @@ function openCreateRow(opts) {
       // Pre-select sales page (this will trigger onPagePicked which loads offers)
       if (pageSel && opts.prefillSalesPageId) {
         pageSel.value = String(opts.prefillSalesPageId);
-        onPagePicked(pageSel.value);
+        // After offers for the page load, default the exchange to the SAME
+        // offer(s) as the original order (exchange is usually a size change).
+        Promise.resolve(onPagePicked(pageSel.value)).then(() => {
+          const srcOffers = (window.EXCHANGE_SOURCE && window.EXCHANGE_SOURCE.offers) || [];
+          const seeded = [];
+          for (const so of srcOffers) {
+            if (!so.offer_id) continue;
+            // Only seed if this offer is actually available on the page.
+            if (offersForPage.some(o => o.id == so.offer_id)) {
+              seeded.push({ offer_id: so.offer_id, quantity: so.quantity || 1, products: [] });
+            }
+          }
+          if (seeded.length > 0) {
+            modalOffers = seeded;
+            // Load each seeded offer's products so colour/size are ready to pick.
+            seeded.forEach((mo, idx) => onOfferPicked(idx, mo.offer_id));
+          }
+        });
       }
       // Pre-fill region/delegation in the picker
       if (opts.prefillRegionId) {
