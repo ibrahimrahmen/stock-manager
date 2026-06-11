@@ -522,6 +522,8 @@ class Order(models.Model):
     RAPPELER        = "rappeler_plus_tard"
     EN_COURS        = "en_cours"          # Navex: colis en cours de livraison
     AU_MAGASIN      = "au_magasin"        # Navex: colis revenu au magasin/dépôt
+    RETOUR_EXPEDITEUR = "retour_expediteur"  # Navex: colis en retour vers l'expéditeur
+    RTN_CLIENT_AGENCE = "rtn_client_agence"  # Navex "Rtn client/agence": client a refusé, en route retour
     LIVREE          = "livree"            # Navex delivered the colis
     ANNULEE         = "annulee"
     SUPPRIME_NAVEX  = "supprime_navex"  # Navex deleted the colis after our push
@@ -534,6 +536,8 @@ class Order(models.Model):
         (RAPPELER,       "Rappeler plus tard"),
         (EN_COURS,       "En cours"),
         (AU_MAGASIN,     "Au magasin"),
+        (RETOUR_EXPEDITEUR, "Retour Expéditeur"),
+        (RTN_CLIENT_AGENCE, "Rtn client/agence"),
         (LIVREE,         "Livrée"),
         (ANNULEE,        "Annulée"),
         (SUPPRIME_NAVEX, "Supprimé Navex"),
