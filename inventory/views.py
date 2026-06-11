@@ -3709,6 +3709,7 @@ def api_orders_search(request):
             "address": o.address or "",
             "total": str(o.total),
             "amount_collected": str(o.amount_collected) if o.amount_collected is not None else None,
+            "status_note": o.status_note or "",
             "bordereau": o.bordereau_barcode,
             "navex_last_status": o.navex_last_status or "",
             "navex_last_synced_at": o.navex_last_synced_at.strftime("%d/%m %H:%M") if o.navex_last_synced_at else "",
@@ -5874,6 +5875,31 @@ def order_view(request, pk):
         pk=pk,
     )
     return render(request, "inventory/order_view.html", {"order": order})
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_order_set_note(request, pk):
+    """Save (or clear) the sticky note on an order. Used by the note icon in
+    the orders list. Reuses the `status_note` field."""
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import Order, log_action, AuditLog
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+    order = get_object_or_404(Order, pk=pk)
+    note = (data.get("note") or "").strip()[:300]
+    order.status_note = note
+    order.save(update_fields=["status_note", "updated_at"])
+    log_action(
+        request.user, AuditLog.EDIT,
+        description=f"Commande #{order.id} : note mise à jour" + (f" → {note}" if note else " (effacée)"),
+        request=request, target_model="Order", target_id=order.id,
+    )
+    return JsonResponse({"status": "ok", "note": note})
 
 
 @csrf_exempt

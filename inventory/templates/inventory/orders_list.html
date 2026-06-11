@@ -131,6 +131,15 @@ a.row-link:hover{text-decoration:underline;}
 .status-menu .danger{color:var(--red);}
 .status-menu .confirm{color:var(--green);}
 .status-menu .sep{height:0.5px;background:var(--border);margin:4px 0;}
+.note-wrap{display:inline-block;}
+.note-icon{background:transparent;border:none;cursor:pointer;font-size:13px;padding:0;margin-top:2px;opacity:0.35;filter:grayscale(1);transition:opacity .15s;line-height:1;}
+.note-icon:hover{opacity:0.9;}
+.note-icon.has-note{opacity:1;filter:none;}
+.note-pop{position:absolute;z-index:60;background:var(--surface);border:0.5px solid var(--border);border-radius:8px;padding:8px;box-shadow:0 8px 20px rgba(0,0,0,0.4);width:240px;}
+.note-pop textarea{width:100%;box-sizing:border-box;background:var(--surface2);color:var(--text);border:0.5px solid var(--border);border-radius:6px;padding:6px;font-family:inherit;font-size:12px;resize:vertical;min-height:60px;}
+.note-pop .note-actions{display:flex;gap:6px;justify-content:flex-end;margin-top:6px;}
+.note-pop button{padding:5px 10px;border-radius:6px;border:0.5px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:12px;font-family:inherit;}
+.note-pop button.save{background:#15803d;color:#fff;border-color:#15803d;}
 .status-non_confirmee{background:var(--red-dim);color:var(--red);}
 .status-confirmee{background:var(--green-dim);color:var(--green);}
 .status-injoignable{background:var(--amber-dim);color:var(--amber);}
@@ -308,7 +317,11 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
               {% if o.scheduled_for %}<span class="scheduled-badge">📅 {{ o.scheduled_for|date:"d/m" }}</span>{% else %}{{ o.created_at|date:"d/m H:i" }}{% endif %}
             </span>
           </td>
-          <td>{{ o.sales_page.name|default:"—" }}</td>
+          <td>{{ o.sales_page.name|default:"—" }}
+            <div class="note-wrap">
+              <button class="note-icon {% if o.status_note %}has-note{% endif %}" onclick="openNoteEditor(this, {{ o.id }})" title="{% if o.status_note %}{{ o.status_note }}{% else %}Ajouter une note{% endif %}" data-note="{{ o.status_note|escape }}">📝</button>
+            </div>
+          </td>
           <td>
             <div>{{ o.customer.name|default:o.customer.phone }}</div>
             <div class="muted" style="font-size:11px;">{{ o.customer.phone }}{% if o.phone_order_count > 1 %} <span onclick="searchPhone('{{ o.customer.phone }}', event)" title="Voir les {{ o.phone_order_count }} commandes de ce numéro" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;cursor:pointer;">{{ o.phone_order_count }} cmd</span>{% endif %}</div>
@@ -963,7 +976,11 @@ function buildOrderRowHtml(o) {
   return `<tr data-order-id="${o.id}"${(o.is_exchange || o.exchange_of_id) ? ' class="exchange-row"' : ''}>
     <td>${idCell}</td>
     <td><span class="date-cell" data-order-id="${o.id}" data-scheduled="${scheduled}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">${dateCellInner}</span></td>
-    <td>${pageName}</td>
+    <td>${pageName}
+      <div class="note-wrap">
+        <button class="note-icon ${o.status_note ? 'has-note' : ''}" onclick="openNoteEditor(this, ${o.id})" title="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : 'Ajouter une note'}" data-note="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : ''}">📝</button>
+      </div>
+    </td>
     <td>
       <div>${name}</div>
       <div class="muted" style="font-size:11px;">${phone}${(o.phone_order_count && o.phone_order_count > 1) ? ` <span onclick="searchPhone('${phone}', event)" title="Voir les ${o.phone_order_count} commandes de ce numéro" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;cursor:pointer;">${o.phone_order_count} cmd</span>` : ''}</div>
@@ -1588,6 +1605,55 @@ document.addEventListener('click', (e) => {
     closeStatusMenu();
   }
 });
+
+function openNoteEditor(btn, orderId) {
+  // close any existing popup
+  const existing = document.querySelector('.note-pop');
+  if (existing) existing.remove();
+  const current = btn.getAttribute('data-note') || '';
+  const pop = document.createElement('div');
+  pop.className = 'note-pop';
+  pop.innerHTML = `
+    <textarea placeholder="Note / raison...">${current.replace(/</g,'&lt;')}</textarea>
+    <div class="note-actions">
+      <button class="cancel">Annuler</button>
+      <button class="save">Enregistrer</button>
+    </div>`;
+  document.body.appendChild(pop);
+  const r = btn.getBoundingClientRect();
+  pop.style.left = (r.left + window.scrollX) + 'px';
+  pop.style.top = (r.bottom + window.scrollY + 4) + 'px';
+  // keep it on screen
+  const pr = pop.getBoundingClientRect();
+  if (pr.right > window.innerWidth - 8) {
+    pop.style.left = (window.innerWidth - pr.width - 8 + window.scrollX) + 'px';
+  }
+  const ta = pop.querySelector('textarea');
+  ta.focus();
+  const close = () => { pop.remove(); document.removeEventListener('click', onDoc, true); };
+  const onDoc = (e) => { if (!pop.contains(e.target) && e.target !== btn) close(); };
+  setTimeout(() => document.addEventListener('click', onDoc, true), 0);
+  pop.querySelector('.cancel').addEventListener('click', close);
+  pop.querySelector('.save').addEventListener('click', async () => {
+    const note = ta.value.trim();
+    try {
+      const res = await fetch(`/api/sales-orders/${orderId}/note/`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken()},
+        body: JSON.stringify({note}),
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        btn.setAttribute('data-note', data.note);
+        btn.setAttribute('title', data.note || 'Ajouter une note');
+        btn.classList.toggle('has-note', !!data.note);
+        close();
+      } else {
+        alert(data.message || 'Erreur.');
+      }
+    } catch (e) { alert('Erreur réseau.'); }
+  });
+}
 
 function openStatusMenu(btn, orderId, currentStatus, hasBordereau) {
   closeStatusMenu();
