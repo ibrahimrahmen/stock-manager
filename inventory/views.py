@@ -6639,6 +6639,25 @@ def _sync_navex_for_v2_orders(only_pending=True):
                     target_model="Order", target_id=o.id,
                 )
 
+        # Detect "Retour Expéditeur" / "Rtn client/agence" → move the order into
+        # RETURNING ("En retour"). Can come from Confirmée or an in-transit
+        # status (en_cours / au_magasin). NOTE: the final RETURNED status is set
+        # by physical scan in v1, not from Navex sync.
+        if o.status in (Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN):
+            if navex_lower in ("retour expediteur", "retour expéditeur",
+                               "retour vers expediteur", "retour vers expéditeur",
+                               "rtn client/agence", "rtn client", "rtn agence"):
+                old_label = dict(Order.STATUS_CHOICES).get(o.status, o.status)
+                o.status = Order.RETURNING
+                if "status" not in update_fields:
+                    update_fields.append("status")
+                log_action(
+                    None, AuditLog.STATUS_CHANGE,
+                    description=f"Auto: commande #{o.id} {old_label} → 'En retour' "
+                                f"(Navex etat='{new_navex_status}', bordereau {o.bordereau_barcode})",
+                    target_model="Order", target_id=o.id,
+                )
+
         # Detect "Rtn client/agence" → mark the order's ProductUnits as EARLY_RETURN
         # (the customer refused; the parcel is on its way back to us).
         # Only flip units that are currently SHIPPED — don't touch PAID/RETURNED.
