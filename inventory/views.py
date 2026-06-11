@@ -6499,18 +6499,35 @@ def _sync_navex_for_v2_orders(only_pending=True):
     """
     from .models import Order, log_action, AuditLog
     from django.db.models import Q
+    from datetime import timedelta
     qs = Order.objects.exclude(bordereau_barcode="")
     if only_pending:
-        # Skip annulees, supprime_navex, and LIVREE — EXCEPT LIVREE exchanges that
-        # still don't have their navex_return_barcode (we need to fetch the
-        # code_echange from Navex).
-        # Include: any not-final state, OR LIVREE that is an exchange missing its return barcode.
+        # Skip annulees and supprime_navex. For LIVREE: keep polling any
+        # delivered order that doesn't yet have a navex_return_barcode, so a
+        # code_echange generated later by Navex (e.g. client kept part of the
+        # order at the door) still gets fetched. Once the return barcode is
+        # stored, the order drops out of the sync.
+        #
+        # Stop condition: a delivered order whose linked v1 ShippingOrder has
+        # been paid for more than 24h is considered settled — drop it from the
+        # sync even if no return barcode ever came. This keeps the polling set
+        # from growing forever with normal deliveries.
         final_states = (Order.ANNULEE, Order.SUPPRIME_NAVEX)
         qs = qs.exclude(status__in=final_states)
-        # For LIVREE: only keep exchanges missing the return barcode
-        qs = qs.filter(
-            ~Q(status=Order.LIVREE) | (Q(status=Order.LIVREE) & Q(exchange_of__isnull=False) & Q(navex_return_barcode=""))
+        paid_cutoff = timezone.now() - timedelta(hours=24)
+        # A LIVREE order is "settled" once any linked paid ShippingOrder was
+        # paid more than 24h ago. Such orders are excluded.
+        settled_livree = (
+            Q(status=Order.LIVREE)
+            & Q(shipping_orders__status=ShippingOrder.PAID)
+            & Q(shipping_orders__paid_at__lt=paid_cutoff)
         )
+        # Keep: anything not LIVREE, OR a LIVREE still missing its return
+        # barcode AND not yet settled (paid >24h ago).
+        qs = qs.filter(
+            ~Q(status=Order.LIVREE)
+            | (Q(status=Order.LIVREE) & Q(navex_return_barcode=""))
+        ).exclude(settled_livree).distinct()
     orders = list(qs)
     n_attempted = len(orders)
     if n_attempted == 0:
