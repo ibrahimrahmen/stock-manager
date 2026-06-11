@@ -1820,6 +1820,9 @@ function renderReturnsGrid() {
           <div style="font-size:13px;font-weight:500;">${(it.product_name||'').replace(/</g,'&lt;')}</div>
           <div style="font-size:11px;color:var(--muted);">${(it.color_label||'')} ${sizeStr}</div>
           <div style="font-size:12px;margin-top:4px;">Qté: ${it.qty}</div>
+          ${(it.units && it.units.length)
+            ? `<div style="font-size:10px;color:var(--muted);margin-top:4px;font-family:monospace;line-height:1.4;">${it.units.map(u => `${u.barcode}`).join('<br>')}</div>`
+            : `<div style="font-size:10px;color:var(--muted);margin-top:4px;font-style:italic;">aucun code-barres</div>`}
         </div>
         <div style="font-size:18px;">${isSelected ? '✓' : '○'}</div>
       </div>`;

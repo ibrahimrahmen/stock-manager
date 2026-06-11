@@ -4096,6 +4096,25 @@ def api_exchange_source_items(request, pk):
 
     items = list(grouped.values())
 
+    # Attach the physical unit barcodes from the original order, matched by
+    # variant + size. Units are reachable via the v2 Order's v1 ShippingOrders
+    # → OrderItems → unit. This lets the office worker see which barcode(s)
+    # correspond to each item being returned.
+    barcodes_by_key = {}
+    for so in source.shipping_orders.all():
+        for oi in so.items.select_related("unit__variant").all():
+            unit = oi.unit
+            if not unit:
+                continue
+            k = (unit.variant_id, unit.size or "")
+            barcodes_by_key.setdefault(k, []).append({
+                "barcode": unit.barcode,
+                "status": unit.status,
+                "status_label": unit.get_status_display(),
+            })
+    for it in items:
+        it["units"] = barcodes_by_key.get((it["variant_id"], it["size"]), [])
+
     # Also check what's already been selected (if return_items already exist for this exchange)
     selected = list(exchange.return_items.values_list("variant_id", "size"))
     selected_set = set((vid, sz) for vid, sz in selected)
