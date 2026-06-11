@@ -2629,6 +2629,26 @@ def api_navex_sync(request):
                             description=f"Auto sync Navex: {flipped} unité(s) → AT_DEPOT (bordereau {bc}, etat '{navex_etat}')",
                             request=request,
                         )
+
+                # v2 Order status: when Navex reports "Au magasin" or "En cours",
+                # move the linked v2 Order out of Confirmée into that status.
+                # ONLY from Confirmée (don't disturb other states).
+                linked_order = getattr(so, "order", None)
+                if linked_order and linked_order.status == Order.CONFIRMEE:
+                    new_status = None
+                    if navex_lower in ("au magasin", "au-magasin", "au magasin navex"):
+                        new_status = Order.AU_MAGASIN
+                    elif navex_lower in ("en cours", "en-cours", "en cours de livraison"):
+                        new_status = Order.EN_COURS
+                    if new_status:
+                        linked_order.status = new_status
+                        linked_order.save(update_fields=["status", "updated_at"])
+                        log_action(
+                            request.user, AuditLog.STATUS_CHANGE,
+                            description=f"Auto sync Navex: commande #{linked_order.id} Confirmée → "
+                                        f"{dict(Order.STATUS_CHOICES)[new_status]} (bordereau {bc}, etat '{navex_etat}')",
+                            request=request,
+                        )
             except ShippingOrder.DoesNotExist:
                 pass
 
@@ -3265,7 +3285,7 @@ def _is_draft_editable(order):
     (non confirmée, injoignable, pas sérieux, rappeler, annulée…).
     It locks only once it is CONFIRMÉE or LIVRÉE, or once it has been pushed
     to Navex (has a bordereau barcode)."""
-    LOCKED_STATUSES = {"confirmee", "livree"}
+    LOCKED_STATUSES = {"confirmee", "livree", "au_magasin", "en_cours"}
     if order.status in LOCKED_STATUSES:
         return False
     if order.bordereau_barcode:
