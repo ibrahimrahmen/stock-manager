@@ -296,7 +296,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
           <td>{{ o.sales_page.name|default:"—" }}</td>
           <td>
             <div>{{ o.customer.name|default:o.customer.phone }}</div>
-            <div class="muted" style="font-size:11px;">{{ o.customer.phone }}{% if o.phone_order_count > 1 %} <span title="Ce numéro a {{ o.phone_order_count }} commandes" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;">{{ o.phone_order_count }} cmd</span>{% endif %}</div>
+            <div class="muted" style="font-size:11px;">{{ o.customer.phone }}{% if o.phone_order_count > 1 %} <span onclick="searchPhone('{{ o.customer.phone }}', event)" title="Voir les {{ o.phone_order_count }} commandes de ce numéro" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;cursor:pointer;">{{ o.phone_order_count }} cmd</span>{% endif %}</div>
           </td>
           <td>
             <div>{{ o.region.name|default:"" }}{% if o.ville %} · {{ o.ville }}{% endif %}</div>
@@ -944,7 +944,7 @@ function buildOrderRowHtml(o) {
     <td>${pageName}</td>
     <td>
       <div>${name}</div>
-      <div class="muted" style="font-size:11px;">${phone}${(o.phone_order_count && o.phone_order_count > 1) ? ` <span title="Ce numéro a ${o.phone_order_count} commandes" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;">${o.phone_order_count} cmd</span>` : ''}</div>
+      <div class="muted" style="font-size:11px;">${phone}${(o.phone_order_count && o.phone_order_count > 1) ? ` <span onclick="searchPhone('${phone}', event)" title="Voir les ${o.phone_order_count} commandes de ce numéro" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;cursor:pointer;">${o.phone_order_count} cmd</span>` : ''}</div>
       ${phone2Block}
     </td>
     <td>
@@ -1987,6 +1987,19 @@ function initSearchBar() {
     // Debounce: wait 200ms after user stops typing before searching
     _searchTimer = setTimeout(() => runSearch(q), 200);
   });
+}
+
+function searchPhone(phone, ev) {
+  if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+  const input = document.getElementById('search-input');
+  if (!input) return;
+  const q = String(phone || '').replace(/\D/g, '');
+  if (!q) return;
+  input.value = q;
+  if (_searchTimer) clearTimeout(_searchTimer);
+  input.focus();
+  try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, 0); }
+  runSearch(q);
 }
 
 async function runSearch(q) {
