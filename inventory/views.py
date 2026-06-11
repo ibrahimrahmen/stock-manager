@@ -1554,6 +1554,13 @@ def api_confirm_payment_from_navex(request, pk):
                 StockMovement.objects.create(
                     unit=item.unit, movement_type=StockMovement.PAID,
                     reference=order.bordereau_barcode, user=_user_for_request(request))
+        # Mirror the collected amount onto the linked v2 Order (if any) so the
+        # v2 list reflects what was actually collected. Only the collected
+        # amount is synced — the computed `total` is left untouched.
+        v2 = getattr(order, "order", None)
+        if v2 is not None:
+            v2.amount_collected = amount
+            v2.save(update_fields=["amount_collected", "updated_at"])
 
     log_action(
         request.user, AuditLog.PAYMENT,
@@ -3672,6 +3679,7 @@ def api_orders_search(request):
             "ville": o.ville,
             "address": o.address or "",
             "total": str(o.total),
+            "amount_collected": str(o.amount_collected) if o.amount_collected is not None else None,
             "bordereau": o.bordereau_barcode,
             "navex_last_status": o.navex_last_status or "",
             "navex_last_synced_at": o.navex_last_synced_at.strftime("%d/%m %H:%M") if o.navex_last_synced_at else "",

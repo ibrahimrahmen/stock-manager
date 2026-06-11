@@ -628,6 +628,13 @@ class Order(models.Model):
         help_text="Commande livrée d'origine, si celle-ci est un échange.",
     )
 
+    # Money actually collected, mirrored from the linked v1 ShippingOrder when
+    # payment is confirmed via "Payer matched" / "Payer tout" (Navex prix).
+    # Distinct from `total` (the computed order value) — this reflects what was
+    # really collected. NULL until a payment is confirmed.
+    amount_collected     = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True,
+        help_text="Montant réellement encaissé (synchronisé depuis v1 lors du paiement Navex).")
+
     # When Navex processes an exchange, it generates a SECOND barcode for the
     # return colis (the one that will pick up the old products). We store it here.
     navex_return_barcode = models.CharField(max_length=80, blank=True, default="",

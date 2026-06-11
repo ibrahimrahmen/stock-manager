@@ -309,7 +309,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
             {% if o.address %}<div class="muted" style="font-size:11px;">{{ o.address|truncatechars:50 }}</div>{% endif %}
           </td>
           <td class="muted">{{ o.article_summary }}</td>
-          <td style="text-align:right;font-weight:500;">{{ o.total|floatformat:0 }} DT</td>
+          <td style="text-align:right;font-weight:500;">{% if o.amount_collected is not None %}<span title="Montant encaissé (Navex)">{{ o.amount_collected|floatformat:0 }} DT</span>{% if o.amount_collected != o.total %}<div class="muted" style="font-size:10px;font-weight:400;" title="Total commande">({{ o.total|floatformat:0 }})</div>{% endif %}{% else %}{{ o.total|floatformat:0 }} DT{% endif %}</td>
           <td>
             {% if o.status == 'annulee' %}
               <span class="status status-annulee">{{ o.get_status_display }}</span>
@@ -916,6 +916,12 @@ function buildOrderRowHtml(o) {
   const articleSummary = (o.article_summary || '—').replace(/</g,'&lt;');
   const pageName = (o.sales_page_name || '—').replace(/</g,'&lt;');
   const total = parseFloat(o.total || '0').toFixed(0);
+  const hasCollected = (o.amount_collected !== null && o.amount_collected !== undefined && o.amount_collected !== '');
+  const collected = hasCollected ? parseFloat(o.amount_collected).toFixed(0) : null;
+  const totalCellHtml = hasCollected
+    ? `<span title="Montant encaissé (Navex)">${collected} DT</span>` +
+      (collected !== total ? `<div class="muted" style="font-size:10px;font-weight:400;" title="Total commande">(${total})</div>` : '')
+    : `${total} DT`;
   const statusDisplay = (o.status_display || '').replace(/</g,'&lt;');
   const created = o.created_at || '';
 
@@ -958,7 +964,7 @@ function buildOrderRowHtml(o) {
       ${addressBlock}
     </td>
     <td class="muted">${articleSummary}</td>
-    <td style="text-align:right;font-weight:500;">${total} DT</td>
+    <td style="text-align:right;font-weight:500;">${totalCellHtml}</td>
     <td>${o.status === 'annulee'
         ? `<span class="status status-annulee">${statusDisplay}</span>`
         : `<button class="status status-${o.status} status-btn" onclick="openStatusMenu(this, ${o.id}, '${o.status}', false)" title="Changer le statut">${statusDisplay} <span style="opacity:0.6;">▾</span></button>`
