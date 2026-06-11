@@ -131,12 +131,11 @@ a.row-link:hover{text-decoration:underline;}
 .status-menu .danger{color:var(--red);}
 .status-menu .confirm{color:var(--green);}
 .status-menu .sep{height:0.5px;background:var(--border);margin:4px 0;}
-.note-wrap{display:inline-flex;vertical-align:middle;margin-left:4px;}
-.note-icon{position:relative;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:transparent;border:0.5px solid var(--border);border-radius:6px;cursor:pointer;padding:0;color:var(--muted);transition:all .15s;}
-.note-icon svg{width:13px;height:13px;display:block;}
-.note-icon:hover{color:var(--text);border-color:var(--text);background:var(--surface2);}
-.note-icon.has-note{color:#d97706;border-color:#d9770655;background:rgba(217,119,6,0.10);}
-.note-icon.has-note::after{content:"";position:absolute;top:-3px;right:-3px;width:7px;height:7px;border-radius:50%;background:#d97706;border:1.5px solid var(--surface);}
+.note-wrap{display:inline-flex;vertical-align:middle;margin-left:6px;}
+.note-icon{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:transparent;border:none;cursor:pointer;padding:0;color:var(--border);transition:color .15s;}
+.note-icon svg{width:14px;height:14px;display:block;}
+.note-icon:hover{color:var(--muted);}
+.note-icon.has-note{color:#d97706;}
 .note-pop{position:absolute;z-index:60;background:var(--surface);border:0.5px solid var(--border);border-radius:10px;padding:10px;box-shadow:0 10px 28px rgba(0,0,0,0.45);width:250px;}
 .note-pop textarea{width:100%;box-sizing:border-box;background:var(--surface2);color:var(--text);border:0.5px solid var(--border);border-radius:8px;padding:8px;font-family:inherit;font-size:12.5px;resize:vertical;min-height:64px;outline:none;}
 .note-pop textarea:focus{border-color:#d97706;}
@@ -343,7 +342,6 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
               <button class="status status-{{ o.status }} status-btn" onclick="openStatusMenu(this, {{ o.id }}, '{{ o.status }}', {{ o.bordereau_barcode|yesno:'true,false' }})" title="Changer le statut">
                 {{ o.get_status_display }} <span style="opacity:0.6;">▾</span>
               </button>
-              {% if o.status_note %}<div class="muted" style="font-size:10px;margin-top:2px;" title="Note">📝 {{ o.status_note }}</div>{% endif %}
             {% endif %}
           </td>
           <td>
