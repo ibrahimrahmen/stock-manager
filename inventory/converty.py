@@ -48,7 +48,13 @@ def _client_secret():
 
 def _redirect_uri(request):
     # Build from the current host so it matches what was registered with Converty.
-    return request.build_absolute_uri("/converty/callback/")
+    # Force https: Railway terminates SSL at its proxy and forwards http to the
+    # app, so build_absolute_uri would otherwise produce an http:// URL that
+    # Converty rejects.
+    uri = request.build_absolute_uri("/converty/callback/")
+    if uri.startswith("http://"):
+        uri = "https://" + uri[len("http://"):]
+    return uri
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +211,8 @@ def converty_callback(request):
 
     # Subscribe webhooks (idempotent — ignore 409 already-subscribed)
     target = request.build_absolute_uri("/webhooks/converty/")
+    if target.startswith("http://"):
+        target = "https://" + target[len("http://"):]
     subscribed = []
     for event in ("order.create", "order.update"):
         sst, sresp = _api_request("POST", "/hooks/subscribe", conn.access_token,

@@ -6,6 +6,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-change-this-in-production')
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 ALLOWED_HOSTS = ['*']
+
+# Railway terminates SSL at its proxy and forwards the original scheme in
+# X-Forwarded-Proto. Trust it so request.is_secure() / build_absolute_uri()
+# correctly produce https URLs (needed for OAuth redirect URIs, webhooks, etc.).
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 CSRF_TRUSTED_ORIGINS = [
     'https://web-production-1391c5.up.railway.app',
 ]
