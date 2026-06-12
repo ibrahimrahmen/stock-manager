@@ -3100,8 +3100,8 @@ def orders_list(request):
     if create_exchange_id:
         try:
             src = Order.objects.select_related("customer", "region", "sales_page").prefetch_related("lines__product", "order_offers").get(pk=int(create_exchange_id))
-            # Only allow exchanges from delivered orders
-            if src.status == Order.LIVREE:
+            # Only allow exchanges from delivered or paid orders
+            if src.status in (Order.LIVREE, Order.PAYEE):
                 exchange_source = src
         except (Order.DoesNotExist, ValueError):
             pass
@@ -3439,7 +3439,7 @@ def api_order_draft_upsert(request):
             if exchange_of_id:
                 try:
                     src = Order.objects.get(pk=int(exchange_of_id))
-                    if src.status == Order.LIVREE:
+                    if src.status in (Order.LIVREE, Order.PAYEE):
                         order.exchange_of_id = src.id
                         order.save(update_fields=["exchange_of"])
                 except (Order.DoesNotExist, ValueError, TypeError):

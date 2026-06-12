@@ -130,9 +130,9 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
         <button class="btn-status danger" onclick="openCancelModal()">❌ Annuler la commande</button>
       </div>
 
-    {% elif order.status == 'livree' %}
+    {% elif order.status == 'livree' or order.status == 'payee' %}
       <div class="muted" style="font-size:13px;color:var(--muted);margin-bottom:10px;">
-        ✓ Cette commande a été livrée par Navex.
+        {% if order.status == 'payee' %}💰 Cette commande a été livrée et payée.{% else %}✓ Cette commande a été livrée par Navex.{% endif %}
       </div>
       <div class="status-actions">
         {% if not order.exchange_of %}
