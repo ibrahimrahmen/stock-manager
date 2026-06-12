@@ -28,7 +28,7 @@ AUTHORIZE_URL = f"{BASE}/oauth2/authorize"
 TOKEN_URL = f"{BASE}/oauth2/token"
 API = f"{BASE}/api/v1"
 
-SCOPES = "read-orders create-orders update-orders read-products read-stores read-hooks create-hooks delete-hooks"
+SCOPES = "read-orders update-orders read-stores read-hooks create-hooks"
 
 # Our status -> Converty status (only these three are pushed back)
 STATUS_MAP = {
