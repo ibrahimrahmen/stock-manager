@@ -416,12 +416,27 @@ def api_converty_webhook(request):
         log_action(
             None, AuditLog.OTHER,
             description=f"Webhook Converty REÇU : _id={converty_id or '?'}, "
-                        f"ref={order_obj.get('reference', '?')}, status={order_obj.get('status', '?')}",
+                        f"ref={order_obj.get('reference', '?')}, status={order_obj.get('status', '?')}, "
+                        f"top_keys={list(payload.keys())[:10]}, event={payload.get('event', payload.get('type', '?'))}",
         )
     except Exception:
         pass
     if not converty_id:
         return JsonResponse({"success": True, "message": "No order id, ignored."})
+
+    # If we already imported this order, don't create a duplicate. (We could
+    # update it here later, but for now we just acknowledge.)
+    from .models import Order
+    if Order.objects.filter(converty_order_id=converty_id).exists():
+        return JsonResponse({"success": True, "message": "already imported"})
+
+    # Only create genuinely new, active orders. Webhooks also fire on
+    # order.update for OLD orders (e.g. when rejected/edited) — we must not
+    # pull those in as fresh orders. Accept only incoming/active states.
+    co_status = (order_obj.get("status") or "").strip().lower()
+    CREATE_STATES = {"pending", "confirmed", "uploaded", "attempt"}
+    if co_status and co_status not in CREATE_STATES:
+        return JsonResponse({"success": True, "message": f"status '{co_status}' ignored"})
 
     # Only create from confirmed-and-earlier states; ignore terminal Converty
     # states we don't want to import as fresh orders.
