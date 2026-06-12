@@ -175,9 +175,21 @@ def converty_callback(request):
         "code": code,
         "client_id": _client_id(),
         "client_secret": _client_secret(),
+        "redirect_uri": _redirect_uri(request),
     })
     if status != 200 or not data.get("access_token"):
-        return _simple_page(f"Échec de l'échange du code : {data.get('message', 'erreur inconnue')}")
+        try:
+            log_action(
+                request.user, AuditLog.OTHER,
+                description=f"Converty token exchange ÉCHEC : http={status}, resp={str(data)[:300]}",
+                request=request,
+            )
+        except Exception:
+            pass
+        return _simple_page(
+            f"Échec de l'échange du code (HTTP {status}) : "
+            f"{data.get('message', str(data)[:200] or 'erreur inconnue')}"
+        )
 
     conn = ConvertyConnection.objects.filter(is_active=True).first() or ConvertyConnection()
     _store_tokens(conn, data)
