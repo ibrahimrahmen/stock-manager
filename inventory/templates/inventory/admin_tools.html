@@ -62,6 +62,29 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     ⚠️ Ces outils modifient directement la base de données. Utilise toujours <strong>Dry-run</strong> d'abord pour voir ce qui sera changé, puis <strong>Appliquer</strong> seulement si tout va bien.
   </div>
 
+  <div class="section-title">Intégration Converty</div>
+
+  <div class="tool-card">
+    <div class="tool-title">Connexion Converty</div>
+    {% if converty_conn and converty_conn.access_token %}
+    <div class="tool-desc">
+      ✅ Connecté à la boutique <strong>{{ converty_conn.store_name|default:converty_conn.store_id }}</strong>
+      {% if converty_conn.store_currency %}({{ converty_conn.store_currency }}){% endif %}.<br>
+      Les nouvelles commandes Converty arrivent automatiquement. Confirmer / annuler / livrer met à jour Converty.
+    </div>
+    <div class="tool-buttons">
+      <a href="{% url 'converty_connect' %}" class="btn" style="display:inline-block;text-decoration:none;">🔄 Reconnecter</a>
+    </div>
+    {% else %}
+    <div class="tool-desc">
+      Non connecté. Cliquez pour autoriser l'accès à votre boutique Converty (commandes entrantes + synchronisation de statut).
+    </div>
+    <div class="tool-buttons">
+      <a href="{% url 'converty_connect' %}" class="btn" style="display:inline-block;text-decoration:none;background:var(--green);color:#0a0a08;">🔗 Connecter Converty</a>
+    </div>
+    {% endif %}
+  </div>
+
   <div class="section-title">Synchronisation Navex</div>
 
   <div class="tool-card">

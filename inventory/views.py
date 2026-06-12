@@ -5655,7 +5655,9 @@ def admin_tools(request):
     Only accessible to superusers."""
     if not request.user.is_superuser:
         return redirect("home")
-    return render(request, "inventory/admin_tools.html", {})
+    from .models import ConvertyConnection
+    converty_conn = ConvertyConnection.objects.filter(is_active=True).order_by("-updated_at").first()
+    return render(request, "inventory/admin_tools.html", {"converty_conn": converty_conn})
 
 
 @csrf_exempt
@@ -6118,6 +6120,14 @@ def api_order_change_status(request, pk):
                     extra=str(sh_resp)[:5000],
                 )
 
+        # If the order came from Converty, push the cancellation (rejected).
+        if getattr(order, "converty_order_id", ""):
+            try:
+                from .converty import push_status_to_converty
+                push_status_to_converty(order, Order.ANNULEE)
+            except Exception:
+                pass
+
         log_action(
             request.user, AuditLog.STATUS_CHANGE,
             description=(
@@ -6326,6 +6336,14 @@ def _push_order_to_navex_internal(request, order):
         order.navex_label_url = label_url[:500]
     order.status = Order.CONFIRMEE
     order.save(update_fields=["bordereau_barcode", "navex_label_url", "pushed_to_navex_at", "status", "updated_at"])
+
+    # If the order came from Converty, push the confirmation.
+    if getattr(order, "converty_order_id", ""):
+        try:
+            from .converty import push_status_to_converty
+            push_status_to_converty(order, Order.CONFIRMEE)
+        except Exception:
+            pass
 
     is_exchange_msg = f" [ÉCHANGE de #{order.exchange_of_id}, {order.return_items.count()} article(s) retour]" if order.exchange_of_id else ""
     log_action(
@@ -6736,6 +6754,13 @@ def _sync_navex_for_v2_orders(only_pending=True):
                 description=f"Auto: commande #{o.id} {old_label} → 'Livrée' (Navex etat='{new_navex_status}', bordereau {o.bordereau_barcode})",
                 target_model="Order", target_id=o.id,
             )
+            # If the order came from Converty, push 'delivered'.
+            if getattr(o, "converty_order_id", ""):
+                try:
+                    from .converty import push_status_to_converty
+                    push_status_to_converty(o, Order.LIVREE)
+                except Exception:
+                    pass
 
         # Detect "Au magasin" / "En cours" → set the in-transit status. Allowed
         # from Confirmée or between the two in-transit states themselves
