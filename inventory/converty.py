@@ -23,10 +23,10 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.contrib.auth.decorators import login_required
 
-BASE = "https://partner.converty.shop"
+BASE = "https://partner.converty.shop"          # OAuth (authorize + token) lives here
 AUTHORIZE_URL = f"{BASE}/oauth2/authorize"
 TOKEN_URL = f"{BASE}/oauth2/token"
-API = f"{BASE}/api/v1"
+API = "https://api.converty.shop/api/v1"          # API endpoints live on api.* host
 
 SCOPES = "read-orders update-orders read-stores read-hooks create-hooks"
 
@@ -144,7 +144,7 @@ def _subscribe_webhooks(token, target):
         # Try candidate paths in order; accept the first that works.
         ok = False
         last = None
-        for path in ("/hooks", "/hooks/subscribe", "/webhooks", "/webhooks/subscribe"):
+        for path in ("/hooks/subscribe", "/hooks", "/webhooks/subscribe", "/webhooks"):
             sst, sresp = _api_request("POST", path, token, body)
             last = (path, sst, sresp)
             if sst in (200, 201, 409):
