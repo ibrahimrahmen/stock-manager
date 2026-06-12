@@ -135,11 +135,9 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
         {% if order.status == 'payee' %}💰 Cette commande a été livrée et payée.{% else %}✓ Cette commande a été livrée par Navex.{% endif %}
       </div>
       <div class="status-actions">
-        {% if not order.exchange_of %}
         <a href="{% url 'orders_list' %}?create_exchange={{ order.id }}" class="btn-status" style="background:var(--blue,#60a5fa);color:#0a0a08;border-color:var(--blue,#60a5fa);text-decoration:none;display:inline-block;">
           🔄 Créer un échange
         </a>
-        {% endif %}
       </div>
 
       {% if order.exchanges.exists %}
