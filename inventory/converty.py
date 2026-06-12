@@ -411,6 +411,15 @@ def api_converty_webhook(request):
     # The webhook may wrap the order under "data" or send it directly.
     order_obj = payload.get("data") if isinstance(payload.get("data"), dict) else payload
     converty_id = str(order_obj.get("_id") or "")
+    # Log every arrival so we can confirm Converty is calling us.
+    try:
+        log_action(
+            None, AuditLog.OTHER,
+            description=f"Webhook Converty REÇU : _id={converty_id or '?'}, "
+                        f"ref={order_obj.get('reference', '?')}, status={order_obj.get('status', '?')}",
+        )
+    except Exception:
+        pass
     if not converty_id:
         return JsonResponse({"success": True, "message": "No order id, ignored."})
 
