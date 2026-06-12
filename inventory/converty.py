@@ -133,6 +133,51 @@ def get_valid_converty_token():
 # ---------------------------------------------------------------------------
 # OAuth flow
 # ---------------------------------------------------------------------------
+def _subscribe_webhooks(token, target):
+    """Subscribe order.create / order.update. Returns (subscribed, errors_str)."""
+    subscribed = []
+    errors = []
+    for event in ("order.create", "order.update"):
+        sst, sresp = _api_request("POST", "/hooks/subscribe", token,
+                                  {"targetUrl": target, "event": event})
+        if sst in (200, 409):
+            subscribed.append(event)
+        else:
+            errors.append(f"{event}: http={sst} {str(sresp.get('message', sresp))[:150]}")
+    return subscribed, "; ".join(errors)
+
+
+@login_required(login_url="/login/")
+def converty_resubscribe(request):
+    """Manually (re)subscribe the Converty webhooks and show the result.
+    Useful when the initial subscribe failed during OAuth."""
+    from .models import ConvertyConnection, log_action, AuditLog
+    token = get_valid_converty_token()
+    if not token:
+        return _simple_page("Pas de connexion Converty active. Connectez d'abord la boutique.")
+    target = request.build_absolute_uri("/webhooks/converty/")
+    if target.startswith("http://"):
+        target = "https://" + target[len("http://"):]
+    # First, list existing hooks for visibility
+    lst_status, lst = _api_request("GET", "/hooks", token)
+    existing = lst.get("data", []) if isinstance(lst, dict) else []
+    subscribed, errors = _subscribe_webhooks(token, target)
+    log_action(
+        request.user, AuditLog.OTHER,
+        description=f"Converty webhooks (manuel) : abonnés={subscribed}, erreurs={errors or 'aucune'}, "
+                    f"existants={len(existing)}, target={target}",
+        request=request,
+    )
+    return _simple_page(
+        f"Webhooks Converty<br>"
+        f"Target : <code>{target}</code><br>"
+        f"Abonnés : {', '.join(subscribed) or 'aucun'}<br>"
+        f"Erreurs : {errors or 'aucune'}<br>"
+        f"Hooks existants côté Converty : {len(existing)}<br>"
+        f"<a href='/admin-tools/'>Retour</a>"
+    )
+
+
 @login_required(login_url="/login/")
 def converty_connect(request):
     """Redirect the seller to Converty's consent page."""
@@ -213,12 +258,16 @@ def converty_callback(request):
     target = request.build_absolute_uri("/webhooks/converty/")
     if target.startswith("http://"):
         target = "https://" + target[len("http://"):]
-    subscribed = []
-    for event in ("order.create", "order.update"):
-        sst, sresp = _api_request("POST", "/hooks/subscribe", conn.access_token,
-                                  {"targetUrl": target, "event": event})
-        if sst in (200, 409):
-            subscribed.append(event)
+    subscribed, sub_errors = _subscribe_webhooks(conn.access_token, target)
+    if sub_errors:
+        try:
+            log_action(
+                request.user, AuditLog.OTHER,
+                description=f"Converty webhooks ÉCHEC : {sub_errors}",
+                request=request,
+            )
+        except Exception:
+            pass
 
     log_action(
         request.user, AuditLog.OTHER,
