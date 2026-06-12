@@ -134,16 +134,25 @@ def get_valid_converty_token():
 # OAuth flow
 # ---------------------------------------------------------------------------
 def _subscribe_webhooks(token, target):
-    """Subscribe order.create / order.update. Returns (subscribed, errors_str)."""
+    """Subscribe order.create / order.update. Returns (subscribed, errors_str).
+    Converty's docs say POST /hooks/subscribe, but that 404s; the real endpoint
+    is the REST collection POST /hooks. We try both for resilience."""
     subscribed = []
     errors = []
     for event in ("order.create", "order.update"):
-        sst, sresp = _api_request("POST", "/hooks/subscribe", token,
-                                  {"targetUrl": target, "event": event})
-        if sst in (200, 409):
-            subscribed.append(event)
-        else:
-            errors.append(f"{event}: http={sst} {str(sresp.get('message', sresp))[:150]}")
+        body = {"targetUrl": target, "event": event}
+        # Try candidate paths in order; accept the first that works.
+        ok = False
+        last = None
+        for path in ("/hooks", "/hooks/subscribe", "/webhooks", "/webhooks/subscribe"):
+            sst, sresp = _api_request("POST", path, token, body)
+            last = (path, sst, sresp)
+            if sst in (200, 201, 409):
+                subscribed.append(event)
+                ok = True
+                break
+        if not ok and last:
+            errors.append(f"{event}: {last[0]} http={last[1]} {str(last[2].get('message', last[2]))[:120]}")
     return subscribed, "; ".join(errors)
 
 
