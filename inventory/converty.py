@@ -242,22 +242,102 @@ def push_status_to_converty(order, our_status):
 
 
 # ---------------------------------------------------------------------------
-# Inbound webhook (Stage 2 will add full product matching)
+# Inbound webhook — translate Converty payload to Shopify-shape, reuse engine
 # ---------------------------------------------------------------------------
+def _converty_to_shopify_shape(co):
+    """Map a Converty order object to the Shopify-shaped payload the shared
+    order-creation engine expects."""
+    cust = co.get("customer") or {}
+    # Address: Converty has address + town/city; combine for our address field.
+    addr_parts = [p for p in (cust.get("address"), cust.get("town")) if p]
+    address1 = ", ".join(addr_parts) if addr_parts else (cust.get("address") or "")
+    shipping = {
+        "first_name": cust.get("name") or "",
+        "last_name": "",
+        "phone": cust.get("phone") or "",
+        "address1": address1,
+        "address2": "",
+        "city": cust.get("city") or "",
+        "province": cust.get("city") or "",
+    }
+
+    line_items = []
+    for item in (co.get("cart") or []):
+        prod = item.get("product") or {}
+        name = prod.get("name") or ""
+        # Build a Shopify-style variant_title from selectedVariants values
+        # (e.g. [{"name":"Size","value":"M"}] -> "M"; size+color -> "M / Bleu").
+        sv_values = []
+        for sv in (item.get("selectedVariants") or []):
+            val = (sv.get("value") or "").strip()
+            if val:
+                sv_values.append(val)
+        variant_title = " / ".join(sv_values)
+        # Also expose each selectedVariant as a Shopify "property" so the
+        # size/color extractors (which read name=size/couleur) can use them.
+        properties = []
+        for sv in (item.get("selectedVariants") or []):
+            properties.append({"name": sv.get("name") or "", "value": sv.get("value") or ""})
+        line_items.append({
+            "title": name,
+            "name": name,
+            "variant_title": variant_title,
+            "properties": properties,
+            "quantity": int(item.get("quantity") or 1),
+            "price": str(item.get("pricePerUnit") or prod.get("price") or "0"),
+            "sku": prod.get("sku") or "",
+        })
+
+    total = co.get("total") or {}
+    delivery = total.get("deliveryPrice")
+    shipping_lines = []
+    if delivery:
+        shipping_lines = [{"price": str(delivery)}]
+
+    return {
+        "id": co.get("_id") or "",
+        "order_number": co.get("reference") or "",
+        "name": str(co.get("reference") or ""),
+        "shipping_address": shipping,
+        "billing_address": shipping,
+        "customer": {"phone": cust.get("phone") or "", "first_name": cust.get("name") or ""},
+        "phone": cust.get("phone") or "",
+        "note": cust.get("note") or co.get("note") or "",
+        "line_items": line_items,
+        "shipping_lines": shipping_lines,
+    }
+
+
 @csrf_exempt
 @require_POST
 def api_converty_webhook(request):
-    """Receive Converty order.create / order.update webhooks.
-    Stage 1: acknowledge and log. Stage 2 adds full order creation/matching.
-    """
+    """Receive Converty order.create / order.update webhooks and create a v2
+    Order using the shared matching engine. Dedups on converty_order_id."""
     from .models import log_action, AuditLog
+    from . import views as _views
     try:
         payload = json.loads(request.body.decode("utf-8"))
     except Exception:
         return JsonResponse({"success": False, "message": "Invalid JSON"}, status=400)
-    log_action(
-        None, AuditLog.OTHER,
-        description=f"Webhook Converty reçu (stage 1, non traité) : "
-                    f"order _id={payload.get('_id', '?')}, ref={payload.get('reference', '?')}",
-    )
-    return JsonResponse({"success": True})
+
+    # The webhook may wrap the order under "data" or send it directly.
+    order_obj = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    converty_id = str(order_obj.get("_id") or "")
+    if not converty_id:
+        return JsonResponse({"success": True, "message": "No order id, ignored."})
+
+    # Only create from confirmed-and-earlier states; ignore terminal Converty
+    # states we don't want to import as fresh orders.
+    shaped = _converty_to_shopify_shape(order_obj)
+    try:
+        resp = _views._create_order_from_shopify_shaped_payload(
+            shaped, source="converty", external_id=converty_id, request=request,
+        )
+        return JsonResponse({"success": True})
+    except Exception as e:
+        log_action(
+            None, AuditLog.OTHER,
+            description=f"Webhook Converty ERREUR pour _id={converty_id} : {str(e)[:300]}",
+        )
+        # Acknowledge so Converty doesn't hammer retries; we logged it.
+        return JsonResponse({"success": True, "message": "logged error"})

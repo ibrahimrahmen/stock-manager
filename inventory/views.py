@@ -4303,6 +4303,27 @@ def api_shopify_webhook_order_created(request):
         return JsonResponse({"status": "error", "message": "Payload JSON invalide."}, status=400)
 
     shopify_order_id = str(payload.get("id") or "")
+    return _create_order_from_shopify_shaped_payload(
+        payload,
+        source="shopify",
+        external_id=shopify_order_id,
+        request=request,
+    )
+
+
+def _create_order_from_shopify_shaped_payload(payload, source="shopify", external_id="", request=None):
+    """Shared order-creation engine. Takes a Shopify-shaped payload (the Converty
+    webhook builds one too) and runs the full matching/AI/region pipeline,
+    creating a v2 Order. `source` is 'shopify' or 'converty'; `external_id` is
+    the originating order id used for dedup and (for Converty) status push-back.
+    """
+    from .models import (
+        Customer, Order, OrderLine, Product, ProductVariant,
+        SalesPage, Region, AuditLog, log_action,
+    )
+    import hmac, hashlib, base64
+
+    shopify_order_id = str(external_id or "")
     shopify_order_number = str(payload.get("order_number") or payload.get("name") or "")
 
     # 3. Extract customer info
@@ -4933,10 +4954,13 @@ def api_shopify_webhook_order_created(request):
         # delegation from the dropdown if needed.
         city = region.name
 
-    # 5. Get the Shopify SalesPage (or create it if missing)
-    sales_page = SalesPage.objects.filter(name__iexact="Barats.tn").first()
-    if not sales_page:
-        sales_page = SalesPage.objects.filter(is_active=True).order_by("id").first()
+    # 5. Get the SalesPage (or create it if missing)
+    if source == "converty":
+        sales_page, _ = SalesPage.objects.get_or_create(name="Converty", defaults={"is_active": True})
+    else:
+        sales_page = SalesPage.objects.filter(name__iexact="Barats.tn").first()
+        if not sales_page:
+            sales_page = SalesPage.objects.filter(is_active=True).order_by("id").first()
     if not sales_page:
         log_action(
             None, AuditLog.OTHER,
@@ -4944,11 +4968,14 @@ def api_shopify_webhook_order_created(request):
         )
         return JsonResponse({"status": "error", "message": "Aucune SalesPage configurée."}, status=500)
 
-    # 6. Check for duplicate (Shopify retries webhooks if no 200 is returned)
-    if shopify_order_id:
-        existing = Order.objects.filter(
-            notes__contains=f"shopify_order_id={shopify_order_id}"
-        ).first()
+    # 6. Check for duplicate (webhooks get retried if no 200 is returned)
+    if external_id:
+        if source == "converty":
+            existing = Order.objects.filter(converty_order_id=external_id).first()
+        else:
+            existing = Order.objects.filter(
+                notes__contains=f"shopify_order_id={external_id}"
+            ).first()
         if existing:
             return JsonResponse({"status": "ok", "message": "Already processed", "order_id": existing.id})
 
@@ -4993,6 +5020,8 @@ def api_shopify_webhook_order_created(request):
             notes=" | ".join(notes_parts),
             status=Order.NON_CONFIRMEE,
             created_by=None,  # No user — webhook is unauthenticated
+            source=(Order.SOURCE_CONVERTY if source == "converty" else Order.SOURCE_SHOPIFY),
+            converty_order_id=(external_id if source == "converty" else ""),
         )
 
     # Helper: extract size from a Shopify line item by looking at variant_title
