@@ -132,8 +132,10 @@ def converty_connect(request):
     """Redirect the seller to Converty's consent page."""
     if not _client_id():
         return HttpResponseBadRequest("CONVERTY_CLIENT_ID non configuré.")
-    state = secrets.token_urlsafe(24)
-    request.session["converty_oauth_state"] = state
+    # Stateless CSRF state: a signed token (no session dependency, which can be
+    # lost across the external redirect). Verified by signature on callback.
+    from django.core import signing
+    state = signing.dumps({"u": request.user.id}, salt="converty-oauth")
     params = {
         "response_type": "code",
         "client_id": _client_id(),
@@ -156,8 +158,16 @@ def converty_callback(request):
 
     code = request.GET.get("code", "")
     state = request.GET.get("state", "")
-    saved_state = request.session.pop("converty_oauth_state", None)
-    if not code or not state or state != saved_state:
+    # Verify the signed state (valid for 1 hour). No session dependency.
+    from django.core import signing
+    state_ok = False
+    if state:
+        try:
+            signing.loads(state, salt="converty-oauth", max_age=3600)
+            state_ok = True
+        except signing.BadSignature:
+            state_ok = False
+    if not code or not state_ok:
         return _simple_page("État invalide (CSRF) ou code manquant. Réessayez la connexion.")
 
     status, data = _post_form(TOKEN_URL, {
