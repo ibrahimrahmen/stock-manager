@@ -558,10 +558,12 @@ class Order(models.Model):
 
     SOURCE_WEBFORM = "web_form"
     SOURCE_SHOPIFY = "shopify"
+    SOURCE_CONVERTY = "converty"
 
     SOURCE_CHOICES = [
         (SOURCE_WEBFORM, "Saisie manuelle"),
         (SOURCE_SHOPIFY, "Shopify"),
+        (SOURCE_CONVERTY, "Converty"),
     ]
 
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="orders")
@@ -603,6 +605,9 @@ class Order(models.Model):
     navex_livreur_tel = models.CharField(max_length=30, blank=True, default="")
 
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_WEBFORM)
+    # Converty order _id (MongoDB ObjectId), used to push status changes back
+    # to Converty (confirmed / rejected / delivered) and to dedupe webhooks.
+    converty_order_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
     # ---- DM conversation (Messenger) -------------------------------------
     # Snapshot of the customer's chat, used by the team to verify a DM order
     # without leaving the app. Bulky text is PURGED after 10 days by a cron
@@ -1044,3 +1049,20 @@ def log_action(user, action, description="", request=None, **kwargs):
         pass
 
 
+class ConvertyConnection(models.Model):
+    """Stores the OAuth tokens for the seller's Converty store. There is a
+    single active connection (one store). client_id / client_secret come from
+    environment variables — only the per-store tokens live here.
+    """
+    store_id        = models.CharField(max_length=64, blank=True, default="")
+    store_name      = models.CharField(max_length=200, blank=True, default="")
+    store_currency  = models.CharField(max_length=10, blank=True, default="")
+    access_token    = models.TextField(blank=True, default="")
+    refresh_token   = models.TextField(blank=True, default="")
+    access_token_expires_at = models.DateTimeField(null=True, blank=True)
+    is_active       = models.BooleanField(default=True)
+    created_at      = models.DateTimeField(auto_now_add=True)
+    updated_at      = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Converty: {self.store_name or self.store_id or 'non connecté'}"

@@ -1,7 +1,11 @@
 from django.urls import path
 from . import views
+from . import converty
 
 urlpatterns = [
+    path("converty/connect/", converty.converty_connect, name="converty_connect"),
+    path("converty/callback/", converty.converty_callback, name="converty_callback"),
+    path("webhooks/converty/", converty.api_converty_webhook, name="api_converty_webhook"),
     path("", views.home_dispatcher, name="home"),
     path("dashboard/", views.dashboard, name="dashboard"),
     path("login/", views.login_view, name="login"),
