@@ -4956,7 +4956,19 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
 
     # 5. Get the SalesPage (or create it if missing)
     if source == "converty":
-        sales_page, _ = SalesPage.objects.get_or_create(name="Converty", defaults={"is_active": True})
+        sales_page, created_page = SalesPage.objects.get_or_create(name="Converty", defaults={"is_active": True})
+        # Ensure the Converty page exposes the same offers as the main page,
+        # otherwise the order form shows "aucune offre attachée". Mirror the
+        # main page's offers onto the Converty page (idempotent).
+        try:
+            from .models import Offer
+            main_page = (SalesPage.objects.filter(name__iexact="Barats.tn").first()
+                         or SalesPage.objects.exclude(name="Converty").filter(is_active=True).order_by("id").first())
+            if main_page:
+                for off in Offer.objects.filter(sales_pages=main_page):
+                    off.sales_pages.add(sales_page)
+        except Exception:
+            pass
     else:
         sales_page = SalesPage.objects.filter(name__iexact="Barats.tn").first()
         if not sales_page:
@@ -5316,9 +5328,11 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
             for p in all_products:
                 if p.name:
                     options_lines.append(f"PRODUIT: {p.name}")
-            if options_lines and (offer or product):
-                # Only ask Gemini when we have at least one classic candidate AND
-                # the match isn't a clean exact match on the title.
+            if options_lines:
+                # Run the AI matcher whenever there isn't a clean exact match —
+                # including when the classic substring search found NOTHING
+                # (e.g. catalog "Ensemble ICY MAZE" vs Converty "Ensemble ice
+                # maze"; substring fails but the AI can bridge icy/ice).
                 exact_offer_match = bool(Offer.objects.filter(name__iexact=title, is_active=True).first())
                 exact_product_match = bool(Product.objects.filter(name__iexact=title).first())
                 if not (exact_offer_match or exact_product_match):
