@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Statistiques — Commandes</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root, [data-theme="dark"] {
+  --bg:#0f0f0d; --surface:#1a1a17; --surface2:#222220;
+  --border:rgba(255,255,255,0.08); --text:#f0ede6; --muted:#8a887f;
+  --green:#4ade9a; --green-dim:rgba(74,222,154,0.15);
+  --amber:#f5a623; --amber-dim:rgba(245,166,35,0.15);
+  --red:#f87171; --red-dim:rgba(248,113,113,0.15);
+  --blue:#60a5fa; --blue-dim:rgba(96,165,250,0.15);
+  --purple:#a78bfa; --purple-dim:rgba(167,139,250,0.15);
+  --input-bg:rgba(255,255,255,0.05);
+}
+[data-theme="light"] {
+  --bg:#faf9f6; --surface:#ffffff; --surface2:#f0eee8;
+  --border:rgba(0,0,0,0.10); --text:#1a1a17; --muted:#6b6a63;
+  --green:#1a9e6e; --amber:#b87513; --red:#c43b3a; --blue:#2363c9; --purple:#7956d6;
+  --input-bg:rgba(0,0,0,0.03);
+}
+body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
+.brand{font-family:'DM Serif Display',serif;font-size:22px;}
+.userbar a{color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;font-size:13px;}
+.wrap{max-width:1100px;margin:0 auto;padding:28px 24px;}
+.page-title{font-family:'DM Serif Display',serif;font-size:28px;margin-bottom:4px;}
+.muted{color:var(--muted);}
+.tabs{display:flex;gap:6px;margin:22px 0 18px;flex-wrap:wrap;border-bottom:0.5px solid var(--border);}
+.tab{padding:9px 16px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:500;border-bottom:2px solid transparent;}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue);}
+.controls{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:20px;background:var(--surface);border:0.5px solid var(--border);border-radius:12px;padding:16px;}
+.controls label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.04em;}
+.controls input[type=date]{background:var(--input-bg);border:0.5px solid var(--border);color:var(--text);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:13px;}
+.controls button{background:var(--blue);color:#06121f;border:none;border-radius:8px;padding:9px 18px;font-family:inherit;font-weight:600;font-size:13px;cursor:pointer;}
+.quick{display:flex;gap:6px;}
+.quick a{font-size:12px;padding:6px 11px;border-radius:7px;border:0.5px solid var(--border);color:var(--muted);text-decoration:none;}
+.quick a:hover{background:var(--surface2);color:var(--text);}
+.view-toggle{display:flex;gap:4px;margin-bottom:14px;}
+.view-toggle button{background:transparent;border:0.5px solid var(--border);color:var(--muted);padding:7px 16px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;}
+.view-toggle button.active{background:var(--surface2);color:var(--text);border-color:var(--text);}
+.card{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;padding:6px 20px 14px;}
+table{width:100%;border-collapse:collapse;}
+th,td{text-align:center;padding:14px 10px;font-size:14px;}
+th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;border-bottom:0.5px solid var(--border);}
+td{border-bottom:0.5px solid var(--border);}
+tr:last-child td{border-bottom:none;}
+td.statut{text-align:left;font-weight:500;}
+tr.tous{font-weight:700;}
+tr.tous td{color:var(--text);}
+.pct-bad{color:var(--red);}
+.pct-good{color:var(--green);}
+.n-days{font-size:12px;color:var(--muted);margin-bottom:10px;}
+#chartWrap{display:none;}
+canvas{max-height:420px;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">Statistiques</div>
+  <div class="userbar"><a href="{% url 'dashboard' %}">← Dashboard</a></div>
+</div>
+
+<div class="wrap">
+  <div class="page-title">Statistiques</div>
+  <div class="muted">Commandes par jour ouvré (17h → 17h) sur la période choisie.</div>
+
+  <div class="tabs">
+    <a href="{% url 'stats_commandes' %}?from={{ from_date }}&to={{ to_date }}" class="tab active">Commandes</a>
+    <span class="tab" style="opacity:0.4;cursor:default;">Modèles</span>
+    <span class="tab" style="opacity:0.4;cursor:default;">Offres</span>
+    <span class="tab" style="opacity:0.4;cursor:default;">Pages</span>
+    <span class="tab" style="opacity:0.4;cursor:default;">Couleurs</span>
+    <span class="tab" style="opacity:0.4;cursor:default;">Gouvernorat</span>
+    <span class="tab" style="opacity:0.4;cursor:default;">Stock</span>
+  </div>
+
+  <form method="get" class="controls">
+    <div>
+      <label>Du</label>
+      <input type="date" name="from" value="{{ from_date }}">
+    </div>
+    <div>
+      <label>Au</label>
+      <input type="date" name="to" value="{{ to_date }}">
+    </div>
+    <button type="submit">Appliquer</button>
+    <div class="quick">
+      <a href="?from={{ to_date }}&to={{ to_date }}">Aujourd'hui</a>
+      <a href="?range=7">7 jours</a>
+      <a href="?range=30">30 jours</a>
+    </div>
+  </form>
+
+  <div class="view-toggle">
+    <button id="btnTable" class="active" onclick="showView('table')">Tableau</button>
+    <button id="btnChart" onclick="showView('chart')">Graphique</button>
+  </div>
+
+  <div class="n-days">{{ n_days }} jour(s) dans la période.</div>
+
+  <div id="tableWrap" class="card">
+    <table>
+      <thead>
+        <tr><th class="statut" style="text-align:left;">Statut</th><th>Min-Max</th><th>Avg</th><th>Somme</th><th>Payée/Retour</th></tr>
+      </thead>
+      <tbody>
+        {% for row in table %}
+        <tr class="{% if row.key == 'tous' %}tous{% endif %}">
+          <td class="statut">{{ row.label }}</td>
+          <td>{{ row.min }}-{{ row.max }}</td>
+          <td>{{ row.avg }}</td>
+          <td>{{ row.somme }}</td>
+          <td class="{% if row.key == 'retour' %}pct-bad{% elif row.key == 'livree' or row.key == 'payee' %}pct-good{% endif %}">{{ row.pct }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div id="chartWrap" class="card">
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<script>
+const savedTheme = localStorage.getItem('theme');
+if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+
+const chartData = {{ chart_json|safe }};
+let chartInstance = null;
+
+function showView(v){
+  const t=document.getElementById('tableWrap'), c=document.getElementById('chartWrap');
+  document.getElementById('btnTable').classList.toggle('active', v==='table');
+  document.getElementById('btnChart').classList.toggle('active', v==='chart');
+  if(v==='chart'){
+    t.style.display='none'; c.style.display='block';
+    if(!chartInstance) renderChart();
+  } else {
+    t.style.display='block'; c.style.display='none';
+  }
+}
+
+function cssVar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+
+function renderChart(){
+  const colors={'Livrée':cssVar('--green'),'Retour':cssVar('--red'),'En Cours':cssVar('--amber'),
+                'Sortie':cssVar('--blue'),'Payée':cssVar('--purple'),'Echange':cssVar('--muted')};
+  const datasets=Object.keys(chartData.series).map(name=>({
+    label:name, data:chartData.series[name],
+    borderColor:colors[name]||cssVar('--text'),
+    backgroundColor:'transparent', tension:0.3, borderWidth:2, pointRadius:2,
+  }));
+  chartInstance=new Chart(document.getElementById('chart'),{
+    type:'line',
+    data:{labels:chartData.labels, datasets},
+    options:{responsive:true, plugins:{legend:{labels:{color:cssVar('--text')}}},
+      scales:{x:{ticks:{color:cssVar('--muted')},grid:{color:cssVar('--border')}},
+              y:{ticks:{color:cssVar('--muted')},grid:{color:cssVar('--border')},beginAtZero:true}}}
+  });
+}
+
+// Handle quick range links (?range=N) client-side -> set dates and submit.
+(function(){
+  const p=new URLSearchParams(location.search);
+  const rng=p.get('range');
+  if(rng){
+    const to=new Date();
+    const from=new Date(); from.setDate(from.getDate()-(parseInt(rng)-1));
+    const fmt=d=>d.toISOString().slice(0,10);
+    location.replace(`?from=${fmt(from)}&to=${fmt(to)}`);
+  }
+})();
+</script>
+</body>
+</html>

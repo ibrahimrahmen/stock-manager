@@ -3107,10 +3107,15 @@ def orders_list(request):
                     .values("customer_id").annotate(n=_Count("id"))):
             insystem_returned[row["customer_id"]] = row["n"]
 
-    # Historic stats per phone (seeded from Navex exports).
+    # Historic stats per phone (seeded from Navex exports). Defensive: if the
+    # table doesn't exist yet (migration not applied), skip silently.
     from .models import Customer as _Cust, CustomerHistory as _CH
     phones = dict(_Cust.objects.filter(id__in=customer_ids).values_list("id", "phone"))
-    hist = {h.phone: h for h in _CH.objects.filter(phone__in=phones.values())}
+    hist = {}
+    try:
+        hist = {h.phone: h for h in _CH.objects.filter(phone__in=phones.values())}
+    except Exception:
+        hist = {}
 
     for o in orders:
         live_count = order_counts.get(o.customer_id, 1)
@@ -3754,7 +3759,11 @@ def api_orders_search(request):
             retd[row["customer_id"]] = row["n"]
     from .models import Customer as _Cust2, CustomerHistory as _CH2
     phones2 = dict(_Cust2.objects.filter(id__in=cust_ids).values_list("id", "phone"))
-    hist2 = {h.phone: h for h in _CH2.objects.filter(phone__in=phones2.values())}
+    hist2 = {}
+    try:
+        hist2 = {h.phone: h for h in _CH2.objects.filter(phone__in=phones2.values())}
+    except Exception:
+        hist2 = {}
     results = []
     for o in qs:
         ph2 = phones2.get(o.customer_id)
@@ -7389,4 +7398,152 @@ def ads_dashboard(request):
         "end": end_str,
         "has_token": has_token,
         "has_account": has_account,
+    })
+
+
+# ===========================================================================
+# Statistics — Commandes tab
+# ===========================================================================
+def _business_day_bounds(d, tz):
+    """For a calendar date `d`, return the [start, end) datetimes of the
+    business day that ENDS at 17:00 on `d` (runs from 17:00 the previous day
+    to 17:00 on `d`). So an order at 2pm on `d` counts as `d`, but one after
+    17:00 on `d` rolls into the next day."""
+    import datetime as _dt
+    end_naive = _dt.datetime.combine(d, _dt.time(17, 0))
+    end = timezone.make_aware(end_naive, tz)
+    start = end - _dt.timedelta(days=1)
+    return start, end
+
+
+@login_required(login_url="/login/")
+def stats_commandes(request):
+    """Statistics page — Commandes tab. Per business-day (17:00→17:00) counts
+    of orders per status over a date range, with Min/Max/Avg/Somme and a
+    percentage of Sortie (orders scanned into v1 shipping)."""
+    if not request.user.is_superuser:
+        return redirect("home")
+    from .models import Order, ShippingOrder
+    import datetime as _dt
+    try:
+        import zoneinfo
+        tz = zoneinfo.ZoneInfo("Africa/Tunis")
+    except Exception:
+        tz = timezone.get_current_timezone()
+
+    # Parse date range (defaults: last 14 business days ending today).
+    today = timezone.localdate()
+    try:
+        start_date = _dt.date.fromisoformat(request.GET.get("from", ""))
+    except ValueError:
+        start_date = today - _dt.timedelta(days=13)
+    try:
+        end_date = _dt.date.fromisoformat(request.GET.get("to", ""))
+    except ValueError:
+        end_date = today
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    # Build list of business days in range.
+    days = []
+    d = start_date
+    while d <= end_date:
+        days.append(d)
+        d += _dt.timedelta(days=1)
+
+    # Overall window for one big query.
+    win_start, _ = _business_day_bounds(start_date, tz)
+    _, win_end = _business_day_bounds(end_date, tz)
+
+    orders = (Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end)
+              .values("id", "status", "created_at", "exchange_of_id"))
+    # Which orders are "Sortie" = have a linked v1 ShippingOrder.
+    sortie_ids = set(ShippingOrder.objects.filter(
+        order__created_at__gte=win_start, order__created_at__lt=win_end
+    ).values_list("order_id", flat=True))
+
+    # status row -> predicate
+    def _row_for(o):
+        rows = []
+        st = o["status"]
+        if o["exchange_of_id"]:
+            rows.append("echange")
+        if st == "returned":
+            rows.append("retour")
+        elif st in ("en_cours", "au_magasin"):
+            rows.append("encours")
+        elif st == "livree":
+            rows.append("livree")
+        elif st == "payee":
+            rows.append("payee")
+        if o["id"] in sortie_ids:
+            rows.append("sortie")
+        return rows
+
+    ROW_KEYS = ["echange", "retour", "encours", "livree", "payee", "sortie"]
+    ROW_LABELS = {
+        "echange": "Echange", "retour": "Retour", "encours": "En Cours",
+        "livree": "Livrée", "payee": "Payée", "sortie": "Sortie",
+    }
+
+    # daily[row][day] = count
+    daily = {k: {dd: 0 for dd in days} for k in ROW_KEYS}
+    tous_daily = {dd: 0 for dd in days}
+
+    # Precompute day boundaries for fast bucketing.
+    bounds = [( *(_business_day_bounds(dd, tz)), dd) for dd in days]
+
+    for o in orders:
+        ca = o["created_at"]
+        # find the day bucket
+        day = None
+        for s, e, dd in bounds:
+            if s <= ca < e:
+                day = dd
+                break
+        if day is None:
+            continue
+        tous_daily[day] += 1
+        for rk in _row_for(o):
+            daily[rk][day] += 1
+
+    def _agg(series):
+        vals = list(series.values())
+        s = sum(vals)
+        mn = min(vals) if vals else 0
+        mx = max(vals) if vals else 0
+        avg = round(s / len(vals)) if vals else 0
+        return {"min": mn, "max": mx, "avg": avg, "somme": s}
+
+    sortie_total = _agg(daily["sortie"])["somme"] or 0
+
+    table = []
+    for rk in ROW_KEYS:
+        a = _agg(daily[rk])
+        pct = (a["somme"] / sortie_total * 100) if sortie_total else 0
+        table.append({
+            "key": rk, "label": ROW_LABELS[rk],
+            "min": a["min"], "max": a["max"], "avg": a["avg"], "somme": a["somme"],
+            "pct": round(pct, 2),
+        })
+    # Tous row
+    ta = _agg(tous_daily)
+    table.append({
+        "key": "tous", "label": "Tous",
+        "min": ta["min"], "max": ta["max"], "avg": ta["avg"], "somme": ta["somme"],
+        "pct": 100.0,
+    })
+
+    # Chart series (per day) as JSON.
+    chart = {
+        "labels": [dd.strftime("%d/%m") for dd in days],
+        "series": {ROW_LABELS[rk]: [daily[rk][dd] for dd in days] for rk in ROW_KEYS},
+    }
+
+    return render(request, "inventory/stats_commandes.html", {
+        "table": table,
+        "chart_json": json.dumps(chart),
+        "from_date": start_date.isoformat(),
+        "to_date": end_date.isoformat(),
+        "n_days": len(days),
     })
