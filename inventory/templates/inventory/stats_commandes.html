@@ -42,6 +42,8 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .quick a{font-size:12px;padding:6px 11px;border-radius:7px;border:0.5px solid var(--border);color:var(--muted);text-decoration:none;}
 .quick a:hover{background:var(--surface2);color:var(--text);}
 .view-toggle{display:flex;gap:4px;margin-bottom:14px;}
+.src-btn{padding:7px 14px;border-radius:8px;border:0.5px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;font-size:13px;text-decoration:none;font-weight:500;}
+.src-btn.active{background:var(--text);color:var(--bg);border-color:var(--text);}
 .view-toggle button{background:transparent;border:0.5px solid var(--border);color:var(--muted);padding:7px 16px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;}
 .view-toggle button.active{background:var(--surface2);color:var(--text);border-color:var(--text);}
 .card{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;padding:6px 20px 14px;}
@@ -71,7 +73,7 @@ canvas{max-height:420px;}
   <div class="muted">Commandes par jour ouvré (17h → 17h) sur la période choisie.</div>
 
   <div class="tabs">
-    <a href="{% url 'stats_commandes' %}?from={{ from_date }}&to={{ to_date }}" class="tab active">Commandes</a>
+    <a href="{% url 'stats_commandes' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab active">Commandes</a>
     <span class="tab" style="opacity:0.4;cursor:default;">Modèles</span>
     <span class="tab" style="opacity:0.4;cursor:default;">Offres</span>
     <span class="tab" style="opacity:0.4;cursor:default;">Pages</span>
@@ -81,6 +83,7 @@ canvas{max-height:420px;}
   </div>
 
   <form method="get" class="controls">
+    <input type="hidden" name="source" value="{{ source_filter }}">
     <div>
       <label>Du</label>
       <input type="date" name="from" value="{{ from_date }}">
@@ -91,11 +94,18 @@ canvas{max-height:420px;}
     </div>
     <button type="submit">Appliquer</button>
     <div class="quick">
-      <a href="?from={{ to_date }}&to={{ to_date }}">Aujourd'hui</a>
-      <a href="?range=7">7 jours</a>
-      <a href="?range=30">30 jours</a>
+      <a href="?from={{ to_date }}&to={{ to_date }}&source={{ source_filter }}">Aujourd'hui</a>
+      <a href="?range=7&source={{ source_filter }}">7 jours</a>
+      <a href="?range=30&source={{ source_filter }}">30 jours</a>
     </div>
   </form>
+
+  <div class="source-filter" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+    <a href="?from={{ from_date }}&to={{ to_date }}&source=all" class="src-btn {% if source_filter == 'all' %}active{% endif %}">Toutes les sources</a>
+    <a href="?from={{ from_date }}&to={{ to_date }}&source=barats" class="src-btn {% if source_filter == 'barats' %}active{% endif %}">🌐 Barats.tn</a>
+    <a href="?from={{ from_date }}&to={{ to_date }}&source=converty" class="src-btn {% if source_filter == 'converty' %}active{% endif %}">🛒 Converty</a>
+    <a href="?from={{ from_date }}&to={{ to_date }}&source=facebook" class="src-btn {% if source_filter == 'facebook' %}active{% endif %}">📘 Facebook</a>
+  </div>
 
   <div class="view-toggle">
     <button id="btnTable" class="active" onclick="showView('table')">Tableau</button>
@@ -174,7 +184,8 @@ function renderChart(){
     const to=new Date();
     const from=new Date(); from.setDate(from.getDate()-(parseInt(rng)-1));
     const fmt=d=>d.toISOString().slice(0,10);
-    location.replace(`?from=${fmt(from)}&to=${fmt(to)}`);
+    const src=p.get('source')||'all';
+    location.replace(`?from=${fmt(from)}&to=${fmt(to)}&source=${src}`);
   }
 })();
 </script>

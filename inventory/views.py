@@ -7502,10 +7502,26 @@ def stats_commandes(request):
 
     orders = (Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end)
               .values("id", "status", "created_at", "exchange_of_id"))
+
+    # Source filter (same grouping as the orders list).
+    source_filter = request.GET.get("source", "all")
+    if source_filter == "barats":
+        orders = orders.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "converty":
+        orders = orders.filter(sales_page__name__iexact="Converty")
+    elif source_filter == "facebook":
+        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
     # Which orders are "Sortie" = have a linked v1 ShippingOrder.
-    sortie_ids = set(ShippingOrder.objects.filter(
+    sortie_q = ShippingOrder.objects.filter(
         order__created_at__gte=win_start, order__created_at__lt=win_end
-    ).values_list("order_id", flat=True))
+    )
+    if source_filter == "barats":
+        sortie_q = sortie_q.filter(order__sales_page__name__iexact="Barats.tn")
+    elif source_filter == "converty":
+        sortie_q = sortie_q.filter(order__sales_page__name__iexact="Converty")
+    elif source_filter == "facebook":
+        sortie_q = sortie_q.exclude(order__sales_page__name__iexact="Barats.tn").exclude(order__sales_page__name__iexact="Converty")
+    sortie_ids = set(sortie_q.values_list("order_id", flat=True))
 
     # status row -> predicate
     def _row_for(o):
@@ -7599,5 +7615,6 @@ def stats_commandes(request):
         "chart_json": json.dumps(chart),
         "from_date": start_date.isoformat(),
         "to_date": end_date.isoformat(),
+        "source_filter": source_filter,
         "n_days": len(days),
     })
