@@ -7521,14 +7521,16 @@ def stats_commandes(request):
             rows.append("livree")
         elif st == "payee":
             rows.append("payee")
+        elif st == "annulee":
+            rows.append("annulee")
         if o["id"] in sortie_ids:
             rows.append("sortie")
         return rows
 
-    ROW_KEYS = ["echange", "retour", "encours", "livree", "payee", "sortie"]
+    ROW_KEYS = ["echange", "retour", "encours", "livree", "payee", "annulee", "sortie"]
     ROW_LABELS = {
         "echange": "Echange", "retour": "Retour", "encours": "En Cours",
-        "livree": "Livrée", "payee": "Payée", "sortie": "Sortie",
+        "livree": "Livrée", "payee": "Payée", "annulee": "Annulée", "sortie": "Sortie",
     }
 
     # daily[row][day] = count
@@ -7560,12 +7562,19 @@ def stats_commandes(request):
         avg = round(s / len(vals)) if vals else 0
         return {"min": mn, "max": mx, "avg": avg, "somme": s}
 
+    tous_total = _agg(tous_daily)["somme"] or 0
     sortie_total = _agg(daily["sortie"])["somme"] or 0
 
     table = []
     for rk in ROW_KEYS:
         a = _agg(daily[rk])
-        pct = (a["somme"] / sortie_total * 100) if sortie_total else 0
+        if rk in ("sortie", "annulee"):
+            # Sortie (ship rate) and Annulée (never shipped) are vs ALL orders.
+            denom = tous_total
+        else:
+            # Other statuses are outcomes of shipped orders -> vs Sortie.
+            denom = sortie_total
+        pct = (a["somme"] / denom * 100) if denom else 0
         table.append({
             "key": rk, "label": ROW_LABELS[rk],
             "min": a["min"], "max": a["max"], "avg": a["avg"], "somme": a["somme"],
