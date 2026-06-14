@@ -1066,3 +1066,20 @@ class ConvertyConnection(models.Model):
 
     def __str__(self):
         return f"Converty: {self.store_name or self.store_id or 'non connecté'}"
+
+
+class CustomerHistory(models.Model):
+    """Historic delivery/return stats per phone number, seeded from Navex
+    exports (orders that predate this system). Combined with live in-system
+    orders to show a customer's full track record (good vs bad client).
+
+    'annulé' outcomes are intentionally NOT counted here.
+    """
+    phone              = models.CharField(max_length=20, unique=True, db_index=True)
+    historic_total     = models.IntegerField(default=0)   # total historic orders seen
+    historic_delivered = models.IntegerField(default=0)   # livré / payé
+    historic_returned  = models.IntegerField(default=0)   # real retour (refusal/no-show)
+    updated_at         = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.phone}: {self.historic_delivered} livré / {self.historic_returned} retour"

@@ -3091,13 +3091,40 @@ def orders_list(request):
     from django.db.models import Count as _Count
     customer_ids = {o.customer_id for o in orders if o.customer_id}
     order_counts = {}
+    insystem_delivered = {}
+    insystem_returned = {}
+    phone_by_cust = {}
     if customer_ids:
         for row in (Order.objects.filter(customer_id__in=customer_ids)
                     .exclude(status="annulee")
                     .values("customer_id").annotate(n=_Count("id"))):
             order_counts[row["customer_id"]] = row["n"]
+        # In-system delivered (livree+payee) and returned per customer.
+        for row in (Order.objects.filter(customer_id__in=customer_ids, status__in=["livree", "payee"])
+                    .values("customer_id").annotate(n=_Count("id"))):
+            insystem_delivered[row["customer_id"]] = row["n"]
+        for row in (Order.objects.filter(customer_id__in=customer_ids, status="returned")
+                    .values("customer_id").annotate(n=_Count("id"))):
+            insystem_returned[row["customer_id"]] = row["n"]
+
+    # Historic stats per phone (seeded from Navex exports).
+    from .models import Customer as _Cust, CustomerHistory as _CH
+    phones = dict(_Cust.objects.filter(id__in=customer_ids).values_list("id", "phone"))
+    hist = {h.phone: h for h in _CH.objects.filter(phone__in=phones.values())}
+
     for o in orders:
-        o.phone_order_count = order_counts.get(o.customer_id, 1)
+        live_count = order_counts.get(o.customer_id, 1)
+        ph = phones.get(o.customer_id)
+        h = hist.get(ph) if ph else None
+        hist_total = h.historic_total if h else 0
+        hist_deliv = h.historic_delivered if h else 0
+        hist_ret = h.historic_returned if h else 0
+        # Combined badge count = live orders + historic orders.
+        o.phone_order_count = live_count + hist_total
+        # Combined delivered / returned (annulé excluded everywhere).
+        o.combined_delivered = insystem_delivered.get(o.customer_id, 0) + hist_deliv
+        o.combined_returned = insystem_returned.get(o.customer_id, 0) + hist_ret
+        o.has_history = hist_total > 0
 
     # Count of currently-hidden future-scheduled orders, for an info banner
     future_count = Order.objects.filter(scheduled_for__gt=today).count()
@@ -3707,22 +3734,41 @@ def api_orders_search(request):
         qs = qs.filter(customer__name__icontains=q)
 
     qs = qs.order_by("-created_at")[:200]
-    # Count total orders per customer (for the repeat-customer badge).
+    # Count total orders per customer (for the repeat-customer badge), plus
+    # combined delivered/returned including historic stats.
     from django.db.models import Count as _Count2
     cust_ids = {o.customer_id for o in qs if o.customer_id}
     pcounts = {}
+    deliv = {}
+    retd = {}
     if cust_ids:
         for row in (Order.objects.filter(customer_id__in=cust_ids)
                     .exclude(status="annulee")
                     .values("customer_id").annotate(n=_Count2("id"))):
             pcounts[row["customer_id"]] = row["n"]
+        for row in (Order.objects.filter(customer_id__in=cust_ids, status__in=["livree", "payee"])
+                    .values("customer_id").annotate(n=_Count2("id"))):
+            deliv[row["customer_id"]] = row["n"]
+        for row in (Order.objects.filter(customer_id__in=cust_ids, status="returned")
+                    .values("customer_id").annotate(n=_Count2("id"))):
+            retd[row["customer_id"]] = row["n"]
+    from .models import Customer as _Cust2, CustomerHistory as _CH2
+    phones2 = dict(_Cust2.objects.filter(id__in=cust_ids).values_list("id", "phone"))
+    hist2 = {h.phone: h for h in _CH2.objects.filter(phone__in=phones2.values())}
     results = []
     for o in qs:
+        ph2 = phones2.get(o.customer_id)
+        h2 = hist2.get(ph2) if ph2 else None
+        h_total = h2.historic_total if h2 else 0
+        h_deliv = h2.historic_delivered if h2 else 0
+        h_ret = h2.historic_returned if h2 else 0
         results.append({
             "id": o.id,
             "phone": o.customer.phone if o.customer else "",
             "phone2": o.customer.phone2 if o.customer else "",
-            "phone_order_count": pcounts.get(o.customer_id, 1),
+            "phone_order_count": pcounts.get(o.customer_id, 1) + h_total,
+            "combined_delivered": deliv.get(o.customer_id, 0) + h_deliv,
+            "combined_returned": retd.get(o.customer_id, 0) + h_ret,
             "name": o.customer.name if o.customer else "",
             "status": o.status,
             "status_display": o.get_status_display(),

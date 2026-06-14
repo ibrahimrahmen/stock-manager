@@ -5,3 +5,4 @@ whitenoise
 psycopg2-binary
 dj-database-url
 resend
+openpyxl==3.1.5
