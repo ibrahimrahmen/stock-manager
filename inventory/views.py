@@ -3073,6 +3073,45 @@ def orders_list(request):
     elif source_filter == "facebook":
         qs = qs.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
 
+    # Date filter (by création date, using the 17h→17h business day). A day `d`
+    # runs from (d-1) 17:00 to d 17:00 local time.
+    import datetime as _dt
+    try:
+        import zoneinfo
+        _tz = zoneinfo.ZoneInfo("Africa/Tunis")
+    except Exception:
+        _tz = timezone.get_current_timezone()
+
+    def _bday(d):
+        end = timezone.make_aware(_dt.datetime.combine(d, _dt.time(17, 0)), _tz)
+        return end - _dt.timedelta(days=1), end
+
+    date_filter = request.GET.get("date", "")   # 'today', 'yesterday', '7d', or '' (all)
+    date_from_raw = request.GET.get("date_from", "")
+    date_to_raw = request.GET.get("date_to", "")
+    today_local = timezone.localdate()
+    active_date_label = ""
+    dstart = dend = None
+    if date_filter == "today":
+        dstart, dend = _bday(today_local); active_date_label = "Aujourd'hui"
+    elif date_filter == "yesterday":
+        dstart, dend = _bday(today_local - _dt.timedelta(days=1)); active_date_label = "Hier"
+    elif date_filter == "7d":
+        dstart, _ = _bday(today_local - _dt.timedelta(days=6))
+        _, dend = _bday(today_local); active_date_label = "7 jours"
+    elif date_from_raw or date_to_raw:
+        try:
+            df = _dt.date.fromisoformat(date_from_raw) if date_from_raw else today_local
+            dt_ = _dt.date.fromisoformat(date_to_raw) if date_to_raw else today_local
+            if df > dt_: df, dt_ = dt_, df
+            dstart, _ = _bday(df)
+            _, dend = _bday(dt_)
+            active_date_label = f"{df.strftime('%d/%m')}–{dt_.strftime('%d/%m')}"
+        except ValueError:
+            dstart = dend = None
+    if dstart and dend:
+        qs = qs.filter(created_at__gte=dstart, created_at__lt=dend)
+
     if status_filter and status_filter != "all":
         qs = qs.filter(status=status_filter)
 
@@ -3144,6 +3183,8 @@ def orders_list(request):
         counts_qs = counts_qs.filter(sales_page__name__iexact="Converty")
     elif source_filter == "facebook":
         counts_qs = counts_qs.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+    if dstart and dend:
+        counts_qs = counts_qs.filter(created_at__gte=dstart, created_at__lt=dend)
     counts = dict(counts_qs.values_list("status").annotate(n=Count("id")))
     source_total = counts_qs.count()
 
@@ -3164,6 +3205,10 @@ def orders_list(request):
         "orders": orders,
         "status_filter": status_filter,
         "source_filter": source_filter,
+        "date_filter": date_filter,
+        "date_from": date_from_raw,
+        "date_to": date_to_raw,
+        "active_date_label": active_date_label,
         "counts": counts,
         "total": source_total,
         "future_count": future_count,
