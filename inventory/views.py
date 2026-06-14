@@ -3061,6 +3061,18 @@ def orders_list(request):
     qs = Order.objects.select_related("customer", "region", "sales_page").prefetch_related(
         "lines__product", "order_offers", "shipping_orders"
     )
+
+    # Source filter: barats.tn (website), converty, or facebook (every other
+    # page). Default = all sources.
+    source_filter = request.GET.get("source", "all")
+    from django.db.models import Q as _Q
+    if source_filter == "barats":
+        qs = qs.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "converty":
+        qs = qs.filter(sales_page__name__iexact="Converty")
+    elif source_filter == "facebook":
+        qs = qs.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+
     if status_filter and status_filter != "all":
         qs = qs.filter(status=status_filter)
 
@@ -3091,7 +3103,17 @@ def orders_list(request):
     future_count = Order.objects.filter(scheduled_for__gt=today).count()
 
     from django.db.models import Count
-    counts = dict(Order.objects.values_list("status").annotate(n=Count("id")))
+    # Chip counts respect the source filter (but not the status filter, so each
+    # chip shows its own total within the chosen source).
+    counts_qs = Order.objects.all()
+    if source_filter == "barats":
+        counts_qs = counts_qs.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "converty":
+        counts_qs = counts_qs.filter(sales_page__name__iexact="Converty")
+    elif source_filter == "facebook":
+        counts_qs = counts_qs.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+    counts = dict(counts_qs.values_list("status").annotate(n=Count("id")))
+    source_total = counts_qs.count()
 
     # If ?create_exchange=ID is in the URL, fetch the original order so the
     # template can pre-fill the inline editor for an exchange.
@@ -3109,8 +3131,9 @@ def orders_list(request):
     return render(request, "inventory/orders_list.html", {
         "orders": orders,
         "status_filter": status_filter,
+        "source_filter": source_filter,
         "counts": counts,
-        "total": Order.objects.count(),
+        "total": source_total,
         "future_count": future_count,
         "show_scheduled": request.GET.get("show_scheduled") == "1",
         # Data needed by the inline-create row + modal
