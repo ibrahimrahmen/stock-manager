@@ -211,6 +211,12 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
 .modal-body{padding:18px 22px;}
 .offer-block{background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px;}
 .offer-pick-row{display:grid;grid-template-columns:1fr 80px 30px;gap:10px;align-items:end;margin-bottom:10px;}
+.offer-search{width:100%;box-sizing:border-box;background:var(--input-bg,rgba(255,255,255,0.05));border:0.5px solid var(--border);color:var(--text);border-radius:8px;padding:9px 10px;font-family:inherit;font-size:13px;}
+.offer-list{position:absolute;left:0;right:0;top:100%;z-index:50;background:var(--surface);border:0.5px solid var(--border);border-radius:8px;margin-top:3px;max-height:240px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.35);}
+.offer-list-item{padding:9px 11px;font-size:13px;cursor:pointer;border-bottom:0.5px solid var(--border);}
+.offer-list-item:last-child{border-bottom:none;}
+.offer-list-item:hover{background:var(--surface2);}
+.offer-list-item.muted{color:var(--muted);cursor:default;}
 .offer-pick-row label{font-size:11px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px;}
 .offer-pick-row select,.offer-pick-row input{background:var(--surface);border:0.5px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;width:100%;font-family:inherit;}
 .offer-products-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;}
@@ -1333,12 +1339,15 @@ function renderOfferBlocks() {
   wrap.innerHTML = modalOffers.map((mo, idx) => `
     <div class="offer-block">
       <div class="offer-pick-row">
-        <div>
+        <div style="position:relative;">
           <label>Offre <span style="float:right;font-weight:400;font-size:10px;cursor:pointer;color:var(--blue);" onclick="toggleAllOffers(${idx})">${mo.use_all ? '↩ Page actuelle' : '＋ Autres pages'}</span></label>
-          <select onchange="onOfferPicked(${idx}, this.value)">
-            <option value="">— Choisir —</option>
-            ${(mo.use_all ? allOffers : offersForPage).map(o => `<option value="${o.id}" ${mo.offer_id == o.id ? 'selected' : ''}>${o.name} — ${o.bundle_price} DT${mo.use_all && o.page ? ' ('+o.page+')' : ''}</option>`).join('')}
-          </select>
+          <input type="text" class="offer-search" autocomplete="off"
+                 placeholder="🔍 Rechercher une offre..."
+                 value="${mo.offer_id ? (offerLabel(mo.offer_id, mo.use_all)) : (mo.search || '')}"
+                 oninput="onOfferSearch(${idx}, this.value)"
+                 onfocus="onOfferSearch(${idx}, this.value); this.select();"
+                 onblur="setTimeout(()=>closeOfferList(${idx}), 200)">
+          <div class="offer-list" id="offer-list-${idx}" style="display:none;"></div>
         </div>
         <div>
           <label>Qté</label>
@@ -1349,6 +1358,41 @@ function renderOfferBlocks() {
       <div id="offer-products-${idx}">${renderOfferProducts(idx)}</div>
     </div>
   `).join('');
+}
+
+function offerLabel(offerId, useAll) {
+  const list = useAll ? allOffers : offersForPage;
+  const o = list.find(x => x.id == offerId) || offersForPage.find(x => x.id == offerId) || allOffers.find(x => x.id == offerId);
+  return o ? `${o.name} — ${o.bundle_price} DT` : '';
+}
+
+function onOfferSearch(idx, q) {
+  const mo = modalOffers[idx];
+  mo.search = q;
+  const list = mo.use_all ? allOffers : offersForPage;
+  const ql = q.trim().toLowerCase();
+  const matches = ql ? list.filter(o => o.name.toLowerCase().includes(ql)) : list;
+  const box = document.getElementById('offer-list-' + idx);
+  if (!box) return;
+  if (matches.length === 0) {
+    box.innerHTML = '<div class="offer-list-item muted">Aucune offre</div>';
+  } else {
+    box.innerHTML = matches.slice(0, 50).map(o =>
+      `<div class="offer-list-item" onmousedown="pickOffer(${idx}, ${o.id})">${o.name} — ${o.bundle_price} DT</div>`
+    ).join('');
+  }
+  box.style.display = 'block';
+}
+
+function pickOffer(idx, offerId) {
+  closeOfferList(idx);
+  modalOffers[idx].search = '';
+  onOfferPicked(idx, offerId);
+}
+
+function closeOfferList(idx) {
+  const box = document.getElementById('offer-list-' + idx);
+  if (box) box.style.display = 'none';
 }
 
 let allOffers = [];
