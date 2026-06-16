@@ -212,7 +212,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
 .offer-block{background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px;}
 .offer-pick-row{display:grid;grid-template-columns:1fr 80px 30px;gap:10px;align-items:end;margin-bottom:10px;}
 .offer-search{width:100%;box-sizing:border-box;background:var(--input-bg,rgba(255,255,255,0.05));border:0.5px solid var(--border);color:var(--text);border-radius:8px;padding:9px 10px;font-family:inherit;font-size:13px;}
-.offer-list{position:absolute;left:0;right:0;top:100%;z-index:50;background:var(--surface);border:0.5px solid var(--border);border-radius:8px;margin-top:3px;max-height:240px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.35);}
+.offer-list{position:fixed;z-index:9999;background:var(--surface);border:0.5px solid var(--border);border-radius:8px;max-height:240px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.35);}
 .offer-list-item{padding:9px 11px;font-size:13px;cursor:pointer;border-bottom:0.5px solid var(--border);}
 .offer-list-item:last-child{border-bottom:none;}
 .offer-list-item:hover{background:var(--surface2);}
@@ -1380,6 +1380,15 @@ function onOfferSearch(idx, q) {
     box.innerHTML = matches.slice(0, 50).map(o =>
       `<div class="offer-list-item" onmousedown="pickOffer(${idx}, ${o.id})">${o.name} — ${o.bundle_price} DT</div>`
     ).join('');
+  }
+  // Position the fixed dropdown right under the search input so the modal's
+  // overflow doesn't clip it.
+  const input = box.previousElementSibling;
+  if (input) {
+    const r = input.getBoundingClientRect();
+    box.style.left = r.left + 'px';
+    box.style.top = (r.bottom + 3) + 'px';
+    box.style.width = r.width + 'px';
   }
   box.style.display = 'block';
 }
