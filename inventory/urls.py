@@ -109,6 +109,7 @@ urlpatterns = [
     path("api/regions/<int:region_id>/delegations/", views.api_region_delegations, name="api_region_delegations"),
     path("api/delegations/all/", views.api_all_delegations, name="api_all_delegations"),
     path("api/sales-pages/<int:page_id>/offers/", views.api_offers_for_page, name="api_offers_for_page"),
+    path("api/offers-all/", views.api_all_offers, name="api_all_offers"),
     path("api/offers/<int:offer_id>/", views.api_offer_detail, name="api_offer_detail"),
 
     # V2 — Admin: manage offers

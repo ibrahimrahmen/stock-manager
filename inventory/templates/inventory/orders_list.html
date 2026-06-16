@@ -1282,7 +1282,6 @@ function updateArticlesSummary() {
 }
 
 function openArticlesModal() {
-  if (offersForPage.length === 0) { alert("Aucune offre disponible pour cette page."); return; }
   document.getElementById('modal-error').style.display = 'none';
   document.getElementById('articles-modal').classList.add('show');
   if (modalOffers.length === 0) addOfferBlock();
@@ -1326,7 +1325,7 @@ document.addEventListener('DOMContentLoaded', function() {
   if (cm) { cm.addEventListener('click', function(ev) { if (ev.target === cm) closeConversationModal(); }); }
 });
 
-function addOfferBlock() { modalOffers.push({ offer_id: null, quantity: 1, products: [] }); renderOfferBlocks(); }
+function addOfferBlock() { modalOffers.push({ offer_id: null, quantity: 1, products: [], use_all: false }); renderOfferBlocks(); }
 function removeOfferBlock(idx) { modalOffers.splice(idx, 1); renderOfferBlocks(); }
 
 function renderOfferBlocks() {
@@ -1335,10 +1334,10 @@ function renderOfferBlocks() {
     <div class="offer-block">
       <div class="offer-pick-row">
         <div>
-          <label>Offre</label>
+          <label>Offre <span style="float:right;font-weight:400;font-size:10px;cursor:pointer;color:var(--blue);" onclick="toggleAllOffers(${idx})">${mo.use_all ? '↩ Page actuelle' : '＋ Autres pages'}</span></label>
           <select onchange="onOfferPicked(${idx}, this.value)">
             <option value="">— Choisir —</option>
-            ${offersForPage.map(o => `<option value="${o.id}" ${mo.offer_id == o.id ? 'selected' : ''}>${o.name} — ${o.bundle_price} DT</option>`).join('')}
+            ${(mo.use_all ? allOffers : offersForPage).map(o => `<option value="${o.id}" ${mo.offer_id == o.id ? 'selected' : ''}>${o.name} — ${o.bundle_price} DT${mo.use_all && o.page ? ' ('+o.page+')' : ''}</option>`).join('')}
           </select>
         </div>
         <div>
@@ -1350,6 +1349,24 @@ function renderOfferBlocks() {
       <div id="offer-products-${idx}">${renderOfferProducts(idx)}</div>
     </div>
   `).join('');
+}
+
+let allOffers = [];
+async function toggleAllOffers(idx) {
+  const mo = modalOffers[idx];
+  if (!mo.use_all) {
+    // Switching to all-pages: load the full list once.
+    if (allOffers.length === 0) {
+      try {
+        const data = await fetchJson('/api/offers-all/');
+        allOffers = data.offers || [];
+      } catch (e) { alert('Erreur de chargement des offres.'); return; }
+    }
+    mo.use_all = true;
+  } else {
+    mo.use_all = false;
+  }
+  renderOfferBlocks();
 }
 
 function renderOfferProducts(idx) {

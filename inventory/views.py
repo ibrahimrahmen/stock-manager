@@ -3246,6 +3246,24 @@ def api_offers_for_page(request, page_id):
 
 
 @login_required(login_url="/login/")
+def api_all_offers(request):
+    """Return ALL active offers across every page, with the page name(s) so the
+    user can pick an offer from another page in the order form."""
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error"}, status=403)
+    from .models import Offer
+    offers = Offer.objects.filter(is_active=True).prefetch_related("sales_pages").distinct().order_by("name")
+    data = []
+    for o in offers:
+        page_names = ", ".join(p.name for p in o.sales_pages.all()) or "—"
+        data.append({
+            "id": o.id, "name": o.name, "bundle_price": str(o.bundle_price),
+            "page": page_names,
+        })
+    return JsonResponse({"status": "ok", "offers": data})
+
+
+@login_required(login_url="/login/")
 def api_offer_detail(request, offer_id):
     """Return an offer's products with each product's variants and sizes-with-stock."""
     if not _orders_role_check(request):
