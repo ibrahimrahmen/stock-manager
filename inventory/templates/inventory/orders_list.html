@@ -148,6 +148,8 @@ a.row-link:hover{text-decoration:underline;}
 .note-icon .note-text{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;word-break:break-word;}
 .note-icon .note-empty{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;color:#a8922f;font-style:italic;opacity:0.85;}
 .note-icon.has-note{background:linear-gradient(135deg,#fff09a 0%,#ffdf5e 100%);}
+.note-plus{background:transparent;border:0.5px dashed var(--border);color:var(--muted);font-size:11px;cursor:pointer;padding:3px 9px;border-radius:6px;margin-top:5px;font-family:inherit;transition:all .15s;}
+.note-plus:hover{border-color:#d97706;color:#d97706;background:rgba(217,119,6,0.08);}
 .note-pop{position:absolute;z-index:60;background:var(--surface);border:0.5px solid var(--border);border-radius:10px;padding:10px;box-shadow:0 10px 28px rgba(0,0,0,0.45);width:250px;}
 .note-pop textarea{width:100%;box-sizing:border-box;background:var(--surface2);color:var(--text);border:0.5px solid var(--border);border-radius:8px;padding:8px;font-family:inherit;font-size:12.5px;resize:vertical;min-height:64px;outline:none;}
 .note-pop textarea:focus{border-color:#d97706;}
@@ -362,7 +364,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
           </td>
           <td>{{ o.sales_page.name|default:"—" }}
             <div class="note-wrap">
-              {% if o.status == 'injoignable' or o.status == 'rappeler_plus_tard' %}<button class="note-icon {% if o.status_note %}has-note{% endif %}" onclick="openNoteEditor(this, {{ o.id }})" title="{% if o.status_note %}{{ o.status_note }}{% else %}Ajouter une note{% endif %}" data-note="{{ o.status_note|escape }}">{% if o.status_note %}<span class="note-text">{{ o.status_note }}</span>{% else %}<span class="note-empty">+ note</span>{% endif %}</button>{% endif %}
+              {% if o.status == 'injoignable' or o.status == 'rappeler_plus_tard' %}<button class="note-icon {% if o.status_note %}has-note{% endif %}" onclick="openNoteEditor(this, {{ o.id }})" title="{% if o.status_note %}{{ o.status_note }}{% else %}Ajouter une note{% endif %}" data-note="{{ o.status_note|escape }}">{% if o.status_note %}<span class="note-text">{{ o.status_note }}</span>{% else %}<span class="note-empty">+ note</span>{% endif %}</button>{% elif o.status == 'non_confirmee' %}{% if o.status_note %}<button class="note-icon has-note" onclick="openNoteEditor(this, {{ o.id }})" title="{{ o.status_note }}" data-note="{{ o.status_note|escape }}"><span class="note-text">{{ o.status_note }}</span></button>{% else %}<button class="note-plus" onclick="openNoteEditor(this, {{ o.id }})" title="Ajouter une note" data-note="">＋ note</button>{% endif %}{% endif %}
             </div>
           </td>
           <td>
@@ -1020,7 +1022,7 @@ function buildOrderRowHtml(o) {
     <td><span class="date-cell" data-order-id="${o.id}" data-scheduled="${scheduled}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">${dateCellInner}</span></td>
     <td>${pageName}
       <div class="note-wrap">
-        ${(o.status === 'injoignable' || o.status === 'rappeler_plus_tard') ? `<button class="note-icon ${o.status_note ? 'has-note' : ''}" onclick="openNoteEditor(this, ${o.id})" title="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : 'Ajouter une note'}" data-note="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : ''}">${o.status_note ? `<span class="note-text">${String(o.status_note).replace(/</g,'&lt;')}</span>` : '<span class="note-empty">+ note</span>'}</button>` : ''}
+        ${(o.status === 'injoignable' || o.status === 'rappeler_plus_tard') ? `<button class="note-icon ${o.status_note ? 'has-note' : ''}" onclick="openNoteEditor(this, ${o.id})" title="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : 'Ajouter une note'}" data-note="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : ''}">${o.status_note ? `<span class="note-text">${String(o.status_note).replace(/</g,'&lt;')}</span>` : '<span class="note-empty">+ note</span>'}</button>` : (o.status === 'non_confirmee' ? (o.status_note ? `<button class="note-icon has-note" onclick="openNoteEditor(this, ${o.id})" title="${String(o.status_note).replace(/"/g,'&quot;')}" data-note="${String(o.status_note).replace(/"/g,'&quot;')}"><span class="note-text">${String(o.status_note).replace(/</g,'&lt;')}</span></button>` : `<button class="note-plus" onclick="openNoteEditor(this, ${o.id})" title="Ajouter une note" data-note="">＋ note</button>`) : '')}
       </div>
     </td>
     <td>
@@ -1748,7 +1750,7 @@ function openNoteEditor(btn, orderId) {
       if (data.status === 'ok') {
         btn.setAttribute('data-note', data.note);
         btn.setAttribute('title', data.note || 'Ajouter une note');
-        btn.classList.toggle('has-note', !!data.note);
+        btn.className = 'note-icon' + (data.note ? ' has-note' : '');
         btn.innerHTML = data.note
           ? `<span class="note-text">${String(data.note).replace(/</g,'&lt;')}</span>`
           : '<span class="note-empty">+ note</span>';
