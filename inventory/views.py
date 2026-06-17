@@ -2550,6 +2550,26 @@ def cron_evening_email(request):
     return JsonResponse({"status": "ok", "type": "evening"})
 
 
+@csrf_exempt
+def cron_navex_sync(request):
+    """Called hourly during work hours by Railway cron to refresh Navex
+    statuses for pending v2 orders. No auth (Railway cron hits it directly);
+    it only triggers a read-sync, no destructive action."""
+    try:
+        n_attempted, n_updated = _sync_navex_for_v2_orders(only_pending=True)
+        try:
+            from .models import AuditLog as _AL
+            _AL.objects.create(
+                user=None, username="system_cron", action=_AL.NAVEX_SYNC,
+                description=f"Sync auto Navex (cron horaire): {n_updated}/{n_attempted} mis à jour",
+            )
+        except Exception:
+            pass
+        return JsonResponse({"status": "ok", "attempted": n_attempted, "updated": n_updated})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
+
+
 def navex_sync(request):
     """Sync page — shows all shipped orders with their Navex status."""
     if not request.user.is_staff:
