@@ -166,7 +166,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
   <div class="card">
     <div class="card-title">Client</div>
     <div class="row">
-      <div class="field-display"><label>Nom</label><div class="val">{{ order.customer.name|default:"—" }}</div></div>
+      <div class="field-display"><label>Nom</label><div class="val">{{ order.display_name|default:"—" }}</div></div>
       <div class="field-display"><label>Téléphone</label><div class="val">{{ order.customer.phone }}</div></div>
       <div class="field-display"><label>Gouvernorat</label><div class="val">{{ order.region.name|default:"—" }}</div></div>
       <div class="field-display"><label>Ville</label><div class="val">{{ order.ville|default:"—" }}</div></div>

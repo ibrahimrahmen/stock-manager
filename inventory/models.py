@@ -567,6 +567,11 @@ class Order(models.Model):
     ]
 
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="orders")
+    # Per-order recipient name. The same person (identified by phone, on the
+    # Customer) may place orders under different names, so the name belongs to
+    # the order, not the shared Customer. Falls back to the customer's name when
+    # blank (e.g. legacy orders created before this field existed).
+    customer_name = models.CharField(max_length=200, blank=True, default="")
     sales_page = models.ForeignKey(SalesPage, on_delete=models.SET_NULL, null=True, blank=True, related_name="orders")
     region = models.ForeignKey(Region, on_delete=models.SET_NULL, null=True, blank=True, related_name="orders")
     ville = models.CharField(max_length=120, blank=True, default="")
@@ -677,6 +682,11 @@ class Order(models.Model):
 
     def __str__(self):
         return f"#{self.id} — {self.customer} — {self.get_status_display()}"
+
+    @property
+    def display_name(self):
+        """Per-order name if set, otherwise the customer's name."""
+        return (self.customer_name or "").strip() or (self.customer.name if self.customer else "")
 
     def recalc_total(self):
         """Recompute total from order_offers + standalone lines + delivery − discount.

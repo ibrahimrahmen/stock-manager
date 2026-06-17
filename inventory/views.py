@@ -3539,6 +3539,7 @@ def api_order_draft_upsert(request):
             order = Order.objects.create(
                 customer=customer,
                 sales_page_id=sales_page_id,
+                customer_name=name,
                 created_by=request.user if request.user.is_authenticated else None,
                 status="non_confirmee",
             )
@@ -3571,16 +3572,13 @@ def api_order_draft_upsert(request):
                 phone=phone,
                 defaults={"name": name or order.customer.name or ""},
             )
-            # Carry the name onto the (possibly new) customer if provided.
-            if name and new_customer.name != name:
-                new_customer.name = name
-                new_customer.save(update_fields=["name"])
             order.customer = new_customer
             order.save(update_fields=["customer"])
             changed.append("phone")
-        elif name and order.customer and order.customer.name != name:
-            order.customer.name = name
-            order.customer.save(update_fields=["name"])
+        # Name is per-order (same person/phone can order under different names).
+        if name and order.customer_name != name:
+            order.customer_name = name
+            order.save(update_fields=["customer_name"])
             changed.append("name")
         # Phone2 is optional — only update if the payload includes it (so blank
         # payload doesn't accidentally wipe an existing secondary number)
@@ -3741,7 +3739,7 @@ def api_order_draft_get(request, pk):
             "locked": not _is_draft_editable(order),
             "phone": order.customer.phone if order.customer else "",
             "phone2": order.customer.phone2 if order.customer else "",
-            "name": order.customer.name if order.customer else "",
+            "name": order.display_name if order.customer else "",
             "sales_page": order.sales_page_id,
             "sales_page_name": order.sales_page.name if order.sales_page else "",
             "region": order.region_id,
@@ -3802,7 +3800,7 @@ def api_orders_search(request):
             f |= Q(pk=order_id_match)
         qs = qs.filter(f)
     else:
-        qs = qs.filter(customer__name__icontains=q)
+        qs = qs.filter(Q(customer_name__icontains=q) | Q(customer__name__icontains=q))
 
     qs = qs.order_by("-created_at")[:200]
     # Count total orders per customer (for the repeat-customer badge), plus
@@ -5175,6 +5173,7 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
             discount=Decimal("0"),
             notes=" | ".join(notes_parts),
             status=Order.NON_CONFIRMEE,
+            customer_name=name,
             created_by=None,  # No user — webhook is unauthenticated
             source=(Order.SOURCE_CONVERTY if source == "converty" else Order.SOURCE_SHOPIFY),
             converty_order_id=(external_id if source == "converty" else ""),
