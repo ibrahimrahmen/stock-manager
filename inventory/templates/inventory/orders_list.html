@@ -479,6 +479,17 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
 </div>
 
 <script>
+// Make the browser "back" button go to the Dashboard from this page,
+// regardless of where the user came from (for everyone).
+(function() {
+  const DASHBOARD_URL = "{% url 'dashboard' %}";
+  // Push an extra history entry so the first "back" press fires popstate here
+  // instead of leaving the page, then redirect to the dashboard.
+  history.pushState(null, "", location.href);
+  window.addEventListener("popstate", function() {
+    window.location.href = DASHBOARD_URL;
+  });
+})();
 const SALES_PAGES = [
   {% for p in sales_pages %}{ id: {{ p.id }}, name: "{{ p.name|escapejs }}" },{% endfor %}
 ];
