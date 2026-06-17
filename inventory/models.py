@@ -739,17 +739,38 @@ class Order(models.Model):
 
     @property
     def article_summary(self):
-        """Short text summary of offers + standalone products for list display."""
+        """Text summary for list display: shows the PRODUCTS inside each offer
+        with their colour and size (not just the offer name), plus any
+        standalone product lines."""
+        def _line_label(line):
+            bits = [line.product.name]
+            detail = []
+            if line.variant and line.variant.color_label:
+                detail.append(line.variant.color_label)
+            if line.size:
+                detail.append(line.size)
+            label = line.product.name
+            if detail:
+                label += " (" + ", ".join(detail) + ")"
+            if line.quantity and line.quantity > 1:
+                label = f"{line.quantity}× " + label
+            return label
+
         parts = []
-        for oo in self.order_offers.all()[:3]:
-            parts.append(f"{oo.quantity}× {oo.offer_name or 'Offre'}")
-        for line in self.lines.filter(order_offer__isnull=True)[:3]:
-            parts.append(f"{line.quantity}× {line.product.name}")
-        # truncate
-        if len(parts) > 3:
-            shown, extra = parts[:3], len(parts) - 3
+        # Offer lines (products that belong to an offer)
+        for oo in self.order_offers.all():
+            for line in oo.lines.all():
+                parts.append(_line_label(line))
+        # Standalone product lines (not part of any offer)
+        for line in self.lines.filter(order_offer__isnull=True):
+            parts.append(_line_label(line))
+
+        if not parts:
+            return "—"
+        if len(parts) > 4:
+            shown, extra = parts[:4], len(parts) - 4
             return ", ".join(shown) + f", +{extra}"
-        return ", ".join(parts) if parts else "—"
+        return ", ".join(parts)
 
 
 class OrderLine(models.Model):
