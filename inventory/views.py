@@ -2377,9 +2377,16 @@ def _build_low_stock_items():
     for product in products:
         stock = sum(v.total_stock for v in product.variants.all())
         if stock <= product.alert_threshold:
+            # product-level: pick the first variant image if any
+            img = None
+            for v in product.variants.all():
+                if v.image:
+                    img = v.image
+                    break
             low_items.append({
                 "name": product.name, "code": product.code,
                 "stock": stock, "info": f"seuil produit: {product.alert_threshold}",
+                "image": img,
             })
         for variant in product.variants.all():
             sizes = set(variant.units.values_list("size", flat=True).distinct())
@@ -2395,8 +2402,56 @@ def _build_low_stock_items():
                         "code": product.code,
                         "stock": f["current_stock"],
                         "info": info,
+                        "image": variant.image if variant.image else None,
                     })
     return low_items
+
+
+def _send_telegram_photo(photo_path, caption, chat_id=None, token=None):
+    """Send a local photo file with caption via Telegram. Best-effort; returns
+    True/False. Sends to all configured chat ids."""
+    import urllib.request, mimetypes, uuid, os as _os
+    token = token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_ids = (chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")).split(",")
+    if not token or not photo_path or not _os.path.exists(photo_path):
+        return False
+    sent_any = False
+    try:
+        with open(photo_path, "rb") as fh:
+            file_bytes = fh.read()
+    except Exception:
+        return False
+    fname = _os.path.basename(photo_path) or "photo.jpg"
+    ctype = mimetypes.guess_type(fname)[0] or "image/jpeg"
+    for cid in chat_ids:
+        cid = cid.strip()
+        if not cid:
+            continue
+        try:
+            boundary = "----tg" + uuid.uuid4().hex
+            body = b""
+            # text fields
+            for field, val in (("chat_id", cid), ("caption", caption)):
+                body += ("--" + boundary + "\r\n").encode()
+                body += ('Content-Disposition: form-data; name="%s"\r\n\r\n' % field).encode()
+                body += (val + "\r\n").encode("utf-8")
+            # photo file
+            body += ("--" + boundary + "\r\n").encode()
+            body += ('Content-Disposition: form-data; name="photo"; filename="%s"\r\n' % fname).encode()
+            body += ("Content-Type: %s\r\n\r\n" % ctype).encode()
+            body += file_bytes + b"\r\n"
+            body += ("--" + boundary + "--\r\n").encode()
+            req = urllib.request.Request(
+                f"https://api.telegram.org/bot{token}/sendPhoto",
+                data=body,
+                headers={"Content-Type": "multipart/form-data; boundary=" + boundary},
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                resp.read()
+            sent_any = True
+        except Exception:
+            continue
+    return sent_any
 
 
 def _send_telegram(message, chat_id=None, token=None):
@@ -2457,27 +2512,51 @@ def _send_whatsapp(message, phone=None, apikey=None):
 
 
 def _send_low_stock_whatsapp():
-    """Send the low-stock report to the configured channels (Telegram and/or
-    WhatsApp). Kept this name for the existing cron call sites."""
-    from .models import ALERT_DAYS
+    """Send the low-stock report to Telegram: a short header, then one photo
+    per low product (captioned with size/stock/days), text fallback if no image.
+    (Name kept for existing cron call sites.)"""
     low_items = _build_low_stock_items()
     if not low_items:
         return False
-    lines = "\n".join(
-        f"- {item['name']} ({item['code']}): {item['stock']} unités — {item['info']}"
-        for item in low_items
+
+    header = (
+        f"\U0001F6A8 STOCK BAS — {len(low_items)} article(s) à réapprovisionner\n"
+        f"{timezone.now().strftime('%d/%m/%Y %H:%M')}"
     )
-    msg = (
-        f"⚠ Stock bas — {len(low_items)} produit(s) à réapprovisionner\n\n"
-        f"{lines}\n\n"
-        f"Détails : https://web-production-1391c5.up.railway.app/products/"
-    )
-    sent = False
-    if _send_telegram(msg):
-        sent = True
-    if _send_whatsapp(msg):
-        sent = True
-    return sent
+    _send_telegram(header)
+
+    text_only = []
+    for item in low_items:
+        caption = (
+            f"\U0001F4E6 {item['name']}\n"
+            f"Code : {item['code']}\n"
+            f"Stock restant : {item['stock']} unités\n"
+            f"\u23F3 {item['info']}"
+        )
+        img = item.get("image")
+        sent_photo = False
+        if img:
+            try:
+                path = img.path  # local filesystem path
+                sent_photo = _send_telegram_photo(path, caption)
+            except Exception:
+                sent_photo = False
+        if not sent_photo:
+            text_only.append(caption)
+
+    # Any items without a usable image → one combined text message.
+    if text_only:
+        _send_telegram("\n\n".join(text_only))
+
+    # Also fire WhatsApp (text) if configured, as a fallback channel.
+    try:
+        lines = "\n".join(
+            f"- {i['name']} ({i['code']}): {i['stock']} u — {i['info']}" for i in low_items
+        )
+        _send_whatsapp(f"Stock bas — {len(low_items)} article(s)\n\n{lines}")
+    except Exception:
+        pass
+    return True
 
 
 def _send_low_stock_email():
@@ -2635,7 +2714,25 @@ def cron_morning_email(request):
 
 @csrf_exempt
 def test_low_stock_whatsapp(request):
-    """Manual trigger to test the low-stock WhatsApp message right now."""
+    """Manual trigger to test the low-stock alert now. Add ?force=1 to send a
+    sample alert (first product with an image) even if nothing is low."""
+    if request.GET.get("force") == "1":
+        # Build a sample item from the first variant that has an image.
+        v = ProductVariant.objects.exclude(image="").exclude(image__isnull=True).select_related("product").first()
+        if not v:
+            _send_telegram("\U0001F9EA Test Telegram : aucune image produit trouvée, mais l'envoi texte fonctionne.")
+            return JsonResponse({"status": "ok", "note": "sent text test, no product image found"})
+        caption = (
+            f"\U0001F9EA TEST — alerte stock bas (exemple)\n"
+            f"\U0001F4E6 {v.product.name} {v.color_label}\n"
+            f"Code : {v.product.code}\n"
+            f"Stock restant : 3 unités\n"
+            f"\u23F3 ~4j restants à 0.7/jour"
+        )
+        ok = _send_telegram_photo(v.image.path, caption)
+        if not ok:
+            _send_telegram(caption)
+        return JsonResponse({"status": "ok", "forced": True, "photo_sent": ok})
     sent = _send_low_stock_whatsapp()
     n = len(_build_low_stock_items())
     return JsonResponse({"status": "ok", "sent": sent, "low_items": n})
