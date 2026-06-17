@@ -5723,6 +5723,22 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
 
                 size_guess = _extract_size(synthetic_li, op.product)
                 variant_guess = _extract_variant(synthetic_li, op.product, strict=True)
+                # Fallback: if strict color matching found no variant (e.g. the
+                # Pants in an Ensemble has a single colour, or its colour wasn't
+                # sent), use the sub-product's only variant so the line isn't
+                # left blank. Only safe when there's exactly one variant.
+                if variant_guess is None:
+                    sub_variants = list(op.product.variants.all())
+                    if len(sub_variants) == 1:
+                        variant_guess = sub_variants[0]
+                    else:
+                        # try a non-strict match (first/any) as a last resort
+                        variant_guess = _extract_variant(synthetic_li, op.product, strict=False)
+                # If size still empty but we have a shared hint, apply it.
+                if not size_guess and shared_size_hint:
+                    synthetic_li2 = dict(li)
+                    synthetic_li2["variant_title"] = shared_size_hint
+                    size_guess = _extract_size(synthetic_li2, op.product)
                 OrderLine.objects.create(
                     order=order,
                     order_offer=order_offer,

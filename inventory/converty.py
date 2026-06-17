@@ -413,11 +413,17 @@ def api_converty_webhook(request):
     converty_id = str(order_obj.get("_id") or "")
     # Log every arrival so we can confirm Converty is calling us.
     try:
+        cart_dbg = []
+        for it in (order_obj.get("cart") or []):
+            cart_dbg.append({
+                "product": (it.get("product") or {}).get("name"),
+                "selectedVariants": it.get("selectedVariants"),
+            })
         log_action(
             None, AuditLog.OTHER,
             description=f"Webhook Converty REÇU : _id={converty_id or '?'}, "
                         f"ref={order_obj.get('reference', '?')}, status={order_obj.get('status', '?')}, "
-                        f"top_keys={list(payload.keys())[:10]}, event={payload.get('event', payload.get('type', '?'))}",
+                        f"cart={json.dumps(cart_dbg, ensure_ascii=False)[:600]}",
         )
     except Exception:
         pass
