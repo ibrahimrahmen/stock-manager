@@ -693,7 +693,7 @@ function openCreateRow(opts) {
     const existing = tbody.querySelector(`tr[data-order-id="${currentDraftId}"]`);
     if (existing) {
       replacedOriginalHtml = existing.outerHTML;
-      existing.replaceWith(tr);
+      window._allowDraftRemoval = true; existing.replaceWith(tr); window._allowDraftRemoval = false;
     } else {
       tbody.insertBefore(tr, tbody.firstChild);
     }
@@ -773,6 +773,26 @@ function openCreateRow(opts) {
     const el = document.getElementById(id);
     if (el) el.addEventListener('blur', () => autoSaveDraft(id));
   });
+
+  // Diagnostic + guard: catch anything that removes the create-row while the
+  // user is actively editing, so a stray remove() can't make the row vanish.
+  // We mark the row as "editing active"; only explicit close/cancel/confirm
+  // (which set _allowDraftRemoval=true) may remove it.
+  try {
+    const crEl = document.getElementById('create-row');
+    if (crEl && !crEl._removeGuarded) {
+      crEl._removeGuarded = true;
+      window._allowDraftRemoval = false;
+      const origRemove = crEl.remove.bind(crEl);
+      crEl.remove = function() {
+        if (!window._allowDraftRemoval) {
+          console.warn('[order] BLOCKED unexpected create-row removal', new Error().stack);
+          return; // refuse to vanish while editing
+        }
+        return origRemove();
+      };
+    }
+  } catch (_) {}
   // Init the unified region/delegation picker
   initLocationPicker();
 
@@ -847,6 +867,12 @@ function _outsideClickHandler(ev) {
   if (ev.target.closest('.status-menu')) return;
   // Don't close if click is inside the location dropdown
   if (ev.target.closest('.loc-dropdown')) return;
+  // Don't close if click is inside the offer search dropdown (it's position:fixed
+  // so it lives outside the create-row in the DOM, but is logically part of it).
+  if (ev.target.closest('.offer-list')) return;
+  if (ev.target.closest('.offer-search')) return;
+  // Any element explicitly marked to keep the draft open.
+  if (ev.target.closest('[data-keep-draft-open]')) return;
   // Check phone validity — only close if empty or exactly 8 digits
   const phoneEl = document.getElementById('cr-phone');
   if (phoneEl) {
@@ -878,6 +904,7 @@ function _outsideClickHandler(ev) {
 
 // Close the create row WITHOUT discarding the draft (it stays in DB).
 async function closeDraftPanel() {
+  window._allowDraftRemoval = true;
   // If we have a draft saved in DB, refresh its row in the list before closing.
   // This way the user sees the up-to-date Articles, Region, Total, etc. without
   // having to reload the whole page.
@@ -912,6 +939,7 @@ async function closeDraftPanel() {
 // Fetch the latest draft data, build a fresh order row, and put it where the
 // create-row was. This preserves the row's vertical position in the list.
 async function replaceCreateRowWithRefreshedRow(orderId) {
+  window._allowDraftRemoval = true;
   const createRow = document.getElementById('create-row');
   let data;
   try {
@@ -1051,6 +1079,7 @@ async function cancelCreateRow() {
   // Same as closeDraftPanel but explicitly called by the × button.
   const draftIdToRefresh = currentDraftId;
   if (draftIdToRefresh && modalOffers.length > 0) {
+    window._allowDraftRemoval = true;
     try { await autoSaveDraft('cancel'); } catch(_) {}
   }
   document.removeEventListener('mousedown', _outsideClickHandler, true);
@@ -1612,6 +1641,7 @@ async function submitNewOrder() {
       btn.textContent = '✓ Envoyé';
       // Force unload all editor state before reload
       try {
+        window._allowDraftRemoval = true;
         document.removeEventListener('mousedown', _outsideClickHandler, true);
         document.getElementById('create-row')?.remove();
         document.getElementById('exchange-banner')?.remove();
