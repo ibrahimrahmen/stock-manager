@@ -2366,28 +2366,45 @@ def _send_email(subject, body):
         return False
 
 def _build_low_stock_items():
-    """Return the list of low-stock items (shared by the email + WhatsApp
-    alerts). Each item: {name, code, stock, info}. Uses the predictive per-size
-    forecast plus the product-level threshold. Skips disabled/archived."""
+    """Return the list of low-stock items (shared by the email + Telegram
+    alerts). Each item: {name, code, stock, info, image}.
+
+    Family-aware: products linked as V2/V3 of a parent share one physical SKU,
+    so stock is summed across the whole family and the alert is reported ONCE
+    per family (on the root product), never once per version."""
     from .models import compute_size_forecast, ALERT_DAYS
     products = Product.objects.filter(
         alert_disabled=False, archived=False
     ).prefetch_related("variants__units")
+
     low_items = []
+    seen_family_product_level = set()   # root ids already reported at product level
+
     for product in products:
-        stock = sum(v.total_stock for v in product.variants.all())
-        if stock <= product.alert_threshold:
-            # product-level: pick the first variant image if any
-            img = None
-            for v in product.variants.all():
-                if v.image:
-                    img = v.image
-                    break
-            low_items.append({
-                "name": product.name, "code": product.code,
-                "stock": stock, "info": f"seuil produit: {product.alert_threshold}",
-                "image": img,
-            })
+        root = product.parent_product or product
+
+        # --- product-level (whole family) check, once per family root ---
+        if root.id not in seen_family_product_level:
+            fam_stock = product.family_total_stock  # summed across parent + versions
+            # threshold: use the root's threshold (fall back to product's)
+            threshold = getattr(root, "alert_threshold", product.alert_threshold)
+            if fam_stock <= threshold:
+                img = None
+                for fam_p in product.family_products():
+                    for v in fam_p.variants.all():
+                        if v.image:
+                            img = v.image; break
+                    if img:
+                        break
+                low_items.append({
+                    "name": root.name, "code": root.code,
+                    "stock": fam_stock,
+                    "info": f"seuil: {threshold} (toutes versions)",
+                    "image": img,
+                })
+            seen_family_product_level.add(root.id)
+
+        # --- predictive per-size alerts (per variant, still useful granular) ---
         for variant in product.variants.all():
             sizes = set(variant.units.values_list("size", flat=True).distinct())
             for size in sizes:

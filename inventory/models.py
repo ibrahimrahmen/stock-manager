@@ -44,6 +44,26 @@ class Product(models.Model):
             status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)
         ).count()
 
+    @property
+    def family_root(self):
+        """The root product of this SKU family (self if it has no parent)."""
+        return self.parent_product or self
+
+    def family_products(self):
+        """All products sharing this physical SKU (root + its versions)."""
+        from django.db.models import Q
+        root = self.family_root
+        return Product.objects.filter(Q(id=root.id) | Q(parent_product=root))
+
+    @property
+    def family_total_stock(self):
+        """Sellable stock summed across the whole SKU family (parent + V2/V3)."""
+        fam_ids = list(self.family_products().values_list("id", flat=True))
+        return ProductUnit.objects.filter(
+            variant__product_id__in=fam_ids,
+            status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)
+        ).count()
+
 
 class ProductVariant(models.Model):
     product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="variants")
