@@ -279,56 +279,50 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
   {% if future_count > 0 and not show_scheduled %}
   <div class="future-banner">
     <span>📅 {{ future_count }} commande{{ future_count|pluralize }} planifiée{{ future_count|pluralize }} pour plus tard, non affichée{{ future_count|pluralize }}.</span>
-    <a href="?status={{ status_filter }}&show_scheduled=1&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}">Voir aussi les commandes planifiées →</a>
+    <a href="?status={{ status_filter }}&show_scheduled=1&source={{ source_filter }}{% if today_on %}&today=1{% endif %}">Voir aussi les commandes planifiées →</a>
   </div>
   {% endif %}
   {% if show_scheduled %}
   <div class="future-banner">
     <span>📅 Affichage de TOUTES les commandes, y compris celles planifiées pour plus tard.</span>
-    <a href="?status={{ status_filter }}&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}">Masquer les futures</a>
+    <a href="?status={{ status_filter }}&source={{ source_filter }}{% if today_on %}&today=1{% endif %}">Masquer les futures</a>
   </div>
   {% endif %}
 
   <div class="source-filter" style="margin-bottom:10px;">
-    <a href="?status={{ status_filter }}&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="src-btn {% if not date_filter and not date_from and not date_to %}active{% endif %}">📅 Toutes les dates</a>
-    <a href="?status={{ status_filter }}&source={{ source_filter }}&date=today" class="src-btn {% if date_filter == 'today' %}active{% endif %}">Aujourd'hui</a>
-    <a href="?status={{ status_filter }}&source={{ source_filter }}&date=yesterday" class="src-btn {% if date_filter == 'yesterday' %}active{% endif %}">Hier</a>
-    <a href="?status={{ status_filter }}&source={{ source_filter }}&date=7d" class="src-btn {% if date_filter == '7d' %}active{% endif %}">7 jours</a>
-    <form method="get" style="display:inline-flex;gap:6px;align-items:center;margin-left:4px;">
-      <input type="hidden" name="status" value="{{ status_filter }}">
-      <input type="hidden" name="source" value="{{ source_filter }}">
-      <input type="date" name="date_from" value="{{ date_from }}" class="src-date">
-      <input type="date" name="date_to" value="{{ date_to }}" class="src-date">
-      <button type="submit" class="src-btn" style="cursor:pointer;border-color:var(--blue);color:var(--blue);">OK</button>
-    </form>
+    {% if today_on %}
+    <a href="?status={{ status_filter }}&source={{ source_filter }}" class="src-btn active" style="background:#1a9e6e;color:#fff;border-color:#1a9e6e;">📅 Aujourd'hui ✓</a>
+    {% else %}
+    <a href="?status={{ status_filter }}&source={{ source_filter }}&today=1" class="src-btn">📅 Aujourd'hui</a>
+    {% endif %}
   </div>
 
   <div class="source-filter">
-    <a href="?status={{ status_filter }}&source=all{% if date_filter %}&date={{ date_filter }}{% endif %}" class="src-btn {% if source_filter == 'all' %}active{% endif %}">Toutes les sources</a>
-    <a href="?status={{ status_filter }}&source=barats{% if date_filter %}&date={{ date_filter }}{% endif %}" class="src-btn {% if source_filter == 'barats' %}active{% endif %}">🌐 Barats.tn</a>
-    <a href="?status={{ status_filter }}&source=converty{% if date_filter %}&date={{ date_filter }}{% endif %}" class="src-btn {% if source_filter == 'converty' %}active{% endif %}">🛒 Converty</a>
-    <a href="?status={{ status_filter }}&source=facebook{% if date_filter %}&date={{ date_filter }}{% endif %}" class="src-btn {% if source_filter == 'facebook' %}active{% endif %}">📘 Facebook</a>
+    <a href="?status={{ status_filter }}&source=all{% if today_on %}&today=1{% endif %}" class="src-btn {% if source_filter == 'all' %}active{% endif %}">Toutes les sources</a>
+    <a href="?status={{ status_filter }}&source=barats{% if today_on %}&today=1{% endif %}" class="src-btn {% if source_filter == 'barats' %}active{% endif %}">🌐 Barats.tn</a>
+    <a href="?status={{ status_filter }}&source=converty{% if today_on %}&today=1{% endif %}" class="src-btn {% if source_filter == 'converty' %}active{% endif %}">🛒 Converty</a>
+    <a href="?status={{ status_filter }}&source=facebook{% if today_on %}&today=1{% endif %}" class="src-btn {% if source_filter == 'facebook' %}active{% endif %}">📘 Facebook</a>
   </div>
 
   <div class="chips">
     <div class="chip-group chip-group-left">
-    <a href="?status=all&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'all' %}active{% endif %}">Toutes <span class="count">{{ total }}</span></a>
-    <a href="?status=non_confirmee&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'non_confirmee' %}active{% endif %}">Non confirmée <span class="count">{{ counts.non_confirmee|default:0 }}</span></a>
-    <a href="?status=confirmee&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'confirmee' %}active{% endif %}">Confirmée <span class="count">{{ counts.confirmee|default:0 }}</span></a>
-    <a href="?status=rappeler_plus_tard&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'rappeler_plus_tard' %}active{% endif %}">Rappeler <span class="count">{{ counts.rappeler_plus_tard|default:0 }}</span></a>
-    <a href="?status=injoignable&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'injoignable' %}active{% endif %}">Injoignable <span class="count">{{ counts.injoignable|default:0 }}</span></a>
-    <a href="?status=pas_serieux&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'pas_serieux' %}active{% endif %}">Pas sérieux <span class="count">{{ counts.pas_serieux|default:0 }}</span></a>
-    <a href="?status=annulee&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'annulee' %}active{% endif %}">Annulée <span class="count">{{ counts.annulee|default:0 }}</span></a>
-    <a href="?status=supprime_navex&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'supprime_navex' %}active{% endif %}" style="border-color:var(--red);color:var(--red);">⚠ Supprimé Navex <span class="count">{{ counts.supprime_navex|default:0 }}</span></a>
+    <a href="?status=all&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'all' %}active{% endif %}">Toutes <span class="count">{{ total }}</span></a>
+    <a href="?status=non_confirmee&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'non_confirmee' %}active{% endif %}">Non confirmée <span class="count">{{ counts.non_confirmee|default:0 }}</span></a>
+    <a href="?status=confirmee&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'confirmee' %}active{% endif %}">Confirmée <span class="count">{{ counts.confirmee|default:0 }}</span></a>
+    <a href="?status=rappeler_plus_tard&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'rappeler_plus_tard' %}active{% endif %}">Rappeler <span class="count">{{ counts.rappeler_plus_tard|default:0 }}</span></a>
+    <a href="?status=injoignable&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'injoignable' %}active{% endif %}">Injoignable <span class="count">{{ counts.injoignable|default:0 }}</span></a>
+    <a href="?status=pas_serieux&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'pas_serieux' %}active{% endif %}">Pas sérieux <span class="count">{{ counts.pas_serieux|default:0 }}</span></a>
+    <a href="?status=annulee&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'annulee' %}active{% endif %}">Annulée <span class="count">{{ counts.annulee|default:0 }}</span></a>
+    <a href="?status=supprime_navex&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'supprime_navex' %}active{% endif %}" style="border-color:var(--red);color:var(--red);">⚠ Supprimé Navex <span class="count">{{ counts.supprime_navex|default:0 }}</span></a>
     </div>
 
     <div class="chip-group chip-group-right">
-    <a href="?status=en_cours&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'en_cours' %}active{% endif %}">En cours <span class="count">{{ counts.en_cours|default:0 }}</span></a>
-    <a href="?status=au_magasin&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'au_magasin' %}active{% endif %}" style="border-color:var(--amber);color:var(--amber);">Au magasin <span class="count">{{ counts.au_magasin|default:0 }}</span></a>
-    <a href="?status=returning&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'returning' %}active{% endif %}" style="border-color:#ea580c;color:#ea580c;">↩ En retour <span class="count">{{ counts.returning|default:0 }}</span></a>
-    <a href="?status=returned&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'returned' %}active{% endif %}">↩ Retourné <span class="count">{{ counts.returned|default:0 }}</span></a>
-    <a href="?status=livree&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'livree' %}active{% endif %}" style="border-color:var(--green);color:var(--green);">✓ Livrée <span class="count">{{ counts.livree|default:0 }}</span></a>
-    <a href="?status=payee&source={{ source_filter }}{% if date_filter %}&date={{ date_filter }}{% endif %}" class="chip {% if status_filter == 'payee' %}active{% endif %}" style="border-color:#15803d;color:#15803d;background:rgba(21,128,61,0.08);">💰 Payée <span class="count">{{ counts.payee|default:0 }}</span></a>
+    <a href="?status=en_cours&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'en_cours' %}active{% endif %}">En cours <span class="count">{{ counts.en_cours|default:0 }}</span></a>
+    <a href="?status=au_magasin&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'au_magasin' %}active{% endif %}" style="border-color:var(--amber);color:var(--amber);">Au magasin <span class="count">{{ counts.au_magasin|default:0 }}</span></a>
+    <a href="?status=returning&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'returning' %}active{% endif %}" style="border-color:#ea580c;color:#ea580c;">↩ En retour <span class="count">{{ counts.returning|default:0 }}</span></a>
+    <a href="?status=returned&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'returned' %}active{% endif %}">↩ Retourné <span class="count">{{ counts.returned|default:0 }}</span></a>
+    <a href="?status=livree&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'livree' %}active{% endif %}" style="border-color:var(--green);color:var(--green);">✓ Livrée <span class="count">{{ counts.livree|default:0 }}</span></a>
+    <a href="?status=payee&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'payee' %}active{% endif %}" style="border-color:#15803d;color:#15803d;background:rgba(21,128,61,0.08);">💰 Payée <span class="count">{{ counts.payee|default:0 }}</span></a>
     </div>
   </div>
 

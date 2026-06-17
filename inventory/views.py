@@ -3073,8 +3073,10 @@ def orders_list(request):
     elif source_filter == "facebook":
         qs = qs.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
 
-    # Date filter (by création date, using the 17h→17h business day). A day `d`
-    # runs from (d-1) 17:00 to d 17:00 local time.
+    # "Aujourd'hui" toggle. When ON, it narrows ONLY the early/call-center
+    # statuses to today's business day (17h yesterday → 17h today, by création
+    # date). The outcome statuses (en cours, au magasin, en retour, livrée,
+    # payée) always show ALL dates and ignore the toggle.
     import datetime as _dt
     try:
         import zoneinfo
@@ -3082,38 +3084,25 @@ def orders_list(request):
     except Exception:
         _tz = timezone.get_current_timezone()
 
-    def _bday(d):
-        end = timezone.make_aware(_dt.datetime.combine(d, _dt.time(17, 0)), _tz)
-        return end - _dt.timedelta(days=1), end
-
-    date_filter = request.GET.get("date", "")   # 'today', 'yesterday', '7d', or '' (all)
-    date_from_raw = request.GET.get("date_from", "")
-    date_to_raw = request.GET.get("date_to", "")
-    today_local = timezone.localdate()
-    active_date_label = ""
-    dstart = dend = None
-    if date_filter == "today":
-        dstart, dend = _bday(today_local); active_date_label = "Aujourd'hui"
-    elif date_filter == "yesterday":
-        dstart, dend = _bday(today_local - _dt.timedelta(days=1)); active_date_label = "Hier"
-    elif date_filter == "7d":
-        dstart, _ = _bday(today_local - _dt.timedelta(days=6))
-        _, dend = _bday(today_local); active_date_label = "7 jours"
-    elif date_from_raw or date_to_raw:
-        try:
-            df = _dt.date.fromisoformat(date_from_raw) if date_from_raw else today_local
-            dt_ = _dt.date.fromisoformat(date_to_raw) if date_to_raw else today_local
-            if df > dt_: df, dt_ = dt_, df
-            dstart, _ = _bday(df)
-            _, dend = _bday(dt_)
-            active_date_label = f"{df.strftime('%d/%m')}–{dt_.strftime('%d/%m')}"
-        except ValueError:
-            dstart = dend = None
-    if dstart and dend:
-        qs = qs.filter(created_at__gte=dstart, created_at__lt=dend)
+    today_on = request.GET.get("today") == "1"
+    EARLY_STATUSES = {"non_confirmee", "confirmee", "rappeler_plus_tard", "injoignable", "pas_serieux", "annulee"}
+    today_start = today_end = None
+    if today_on:
+        today_local = timezone.localdate()
+        today_end = timezone.make_aware(_dt.datetime.combine(today_local, _dt.time(17, 0)), _tz)
+        today_start = today_end - _dt.timedelta(days=1)
 
     if status_filter and status_filter != "all":
         qs = qs.filter(status=status_filter)
+
+    # Apply the today window only to early statuses.
+    if today_on and today_start and (status_filter in EARLY_STATUSES or status_filter == "all"):
+        if status_filter == "all":
+            # For "Toutes": early statuses limited to today, outcome statuses all.
+            qs = qs.filter(Q(created_at__gte=today_start, created_at__lt=today_end)
+                           | ~Q(status__in=EARLY_STATUSES))
+        else:
+            qs = qs.filter(created_at__gte=today_start, created_at__lt=today_end)
 
     # Hide orders scheduled for a future date (today's not-yet-actionable orders).
     # NULL scheduled_for = always visible. scheduled_for <= today = visible.
@@ -3183,8 +3172,13 @@ def orders_list(request):
         counts_qs = counts_qs.filter(sales_page__name__iexact="Converty")
     elif source_filter == "facebook":
         counts_qs = counts_qs.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
-    if dstart and dend:
-        counts_qs = counts_qs.filter(created_at__gte=dstart, created_at__lt=dend)
+    # Chip counts: when 'today' is on, early statuses are limited to today's
+    # window; outcome statuses always count all.
+    if today_on and today_start:
+        counts_qs = counts_qs.filter(
+            Q(created_at__gte=today_start, created_at__lt=today_end)
+            | ~Q(status__in=EARLY_STATUSES)
+        )
     counts = dict(counts_qs.values_list("status").annotate(n=Count("id")))
     source_total = counts_qs.count()
 
@@ -3205,10 +3199,7 @@ def orders_list(request):
         "orders": orders,
         "status_filter": status_filter,
         "source_filter": source_filter,
-        "date_filter": date_filter,
-        "date_from": date_from_raw,
-        "date_to": date_to_raw,
-        "active_date_label": active_date_label,
+        "today_on": today_on,
         "counts": counts,
         "total": source_total,
         "future_count": future_count,
