@@ -2399,6 +2399,34 @@ def _build_low_stock_items():
     return low_items
 
 
+def _send_telegram(message, chat_id=None, token=None):
+    """Send a message via Telegram Bot API. Reads token + chat_id from env
+    (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) unless passed explicitly. Best-effort:
+    never raises, returns True/False. Supports multiple chat ids comma-separated."""
+    import urllib.parse, urllib.request, json as _json
+    token = token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_ids = (chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")).split(",")
+    if not token:
+        return False
+    sent_any = False
+    for cid in chat_ids:
+        cid = cid.strip()
+        if not cid:
+            continue
+        try:
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            data = urllib.parse.urlencode({
+                "chat_id": cid, "text": message, "disable_web_page_preview": "true",
+            }).encode()
+            req = urllib.request.Request(url, data=data)
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                resp.read()
+            sent_any = True
+        except Exception:
+            continue
+    return sent_any
+
+
 def _send_whatsapp(message, phone=None, apikey=None):
     """Send a WhatsApp message via CallMeBot. Reads phone + apikey from env
     (CALLMEBOT_PHONE, CALLMEBOT_APIKEY) unless passed explicitly. Best-effort:
@@ -2429,7 +2457,8 @@ def _send_whatsapp(message, phone=None, apikey=None):
 
 
 def _send_low_stock_whatsapp():
-    """Send the low-stock report to the configured WhatsApp number(s)."""
+    """Send the low-stock report to the configured channels (Telegram and/or
+    WhatsApp). Kept this name for the existing cron call sites."""
     from .models import ALERT_DAYS
     low_items = _build_low_stock_items()
     if not low_items:
@@ -2443,7 +2472,12 @@ def _send_low_stock_whatsapp():
         f"{lines}\n\n"
         f"Détails : https://web-production-1391c5.up.railway.app/products/"
     )
-    return _send_whatsapp(msg)
+    sent = False
+    if _send_telegram(msg):
+        sent = True
+    if _send_whatsapp(msg):
+        sent = True
+    return sent
 
 
 def _send_low_stock_email():
