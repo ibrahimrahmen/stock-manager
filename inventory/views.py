@@ -2365,9 +2365,10 @@ def _send_email(subject, body):
         # Match previous fail_silently behaviour
         return False
 
-def _send_low_stock_email():
-    """Send low stock report email — predictive (size will run out in <10 days).
-    Skips products with alert_disabled=True or archived=True."""
+def _build_low_stock_items():
+    """Return the list of low-stock items (shared by the email + WhatsApp
+    alerts). Each item: {name, code, stock, info}. Uses the predictive per-size
+    forecast plus the product-level threshold. Skips disabled/archived."""
     from .models import compute_size_forecast, ALERT_DAYS
     products = Product.objects.filter(
         alert_disabled=False, archived=False
@@ -2380,7 +2381,6 @@ def _send_low_stock_email():
                 "name": product.name, "code": product.code,
                 "stock": stock, "info": f"seuil produit: {product.alert_threshold}",
             })
-        # Check predictive per-size alerts
         for variant in product.variants.all():
             sizes = set(variant.units.values_list("size", flat=True).distinct())
             for size in sizes:
@@ -2396,6 +2396,61 @@ def _send_low_stock_email():
                         "stock": f["current_stock"],
                         "info": info,
                     })
+    return low_items
+
+
+def _send_whatsapp(message, phone=None, apikey=None):
+    """Send a WhatsApp message via CallMeBot. Reads phone + apikey from env
+    (CALLMEBOT_PHONE, CALLMEBOT_APIKEY) unless passed explicitly. Best-effort:
+    never raises, returns True/False. Supports multiple recipients by comma in
+    CALLMEBOT_PHONE / CALLMEBOT_APIKEY (matched by position)."""
+    import urllib.parse, urllib.request
+    phones = (phone or os.environ.get("CALLMEBOT_PHONE", "")).split(",")
+    keys = (apikey or os.environ.get("CALLMEBOT_APIKEY", "")).split(",")
+    sent_any = False
+    for i, ph in enumerate(phones):
+        ph = ph.strip()
+        if not ph:
+            continue
+        key = keys[i].strip() if i < len(keys) else (keys[0].strip() if keys else "")
+        if not key:
+            continue
+        try:
+            url = (
+                "https://api.callmebot.com/whatsapp.php?"
+                + urllib.parse.urlencode({"phone": ph, "text": message, "apikey": key})
+            )
+            with urllib.request.urlopen(url, timeout=20) as resp:
+                resp.read()
+            sent_any = True
+        except Exception:
+            continue
+    return sent_any
+
+
+def _send_low_stock_whatsapp():
+    """Send the low-stock report to the configured WhatsApp number(s)."""
+    from .models import ALERT_DAYS
+    low_items = _build_low_stock_items()
+    if not low_items:
+        return False
+    lines = "\n".join(
+        f"- {item['name']} ({item['code']}): {item['stock']} unités — {item['info']}"
+        for item in low_items
+    )
+    msg = (
+        f"⚠ Stock bas — {len(low_items)} produit(s) à réapprovisionner\n\n"
+        f"{lines}\n\n"
+        f"Détails : https://web-production-1391c5.up.railway.app/products/"
+    )
+    return _send_whatsapp(msg)
+
+
+def _send_low_stock_email():
+    """Send low stock report email — predictive (size will run out in <10 days).
+    Skips products with alert_disabled=True or archived=True."""
+    from .models import ALERT_DAYS
+    low_items = _build_low_stock_items()
 
     if not low_items:
         return False
@@ -2540,7 +2595,16 @@ def api_send_email(request, email_type):
 def cron_morning_email(request):
     """Called at 11am by Railway cron."""
     _send_low_stock_email()
+    _send_low_stock_whatsapp()
     return JsonResponse({"status": "ok", "type": "morning"})
+
+
+@csrf_exempt
+def test_low_stock_whatsapp(request):
+    """Manual trigger to test the low-stock WhatsApp message right now."""
+    sent = _send_low_stock_whatsapp()
+    n = len(_build_low_stock_items())
+    return JsonResponse({"status": "ok", "sent": sent, "low_items": n})
 
 
 def cron_evening_email(request):

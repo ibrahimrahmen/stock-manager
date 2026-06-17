@@ -51,6 +51,7 @@ urlpatterns = [
     path("api/send-email/<str:email_type>/", views.api_send_email, name="api_send_email"),
     path("cron/morning/", views.cron_morning_email, name="cron_morning"),
     path("cron/navex-sync/", views.cron_navex_sync, name="cron_navex_sync"),
+    path("test/low-stock-whatsapp/", views.test_low_stock_whatsapp, name="test_low_stock_whatsapp"),
     path("cron/evening/", views.cron_evening_email, name="cron_evening"),
     path("api/orders/<int:pk>/save-navex/", views.api_save_navex_info, name="api_save_navex_info"),
     path("api/orders/<int:pk>/amount/", views.api_get_order_amount, name="api_get_order_amount"),
