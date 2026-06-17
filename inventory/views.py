@@ -3561,12 +3561,24 @@ def api_order_draft_upsert(request):
 
         # Apply any provided fields
         changed = []
-        # Customer fields
+        # Customer fields. IMPORTANT: phone is a property of the Customer, and
+        # several orders can share one Customer. So changing the phone must NOT
+        # rewrite the shared Customer (that would change every other order of
+        # that person). Instead, re-link THIS order to the Customer matching the
+        # new phone (creating it if needed), leaving the others untouched.
         if phone and order.customer and order.customer.phone != phone:
-            order.customer.phone = phone
-            order.customer.save(update_fields=["phone"])
+            new_customer, _created = Customer.objects.get_or_create(
+                phone=phone,
+                defaults={"name": name or order.customer.name or ""},
+            )
+            # Carry the name onto the (possibly new) customer if provided.
+            if name and new_customer.name != name:
+                new_customer.name = name
+                new_customer.save(update_fields=["name"])
+            order.customer = new_customer
+            order.save(update_fields=["customer"])
             changed.append("phone")
-        if name and order.customer and order.customer.name != name:
+        elif name and order.customer and order.customer.name != name:
             order.customer.name = name
             order.customer.save(update_fields=["name"])
             changed.append("name")
