@@ -5445,6 +5445,30 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
                     product = p
                     break
 
+        # Word-overlap fuzzy match (handles title shorter than catalog name,
+        # e.g. "Polo Ralph Kaja" vs "Polo Ralph Kaja Summer"). Pick the product
+        # sharing the most consecutive leading words with the title.
+        if not product:
+            t_words = title_lower.split()
+            best = None; best_score = 0
+            for p in Product.objects.all():
+                pn = (p.name or "").strip().lower().split()
+                if not pn:
+                    continue
+                # count leading matching words
+                k = 0
+                for a, b in zip(t_words, pn):
+                    if a == b:
+                        k += 1
+                    else:
+                        break
+                # require at least 2 leading words in common and most of the
+                # shorter name to match, to avoid loose matches.
+                if k >= 2 and k >= min(len(t_words), len(pn)) - 1 and k > best_score:
+                    best = p; best_score = k
+            if best:
+                product = best
+
         # --- (C) Ask Gemini to validate the best choice between offer / product / nothing ---
         # This handles cases like Shopify title "Pull Polo Crochet Blueline" where
         # the classic substring match might wrongly pick an Offer named "Pull Polo".
@@ -5511,20 +5535,39 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
                             product = None
                         elif upper.startswith("OFFRE:"):
                             target_name = ai_response[6:].strip()
+                            tn = target_name.lower()
                             for o in all_offers:
-                                if o.name and o.name.strip().lower() == target_name.lower():
-                                    offer = o
-                                    product = None
-                                    gemini_pick = "offer"
-                                    break
+                                if o.name and o.name.strip().lower() == tn:
+                                    offer = o; product = None; gemini_pick = "offer"; break
+                            if not gemini_pick and tn:
+                                cands = [o for o in all_offers if o.name and (
+                                    o.name.strip().lower().startswith(tn) or tn.startswith(o.name.strip().lower())
+                                    or tn in o.name.strip().lower() or o.name.strip().lower() in tn)]
+                                if cands:
+                                    offer = min(cands, key=lambda o: abs(len(o.name) - len(target_name)))
+                                    product = None; gemini_pick = "offer_fuzzy"
                         elif upper.startswith("PRODUIT:"):
                             target_name = ai_response[8:].strip()
+                            tn = target_name.lower()
+                            # 1) exact match
                             for p in all_products:
-                                if p.name and p.name.strip().lower() == target_name.lower():
-                                    product = p
-                                    offer = None
-                                    gemini_pick = "product"
-                                    break
+                                if p.name and p.name.strip().lower() == tn:
+                                    product = p; offer = None; gemini_pick = "product"; break
+                            # 2) fuzzy: catalog name starts-with / contains Gemini's
+                            #    answer, or vice-versa (handles "Polo Ralph Kaja" vs
+                            #    "Polo Ralph Kaja Summer").
+                            if not gemini_pick and tn:
+                                cands = []
+                                for p in all_products:
+                                    pn = (p.name or "").strip().lower()
+                                    if not pn:
+                                        continue
+                                    if pn.startswith(tn) or tn.startswith(pn) or tn in pn or pn in tn:
+                                        cands.append(p)
+                                if cands:
+                                    # prefer the closest length to Gemini's answer
+                                    product = min(cands, key=lambda p: abs(len(p.name) - len(target_name)))
+                                    offer = None; gemini_pick = "product_fuzzy"
                         else:
                             # Gemini answered without prefix — search the name in both lists
                             name_lower = ai_response.lower()
