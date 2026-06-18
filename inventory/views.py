@@ -3013,24 +3013,22 @@ def products_list(request):
         products_qs = products_qs.filter(archived=False)
         if season in (Product.SEASON_SUMMER, Product.SEASON_WINTER):
             products_qs = products_qs.filter(season=season)
-    products = products_qs.all()
+    # Top level shows only PARENTS + standalone products (hide V2/V3 children;
+    # they appear nested under their parent when expanded).
+    products = products_qs.filter(parent_product__isnull=True).all()
     total_available = ProductUnit.objects.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)).count()
     total_shipped = ProductUnit.objects.filter(status=ProductUnit.SHIPPED).count()
     total_paid = ProductUnit.objects.filter(status=ProductUnit.PAID).count()
     total_early_return = ProductUnit.objects.filter(status=ProductUnit.EARLY_RETURN).count()
     total_at_depot = ProductUnit.objects.filter(status=ProductUnit.AT_DEPOT).count()
 
-    from .models import compute_size_forecast
+    from .models import compute_size_forecast, compute_family_size_forecast
+    from django.db.models import Q
 
-    # Calculate low stock sizes per product (predictive: days-of-cover < 10)
-    products_data = []
-    for product in products:
-        # Stock breakdown: total disponible = in_stock + returned
-        in_stock_count = 0
-        returned_count = 0
-        early_return_count = 0
-        at_depot_count = 0
-        for variant in product.variants.all():
+    def _stock_breakdown(prod):
+        """Per-product stock counts + low/zero sizes (its own units only)."""
+        in_stock_count = returned_count = early_return_count = at_depot_count = 0
+        for variant in prod.variants.all():
             for unit in variant.units.all():
                 if unit.status == ProductUnit.IN_STOCK:
                     in_stock_count += 1
@@ -3040,30 +3038,64 @@ def products_list(request):
                     early_return_count += 1
                 elif unit.status == ProductUnit.AT_DEPOT:
                     at_depot_count += 1
+        return {
+            "product": prod,
+            "stock": in_stock_count + returned_count,
+            "in_stock_count": in_stock_count,
+            "returned_count": returned_count,
+            "early_return_count": early_return_count,
+            "at_depot_count": at_depot_count,
+            "variants": prod.variants.all(),
+        }
+
+    # Calculate low stock sizes per product (predictive: days-of-cover < 10)
+    products_data = []
+    for product in products:
+        # The family = this parent + its versions.
+        family = list(Product.objects.filter(
+            Q(id=product.id) | Q(parent_product=product)
+        ).prefetch_related("variants__units"))
+        fam_ids = [p.id for p in family]
+        has_children = len(family) > 1
+
+        # Family-combined stock counts.
+        in_stock_count = returned_count = early_return_count = at_depot_count = 0
+        for fp in family:
+            for variant in fp.variants.all():
+                for unit in variant.units.all():
+                    if unit.status == ProductUnit.IN_STOCK:
+                        in_stock_count += 1
+                    elif unit.status == ProductUnit.RETURNED:
+                        returned_count += 1
+                    elif unit.status == ProductUnit.EARLY_RETURN:
+                        early_return_count += 1
+                    elif unit.status == ProductUnit.AT_DEPOT:
+                        at_depot_count += 1
         stock = in_stock_count + returned_count
         is_low = stock <= product.alert_threshold and not product.alert_disabled
 
-        # Find low/zero sizes using predictive forecast — skipped entirely for muted products
+        # Low/zero sizes computed across the WHOLE family per size.
         low_sizes = []
         zero_sizes = []
         if not product.alert_disabled:
-            for variant in product.variants.all():
-                size_map = {}
-                for unit in variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)):
-                    size_map[unit.size] = size_map.get(unit.size, 0) + 1
-                # Also include sizes with units in any status, so we can flag zero stock
-                all_sizes = set(size_map.keys()) | set(
-                    variant.units.values_list("size", flat=True).distinct()
-                )
-                for size in all_sizes:
-                    count = size_map.get(size, 0)
-                    if count == 0:
-                        if size not in zero_sizes:
-                            zero_sizes.append(size)
-                    else:
-                        forecast = compute_size_forecast(variant, size)
-                        if forecast["is_triggered"] and size not in low_sizes:
-                            low_sizes.append(size)
+            all_sizes = set(
+                ProductUnit.objects.filter(variant__product_id__in=fam_ids)
+                .values_list("size", flat=True).distinct()
+            )
+            for size in all_sizes:
+                if not size:
+                    continue
+                f = compute_family_size_forecast(fam_ids, size)
+                if f["current_stock"] == 0:
+                    zero_sizes.append(size)
+                elif f["is_triggered"]:
+                    low_sizes.append(size)
+
+        # Per-version breakdown (only if it has children) for the expand panel.
+        children_data = []
+        if has_children:
+            for fp in family:
+                children_data.append(_stock_breakdown(fp))
 
         products_data.append({
             "product": product,
@@ -3076,6 +3108,9 @@ def products_list(request):
             "zero_sizes": zero_sizes,
             "is_low": is_low,
             "variants": product.variants.all(),
+            "has_children": has_children,
+            "version_count": len(family),
+            "children_data": children_data,
         })
 
     return render(request, "inventory/products_list.html", {

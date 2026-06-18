@@ -79,6 +79,16 @@
     .empty{text-align:center;padding:80px 0;color:var(--muted);}
     .empty-title{font-family:'Syne',sans-serif;font-size:18px;font-weight:600;margin-bottom:8px;}
     .empty-sub{font-size:13px;margin-bottom:20px;}
+.versions-toggle{display:block;width:100%;margin-top:-6px;margin-bottom:14px;background:var(--surface2);border:0.5px solid var(--border);color:var(--muted);border-radius:0 0 12px 12px;padding:7px 12px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;text-align:left;}
+.versions-toggle:hover{color:var(--text);background:var(--border);}
+.versions-toggle.open{color:var(--text);}
+.versions-panel{margin-top:-12px;margin-bottom:14px;background:var(--surface2);border:0.5px solid var(--border);border-top:none;border-radius:0 0 12px 12px;padding:4px 10px 8px;}
+.version-row{display:flex;justify-content:space-between;align-items:center;padding:8px 8px;border-bottom:0.5px solid var(--border);text-decoration:none;color:var(--text);font-size:13px;}
+.version-row:last-child{border-bottom:none;}
+.version-row:hover{background:var(--surface);}
+.version-code{color:var(--muted);font-size:11px;margin-left:4px;}
+.version-stock{font-weight:600;color:var(--green);font-size:13px;}
+.version-stock.vzero{color:var(--red);}
   </style>
 </head>
 <body>
@@ -172,6 +182,19 @@
       </div>
       {% endif %}
     </a>
+    {% if pd.has_children %}
+    <button type="button" class="versions-toggle" onclick="toggleVersions('vers-{{ product.pk }}', this)">
+      ▸ {{ pd.version_count }} versions (V1 + enfants)
+    </button>
+    <div class="versions-panel" id="vers-{{ product.pk }}" style="display:none;">
+      {% for cd in pd.children_data %}
+      <a href="{% url 'product_detail' cd.product.pk %}" class="version-row">
+        <span class="version-name">{{ cd.product.name }} <span class="version-code">{{ cd.product.code }}</span></span>
+        <span class="version-stock {% if cd.stock == 0 %}vzero{% endif %}">{{ cd.stock }} u</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% endwith %}
     {% endwith %}{% endfor %}
   </div>
@@ -184,6 +207,14 @@
   {% endif %}
 </div>
 <script>
+function toggleVersions(id, btn) {
+  var panel = document.getElementById(id);
+  if (!panel) return;
+  var open = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : 'block';
+  btn.classList.toggle('open', !open);
+  btn.innerHTML = btn.innerHTML.replace(open ? '▾' : '▸', open ? '▸' : '▾');
+}
 function filterProducts(query) {
   var q = query.toLowerCase().trim();
   var cards = document.querySelectorAll('.product-bubble');
