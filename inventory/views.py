@@ -3131,24 +3131,47 @@ def products_list(request):
 def product_detail(request, pk):
     product = get_object_or_404(Product, pk=pk)
     from .models import compute_size_forecast
-    variants = product.variants.prefetch_related("units").all()
+    from django.db.models import Q
 
-    # Build size breakdown per variant — only available units (in_stock + returned)
+    # Resolve the SKU family: the root (parent or self) + all its versions.
+    root = product.parent_product or product
+    family = list(
+        Product.objects.filter(Q(id=root.id) | Q(parent_product=root))
+        .prefetch_related("variants__units")
+    )
+    # Order: root first, then versions by name.
+    family.sort(key=lambda p: (p.id != root.id, p.name))
+
+    # Filter buttons data (always show the root product's page; the buttons just
+    # change which scope we display).
+    versions = [{"id": p.id, "name": p.name, "code": p.code, "is_root": p.id == root.id}
+                for p in family]
+
+    # Which scope are we showing? ?version=<id> for a single version, or 'all'
+    # (default) for the whole family combined.
+    sel = request.GET.get("version", "all")
+    if sel != "all":
+        try:
+            sel_id = int(sel)
+            scope_products = [p for p in family if p.id == sel_id] or family
+        except ValueError:
+            sel = "all"; scope_products = family
+    else:
+        scope_products = family
+
+    # Collect variants across the scoped products.
+    variants = []
+    for p in scope_products:
+        variants.extend(p.variants.prefetch_related("units").all())
+
+    # Build size breakdown per variant.
     variants_data = []
     for variant in variants:
-        # Get ALL sizes that ever existed for this variant (including 0 stock)
         all_sizes = list(variant.units.values_list("size", flat=True).distinct())
-        size_map = {}
-        for size in all_sizes:
-            size_map[size] = 0
+        size_map = {s: 0 for s in all_sizes}
         for unit in variant.units.filter(status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED)):
             size_map[unit.size] = size_map.get(unit.size, 0) + 1
-
-        # Predictive forecast per size — feeds the alert UI
-        size_forecasts = {}
-        for size in size_map.keys():
-            size_forecasts[size] = compute_size_forecast(variant, size)
-
+        size_forecasts = {s: compute_size_forecast(variant, s) for s in size_map.keys()}
         variants_data.append({
             "variant": variant,
             "size_map": size_map,
@@ -3157,25 +3180,24 @@ def product_detail(request, pk):
             "all_units": variant.units.all(),
         })
 
-    # Stock breakdown for the whole product (across all variants/sizes)
-    in_stock_total = 0
-    returned_total = 0
-    early_return_total = 0
-    at_depot_total = 0
-    for variant in variants:
-        for unit in variant.units.all():
-            if unit.status == ProductUnit.IN_STOCK:
-                in_stock_total += 1
-            elif unit.status == ProductUnit.RETURNED:
-                returned_total += 1
-            elif unit.status == ProductUnit.EARLY_RETURN:
-                early_return_total += 1
-            elif unit.status == ProductUnit.AT_DEPOT:
-                at_depot_total += 1
+    # Stock totals for the scoped products.
+    in_stock_total = returned_total = early_return_total = at_depot_total = 0
+    for p in scope_products:
+        for variant in p.variants.all():
+            for unit in variant.units.all():
+                if unit.status == ProductUnit.IN_STOCK:
+                    in_stock_total += 1
+                elif unit.status == ProductUnit.RETURNED:
+                    returned_total += 1
+                elif unit.status == ProductUnit.EARLY_RETURN:
+                    early_return_total += 1
+                elif unit.status == ProductUnit.AT_DEPOT:
+                    at_depot_total += 1
     available_total = in_stock_total + returned_total
 
     return render(request, "inventory/product_detail.html", {
         "product": product,
+        "root_product": root,
         "variants": variants,
         "variants_data": variants_data,
         "in_stock_total": in_stock_total,
@@ -3183,6 +3205,9 @@ def product_detail(request, pk):
         "early_return_total": early_return_total,
         "at_depot_total": at_depot_total,
         "available_total": available_total,
+        "versions": versions,
+        "selected_version": sel,
+        "has_family": len(family) > 1,
     })
 
 

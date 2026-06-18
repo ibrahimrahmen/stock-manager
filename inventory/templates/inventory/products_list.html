@@ -182,19 +182,6 @@
       </div>
       {% endif %}
     </a>
-    {% if pd.has_children %}
-    <button type="button" class="versions-toggle" onclick="toggleVersions('vers-{{ product.pk }}', this)">
-      ▸ {{ pd.version_count }} versions (V1 + enfants)
-    </button>
-    <div class="versions-panel" id="vers-{{ product.pk }}" style="display:none;">
-      {% for cd in pd.children_data %}
-      <a href="{% url 'product_detail' cd.product.pk %}" class="version-row">
-        <span class="version-name">{{ cd.product.name }} <span class="version-code">{{ cd.product.code }}</span></span>
-        <span class="version-stock {% if cd.stock == 0 %}vzero{% endif %}">{{ cd.stock }} u</span>
-      </a>
-      {% endfor %}
-    </div>
-    {% endif %}
     {% endwith %}
     {% endwith %}{% endfor %}
   </div>

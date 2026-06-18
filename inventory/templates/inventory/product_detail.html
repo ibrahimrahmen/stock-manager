@@ -123,6 +123,11 @@
     .us-shipped{background:var(--blue-bg);color:var(--blue);}
     .us-paid{background:var(--purple-bg);color:var(--purple);}
     .us-returned{background:var(--red-bg);color:var(--red);}
+.version-filter{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px 0;}
+.vfilter{padding:8px 16px;border-radius:10px;border:0.5px solid var(--border,rgba(255,255,255,0.1));background:var(--surface,#1a1a17);color:var(--muted,#999);text-decoration:none;font-size:13px;font-weight:600;}
+.vfilter:hover{color:var(--text,#fff);}
+.vfilter.active{background:var(--text,#fff);color:var(--bg,#000);border-color:var(--text,#fff);}
+.vf-tag{font-size:10px;opacity:0.7;font-weight:400;text-transform:uppercase;}
   </style>
 </head>
 <body>
@@ -148,6 +153,15 @@
     {% endif %}
   </div>
   </div>
+
+  {% if has_family %}
+  <div class="version-filter">
+    <a href="?version=all" class="vfilter {% if selected_version == 'all' %}active{% endif %}">Tous (combiné)</a>
+    {% for v in versions %}
+    <a href="?version={{ v.id }}" class="vfilter {% if selected_version == v.id|stringformat:'s' %}active{% endif %}">{{ v.name }}{% if v.is_root %} <span class="vf-tag">parent</span>{% endif %}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <div class="sec">Stock par variante et taille</div>
   <div style="margin: 0 0 12px 0; padding: 10px 14px; background: rgba(255,255,255,0.04); border-radius: 8px; font-size: 14px; display:flex; flex-wrap:wrap; gap:18px; align-items:center;">
