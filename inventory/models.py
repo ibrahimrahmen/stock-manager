@@ -197,6 +197,10 @@ class ShippingOrder(models.Model):
     opened_at            = models.DateTimeField(auto_now_add=True)
     closed_at            = models.DateTimeField(null=True, blank=True)
     paid_at              = models.DateTimeField(null=True, blank=True)
+    # When the Navex sync first saw a "Livré Payé" status for this order. Used
+    # as the paid_at date when the office later confirms the payment, so paid_at
+    # reflects when Navex reported it paid (≈ real date) rather than the click.
+    navex_paid_detected_at = models.DateTimeField(null=True, blank=True)
     amount_collected     = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True,
                                                help_text="Actual amount collected from client")
     notes                = models.TextField(blank=True)

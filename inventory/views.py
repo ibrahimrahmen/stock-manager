@@ -780,7 +780,7 @@ def api_scan_payment(request):
             prev_order = ShippingOrder.objects.get(pk=pending_order_id)
             if prev_order.status == ShippingOrder.CLOSED:
                 prev_order.status = ShippingOrder.PAID
-                prev_order.paid_at = timezone.now()
+                prev_order.paid_at = prev_order.navex_paid_detected_at or timezone.now()
                 prev_order.save()
                 # Mark all shipped items as sold
                 for item in prev_order.items.select_related("unit"):
@@ -919,7 +919,7 @@ def api_confirm_payment(request):
 
     # Mark order as paid — also fix any remaining shipped units
     order.status = ShippingOrder.PAID
-    order.paid_at = timezone.now()
+    order.paid_at = order.navex_paid_detected_at or timezone.now()
     order.amount_collected = amount_collected
     order.notes = notes
     order.save()
@@ -1565,7 +1565,7 @@ def api_confirm_payment_from_navex(request, pk):
 
     with transaction.atomic():
         order.status = ShippingOrder.PAID
-        order.paid_at = timezone.now()
+        order.paid_at = order.navex_paid_detected_at or timezone.now()
         order.amount_collected = amount
         order.save()
         for item in order.items.select_related("unit"):
@@ -3097,6 +3097,17 @@ def products_list(request):
             for fp in family:
                 children_data.append(_stock_breakdown(fp))
 
+        # Average units sold per day across the whole family (last
+        # FORECAST_WINDOW_DAYS): net = SHIPPED − RETURNED, divided by window.
+        from .models import StockMovement, FORECAST_WINDOW_DAYS
+        cutoff = timezone.now() - timezone.timedelta(days=FORECAST_WINDOW_DAYS)
+        movs = StockMovement.objects.filter(
+            unit__variant__product_id__in=fam_ids, moved_at__gte=cutoff,
+        ).values_list("movement_type", flat=True)
+        shipped = sum(1 for m in movs if m == StockMovement.SHIPPED)
+        returned = sum(1 for m in movs if m == StockMovement.RETURNED)
+        avg_per_day = max(0, shipped - returned) / float(FORECAST_WINDOW_DAYS)
+
         products_data.append({
             "product": product,
             "stock": stock,
@@ -3111,7 +3122,11 @@ def products_list(request):
             "has_children": has_children,
             "version_count": len(family),
             "children_data": children_data,
+            "avg_per_day": round(avg_per_day, 1),
         })
+
+    # Sort by best-selling (highest avg/day first).
+    products_data.sort(key=lambda d: d["avg_per_day"], reverse=True)
 
     return render(request, "inventory/products_list.html", {
         "products_data": products_data,
@@ -7262,6 +7277,16 @@ def _sync_navex_for_v2_orders(only_pending=True):
                     push_status_to_converty(o, Order.LIVREE)
                 except Exception:
                     pass
+
+        # If Navex reports the colis as "Livré Payé" (delivered AND paid), record
+        # the moment we first detected it on the linked v1 ShippingOrder(s). The
+        # office's later pay-confirmation uses this as paid_at (≈ real Navex date)
+        # instead of the click time. Set once; never overwrite.
+        if navex_lower in ("livrer paye", "livré payé", "livre paye", "livre payé", "livree paye", "livrée payée"):
+            for so in o.shipping_orders.all():
+                if so.navex_paid_detected_at is None:
+                    so.navex_paid_detected_at = now
+                    so.save(update_fields=["navex_paid_detected_at"])
 
         # Detect "Au magasin" / "En cours" → set the in-transit status. Allowed
         # from Confirmée or between the two in-transit states themselves
