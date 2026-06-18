@@ -3097,18 +3097,17 @@ def products_list(request):
             for fp in family:
                 children_data.append(_stock_breakdown(fp))
 
-        # Average units DELIVERED per day across the whole family over the last
-        # FORECAST_WINDOW_DAYS: sum of OrderLine quantities whose order is
-        # livrée/payée and whose delivered_at falls in the window, ÷ window.
-        from .models import OrderLine, Order as _Order, FORECAST_WINDOW_DAYS
-        from django.db.models import Sum
+        # Average units that became PAID per day across the whole family over
+        # the last FORECAST_WINDOW_DAYS. Source = PAID StockMovements (each one
+        # = a unit that got paid), dated by moved_at.
+        from .models import StockMovement, FORECAST_WINDOW_DAYS
         cutoff = timezone.now() - timezone.timedelta(days=FORECAST_WINDOW_DAYS)
-        delivered_qty = OrderLine.objects.filter(
-            product_id__in=fam_ids,
-            order__status__in=[_Order.LIVREE, _Order.PAYEE],
-            order__delivered_at__gte=cutoff,
-        ).aggregate(n=Sum("quantity"))["n"] or 0
-        avg_per_day = delivered_qty / float(FORECAST_WINDOW_DAYS)
+        paid_qty = StockMovement.objects.filter(
+            unit__variant__product_id__in=fam_ids,
+            movement_type=StockMovement.PAID,
+            moved_at__gte=cutoff,
+        ).count()
+        avg_per_day = paid_qty / float(FORECAST_WINDOW_DAYS)
 
         products_data.append({
             "product": product,

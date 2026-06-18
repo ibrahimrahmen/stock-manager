@@ -167,7 +167,7 @@
           {% if product.variants.count > 1 %}
           <span class="bstat bstat-shipped">{{ product.variants.count }} variantes</span>
           {% endif %}
-          <span class="bstat" style="background:var(--purple-dim,rgba(167,139,250,0.15));color:var(--purple,#a78bfa);">🚚 {{ pd.avg_per_day }} livrée/jour</span>
+          <span class="bstat" style="background:var(--purple-dim,rgba(167,139,250,0.15));color:var(--purple,#a78bfa);">💰 {{ pd.avg_per_day }} payé/jour</span>
         </div>
         <div class="bubble-price">{{ product.sell_price|floatformat:3 }} TND</div>
       </div>
