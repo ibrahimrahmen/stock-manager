@@ -648,6 +648,9 @@ class Order(models.Model):
     cancel_reason = models.CharField(max_length=30, choices=CANCEL_REASON_CHOICES, blank=True, default="",
         help_text="Raison de l'annulation (client / changement / rupture stock)")
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    # When the order became "livrée" (set once by the Navex sync on the LIVREE
+    # transition, or by the pay flow). Used for delivered-per-day metrics.
+    delivered_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(blank=True, default="")
 
     # Filled later by Phase 5 (Navex push) — blank means "not yet pushed"

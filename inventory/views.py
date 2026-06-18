@@ -3097,16 +3097,18 @@ def products_list(request):
             for fp in family:
                 children_data.append(_stock_breakdown(fp))
 
-        # Average units sold per day across the whole family (last
-        # FORECAST_WINDOW_DAYS): net = SHIPPED − RETURNED, divided by window.
-        from .models import StockMovement, FORECAST_WINDOW_DAYS
+        # Average units DELIVERED per day across the whole family over the last
+        # FORECAST_WINDOW_DAYS: sum of OrderLine quantities whose order is
+        # livrée/payée and whose delivered_at falls in the window, ÷ window.
+        from .models import OrderLine, Order as _Order, FORECAST_WINDOW_DAYS
+        from django.db.models import Sum
         cutoff = timezone.now() - timezone.timedelta(days=FORECAST_WINDOW_DAYS)
-        movs = StockMovement.objects.filter(
-            unit__variant__product_id__in=fam_ids, moved_at__gte=cutoff,
-        ).values_list("movement_type", flat=True)
-        shipped = sum(1 for m in movs if m == StockMovement.SHIPPED)
-        returned = sum(1 for m in movs if m == StockMovement.RETURNED)
-        avg_per_day = max(0, shipped - returned) / float(FORECAST_WINDOW_DAYS)
+        delivered_qty = OrderLine.objects.filter(
+            product_id__in=fam_ids,
+            order__status__in=[_Order.LIVREE, _Order.PAYEE],
+            order__delivered_at__gte=cutoff,
+        ).aggregate(n=Sum("quantity"))["n"] or 0
+        avg_per_day = delivered_qty / float(FORECAST_WINDOW_DAYS)
 
         products_data.append({
             "product": product,
@@ -7263,6 +7265,10 @@ def _sync_navex_for_v2_orders(only_pending=True):
             and o.status in (Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN)):
             old_label = dict(Order.STATUS_CHOICES).get(o.status, o.status)
             o.status = Order.LIVREE
+            if o.delivered_at is None:
+                o.delivered_at = now
+                if "delivered_at" not in update_fields:
+                    update_fields.append("delivered_at")
             if "status" not in update_fields:
                 update_fields.append("status")
             log_action(
