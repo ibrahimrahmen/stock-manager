@@ -420,6 +420,43 @@ FORECAST_WINDOW_DAYS = 7   # average over last 7 days of activity
 ALERT_DAYS           = 10  # raise alert when days_of_cover < 10
 
 
+def compute_family_size_forecast(family_product_ids, size):
+    """Like compute_size_forecast but summed across a whole SKU family for a
+    given size. Combines stock + movements of that size across all family
+    products (parent + V2/V3). Returns the same dict shape."""
+    cutoff = timezone.now() - timezone.timedelta(days=FORECAST_WINDOW_DAYS)
+    movements = StockMovement.objects.filter(
+        unit__variant__product_id__in=family_product_ids,
+        unit__size=size,
+        moved_at__gte=cutoff,
+    ).values_list("movement_type", flat=True)
+
+    shipped  = sum(1 for m in movements if m == StockMovement.SHIPPED)
+    returned = sum(1 for m in movements if m == StockMovement.RETURNED)
+    net = max(0, shipped - returned)
+    daily_rate = net / float(FORECAST_WINDOW_DAYS)
+
+    current_stock = ProductUnit.objects.filter(
+        variant__product_id__in=family_product_ids,
+        size=size,
+        status__in=(ProductUnit.IN_STOCK, ProductUnit.RETURNED),
+    ).count()
+
+    if daily_rate <= 0:
+        days_of_cover = None
+        is_triggered = current_stock == 0
+    else:
+        days_of_cover = current_stock / daily_rate
+        is_triggered = days_of_cover < ALERT_DAYS
+
+    return {
+        "current_stock": current_stock,
+        "daily_rate": round(daily_rate, 2),
+        "days_of_cover": round(days_of_cover, 1) if days_of_cover is not None else None,
+        "is_triggered": is_triggered,
+    }
+
+
 def compute_size_forecast(variant, size):
     """Compute days-of-cover for a (variant, size) pair.
 

@@ -2366,62 +2366,62 @@ def _send_email(subject, body):
         return False
 
 def _build_low_stock_items():
-    """Return the list of low-stock items (shared by the email + Telegram
-    alerts). Each item: {name, code, stock, info, image}.
+    """One alert per SKU family (parent product). For each family we compute,
+    per size, the COMBINED stock + sell-rate across parent + V2/V3, and list
+    only the sizes that are running low. Returns list of:
+        {name, code, image, low_sizes: [{size, stock, info}], total_stock}
+    Families with no low size are skipped."""
+    from .models import compute_family_size_forecast
+    from django.db.models import Q
 
-    Family-aware: products linked as V2/V3 of a parent share one physical SKU,
-    so stock is summed across the whole family and the alert is reported ONCE
-    per family (on the root product), never once per version."""
-    from .models import compute_size_forecast, ALERT_DAYS
-    products = Product.objects.filter(
-        alert_disabled=False, archived=False
-    ).prefetch_related("variants__units")
+    # Find all family roots among active products.
+    products = Product.objects.filter(alert_disabled=False, archived=False)
+    roots = {}
+    for p in products:
+        root = p.parent_product or p
+        roots.setdefault(root.id, root)
 
-    low_items = []
-    seen_family_product_level = set()   # root ids already reported at product level
+    items = []
+    for root in roots.values():
+        fam = Product.objects.filter(Q(id=root.id) | Q(parent_product=root))
+        fam_ids = list(fam.values_list("id", flat=True))
 
-    for product in products:
-        root = product.parent_product or product
-
-        # --- product-level (whole family) check, once per family root ---
-        if root.id not in seen_family_product_level:
-            fam_stock = product.family_total_stock  # summed across parent + versions
-            # threshold: use the root's threshold (fall back to product's)
-            threshold = getattr(root, "alert_threshold", product.alert_threshold)
-            if fam_stock <= threshold:
-                img = None
-                for fam_p in product.family_products():
-                    for v in fam_p.variants.all():
-                        if v.image:
-                            img = v.image; break
-                    if img:
-                        break
-                low_items.append({
-                    "name": root.name, "code": root.code,
-                    "stock": fam_stock,
-                    "info": f"seuil: {threshold} (toutes versions)",
-                    "image": img,
+        # all sizes present anywhere in the family
+        sizes = set(
+            ProductUnit.objects.filter(variant__product_id__in=fam_ids)
+            .values_list("size", flat=True).distinct()
+        )
+        low_sizes = []
+        total_stock = 0
+        for size in sorted(s for s in sizes if s):
+            f = compute_family_size_forecast(fam_ids, size)
+            total_stock += f["current_stock"]
+            if f["is_triggered"]:
+                if f["days_of_cover"] is not None:
+                    info = f"~{f['days_of_cover']}j restants à {f['daily_rate']}/j"
+                else:
+                    info = "rupture" if f["current_stock"] == 0 else "stock bas"
+                low_sizes.append({
+                    "size": size, "stock": f["current_stock"], "info": info,
                 })
-            seen_family_product_level.add(root.id)
 
-        # --- predictive per-size alerts (per variant, still useful granular) ---
-        for variant in product.variants.all():
-            sizes = set(variant.units.values_list("size", flat=True).distinct())
-            for size in sizes:
-                f = compute_size_forecast(variant, size)
-                if f["is_triggered"] and f["current_stock"] > 0:
-                    if f["days_of_cover"] is not None:
-                        info = f"~{f['days_of_cover']}j restants à {f['daily_rate']}/jour"
-                    else:
-                        info = "stock 0"
-                    low_items.append({
-                        "name": f"{product.name} {variant.color_label} taille {size}",
-                        "code": product.code,
-                        "stock": f["current_stock"],
-                        "info": info,
-                        "image": variant.image if variant.image else None,
-                    })
-    return low_items
+        if not low_sizes:
+            continue
+
+        # photo: first family variant with an image
+        img = None
+        for fam_p in fam.prefetch_related("variants"):
+            for v in fam_p.variants.all():
+                if v.image:
+                    img = v.image; break
+            if img:
+                break
+
+        items.append({
+            "name": root.name, "code": root.code,
+            "image": img, "low_sizes": low_sizes, "total_stock": total_stock,
+        })
+    return items
 
 
 def _send_telegram_photo(photo_path, caption, chat_id=None, token=None):
@@ -2529,50 +2529,42 @@ def _send_whatsapp(message, phone=None, apikey=None):
 
 
 def _send_low_stock_whatsapp():
-    """Send the low-stock report to Telegram: a short header, then one photo
-    per low product (captioned with size/stock/days), text fallback if no image.
-    (Name kept for existing cron call sites.)"""
-    low_items = _build_low_stock_items()
-    if not low_items:
+    """Send the low-stock report to Telegram: one message per family (parent
+    product) listing only the sizes that are running low (combined across all
+    versions), with the parent photo. (Name kept for existing cron call sites.)"""
+    items = _build_low_stock_items()
+    if not items:
         return False
 
     header = (
-        f"\U0001F6A8 STOCK BAS — {len(low_items)} article(s) à réapprovisionner\n"
+        f"\U0001F6A8 STOCK BAS — {len(items)} produit(s) à réapprovisionner\n"
         f"{timezone.now().strftime('%d/%m/%Y %H:%M')}"
     )
     _send_telegram(header)
 
     text_only = []
-    for item in low_items:
+    for item in items:
+        size_lines = "\n".join(
+            f"   • Taille {s['size']} : {s['stock']} u  ({s['info']})"
+            for s in item["low_sizes"]
+        )
         caption = (
-            f"\U0001F4E6 {item['name']}\n"
-            f"Code : {item['code']}\n"
-            f"Stock restant : {item['stock']} unités\n"
-            f"\u23F3 {item['info']}"
+            f"\U0001F4E6 {item['name']}  ({item['code']})\n"
+            f"Stock total (toutes versions) : {item['total_stock']} u\n"
+            f"Tailles en rupture/bas :\n{size_lines}"
         )
         img = item.get("image")
         sent_photo = False
         if img:
             try:
-                path = img.path  # local filesystem path
-                sent_photo = _send_telegram_photo(path, caption)
+                sent_photo = _send_telegram_photo(img.path, caption)
             except Exception:
                 sent_photo = False
         if not sent_photo:
             text_only.append(caption)
 
-    # Any items without a usable image → one combined text message.
     if text_only:
         _send_telegram("\n\n".join(text_only))
-
-    # Also fire WhatsApp (text) if configured, as a fallback channel.
-    try:
-        lines = "\n".join(
-            f"- {i['name']} ({i['code']}): {i['stock']} u — {i['info']}" for i in low_items
-        )
-        _send_whatsapp(f"Stock bas — {len(low_items)} article(s)\n\n{lines}")
-    except Exception:
-        pass
     return True
 
 
@@ -2585,10 +2577,11 @@ def _send_low_stock_email():
     if not low_items:
         return False
 
-    lines = "\n".join(
-        f"- {item['name']} ({item['code']}): {item['stock']} unités ({item['info']})"
-        for item in low_items
-    )
+    lines_parts = []
+    for item in low_items:
+        sizes = ", ".join(f"T{s['size']}: {s['stock']}u ({s['info']})" for s in item["low_sizes"])
+        lines_parts.append(f"- {item['name']} ({item['code']}) — total {item['total_stock']}u — {sizes}")
+    lines = "\n".join(lines_parts)
     body = f"""Rapport de stock bas — {timezone.now().strftime('%d/%m/%Y %H:%M')}
 
 Les produits suivants ont un stock bas (alerte si moins de {ALERT_DAYS} jours de couverture) :
