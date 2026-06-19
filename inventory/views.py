@@ -6779,6 +6779,29 @@ def api_order_change_status(request, pk):
     return JsonResponse({"status": "ok", "new_status": new_status, "label": valid[new_status]})
 
 
+def _navex_clean_text(s):
+    """Sanitize a text field before sending to Navex. Navex's PHP endpoint can
+    return HTTP 500 when fed 'fancy' Unicode (stylized math/fullwidth letters
+    people use on social media) or emoji. We NFKC-normalize (folds fancy fonts
+    back to plain letters) and drop symbols/emoji, keeping letters (incl.
+    Arabic), numbers, punctuation and spaces."""
+    import unicodedata
+    if not s:
+        return ""
+    s = unicodedata.normalize("NFKC", str(s))
+    out = []
+    for ch in s:
+        cat = unicodedata.category(ch)
+        # keep Letters, Marks, Numbers, Punctuation, Spaces; drop Symbols (emoji),
+        # control/surrogate chars, etc.
+        if cat[0] in ("L", "M", "N", "P", "Z") or ch in " -'":
+            out.append(ch)
+    cleaned = "".join(out).strip()
+    # collapse runs of whitespace
+    cleaned = " ".join(cleaned.split())
+    return cleaned
+
+
 def _push_order_to_navex_internal(request, order):
     """Internal: push an order to Navex and return JsonResponse with the result.
     Same logic as api_push_order_to_navex but takes an already-loaded order."""
@@ -6869,10 +6892,10 @@ def _push_order_to_navex_internal(request, order):
 
     payload = {
         "prix":           prix_str,
-        "nom":            order.customer.name or order.customer.phone,
+        "nom":            _navex_clean_text(order.display_name or order.customer.phone),
         "gouvernerat":    order.region.name,
-        "ville":          order.ville or "",
-        "adresse":        (order.address or order.localite or "").strip() or order.ville or "",
+        "ville":          _navex_clean_text(order.ville or ""),
+        "adresse":        _navex_clean_text((order.address or order.localite or "").strip() or order.ville or ""),
         "tel":            order.customer.phone,
         "tel2":           order.customer.phone2 or "",
         "designation":    designation[:500],
