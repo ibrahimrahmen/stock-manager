@@ -6313,7 +6313,26 @@ def _admin_only(view_fn):
     return wrapper
 
 
-@_admin_only
+def _admin_or_office(view_fn):
+    """Allow superusers and office-role staff to manage offers."""
+    from functools import wraps
+    @wraps(view_fn)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect("login")
+        if request.user.is_superuser:
+            return view_fn(request, *args, **kwargs)
+        try:
+            role = request.user.profile.role
+        except Exception:
+            role = "office"
+        if role == "office":
+            return view_fn(request, *args, **kwargs)
+        return redirect("home")
+    return wrapper
+
+
+@_admin_or_office
 def offers_manage(request):
     """Custom admin page to manage offers, with an optional page filter."""
     from .models import Offer, SalesPage, Product
@@ -6338,7 +6357,7 @@ def offers_manage(request):
 
 @csrf_exempt
 @require_POST
-@_admin_only
+@_admin_or_office
 def api_offer_create(request):
     from .models import Offer, SalesPage, Product, OfferProduct, log_action, AuditLog
     try:
@@ -6389,7 +6408,7 @@ def api_offer_create(request):
 
 @csrf_exempt
 @require_POST
-@_admin_only
+@_admin_or_office
 def api_offer_update(request, pk):
     from .models import Offer, SalesPage, Product, OfferProduct, log_action, AuditLog
     try:
