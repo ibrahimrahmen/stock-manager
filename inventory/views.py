@@ -3274,14 +3274,30 @@ def api_check_barcode_gaps(request, pk):
     """
     import re
     product = get_object_or_404(Product, pk=pk)
+    from django.db.models import Q
 
     # Optional ?variant=ID & ?size=N filtering for per-variant button
     variant_id = request.GET.get("variant")
     size_filter = request.GET.get("size")
+    version = request.GET.get("version", "all")  # 'all' = whole family, or a product id
 
-    variants = product.variants.prefetch_related("units").all()
     if variant_id:
-        variants = variants.filter(pk=variant_id)
+        # Single variant: just that variant.
+        variants = ProductVariant.objects.filter(pk=variant_id).prefetch_related("units")
+    else:
+        # Determine the scope of products to check.
+        root = product.parent_product or product
+        family = Product.objects.filter(Q(id=root.id) | Q(parent_product=root))
+        if version and version != "all":
+            try:
+                scope_ids = [int(version)]
+            except ValueError:
+                scope_ids = list(family.values_list("id", flat=True))
+        else:
+            scope_ids = list(family.values_list("id", flat=True))
+        variants = ProductVariant.objects.filter(
+            product_id__in=scope_ids
+        ).prefetch_related("units")
 
     groups = []  # one dict per (variant, size)
     for variant in variants:

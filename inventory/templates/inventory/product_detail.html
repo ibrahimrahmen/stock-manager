@@ -201,7 +201,7 @@
           <span style="color:var(--muted);">Total disponible</span>
           <span class="tn {% if vd.total_stock == 0 %}zero{% elif vd.total_stock <= product.alert_threshold %}low{% else %}ok{% endif %}">{{ vd.total_stock }}</span>
         </div>
-        <button class="vcheck-btn" onclick="checkGaps({{ product.pk }}, {{ vd.variant.pk }})" title="Vérifier les barcodes manquants">
+        <button class="vcheck-btn" onclick="checkGaps({{ vd.variant.product_id }}, {{ vd.variant.pk }})" title="Vérifier les barcodes manquants">
           🔍 Vérifier
         </button>
       </div>
@@ -221,7 +221,7 @@
       <button class="fbtn" onclick="setFilter('shipped',this)">Expédié</button>
       <button class="fbtn" onclick="setFilter('paid',this)">Vendu</button>
       <button class="fbtn" onclick="setFilter('returned',this)">Retourné</button>
-      <button class="fbtn check-all-btn" onclick="checkGaps({{ product.pk }})" title="Vérifier les barcodes manquants pour toutes les variantes">🔍 Vérifier tout</button>
+      <button class="fbtn check-all-btn" onclick="checkGaps({{ root_product.pk }}, null, '{{ selected_version }}')" title="Vérifier les barcodes manquants pour toutes les variantes">🔍 Vérifier tout</button>
     </div>
     <div class="units-count" id="units-count">0</div>
   </div>
@@ -398,12 +398,15 @@ applyAll();
 <script>
 function closeGap() { document.getElementById('gap-overlay').style.display = 'none'; }
 
-async function checkGaps(productId, variantId) {
+async function checkGaps(productId, variantId, version) {
   document.getElementById('gap-overlay').style.display = 'flex';
   document.getElementById('gap-body').innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;">Chargement...</div>';
 
   var url = '/api/products/' + productId + '/check-gaps/';
-  if (variantId) url += '?variant=' + variantId;
+  var params = [];
+  if (variantId) params.push('variant=' + variantId);
+  if (version) params.push('version=' + encodeURIComponent(version));
+  if (params.length) url += '?' + params.join('&');
 
   try {
     var res = await fetch(url);
