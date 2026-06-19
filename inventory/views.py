@@ -3441,7 +3441,6 @@ def orders_list(request):
     phone_by_cust = {}
     if customer_ids:
         for row in (Order.objects.filter(customer_id__in=customer_ids)
-                    .exclude(status="annulee")
                     .values("customer_id").annotate(n=_Count("id"))):
             order_counts[row["customer_id"]] = row["n"]
         # In-system delivered (livree+payee) and returned per customer.
@@ -4131,7 +4130,6 @@ def api_orders_search(request):
     retd = {}
     if cust_ids:
         for row in (Order.objects.filter(customer_id__in=cust_ids)
-                    .exclude(status="annulee")
                     .values("customer_id").annotate(n=_Count2("id"))):
             pcounts[row["customer_id"]] = row["n"]
         for row in (Order.objects.filter(customer_id__in=cust_ids, status__in=["livree", "payee"])
