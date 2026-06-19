@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Changement de prix — Stock Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root,[data-theme="dark"]{--bg:#0f0f0d;--surface:#1a1a17;--surface2:#222220;--border:rgba(255,255,255,0.08);--text:#f0ede6;--muted:#8a887f;--green:#4ade9a;--red:#f87171;--blue:#60a5fa;--input-bg:rgba(255,255,255,0.05);}
+[data-theme="light"]{--bg:#faf9f6;--surface:#fff;--surface2:#f0eee8;--border:rgba(0,0,0,0.1);--text:#1a1a17;--muted:#6b6a63;--green:#1a9e6e;--red:#c43b3a;--blue:#2363c9;--input-bg:rgba(0,0,0,0.03);}
+body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
+.brand{font-family:'DM Serif Display',serif;font-size:22px;}
+.userbar a{color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;font-size:13px;}
+.wrap{max-width:780px;margin:0 auto;padding:28px 24px;}
+.page-title{font-family:'DM Serif Display',serif;font-size:28px;margin-bottom:4px;}
+.muted{color:var(--muted);}
+.search-form{display:flex;gap:10px;margin:22px 0;}
+.search-form input{flex:1;background:var(--input-bg);border:0.5px solid var(--border);color:var(--text);border-radius:10px;padding:12px 14px;font-family:inherit;font-size:15px;}
+.search-form button{background:var(--blue);color:#06121f;border:none;border-radius:10px;padding:12px 22px;font-family:inherit;font-weight:600;font-size:14px;cursor:pointer;}
+.order-card{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:12px;}
+.order-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+.order-num{font-weight:600;font-size:15px;}
+.order-meta{color:var(--muted);font-size:13px;margin-top:3px;line-height:1.5;}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;background:var(--surface2);color:var(--muted);}
+.cur-total{font-size:18px;font-weight:700;}
+.price-row{display:flex;gap:10px;align-items:center;margin-top:14px;padding-top:14px;border-top:0.5px solid var(--border);}
+.price-row input{width:120px;background:var(--input-bg);border:0.5px solid var(--border);color:var(--text);border-radius:8px;padding:9px 11px;font-family:inherit;font-size:14px;}
+.price-row button{background:var(--green);color:#04140c;border:none;border-radius:8px;padding:9px 18px;font-family:inherit;font-weight:600;font-size:13px;cursor:pointer;}
+.price-row label{font-size:13px;color:var(--muted);}
+.empty{text-align:center;color:var(--muted);padding:40px 20px;}
+.saved-msg{color:var(--green);font-size:13px;font-weight:600;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">Changement de prix</div>
+  <div class="userbar"><a href="{% url 'dashboard' %}">← Dashboard</a></div>
+</div>
+
+<div class="wrap">
+  <div class="page-title">Changement de prix</div>
+  <div class="muted">Cherchez un client par téléphone, choisissez la commande, et entrez le nouveau total convenu avec Navex.</div>
+
+  <form method="get" class="search-form">
+    <input type="text" name="phone" value="{{ phone }}" placeholder="🔍 Numéro de téléphone du client" autofocus autocomplete="off">
+    <button type="submit">Chercher</button>
+  </form>
+
+  {% if searched %}
+    {% if orders %}
+      {% for o in orders %}
+      <div class="order-card" data-order-id="{{ o.id }}">
+        <div class="order-head">
+          <div>
+            <div class="order-num">#{{ o.id }} — {{ o.display_name }}</div>
+            <div class="order-meta">
+              {{ o.customer.phone }}<br>
+              {{ o.sales_page.name|default:"—" }} · {{ o.get_status_display }}<br>
+              Bordereau : {{ o.bordereau_barcode|default:"—" }}
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div class="cur-total" id="total-{{ o.id }}">{{ o.total }} DT</div>
+            <span class="badge">{{ o.get_status_display }}</span>
+          </div>
+        </div>
+        <div class="price-row">
+          <label>Nouveau total :</label>
+          <input type="number" step="0.001" min="0" id="price-{{ o.id }}" placeholder="ex: 40">
+          <button onclick="setPrice({{ o.id }})">Enregistrer</button>
+          <span class="saved-msg" id="msg-{{ o.id }}"></span>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty">Aucune commande modifiable pour ce numéro.<br><span style="font-size:13px;">(Seules les commandes envoyées à Navex et non encore livrées apparaissent.)</span></div>
+    {% endif %}
+  {% endif %}
+</div>
+
+<script>
+const savedTheme = localStorage.getItem('theme');
+if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+
+function getCookie(name){
+  const v = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+  return v ? v.pop() : '';
+}
+
+async function setPrice(orderId){
+  const input = document.getElementById('price-' + orderId);
+  const msg = document.getElementById('msg-' + orderId);
+  const price = (input.value || '').trim();
+  if (price === '' || isNaN(parseFloat(price)) || parseFloat(price) < 0){
+    msg.style.color = 'var(--red)'; msg.textContent = 'Prix invalide';
+    return;
+  }
+  msg.style.color = 'var(--muted)'; msg.textContent = 'Enregistrement...';
+  try {
+    const res = await fetch('/api/orders/' + orderId + '/set-price/', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'X-CSRFToken': getCookie('csrftoken')},
+      body: JSON.stringify({price: price}),
+    });
+    const data = await res.json();
+    if (data.status === 'ok'){
+      document.getElementById('total-' + orderId).textContent = data.new_total + ' DT';
+      msg.style.color = 'var(--green)'; msg.textContent = '✓ Enregistré';
+      input.value = '';
+    } else {
+      msg.style.color = 'var(--red)'; msg.textContent = data.message || 'Erreur';
+    }
+  } catch(e){
+    msg.style.color = 'var(--red)'; msg.textContent = 'Erreur réseau';
+  }
+}
+</script>
+</body>
+</html>

@@ -116,6 +116,8 @@ urlpatterns = [
 
     # V2 — Admin: manage offers
     path("admin-offers/", views.offers_manage, name="offers_manage"),
+    path("changement-prix/", views.price_change_page, name="price_change_page"),
+    path("api/orders/<int:pk>/set-price/", views.api_set_order_price, name="api_set_order_price"),
     path("api/offers/", views.api_offer_create, name="api_offer_create"),
     path("api/offers/<int:pk>/edit/", views.api_offer_update, name="api_offer_update"),
     path("api/offers/<int:pk>/delete/", views.api_offer_delete, name="api_offer_delete"),

@@ -643,6 +643,10 @@ class Order(models.Model):
     discount = models.DecimalField(max_digits=10, decimal_places=3, default=0)
     total = models.DecimalField(max_digits=10, decimal_places=3, default=0,
         help_text="Computed: sum(line totals) + delivery_fee − discount")
+    # Manually-set total (e.g. office grants a reduction after shipping, agreed
+    # by phone with Navex). When set, this IS the order total and recalc_total()
+    # will not recompute it — keeps "notre total" matching what Navex collects.
+    price_override = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
 
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default=NON_CONFIRMEE)
     cancel_reason = models.CharField(max_length=30, choices=CANCEL_REASON_CHOICES, blank=True, default="",
@@ -761,6 +765,11 @@ class Order(models.Model):
         order). Total = delivery_fee - discount only.
         """
         from decimal import Decimal
+        # If a manual price override is set (office reduction), it IS the total.
+        if self.price_override is not None:
+            self.total = self.price_override
+            self.save(update_fields=["total", "updated_at"])
+            return
         if self.exchange_of_id:
             # Exchange: only the delivery fee, no articles re-charged
             self.total = max(

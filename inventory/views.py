@@ -6333,6 +6333,72 @@ def _admin_or_office(view_fn):
 
 
 @_admin_or_office
+def price_change_page(request):
+    """Office page: search a client by phone, see their eligible orders, and set
+    a new total (reduction agreed by phone with Navex) so 'notre total' matches
+    what Navex will collect — avoiding price-mismatch flags in the sync."""
+    from .models import Order, Customer
+    phone = (request.GET.get("phone") or "").strip()
+    orders = []
+    searched = bool(phone)
+    if phone:
+        phone_digits = "".join(c for c in phone if c.isdigit())
+        customers = Customer.objects.filter(
+            Q(phone__icontains=phone_digits) | Q(phone2__icontains=phone_digits)
+        )
+        eligible_statuses = [Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN]
+        qs = (Order.objects.filter(customer__in=customers)
+              .exclude(bordereau_barcode="")
+              .filter(status__in=eligible_statuses)
+              .select_related("customer", "sales_page")
+              .order_by("-created_at"))
+        orders = list(qs)
+    return render(request, "inventory/price_change.html", {
+        "phone": phone,
+        "orders": orders,
+        "searched": searched,
+    })
+
+
+@_admin_or_office
+def api_set_order_price(request, pk):
+    """Set a manual price override on an order (office reduction)."""
+    from .models import Order, log_action, AuditLog
+    from decimal import Decimal, InvalidOperation
+    if request.method != "POST":
+        return JsonResponse({"status": "error", "message": "POST requis."}, status=405)
+    try:
+        data = json.loads(request.body or "{}")
+    except Exception:
+        data = {}
+    try:
+        new_price = Decimal(str(data.get("price", "")).replace(",", "."))
+    except (InvalidOperation, ValueError):
+        return JsonResponse({"status": "error", "message": "Prix invalide."}, status=400)
+    if new_price < 0:
+        return JsonResponse({"status": "error", "message": "Prix invalide."}, status=400)
+    order = get_object_or_404(Order, pk=pk)
+    if order.status in (Order.LIVREE, Order.PAYEE, Order.RETURNED, Order.RETURNING, Order.ANNULEE):
+        return JsonResponse({"status": "error", "message": "Commande déjà livrée/terminée — prix non modifiable."}, status=400)
+    old_total = order.total
+    order.price_override = new_price
+    order.save(update_fields=["price_override"])
+    order.recalc_total()  # applies the override -> total = new_price
+    for so in order.shipping_orders.all():
+        so.amount_collected = new_price
+        so.save(update_fields=["amount_collected"])
+    try:
+        log_action(
+            request.user, AuditLog.OTHER,
+            description=f"Changement de prix commande #{order.id} : {old_total} → {new_price} DT",
+            target_model="Order", target_id=order.id, request=request,
+        )
+    except Exception:
+        pass
+    return JsonResponse({"status": "ok", "new_total": str(order.total)})
+
+
+@_admin_or_office
 def offers_manage(request):
     """Custom admin page to manage offers, with an optional page filter."""
     from .models import Offer, SalesPage, Product
