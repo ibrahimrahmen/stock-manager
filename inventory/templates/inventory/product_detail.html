@@ -128,6 +128,10 @@
 .vfilter:hover{color:var(--text,#fff);}
 .vfilter.active{background:var(--text,#fff);color:var(--bg,#000);border-color:var(--text,#fff);}
 .vf-tag{font-size:10px;opacity:0.7;font-weight:400;text-transform:uppercase;}
+.stock-added-list{margin:0 0 18px 0;display:flex;flex-direction:column;gap:8px;}
+.stock-added-row{display:flex;align-items:center;gap:14px;padding:10px 14px;background:var(--surface,#1a1a17);border:0.5px solid var(--border,rgba(255,255,255,0.08));border-radius:10px;}
+.sa-count{font-weight:700;color:var(--green,#4ade9a);font-size:15px;min-width:110px;}
+.sa-date{color:var(--muted,#8a887f);font-size:14px;}
   </style>
 </head>
 <body>
@@ -159,6 +163,18 @@
     <a href="?version=all" class="vfilter {% if selected_version == 'all' %}active{% endif %}">Tous (combiné)</a>
     {% for v in versions %}
     <a href="?version={{ v.id }}" class="vfilter {% if selected_version == v.id|stringformat:'s' %}active{% endif %}">{{ v.name }}{% if v.is_root %} <span class="vf-tag">parent</span>{% endif %}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if stock_added %}
+  <div class="sec">Historique d'ajout de stock</div>
+  <div class="stock-added-list">
+    {% for entry in stock_added %}
+    <div class="stock-added-row">
+      <span class="sa-count">+{{ entry.count }} unité{{ entry.count|pluralize }}</span>
+      <span class="sa-date">{{ entry.date|date:"d F Y" }}</span>
+    </div>
     {% endfor %}
   </div>
   {% endif %}

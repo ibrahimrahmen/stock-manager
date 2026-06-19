@@ -3211,6 +3211,20 @@ def product_detail(request, pk):
                     at_depot_total += 1
     available_total = in_stock_total + returned_total
 
+    # Stock-added history: group the scoped products' units by the DAY they were
+    # created (= when stock was added), newest first.
+    from collections import OrderedDict
+    added_map = {}
+    for p in scope_products:
+        for variant in p.variants.all():
+            for unit in variant.units.all():
+                d = timezone.localtime(unit.created_at).date()
+                added_map[d] = added_map.get(d, 0) + 1
+    stock_added = [
+        {"date": d, "count": n}
+        for d, n in sorted(added_map.items(), key=lambda x: x[0], reverse=True)
+    ]
+
     return render(request, "inventory/product_detail.html", {
         "product": product,
         "root_product": root,
@@ -3224,6 +3238,7 @@ def product_detail(request, pk):
         "versions": versions,
         "selected_version": sel,
         "has_family": len(family) > 1,
+        "stock_added": stock_added,
     })
 
 
