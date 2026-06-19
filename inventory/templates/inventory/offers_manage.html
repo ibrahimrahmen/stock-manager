@@ -54,6 +54,9 @@ input:focus,select:focus{outline:none;border-color:var(--green);}
 .btn-cancel{background:transparent;border:0.5px solid var(--border);color:var(--muted);padding:10px 18px;border-radius:8px;cursor:pointer;}
 .empty{text-align:center;padding:40px 20px;color:var(--muted);}
 .error{background:var(--red-dim);color:var(--red);padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;display:none;}
+.pf-btn{padding:8px 16px;border-radius:10px;border:0.5px solid var(--border);background:var(--surface);color:var(--muted);text-decoration:none;font-size:13px;font-weight:600;}
+.pf-btn:hover{color:var(--text);}
+.pf-btn.active{background:var(--text);color:var(--bg);border-color:var(--text);}
 </style>
 </head>
 <body>
@@ -71,6 +74,17 @@ input:focus,select:focus{outline:none;border-color:var(--green);}
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
     <div class="page-title">Offres</div>
     <button class="add-btn" onclick="openCreate()">+ Nouvelle offre</button>
+  </div>
+
+  <div class="page-filter" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;">
+    <a href="?page=all" class="pf-btn {% if page_filter == 'all' %}active{% endif %}">Toutes les pages</a>
+    <a href="?page=barats" class="pf-btn {% if page_filter == 'barats' %}active{% endif %}">🌐 Barats.tn</a>
+    <a href="?page=converty" class="pf-btn {% if page_filter == 'converty' %}active{% endif %}">🛒 Converty</a>
+    {% for p in sales_pages %}
+      {% if p.name|lower != 'barats.tn' and p.name|lower != 'converty' %}
+      <a href="?page={{ p.id }}" class="pf-btn {% if page_filter == p.id|stringformat:'s' %}active{% endif %}">{{ p.name }}</a>
+      {% endif %}
+    {% endfor %}
   </div>
 
   {% for offer in offers %}

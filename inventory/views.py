@@ -6313,12 +6313,24 @@ def _admin_only(view_fn):
 
 @_admin_only
 def offers_manage(request):
-    """Custom admin page to manage offers."""
+    """Custom admin page to manage offers, with an optional page filter."""
     from .models import Offer, SalesPage, Product
+    page_filter = request.GET.get("page", "all")  # 'all', 'barats', 'converty', or a page id
+    offers = Offer.objects.prefetch_related("sales_pages", "products__product").all()
+    if page_filter == "barats":
+        offers = offers.filter(sales_pages__name__iexact="Barats.tn").distinct()
+    elif page_filter == "converty":
+        offers = offers.filter(sales_pages__name__iexact="Converty").distinct()
+    elif page_filter not in ("all", ""):
+        try:
+            offers = offers.filter(sales_pages__id=int(page_filter)).distinct()
+        except ValueError:
+            pass
     return render(request, "inventory/offers_manage.html", {
-        "offers": Offer.objects.prefetch_related("sales_pages", "products__product").all(),
+        "offers": offers,
         "sales_pages": SalesPage.objects.filter(is_active=True),
         "products": Product.objects.filter(archived=False).order_by("name"),
+        "page_filter": page_filter,
     })
 
 
