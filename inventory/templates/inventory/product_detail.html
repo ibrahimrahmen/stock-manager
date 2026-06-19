@@ -128,10 +128,11 @@
 .vfilter:hover{color:var(--text,#fff);}
 .vfilter.active{background:var(--text,#fff);color:var(--bg,#000);border-color:var(--text,#fff);}
 .vf-tag{font-size:10px;opacity:0.7;font-weight:400;text-transform:uppercase;}
-.stock-added-list{margin:0 0 18px 0;display:flex;flex-wrap:wrap;gap:6px;}
-.stock-added-row{display:inline-flex;align-items:baseline;gap:5px;padding:4px 10px;background:var(--surface,#1a1a17);border:0.5px solid var(--border,rgba(255,255,255,0.08));border-radius:20px;font-size:12px;white-space:nowrap;}
-.sa-count{font-weight:700;color:var(--green,#4ade9a);}
-.sa-date{color:var(--muted,#8a887f);}
+.stock-added-list{margin:0 0 18px 0;display:flex;flex-direction:column;gap:6px;}
+.stock-added-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:6px 12px;background:var(--surface,#1a1a17);border:0.5px solid var(--border,rgba(255,255,255,0.08));border-radius:10px;font-size:12px;}
+.sa-date{color:var(--muted,#8a887f);font-weight:600;min-width:90px;}
+.sa-colors{display:flex;flex-wrap:wrap;gap:6px;}
+.sa-color{background:var(--surface2,#222220);color:var(--green,#4ade9a);font-weight:600;padding:2px 9px;border-radius:20px;white-space:nowrap;}
   </style>
 </head>
 <body>
@@ -172,8 +173,10 @@
   <div class="stock-added-list">
     {% for entry in stock_added %}
     <div class="stock-added-row">
-      <span class="sa-count">+{{ entry.count }}</span>
       <span class="sa-date">{{ entry.date|date:"d M Y" }}</span>
+      <span class="sa-colors">
+        {% for c in entry.colors %}<span class="sa-color">+{{ c.count }} {{ c.color }}</span>{% endfor %}
+      </span>
     </div>
     {% endfor %}
   </div>

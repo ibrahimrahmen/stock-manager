@@ -3212,18 +3212,25 @@ def product_detail(request, pk):
     available_total = in_stock_total + returned_total
 
     # Stock-added history: group the scoped products' units by the DAY they were
-    # created (= when stock was added), newest first.
-    from collections import OrderedDict
-    added_map = {}
+    # created (= when stock was added), with a per-color breakdown, newest first.
+    added_map = {}   # date -> {color_label -> count}
     for p in scope_products:
         for variant in p.variants.all():
+            color = variant.color_label or variant.color_name or "—"
             for unit in variant.units.all():
                 d = timezone.localtime(unit.created_at).date()
-                added_map[d] = added_map.get(d, 0) + 1
-    stock_added = [
-        {"date": d, "count": n}
-        for d, n in sorted(added_map.items(), key=lambda x: x[0], reverse=True)
-    ]
+                if d not in added_map:
+                    added_map[d] = {}
+                added_map[d][color] = added_map[d].get(color, 0) + 1
+    stock_added = []
+    for d in sorted(added_map.keys(), reverse=True):
+        colors = added_map[d]
+        stock_added.append({
+            "date": d,
+            "count": sum(colors.values()),
+            "colors": [{"color": c, "count": n}
+                       for c, n in sorted(colors.items(), key=lambda x: -x[1])],
+        })
 
     return render(request, "inventory/product_detail.html", {
         "product": product,
