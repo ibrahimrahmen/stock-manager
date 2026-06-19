@@ -884,6 +884,36 @@ class Offer(models.Model):
     def __str__(self):
         return f"{self.name} ({self.bundle_price} DT)"
 
+    def price_for_page(self, page):
+        """Return the price for this offer on a given SalesPage. Falls back to
+        bundle_price when no page-specific override exists."""
+        if page is not None:
+            pp = self.page_prices.filter(sales_page=page).first()
+            if pp is not None and pp.price is not None:
+                return pp.price
+        return self.bundle_price
+
+    def price_for_page_name(self, page_name):
+        if page_name:
+            pp = self.page_prices.filter(sales_page__name__iexact=page_name).first()
+            if pp is not None and pp.price is not None:
+                return pp.price
+        return self.bundle_price
+
+
+class OfferPagePrice(models.Model):
+    """Per-page price override for an offer. Lets the same offer have a
+    different price depending on which sales page it's sold on."""
+    offer = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name="page_prices")
+    sales_page = models.ForeignKey(SalesPage, on_delete=models.CASCADE, related_name="offer_prices")
+    price = models.DecimalField(max_digits=10, decimal_places=3, default=0)
+
+    class Meta:
+        unique_together = (("offer", "sales_page"),)
+
+    def __str__(self):
+        return f"{self.offer.name} @ {self.sales_page.name}: {self.price} DT"
+
 
 class OfferProduct(models.Model):
     """A product that belongs to an offer. Quantity defaults to 1.

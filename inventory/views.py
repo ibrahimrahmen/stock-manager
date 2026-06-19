@@ -3542,12 +3542,13 @@ def api_offers_for_page(request, page_id):
     """Return active offers attached to a given SalesPage."""
     if not _orders_role_check(request):
         return JsonResponse({"status": "error"}, status=403)
-    from .models import Offer
+    from .models import Offer, SalesPage
+    page = SalesPage.objects.filter(id=page_id).first()
     offers = Offer.objects.filter(is_active=True, sales_pages__id=page_id).distinct()
     return JsonResponse({
         "status": "ok",
         "offers": [
-            {"id": o.id, "name": o.name, "bundle_price": str(o.bundle_price)}
+            {"id": o.id, "name": o.name, "bundle_price": str(o.price_for_page(page))}
             for o in offers
         ],
     })
@@ -3642,6 +3643,7 @@ def api_offer_detail(request, offer_id):
             "bundle_price": str(offer.bundle_price),
             "is_active": offer.is_active,
             "sales_page_ids": list(offer.sales_pages.values_list("id", flat=True)),
+            "page_prices": {str(pp.sales_page_id): str(pp.price) for pp in offer.page_prices.all()},
             "products": products_data,
         },
     })
@@ -3726,7 +3728,7 @@ def api_create_order_inline(request):
                 order_offer = OrderOffer.objects.create(
                     order=order, offer=offer,
                     offer_name=offer.name,
-                    bundle_price=offer.bundle_price,
+                    bundle_price=offer.price_for_page(order.sales_page),
                     quantity=qty,
                 )
                 for line in op.get("products", []):
@@ -3973,7 +3975,7 @@ def api_order_draft_upsert(request):
                     order_offer = OrderOffer.objects.create(
                         order=order, offer=offer,
                         offer_name=offer.name,
-                        bundle_price=offer.bundle_price,
+                        bundle_price=offer.price_for_page(order.sales_page),
                         quantity=qty,
                     )
                     for line in op.get("products", []):
@@ -6004,7 +6006,7 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
             order_offer = OrderOffer.objects.create(
                 order=order, offer=offer,
                 offer_name=offer.name,
-                bundle_price=offer.bundle_price,
+                bundle_price=offer.price_for_page(order.sales_page),
                 quantity=quantity,
             )
             # Split variant_title by "/" to get one color (or size) per slot.
@@ -6350,12 +6352,22 @@ def api_offer_create(request):
         return JsonResponse({"status": "error", "message": "Une offre avec ce nom existe déjà."}, status=400)
     bundle_price = Decimal(str(data.get("bundle_price") or "0"))
     page_ids = data.get("sales_page_ids") or []
+    page_prices = data.get("page_prices") or {}  # {page_id: price}
     products_data = data.get("products") or []  # list of {product_id, quantity}
 
     with transaction.atomic():
         offer = Offer.objects.create(name=name, bundle_price=bundle_price)
         if page_ids:
             offer.sales_pages.set(SalesPage.objects.filter(id__in=page_ids))
+        from .models import OfferPagePrice
+        for pid, pr in (page_prices or {}).items():
+            try:
+                OfferPagePrice.objects.update_or_create(
+                    offer=offer, sales_page_id=int(pid),
+                    defaults={"price": Decimal(str(pr or "0"))},
+                )
+            except Exception:
+                pass
         for p in products_data:
             try:
                 OfferProduct.objects.create(
@@ -6399,6 +6411,19 @@ def api_offer_update(request, pk):
         offer.save()
         if "sales_page_ids" in data:
             offer.sales_pages.set(SalesPage.objects.filter(id__in=data["sales_page_ids"]))
+        if "page_prices" in data:
+            from .models import OfferPagePrice
+            pp = data.get("page_prices") or {}
+            # Replace all page prices with the submitted set.
+            offer.page_prices.all().delete()
+            for pid, pr in pp.items():
+                try:
+                    OfferPagePrice.objects.create(
+                        offer=offer, sales_page_id=int(pid),
+                        price=Decimal(str(pr or "0")),
+                    )
+                except Exception:
+                    pass
         if "products" in data:
             offer.products.all().delete()
             for p in data["products"]:

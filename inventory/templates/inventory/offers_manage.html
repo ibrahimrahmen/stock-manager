@@ -128,13 +128,16 @@ input:focus,select:focus{outline:none;border-color:var(--green);}
     <div class="modal-body">
       <div class="error" id="modal-err"></div>
       <div class="field"><label>Nom *</label><input id="of-name" type="text" placeholder="ex: Tenue Camo"></div>
-      <div class="field"><label>Prix bundle *</label><input id="of-price" type="number" min="0" step="0.001" placeholder="96"></div>
+      <div class="field"><label>Prix par défaut *</label><input id="of-price" type="number" min="0" step="0.001" placeholder="96"><div style="font-size:11px;color:var(--muted);margin-top:4px;">Utilisé si une page n'a pas de prix spécifique.</div></div>
 
       <div class="field">
-        <label>Pages où cette offre apparaît</label>
+        <label>Pages où cette offre apparaît (prix par page optionnel)</label>
         <div class="checkbox-list">
           {% for p in sales_pages %}
-            <label class="cbox"><input type="checkbox" name="sp" value="{{ p.id }}"> {{ p.name }}</label>
+            <label class="cbox" style="display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" name="sp" value="{{ p.id }}" onchange="togglePagePrice({{ p.id }}, this.checked)"> {{ p.name }}
+              <input type="number" min="0" step="0.001" class="page-price-input" id="pp-{{ p.id }}" data-page="{{ p.id }}" placeholder="prix" style="width:90px;margin-left:auto;display:none;padding:4px 8px;border-radius:6px;border:0.5px solid var(--border);background:var(--input-bg,rgba(255,255,255,0.05));color:var(--text);">
+            </label>
           {% endfor %}
         </div>
       </div>
@@ -178,6 +181,11 @@ function renderProductPicks() {
 }
 function addProductPick() { productPicks.push({ product_id: null, quantity: 1 }); renderProductPicks(); }
 
+function togglePagePrice(pageId, checked) {
+  const inp = document.getElementById('pp-' + pageId);
+  if (inp) { inp.style.display = checked ? 'inline-block' : 'none'; if (!checked) inp.value = ''; }
+}
+
 function openCreate() {
   editingOfferId = null;
   document.getElementById('modal-title').textContent = 'Nouvelle offre';
@@ -185,19 +193,28 @@ function openCreate() {
   document.getElementById('of-price').value = '';
   document.getElementById('of-active').checked = true;
   document.querySelectorAll('input[name="sp"]').forEach(c => c.checked = false);
+  document.querySelectorAll('.page-price-input').forEach(i => { i.value = ''; i.style.display = 'none'; });
   productPicks = [];
   renderProductPicks();
   document.getElementById('modal-err').style.display = 'none';
   document.getElementById('offer-modal').classList.add('show');
 }
 
-function openEdit(id, name, price, active, pageIds, products) {
+function openEdit(id, name, price, active, pageIds, products, pagePrices) {
   editingOfferId = id;
   document.getElementById('modal-title').textContent = 'Modifier l\'offre';
   document.getElementById('of-name').value = name;
   document.getElementById('of-price').value = price;
   document.getElementById('of-active').checked = active;
   document.querySelectorAll('input[name="sp"]').forEach(c => { c.checked = pageIds.includes(parseInt(c.value)); });
+  // Show/fill per-page price inputs.
+  const pp = pagePrices || {};
+  document.querySelectorAll('.page-price-input').forEach(i => {
+    const pid = i.dataset.page;
+    const checked = pageIds.includes(parseInt(pid));
+    i.style.display = checked ? 'inline-block' : 'none';
+    i.value = (pp[pid] !== undefined && pp[pid] !== null) ? pp[pid] : '';
+  });
   productPicks = products.map(p => ({ product_id: p.product_id, quantity: p.quantity }));
   renderProductPicks();
   document.getElementById('modal-err').style.display = 'none';
@@ -224,7 +241,8 @@ async function openEditFromButton(btn) {
       offer.bundle_price || 0,
       !!offer.is_active,
       (offer.sales_page_ids || (offer.sales_pages || []).map(p => p.id || p)) || [],
-      (offer.products || []).map(p => ({ product_id: p.product_id || p.product?.id, quantity: p.quantity }))
+      (offer.products || []).map(p => ({ product_id: p.product_id || p.product?.id, quantity: p.quantity })),
+      offer.page_prices || {}
     );
   } catch (e) {
     alert('Erreur lors du chargement de l\'offre : ' + e.message);
@@ -245,10 +263,18 @@ async function saveOffer() {
   const sp = Array.from(document.querySelectorAll('input[name="sp"]:checked')).map(c => parseInt(c.value));
   const products = productPicks.filter(p => p.product_id).map(p => ({product_id: p.product_id, quantity: p.quantity}));
 
+  // Per-page prices: only for checked pages that have a value entered.
+  const page_prices = {};
+  sp.forEach(pid => {
+    const inp = document.getElementById('pp-' + pid);
+    if (inp && inp.value !== '') page_prices[pid] = parseFloat(inp.value) || 0;
+  });
+
   const payload = {
     name, bundle_price: price,
     is_active: document.getElementById('of-active').checked,
     sales_page_ids: sp,
+    page_prices,
     products,
   };
   const url = editingOfferId ? `/api/offers/${editingOfferId}/edit/` : '/api/offers/';
