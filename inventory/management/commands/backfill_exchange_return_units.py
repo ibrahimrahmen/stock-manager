@@ -13,7 +13,7 @@ class Command(BaseCommand):
                             help="Show what would change without saving.")
 
     def handle(self, *args, **opts):
-        from inventory.models import Product
+        from inventory.models import Product, ExchangeReturnItem as ERI
         from django.db.models import Q
         dry = opts["dry_run"]
         items = ExchangeReturnItem.objects.filter(unit__isnull=True).select_related(
@@ -21,6 +21,12 @@ class Command(BaseCommand):
         )
         fixed = 0
         skipped = 0
+
+        # Units already linked to ANY ExchangeReturnItem (across all exchanges) —
+        # a physical unit can only be returned once, so never reuse one.
+        globally_used = set(
+            ERI.objects.filter(unit__isnull=False).values_list("unit_id", flat=True)
+        )
 
         def color_keys(variant):
             return {
@@ -32,6 +38,11 @@ class Command(BaseCommand):
             exchange = ri.exchange_order
             original = exchange.exchange_of if exchange else None
             if original is None or ri.variant is None:
+                skipped += 1
+                continue
+            # Skip cancelled exchanges — they never actually returned anything, and
+            # linking their items could steal a unit from a real active exchange.
+            if exchange.status == "annulee":
                 skipped += 1
                 continue
 
@@ -47,6 +58,7 @@ class Command(BaseCommand):
                 exchange.return_items.exclude(unit__isnull=True)
                 .values_list("unit_id", flat=True)
             )
+            claimed |= globally_used
 
             matched = None
             for so in original.shipping_orders.all():
@@ -112,6 +124,7 @@ class Command(BaseCommand):
                 if not dry:
                     ri.unit = matched
                     ri.save(update_fields=["unit"])
+                globally_used.add(matched.id)
                 fixed += 1
             else:
                 self.stdout.write(self.style.WARNING(
