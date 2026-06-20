@@ -710,7 +710,7 @@ async function sendEmail(type) {
   try {
     var res = await fetch('/api/send-email/' + type + '/');
     var data = await res.json();
-    showToast(data.message || 'Email envoyé !');
+    showToast(data.message || 'Envoyé !');
   } catch(e) { showToast('Erreur réseau.'); }
   btn.disabled = false;
   btn.style.opacity = '1';

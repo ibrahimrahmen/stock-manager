@@ -2700,8 +2700,10 @@ def api_send_email(request, email_type):
     
     try:
         if email_type == "low_stock":
-            result = _send_low_stock_email()
-            msg = "Email stock bas envoyé !" if result else "Aucun produit en stock bas."
+            # Send the low-stock report to Telegram (family-aware, with photos)
+            # instead of email.
+            result = _send_low_stock_whatsapp()
+            msg = "Alerte stock bas envoyée sur Telegram !" if result else "Aucun produit en stock bas."
         elif email_type == "daily_summary":
             result = _send_daily_summary_email()
             msg = "Résumé quotidien envoyé !"
