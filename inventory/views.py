@@ -525,12 +525,13 @@ def api_scan_return(request):
         # come later — at this stage we just show what's EXPECTED).
         items_data = []
         for ri in return_items:
-            variant = ri.variant
+            variant = ri.variant or (ri.unit.variant if ri.unit else None)
             product = variant.product if variant else None
             items_data.append({
-                # No physical barcode yet — use the ExchangeReturnItem ID as placeholder
-                "barcode": f"RETURN-{ri.id}",
-                "size": ri.size,
+                # Show the real physical barcode when the return item is linked to
+                # a specific unit; otherwise a placeholder until the unit is scanned.
+                "barcode": ri.unit.barcode if ri.unit else f"RETURN-{ri.id}",
+                "size": ri.size or (ri.unit.size if ri.unit else ""),
                 "status": "pending_return",  # Custom status: still waiting for scan
                 "product_name": product.name if product else (ri.product_name_snapshot or "?"),
                 "color_label": variant.color_label if variant else "",
@@ -4709,6 +4710,9 @@ def api_exchange_set_returns(request, pk):
     exchange.return_items.all().delete()
 
     created = 0
+    claimed = set()  # original-order unit ids already linked, across all selections
+    original = exchange.exchange_of
+    from .models import ProductUnit
     for it in raw_items:
         try:
             variant_id = int(it.get("variant_id"))
@@ -4720,10 +4724,46 @@ def api_exchange_set_returns(request, pk):
             variant = ProductVariant.objects.select_related("product").get(pk=variant_id)
         except ProductVariant.DoesNotExist:
             continue
-        # Create N rows, one per unit expected back
-        for _ in range(qty):
+
+        # Preferred path: the frontend sends the exact unit barcodes selected.
+        # Link those precise units so the return scan shows the right barcode.
+        sent_barcodes = it.get("barcodes") or []
+        used_from_sent = 0
+        for bc in sent_barcodes:
+            if used_from_sent >= qty:
+                break
+            u = ProductUnit.objects.filter(barcode=bc).first()
+            if u and u.id not in claimed:
+                ExchangeReturnItem.objects.create(
+                    exchange_order=exchange,
+                    unit=u,
+                    variant=variant,
+                    size=size or (str(u.size) if u.size else ""),
+                    product_name_snapshot=variant.product.name,
+                )
+                claimed.add(u.id)
+                used_from_sent += 1
+                created += 1
+
+        # Fallback (legacy): if no/insufficient barcodes were sent, match the
+        # remaining qty by variant+size from the original delivered order.
+        remaining = qty - used_from_sent
+        for _ in range(remaining):
+            matched_unit = None
+            if original is not None:
+                for oi in original.shipping_orders.all():
+                    for item in oi.items.select_related("unit", "unit__variant").all():
+                        u = item.unit
+                        if (u and u.id not in claimed and u.variant_id == variant.id
+                                and str(u.size) == str(size)):
+                            matched_unit = u
+                            claimed.add(u.id)
+                            break
+                    if matched_unit:
+                        break
             ExchangeReturnItem.objects.create(
                 exchange_order=exchange,
+                unit=matched_unit,
                 variant=variant,
                 size=size,
                 product_name_snapshot=variant.product.name,

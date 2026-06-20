@@ -2040,7 +2040,8 @@ async function openReturnsModal() {
     for (const it of returnsItemsCache) {
       if (it.is_selected) {
         returnsSelected.set(`${it.variant_id}|${it.size}`, {
-          variant_id: it.variant_id, size: it.size, qty: it.qty
+          variant_id: it.variant_id, size: it.size, qty: it.qty,
+          barcodes: (it.units || []).map(u => u.barcode),
         });
       }
     }
@@ -2098,7 +2099,10 @@ function toggleReturn(key) {
   if (returnsSelected.has(key)) {
     returnsSelected.delete(key);
   } else {
-    returnsSelected.set(key, { variant_id: it.variant_id, size: it.size, qty: it.qty });
+    returnsSelected.set(key, {
+      variant_id: it.variant_id, size: it.size, qty: it.qty,
+      barcodes: (it.units || []).map(u => u.barcode),
+    });
   }
   renderReturnsGrid();
 }
