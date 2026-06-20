@@ -13,35 +13,69 @@ class Command(BaseCommand):
                             help="Show what would change without saving.")
 
     def handle(self, *args, **opts):
+        from inventory.models import Product
+        from django.db.models import Q
         dry = opts["dry_run"]
         items = ExchangeReturnItem.objects.filter(unit__isnull=True).select_related(
-            "exchange_order__exchange_of", "variant"
+            "exchange_order__exchange_of", "variant__product"
         )
         fixed = 0
         skipped = 0
+
+        def color_keys(variant):
+            return {
+                (variant.color_name or "").strip().lower(),
+                (variant.color_label or "").strip().lower(),
+            } - {""}
+
         for ri in items:
             exchange = ri.exchange_order
             original = exchange.exchange_of if exchange else None
-            if original is None:
+            if original is None or ri.variant is None:
                 skipped += 1
                 continue
-            # Gather units already linked to other return items of THIS exchange,
-            # so we don't link two return rows to the same physical unit.
+
+            # The order line references the PARENT product, but the unit shipped
+            # may be a V2/V3 child (same SKU family). Match on family + color + size.
+            ri_family_ids = set(
+                ri.variant.product.family_products().values_list("id", flat=True)
+            )
+            ri_colors = color_keys(ri.variant)
+            ri_size = str(ri.size)
+
             claimed = set(
                 exchange.return_items.exclude(unit__isnull=True)
                 .values_list("unit_id", flat=True)
             )
+
             matched = None
             for so in original.shipping_orders.all():
-                for oi in so.items.select_related("unit__variant").all():
+                for oi in so.items.select_related("unit__variant__product").all():
                     u = oi.unit
-                    if (u and u.id not in claimed
-                            and u.variant_id == ri.variant_id
-                            and str(u.size) == str(ri.size)):
-                        matched = u
-                        break
+                    if not u or u.id in claimed:
+                        continue
+                    uv = u.variant
+                    if uv is None:
+                        continue
+                    # same SKU family?
+                    if uv.product_id not in ri_family_ids:
+                        # also allow the reverse: unit's family contains ri's product
+                        u_family_ids = set(
+                            uv.product.family_products().values_list("id", flat=True)
+                        )
+                        if not (ri_family_ids & u_family_ids):
+                            continue
+                    # same color?
+                    if ri_colors and not (ri_colors & color_keys(uv)):
+                        continue
+                    # same size?
+                    if str(u.size) != ri_size:
+                        continue
+                    matched = u
+                    break
                 if matched:
                     break
+
             if matched:
                 self.stdout.write(
                     f"ExchangeReturnItem #{ri.id} (exch #{exchange.id}) -> {matched.barcode}"
