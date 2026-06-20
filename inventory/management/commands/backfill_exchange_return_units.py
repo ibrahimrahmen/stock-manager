@@ -59,7 +59,6 @@ class Command(BaseCommand):
                         continue
                     # same SKU family?
                     if uv.product_id not in ri_family_ids:
-                        # also allow the reverse: unit's family contains ri's product
                         u_family_ids = set(
                             uv.product.family_products().values_list("id", flat=True)
                         )
@@ -75,6 +74,36 @@ class Command(BaseCommand):
                     break
                 if matched:
                     break
+
+            # Fallback: size on the order may have been recorded wrong vs what
+            # was physically shipped. If family + color matches EXACTLY ONE
+            # unclaimed unit (regardless of size), it's unambiguous — link it.
+            if matched is None:
+                fam_color_units = []
+                for so in original.shipping_orders.all():
+                    for oi in so.items.select_related("unit__variant__product").all():
+                        u = oi.unit
+                        if not u or u.id in claimed:
+                            continue
+                        uv = u.variant
+                        if uv is None:
+                            continue
+                        in_family = uv.product_id in ri_family_ids
+                        if not in_family:
+                            u_family_ids = set(
+                                uv.product.family_products().values_list("id", flat=True)
+                            )
+                            in_family = bool(ri_family_ids & u_family_ids)
+                        if not in_family:
+                            continue
+                        if ri_colors and not (ri_colors & color_keys(uv)):
+                            continue
+                        fam_color_units.append(u)
+                if len(fam_color_units) == 1:
+                    matched = fam_color_units[0]
+                    self.stdout.write(
+                        f"  (size mismatch, single unit) RI#{ri.id} -> {matched.barcode}"
+                    )
 
             if matched:
                 self.stdout.write(
