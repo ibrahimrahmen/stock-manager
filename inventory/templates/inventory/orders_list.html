@@ -655,6 +655,12 @@ function openCreateRow(opts) {
   creatingRow = true;
   document.getElementById('btn-new-order').disabled = true;
   currentDraftId = (opts && opts.editingId) || null;
+  // Reset delivery/discount to defaults for a brand-new order so a stale value
+  // from a previously-edited order doesn't carry over.
+  if (!currentDraftId) {
+    var md0 = document.getElementById('modal-delivery'); if (md0) md0.value = '7';
+    var mdi0 = document.getElementById('modal-discount'); if (mdi0) mdi0.value = '0';
+  }
   lastSaveAt = null;
   pendingSavePayload = null;
   setSaveStatus(currentDraftId ? 'saved' : 'hide', currentDraftId ? 'Brouillon chargé' : '');
@@ -1708,6 +1714,12 @@ async function editOrder(orderId) {
       document.getElementById('cr-loc-search').value = '';
     }
     document.getElementById('cr-address').value = o.address || '';
+    // Restore delivery fee and discount from the order (avoid leaking a stale
+    // value from a previously-opened order into this one).
+    var mdEl = document.getElementById('modal-delivery');
+    if (mdEl) mdEl.value = (o.delivery_fee !== undefined && o.delivery_fee !== null && o.delivery_fee !== '') ? o.delivery_fee : '7';
+    var mdiscEl = document.getElementById('modal-discount');
+    if (mdiscEl) mdiscEl.value = (o.discount !== undefined && o.discount !== null && o.discount !== '') ? o.discount : '0';
     // Restore offers
     modalOffers = o.offers || [];
     // Pre-fetch each offer's detail into offerCache so the modal can re-render
