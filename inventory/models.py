@@ -719,6 +719,8 @@ class Order(models.Model):
     # injoignable / rappeler / pas sérieux — so the reason is known later.
     status_note          = models.CharField(max_length=300, blank=True, default="",
         help_text="Note/raison saisie lors d'un changement de statut (injoignable, rappeler, pas sérieux).")
+    # When the note was last written/updated, so the UI can show its time.
+    status_note_at       = models.DateTimeField(null=True, blank=True)
 
     # When Navex processes an exchange, it generates a SECOND barcode for the
     # return colis (the one that will pick up the old products). We store it here.

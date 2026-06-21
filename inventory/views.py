@@ -4194,6 +4194,7 @@ def api_orders_search(request):
             "total": str(o.total),
             "amount_collected": str(o.amount_collected) if o.amount_collected is not None else None,
             "status_note": o.status_note or "",
+            "status_note_at": o.status_note_at.strftime("%d/%m %H:%M") if o.status_note_at else "",
             "bordereau": o.bordereau_barcode,
             "navex_last_status": o.navex_last_status or "",
             "navex_last_synced_at": o.navex_last_synced_at.strftime("%d/%m %H:%M") if o.navex_last_synced_at else "",
@@ -6641,13 +6642,17 @@ def api_order_set_note(request, pk):
     order = get_object_or_404(Order, pk=pk)
     note = (data.get("note") or "").strip()[:300]
     order.status_note = note
-    order.save(update_fields=["status_note", "updated_at"])
+    order.status_note_at = timezone.now() if note else None
+    order.save(update_fields=["status_note", "status_note_at", "updated_at"])
     log_action(
         request.user, AuditLog.EDIT,
         description=f"Commande #{order.id} : note mise à jour" + (f" → {note}" if note else " (effacée)"),
         request=request, target_model="Order", target_id=order.id,
     )
-    return JsonResponse({"status": "ok", "note": note})
+    return JsonResponse({
+        "status": "ok", "note": note,
+        "note_at": order.status_note_at.strftime("%d/%m %H:%M") if order.status_note_at else "",
+    })
 
 
 @csrf_exempt
@@ -6895,7 +6900,9 @@ def api_order_change_status(request, pk):
     update_fields = ["status", "updated_at"]
     if status_note:
         order.status_note = status_note[:300]
+        order.status_note_at = timezone.now()
         update_fields.append("status_note")
+        update_fields.append("status_note_at")
     order.save(update_fields=update_fields)
     log_action(
         request.user, AuditLog.STATUS_CHANGE,
