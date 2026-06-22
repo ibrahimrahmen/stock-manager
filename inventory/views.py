@@ -8725,6 +8725,28 @@ def _try_extract_and_create_pending(conv):
             notes__contains=f"shopify_order_id=dm_{conv.id}"
         ).order_by("-id").first()
         if order:
+            # Integrate with the EXISTING conversation system: store the chat on
+            # the order (so the 💬 modal shows it), link the PSID on the customer,
+            # and record the ad source in the notes.
+            from django.utils import timezone as _tz
+            convo_text = "\n".join(
+                f"{'Client' if m.get('from') == 'user' else 'Page'}: {m.get('text','')}"
+                for m in (conv.messages or []) if m.get("text")
+            )
+            order.conversation_text = convo_text
+            order.conversation_updated_at = _tz.now()
+            extra_notes = ["[Commande créée depuis Messenger]"]
+            if conv.source_ad_id:
+                extra_notes.append(f"Ad source: {conv.source_ad_id}")
+            if conv.source_campaign:
+                extra_notes.append(f"Campagne: {conv.source_campaign}")
+            order.notes = (order.notes + "\n" + "\n".join(extra_notes)).strip()
+            order.save(update_fields=["conversation_text", "conversation_updated_at",
+                                      "notes", "updated_at"])
+            # Link the PSID to the customer for future message matching.
+            if order.customer and conv.sender_id and not order.customer.customer_psid:
+                order.customer.customer_psid = conv.sender_id
+                order.customer.save(update_fields=["customer_psid"])
             conv.pending_order = order
             conv.status = MessengerConversation.EXTRACTED
     except Exception:
