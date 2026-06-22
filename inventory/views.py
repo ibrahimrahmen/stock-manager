@@ -5916,6 +5916,20 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
         # --- (A) Try to match an OFFER (bundle) by name first ---
         offer = Offer.objects.filter(name__iexact=title, is_active=True).first()
         if not offer:
+            # Normalized match: ignore stray trailing/leading punctuation and
+            # extra spaces, so an offer named "Ensemble 3pcs SORA ." still
+            # matches a website title "Ensemble 3pcs sora".
+            def _norm_name(s):
+                s = (s or "").lower().strip()
+                s = re.sub(r"\s+", " ", s)
+                return s.strip(" .,-_/|;:·•").strip()
+            tnorm = _norm_name(title)
+            if tnorm:
+                for o in Offer.objects.filter(is_active=True):
+                    if _norm_name(o.name) == tnorm:
+                        offer = o
+                        break
+        if not offer:
             # Try "offer name contained in shopify title"
             candidates = []
             for o in Offer.objects.filter(is_active=True):
