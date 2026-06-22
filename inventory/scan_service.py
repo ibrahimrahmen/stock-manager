@@ -61,6 +61,50 @@ def _get_navex_info(barcode: str):
     return {}
 
 
+def _matched_products_from_order(order) -> list:
+    """Build the scan-card list for an en-attente order directly from its real
+    v2 OrderLines (accurate product/variant/size/qty), instead of parsing the
+    Navex designation text. Same dict shape as _get_matched_products so the
+    frontend renders identically."""
+    from .models import ProductUnit
+    STATUS_TO_COLOR = {
+        "exact": "green", "plus1": "green", "minus1": "yellow",
+        "plus2": "orange", "minus2": "red", "none": "red",
+    }
+    cards = []
+    try:
+        for line in order.lines.select_related("product", "variant").all():
+            product = line.product
+            variant = line.variant
+            size = (line.size or "").strip()
+            qty = line.quantity or 1
+            in_stock_count = 0
+            if variant is not None:
+                qs = ProductUnit.objects.filter(variant=variant, status=ProductUnit.IN_STOCK)
+                if size:
+                    qs = qs.filter(size=size)
+                in_stock_count = qs.count()
+            stock_status = "exact" if in_stock_count >= qty else ("minus1" if in_stock_count > 0 else "none")
+            badge_color = STATUS_TO_COLOR.get(stock_status, "red")
+            cards.append({
+                "id": product.id if product else None,
+                "name": product.name if product else (line.product_name or "?"),
+                "code": product.code if product else "",
+                "color_matched": variant.color_label if variant else "",
+                "image_url": variant.image.url if variant and variant.image else None,
+                "size": size,
+                "qty": qty,
+                "in_stock": in_stock_count,
+                "stock_ok": badge_color == "green",
+                "stock_status": stock_status,
+                "badge_color": badge_color,
+                "found_size": size,
+            })
+    except Exception:
+        return []
+    return cards
+
+
 def _get_matched_products(designation: str) -> list:
     """Match products from a Navex designation string.
     Creates one card per product+color item in the designation.

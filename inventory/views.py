@@ -1633,65 +1633,102 @@ def api_confirm_payment_from_navex(request, pk):
 
 @csrf_exempt
 def api_navex_en_attente(request):
-    """Get all en attente orders from Navex and try to match with our products."""
+    """En-attente list for scan expédition. HYBRID source:
+      1) Primary: our own v2 Orders that are confirmée, have a bordereau, and
+         are not yet shipped — with products from the REAL OrderLines (accurate).
+      2) Fallback: any barcode Navex lists as en-attente that has NO order in our
+         system (e.g. created directly in Navex) — matched from the Navex
+         designation text so it isn't hidden.
+    A barcode that already has a ShippingOrder (scanned/expédié) is excluded."""
     import urllib.request, urllib.parse
+    from .models import Order
+    from .scan_service import _matched_products_from_order, _get_matched_products
+    from . import scan_service
 
     try:
-        data = urllib.parse.urlencode({"getattente": "1"}).encode()
-        req = urllib.request.Request(
-            NAVEX_API_URL,
-            data=data, method="POST"
-        )
-        req.add_header("Content-Type", "application/x-www-form-urlencoded")
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            import json as json_lib
-            navex_data = json_lib.loads(resp.read().decode())
+        # Barcodes already scanned at expédition (any ShippingOrder) → exclude.
+        scanned = set(ShippingOrder.objects
+                      .exclude(bordereau_barcode="")
+                      .values_list("bordereau_barcode", flat=True))
 
-        colis_list = navex_data.get("colis", [])
-
-        # An order is "en attente" only until it's SCANNED at expédition. Scanning
-        # creates a ShippingOrder (status OPEN). So skip any barcode that already
-        # has a ShippingOrder in ANY status — it's been scanned/expédié, not
-        # pending. (Previously only CLOSED/PAID were skipped, so freshly-scanned
-        # OPEN orders wrongly stayed in the en-attente list.)
-        our_barcodes = set(ShippingOrder.objects
-                           .exclude(bordereau_barcode="")
-                           .values_list("bordereau_barcode", flat=True))
+        # --- (1) v2 orders: confirmée, pushed, not yet shipped ---
+        shipped_or_beyond = [
+            Order.EN_COURS, Order.AU_MAGASIN, Order.RETURNING, Order.RETURNED,
+            Order.LIVREE, Order.PAYEE, Order.ANNULEE,
+        ]
+        v2_orders = (Order.objects
+                     .filter(status=Order.CONFIRMEE)
+                     .exclude(bordereau_barcode="")
+                     .exclude(status__in=shipped_or_beyond)
+                     .select_related("customer", "sales_page", "region")
+                     .prefetch_related("lines__product", "lines__variant")
+                     .order_by("-created_at"))
 
         result = []
-        for colis in colis_list:
-            code_barre = colis.get("code_barre", "")
-            designation = colis.get("designation", "")
-            prix = colis.get("prix", "")
-
-            # Skip if already scanned in our system
-            if code_barre in our_barcodes:
+        seen_barcodes = set()
+        for o in v2_orders:
+            bc = o.bordereau_barcode
+            if not bc or bc in scanned or bc in seen_barcodes:
                 continue
-
-            # Use scan_service helper for consistent matching
-            from .scan_service import _get_matched_products
-            matched_products = _get_matched_products(designation)
-
+            seen_barcodes.add(bc)
+            matched = _matched_products_from_order(o)
             result.append({
-                "code_barre": code_barre,
-                "designation": designation,
-                "prix": prix,
-                "nom": colis.get("nom", "") or colis.get("client_nom", "") or colis.get("name", ""),
-                "tel": colis.get("tel", "") or colis.get("phone", "") or colis.get("telephone", ""),
-                "ville": colis.get("ville", "") or colis.get("city", ""),
-                "matched_products": matched_products,
-                "recognized": len(matched_products) > 0,
+                "code_barre": bc,
+                "designation": o.article_summary if hasattr(o, "article_summary") else "",
+                "prix": str(o.total),
+                "nom": o.display_name,
+                "tel": o.customer.phone if o.customer else "",
+                "ville": o.ville or "",
+                "page": o.sales_page.name if o.sales_page else "",
+                "order_id": o.id,
+                "matched_products": matched,
+                "recognized": len(matched) > 0,
             })
 
-        # Populate scan_service cache for instant prediction on scan
-        from . import scan_service
-        scan_service.navexMap_cache = {c["code_barre"]: c for c in result}
+        # --- (2) Navex-only fallback: barcodes Navex has en attente that we
+        # don't know about (no order in our system). Keep them visible. ---
+        try:
+            data = urllib.parse.urlencode({"getattente": "1"}).encode()
+            req = urllib.request.Request(NAVEX_API_URL, data=data, method="POST")
+            req.add_header("Content-Type", "application/x-www-form-urlencoded")
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                import json as json_lib
+                navex_data = json_lib.loads(resp.read().decode())
+            our_order_barcodes = set(
+                Order.objects.exclude(bordereau_barcode="")
+                .values_list("bordereau_barcode", flat=True)
+            )
+            for colis in navex_data.get("colis", []):
+                bc = colis.get("code_barre", "")
+                if not bc or bc in scanned or bc in seen_barcodes:
+                    continue
+                # Only add if we have NO order for it (else v2 already covered it
+                # or it's intentionally not pending on our side).
+                if bc in our_order_barcodes:
+                    continue
+                seen_barcodes.add(bc)
+                designation = colis.get("designation", "")
+                matched = _get_matched_products(designation)
+                result.append({
+                    "code_barre": bc,
+                    "designation": designation,
+                    "prix": colis.get("prix", ""),
+                    "nom": colis.get("nom", "") or colis.get("client_nom", "") or colis.get("name", ""),
+                    "tel": colis.get("tel", "") or colis.get("phone", "") or colis.get("telephone", ""),
+                    "ville": colis.get("ville", "") or colis.get("city", ""),
+                    "matched_products": matched,
+                    "recognized": len(matched) > 0,
+                    "navex_only": True,
+                })
+        except Exception:
+            # If Navex is unreachable, still return the v2 list.
+            pass
 
-        return JsonResponse({
-            "status": "ok",
-            "total": len(result),
-            "colis": result,
-        })
+        scan_service.navexMap_cache = {c["code_barre"]: c for c in result}
+        return JsonResponse({"status": "ok", "total": len(result), "colis": result})
+
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)})
 
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)})
