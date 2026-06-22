@@ -5714,6 +5714,15 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
                 p = part.strip()
                 if p:
                     candidates.append(p)
+        # Some website/Shopify titles embed the variant in parentheses inside
+        # the TITLE itself, e.g. "PULL SORA (BLACK, L)" or "Short Sora (Noir, L)".
+        # Pull those tokens out as candidates too (split on comma/slash).
+        li_title = (li.get("title") or li.get("name") or "")
+        for paren in re.findall(r"\(([^)]*)\)", li_title):
+            for part in re.split(r"[/|\\,;]| - ", paren):
+                p = part.strip()
+                if p:
+                    candidates.append(p)
         for k in ("option1", "option2", "option3"):
             ov = li.get(k) or ""
             if ov:
@@ -6188,6 +6197,19 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
                 return bool(_re_local.match(r"^(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|4xl|\d{1,2})$", t))
             color_parts = [p for p in parts if not _looks_like_size(p)]
             size_parts  = [p for p in parts if _looks_like_size(p)]
+            # Also harvest color/size tokens from parentheses in the TITLE, e.g.
+            # "PULL SORA (BLACK, L), Short et Pantalon Sora (BLACK, L)" — websites
+            # that don't populate variant_title put the variant here instead.
+            _li_title_for_color = (li.get("title") or li.get("name") or "")
+            for paren in _re_local.findall(r"\(([^)]*)\)", _li_title_for_color):
+                for tok in _re_local.split(r"[/|\\,;]| - ", paren):
+                    tok = tok.strip()
+                    if not tok:
+                        continue
+                    if _looks_like_size(tok):
+                        size_parts.append(tok)
+                    elif tok not in color_parts:
+                        color_parts.append(tok)
             shared_size_hint = size_parts[-1] if size_parts else ""
 
             # Track which color candidates have been "claimed" so we don't
@@ -6195,8 +6217,25 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
             # First pass: prefer assigning each sub-product a color UNIQUE to it.
             # Fallback pass: if a sub-product has no unique match, allow shared.
             assignments = [None] * len(offer_products)  # color string for each sub
+            # POSITIONAL assignment (priority): when the SKU/variant carries one
+            # color per sub-product in order, e.g. SKU "BLANC/NOIR" for an
+            # offer [PULL SORA, Short Sora] means PULL→BLANC, Short→NOIR. If the
+            # number of color tokens equals the number of sub-products, map them
+            # 1:1 by position — but only keep a positional color if it actually
+            # matches a variant of that sub-product (otherwise leave it for the
+            # match-based pass below).
+            if len(color_parts) == len(offer_products) and len(offer_products) > 1:
+                for i, op in enumerate(offer_products):
+                    cand = color_parts[i]
+                    synthetic_li_test = dict(li)
+                    synthetic_li_test["variant_title"] = cand
+                    if _extract_variant(synthetic_li_test, op.product, strict=True) is not None:
+                        assignments[i] = cand
+            # Match-based fallback for any sub-product not yet assigned: try each
+            # color candidate and use the first that matches one of its variants.
             for i, op in enumerate(offer_products):
-                # Find which of color_parts matches a variant of this sub-product
+                if assignments[i] is not None:
+                    continue
                 synthetic_li_test = dict(li)
                 for cand in color_parts:
                     synthetic_li_test["variant_title"] = cand
