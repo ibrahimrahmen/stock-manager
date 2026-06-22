@@ -935,16 +935,22 @@ function _outsideClickHandler(ev) {
 // Close the create row WITHOUT discarding the draft (it stays in DB).
 async function closeDraftPanel() {
   window._allowDraftRemoval = true;
-  // If we have a draft saved in DB, refresh its row in the list before closing.
-  // This way the user sees the up-to-date Articles, Region, Total, etc. without
-  // having to reload the whole page.
-  const draftIdToRefresh = currentDraftId;
-  // Force a final autosave to make sure Order.total is up-to-date in DB,
-  // since the backend recalculates total on every upsert. Without this, opening
-  // and immediately closing a draft would leave it with stale (often 0) total.
-  if (draftIdToRefresh && modalOffers.length > 0) {
-    try { await autoSaveDraft('close'); } catch(_) {}
+  // Wait for any in-flight autosave to finish so currentDraftId is set.
+  let _guard = 0;
+  while (saveInFlight && _guard < 40) { await new Promise(r => setTimeout(r, 50)); _guard++; }
+  // Always run a final autosave before closing so the draft is persisted AND
+  // currentDraftId is set — even if the operator only filled page + phone (no
+  // articles). Without this, closing too quickly left the row unsaved in the
+  // view (it only reappeared after a full page refresh).
+  try { await autoSaveDraft('close'); } catch(_) {}
+  // Drain any queued save too.
+  while (saveInFlight && _guard < 80) { await new Promise(r => setTimeout(r, 50)); _guard++; }
+  if (pendingSavePayload) {
+    pendingSavePayload = null;
+    try { await autoSaveDraft('close-queued'); } catch(_) {}
+    while (saveInFlight && _guard < 120) { await new Promise(r => setTimeout(r, 50)); _guard++; }
   }
+  const draftIdToRefresh = currentDraftId;
   document.removeEventListener('mousedown', _outsideClickHandler, true);
   document.getElementById('cr-row-error-tr')?.remove();
   document.getElementById('exchange-banner')?.remove();
