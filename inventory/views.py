@@ -1649,10 +1649,14 @@ def api_navex_en_attente(request):
 
         colis_list = navex_data.get("colis", [])
 
-        # Only skip orders that are already CLOSED or PAID — open orders still count as pending
-        our_barcodes = set(ShippingOrder.objects.filter(
-            status__in=(ShippingOrder.CLOSED, ShippingOrder.PAID)
-        ).values_list("bordereau_barcode", flat=True))
+        # An order is "en attente" only until it's SCANNED at expédition. Scanning
+        # creates a ShippingOrder (status OPEN). So skip any barcode that already
+        # has a ShippingOrder in ANY status — it's been scanned/expédié, not
+        # pending. (Previously only CLOSED/PAID were skipped, so freshly-scanned
+        # OPEN orders wrongly stayed in the en-attente list.)
+        our_barcodes = set(ShippingOrder.objects
+                           .exclude(bordereau_barcode="")
+                           .values_list("bordereau_barcode", flat=True))
 
         result = []
         for colis in colis_list:
