@@ -366,6 +366,14 @@ def _converty_to_shopify_shape(co):
         properties = []
         for sv in (item.get("selectedVariants") or []):
             properties.append({"name": sv.get("name") or "", "value": sv.get("value") or ""})
+        # Converty products here have no color variant — the color name (e.g.
+        # "noir", "blanc") is stored in the product SKU field. Expose it as a
+        # "couleur" property AND fold it into variant_title so the color
+        # extractor picks it up like any other order.
+        sku_val = (prod.get("sku") or "").strip()
+        if sku_val:
+            properties.append({"name": "couleur", "value": sku_val})
+            variant_title = (variant_title + " / " + sku_val).strip(" /") if variant_title else sku_val
         line_items.append({
             "title": name,
             "name": name,
@@ -373,7 +381,7 @@ def _converty_to_shopify_shape(co):
             "properties": properties,
             "quantity": int(item.get("quantity") or 1),
             "price": str(item.get("pricePerUnit") or prod.get("price") or "0"),
-            "sku": prod.get("sku") or "",
+            "sku": sku_val,
         })
 
     total = co.get("total") or {}
