@@ -1507,11 +1507,18 @@ function renderOfferProducts(idx) {
 async function onOfferPicked(idx, offerId) {
   modalOffers[idx].offer_id = offerId ? parseInt(offerId) : null;
   modalOffers[idx].products = [];
-  if (offerId && !offerCache[offerId]) {
+  // Cache key includes the page so the per-page price is correct (an offer can
+  // be 89 on one page and 79 on another).
+  const cacheKey = offerId ? `${offerId}@${pickedPageId || ''}` : null;
+  if (offerId && !offerCache[cacheKey]) {
     try {
-      const data = await fetchJson(`/api/offers/${offerId}/`);
-      if (data.status === 'ok') offerCache[offerId] = data.offer;
+      let url = `/api/offers/${offerId}/`;
+      if (pickedPageId) url += `?page=${encodeURIComponent(pickedPageId)}`;
+      const data = await fetchJson(url);
+      if (data.status === 'ok') { offerCache[cacheKey] = data.offer; offerCache[offerId] = data.offer; }
     } catch (e) { alert('Erreur: ' + e.message); }
+  } else if (offerId && offerCache[cacheKey]) {
+    offerCache[offerId] = offerCache[cacheKey];
   }
   if (offerId && offerCache[offerId]) {
     modalOffers[idx].products = offerCache[offerId].products.map(p => ({

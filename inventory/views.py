@@ -3660,11 +3660,28 @@ def api_offer_detail(request, offer_id):
             "variants": variants,
         })
 
+    # Resolve the price for the page this order is on (per-page pricing). Falls
+    # back to the default bundle_price when no page is given or no override.
+    page_id = request.GET.get("page")
+    page_name = request.GET.get("page_name")
+    resolved_price = offer.bundle_price
+    if page_id:
+        try:
+            from .models import SalesPage
+            sp = SalesPage.objects.filter(pk=int(page_id)).first()
+            if sp is not None:
+                resolved_price = offer.price_for_page(sp)
+        except (ValueError, TypeError):
+            pass
+    elif page_name:
+        resolved_price = offer.price_for_page_name(page_name)
+
     return JsonResponse({
         "status": "ok",
         "offer": {
             "id": offer.id, "name": offer.name,
-            "bundle_price": str(offer.bundle_price),
+            "bundle_price": str(resolved_price),
+            "default_price": str(offer.bundle_price),
             "is_active": offer.is_active,
             "sales_page_ids": list(offer.sales_pages.values_list("id", flat=True)),
             "page_prices": {str(pp.sales_page_id): str(pp.price) for pp in offer.page_prices.all()},
