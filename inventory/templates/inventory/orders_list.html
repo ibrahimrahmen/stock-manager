@@ -1755,7 +1755,16 @@ async function submitNewOrder() {
         document.getElementById('exchange-banner')?.remove();
         document.getElementById('cr-row-error-tr')?.remove();
       } catch(_) {}
-      // Reload to refresh the list
+      // Reload to refresh the list. Strip ?create_exchange so the exchange
+      // editor doesn't auto-reopen after the reload.
+      try {
+        const u = new URL(window.location.href);
+        if (u.searchParams.has('create_exchange')) {
+          u.searchParams.delete('create_exchange');
+          window.location.replace(u.pathname + u.search);
+          return;
+        }
+      } catch(_) {}
       window.location.reload();
       return;
     } else {
