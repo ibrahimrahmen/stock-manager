@@ -3936,17 +3936,37 @@ def api_order_draft_upsert(request):
             if phone2 and customer.phone2 != phone2:
                 customer.phone2 = phone2
                 customer.save(update_fields=["phone2"])
-            order = Order.objects.create(
-                customer=customer,
-                sales_page_id=sales_page_id,
-                customer_name=name,
-                created_by=request.user if request.user.is_authenticated else None,
-                status="non_confirmee",
-            )
+            # EXCHANGE de-dup: if this is an exchange draft and an OPEN (still
+            # editable, not pushed) exchange draft already exists for the same
+            # source order + customer, reuse it instead of creating a duplicate.
+            # This prevents a pile of draft exchanges when the operator's editor
+            # reopens or autosaves fire before currentDraftId is set.
+            exchange_of_id = data.get("exchange_of_id")
+            order = None
+            if exchange_of_id:
+                try:
+                    existing = (Order.objects
+                                .filter(exchange_of_id=int(exchange_of_id),
+                                        customer=customer,
+                                        status="non_confirmee",
+                                        bordereau_barcode="")
+                                .order_by("-created_at")
+                                .first())
+                    if existing is not None:
+                        order = existing
+                except (ValueError, TypeError):
+                    pass
+            if order is None:
+                order = Order.objects.create(
+                    customer=customer,
+                    sales_page_id=sales_page_id,
+                    customer_name=name,
+                    created_by=request.user if request.user.is_authenticated else None,
+                    status="non_confirmee",
+                )
             # If this is an exchange (frontend passes exchange_of_id), link the
             # new order to the original delivered order.
-            exchange_of_id = data.get("exchange_of_id")
-            if exchange_of_id:
+            if exchange_of_id and not order.exchange_of_id:
                 try:
                     src = Order.objects.get(pk=int(exchange_of_id))
                     if src.status in (Order.LIVREE, Order.PAYEE):
