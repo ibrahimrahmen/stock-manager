@@ -494,19 +494,33 @@ def api_converty_webhook(request):
         return JsonResponse({"success": True, "message": f"status '{co_status}' ignored"})
 
     # The webhook payload's selectedVariants carry the COULEUR as an IMAGE URL
-    # (not usable for color). The full order from the API carries it as a hex
-    # color (e.g. "#ffffff"). Fetch the full order so we can resolve the colour;
-    # fall back to the webhook payload if the fetch fails.
+    # (not usable for color). The full order from the API carries the per-variant
+    # data (newVariants with colour SKUs). Direct GET /orders/<id> returns 404 on
+    # this API, but GET /orders?search=<id> returns the single matching order.
+    # Fetch it so we can resolve the colour; fall back to the webhook payload.
     full_obj = order_obj
     try:
         token = get_valid_converty_token()
         if token:
-            st_f, data_f = _api_request("GET", f"/orders/{converty_id}", token)
+            import urllib.parse as _up
             fetched = None
-            if isinstance(data_f, dict):
-                fetched = data_f.get("data") if isinstance(data_f.get("data"), dict) else None
-                if fetched is None and data_f.get("_id"):
-                    fetched = data_f
+            for _key in (str(order_obj.get("reference") or ""), converty_id):
+                if not _key:
+                    continue
+                st_f, data_f = _api_request(
+                    "GET", f"/orders?search={_up.quote(str(_key))}", token
+                )
+                rows = data_f.get("data") if isinstance(data_f, dict) else None
+                if isinstance(rows, list):
+                    # Prefer an exact _id match; else take the single result.
+                    for row in rows:
+                        if str(row.get("_id")) == str(converty_id):
+                            fetched = row
+                            break
+                    if fetched is None and len(rows) == 1:
+                        fetched = rows[0]
+                if fetched:
+                    break
             if fetched and (fetched.get("cart") or fetched.get("_id")):
                 full_obj = fetched
     except Exception:
