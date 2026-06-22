@@ -356,24 +356,62 @@ def _converty_to_shopify_shape(co):
         # Build a Shopify-style variant_title from selectedVariants values
         # (e.g. [{"name":"Size","value":"M"}] -> "M"; size+color -> "M / Bleu").
         sv_values = []
+        sel_color_val = ""   # selected COULEUR value (image url or hex)
+        sel_size_val = ""    # selected size
         for sv in (item.get("selectedVariants") or []):
+            nm = (sv.get("name") or "").strip().lower()
             val = (sv.get("value") or "").strip()
             if val:
                 sv_values.append(val)
+            if nm in ("couleur", "color", "colour"):
+                sel_color_val = val
+            elif nm in ("taille", "size"):
+                sel_size_val = val
         variant_title = " / ".join(sv_values)
+        # The selected COULEUR is often an image URL — useless and pollutes the
+        # colour parser. Rebuild variant_title from the SIZE only; the real
+        # colour comes from the variant SKU resolved below.
+        if sel_color_val and sel_color_val in variant_title:
+            variant_title = sel_size_val or ""
         # Also expose each selectedVariant as a Shopify "property" so the
         # size/color extractors (which read name=size/couleur) can use them.
         properties = []
         for sv in (item.get("selectedVariants") or []):
             properties.append({"name": sv.get("name") or "", "value": sv.get("value") or ""})
-        # Converty products here have no color variant — the color name (e.g.
-        # "noir", "blanc") is stored in the product SKU field. Expose it as a
-        # "couleur" property AND fold it into variant_title so the color
-        # extractor picks it up like any other order.
-        sku_val = (prod.get("sku") or "").strip()
-        if sku_val:
-            properties.append({"name": "couleur", "value": sku_val})
-            variant_title = (variant_title + " / " + sku_val).strip(" /") if variant_title else sku_val
+
+        # Converty colour resolution: the PER-VARIANT SKU holds the colour name
+        # (e.g. "BLANC", "NOIR", "NOIR/BLANC"). Each variant in newVariants has
+        # selectedValues=[colorImageUrl, size]. Match the order's selected colour
+        # (+ size) to its variant, then use THAT variant's SKU as the colour.
+        color_sku = ""
+        new_variants = prod.get("newVariants") or []
+        if new_variants and (sel_color_val or sel_size_val):
+            best = None
+            for v in new_variants:
+                vals = v.get("selectedValues") or []
+                v_color = str(vals[0]) if len(vals) >= 1 else ""
+                v_size = str(vals[1]) if len(vals) >= 2 else ""
+                color_ok = (not sel_color_val) or (v_color == sel_color_val)
+                size_ok = (not sel_size_val) or (v_size == sel_size_val)
+                if color_ok and size_ok:
+                    best = v
+                    break
+            # If size didn't line up, match colour only.
+            if best is None and sel_color_val:
+                for v in new_variants:
+                    vals = v.get("selectedValues") or []
+                    if vals and str(vals[0]) == sel_color_val:
+                        best = v
+                        break
+            if best is not None:
+                color_sku = (best.get("sku") or "").strip()
+
+        # The colour SKU (BLANC / NOIR / NOIR/BLANC) is the colour source. Expose
+        # it as a "couleur" property AND fold into variant_title so the positional
+        # colour extractor splits "NOIR/BLANC" across the offer's sub-products.
+        if color_sku:
+            properties.append({"name": "couleur", "value": color_sku})
+            variant_title = (variant_title + " / " + color_sku).strip(" /") if variant_title else color_sku
         line_items.append({
             "title": name,
             "name": name,
@@ -381,7 +419,7 @@ def _converty_to_shopify_shape(co):
             "properties": properties,
             "quantity": int(item.get("quantity") or 1),
             "price": str(item.get("pricePerUnit") or prod.get("price") or "0"),
-            "sku": sku_val,
+            "sku": color_sku or (prod.get("sku") or ""),
         })
 
     total = co.get("total") or {}
@@ -423,8 +461,11 @@ def api_converty_webhook(request):
     try:
         cart_dbg = []
         for it in (order_obj.get("cart") or []):
+            prod = it.get("product") or {}
             cart_dbg.append({
-                "product": (it.get("product") or {}).get("name"),
+                "product": prod.get("name"),
+                "sku": prod.get("sku"),
+                "variants": prod.get("variants"),
                 "selectedVariants": it.get("selectedVariants"),
             })
         log_action(
@@ -452,9 +493,28 @@ def api_converty_webhook(request):
     if co_status and co_status not in CREATE_STATES:
         return JsonResponse({"success": True, "message": f"status '{co_status}' ignored"})
 
+    # The webhook payload's selectedVariants carry the COULEUR as an IMAGE URL
+    # (not usable for color). The full order from the API carries it as a hex
+    # color (e.g. "#ffffff"). Fetch the full order so we can resolve the colour;
+    # fall back to the webhook payload if the fetch fails.
+    full_obj = order_obj
+    try:
+        token = get_valid_converty_token()
+        if token:
+            st_f, data_f = _api_request("GET", f"/orders/{converty_id}", token)
+            fetched = None
+            if isinstance(data_f, dict):
+                fetched = data_f.get("data") if isinstance(data_f.get("data"), dict) else None
+                if fetched is None and data_f.get("_id"):
+                    fetched = data_f
+            if fetched and (fetched.get("cart") or fetched.get("_id")):
+                full_obj = fetched
+    except Exception:
+        pass
+
     # Only create from confirmed-and-earlier states; ignore terminal Converty
     # states we don't want to import as fresh orders.
-    shaped = _converty_to_shopify_shape(order_obj)
+    shaped = _converty_to_shopify_shape(full_obj)
     try:
         resp = _views._create_order_from_shopify_shaped_payload(
             shaped, source="converty", external_id=converty_id, request=request,
