@@ -3939,23 +3939,43 @@ def api_order_draft_upsert(request):
             # EXCHANGE de-dup: if this is an exchange draft and an OPEN (still
             # editable, not pushed) exchange draft already exists for the same
             # source order + customer, reuse it instead of creating a duplicate.
-            # This prevents a pile of draft exchanges when the operator's editor
-            # reopens or autosaves fire before currentDraftId is set.
+            # Wrapped in a transaction with row-locking on the source order so
+            # near-simultaneous autosaves (which fire before the frontend knows
+            # the draft id) serialize and only ONE draft is ever created.
             exchange_of_id = data.get("exchange_of_id")
             order = None
             if exchange_of_id:
+                from django.db import transaction
                 try:
-                    existing = (Order.objects
-                                .filter(exchange_of_id=int(exchange_of_id),
-                                        customer=customer,
-                                        status="non_confirmee",
-                                        bordereau_barcode="")
-                                .order_by("-created_at")
-                                .first())
-                    if existing is not None:
-                        order = existing
+                    src_id = int(exchange_of_id)
+                    with transaction.atomic():
+                        # Lock the source order row so concurrent exchange-draft
+                        # creates for the same source line up one at a time.
+                        try:
+                            Order.objects.select_for_update().filter(pk=src_id).first()
+                        except Exception:
+                            pass
+                        existing = (Order.objects
+                                    .filter(exchange_of_id=src_id,
+                                            customer=customer,
+                                            bordereau_barcode="")
+                                    .exclude(status__in=["confirmee", "livree", "payee",
+                                                          "au_magasin", "en_cours"])
+                                    .order_by("-created_at")
+                                    .first())
+                        if existing is not None:
+                            order = existing
+                        else:
+                            order = Order.objects.create(
+                                customer=customer,
+                                sales_page_id=sales_page_id,
+                                customer_name=name,
+                                created_by=request.user if request.user.is_authenticated else None,
+                                status="non_confirmee",
+                                exchange_of_id=src_id,
+                            )
                 except (ValueError, TypeError):
-                    pass
+                    order = None
             if order is None:
                 order = Order.objects.create(
                     customer=customer,

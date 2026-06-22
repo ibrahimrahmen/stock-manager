@@ -2083,10 +2083,12 @@ async function syncNavex() {
 
 // Auto-open editor for orders that were just "annulé pour changement"
 window.addEventListener('DOMContentLoaded', () => {
+  let _autoOpenedExisting = false;
   try {
     const autoOpenId = sessionStorage.getItem('autoOpenEditOrder');
     if (autoOpenId) {
       sessionStorage.removeItem('autoOpenEditOrder');
+      _autoOpenedExisting = true;
       // Small delay so all init code finishes first
       setTimeout(() => { editOrder(parseInt(autoOpenId)); }, 100);
     }
@@ -2096,7 +2098,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // If the page was opened with ?create_exchange=X, the backend put the source
   // order's data in window.EXCHANGE_SOURCE. Open a pre-filled editor row.
-  if (window.EXCHANGE_SOURCE && window.EXCHANGE_SOURCE.id) {
+  // BUT only if we're not already re-opening an existing order for edit —
+  // otherwise both fire and a duplicate exchange draft gets created.
+  if (!_autoOpenedExisting && window.EXCHANGE_SOURCE && window.EXCHANGE_SOURCE.id) {
     setTimeout(() => { openExchangeEditor(window.EXCHANGE_SOURCE); }, 200);
   }
 });
