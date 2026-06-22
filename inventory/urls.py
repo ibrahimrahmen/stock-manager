@@ -108,6 +108,8 @@ urlpatterns = [
     path("api/debug/navex-etat/", views.api_debug_navex_etat, name="api_debug_navex_etat"),
     # Shopify webhook: client passes order on barats.tn → auto-create v2 draft
     path("api/shopify/webhook/orders/create/", views.api_shopify_webhook_order_created, name="api_shopify_webhook_order_created"),
+    # Messenger DM webhook: receives messages + ad referral, stores conversation.
+    path("webhooks/messenger/", views.api_messenger_webhook, name="api_messenger_webhook"),
     # Regions / delegations (cascaded dropdown)
     path("api/regions/<int:region_id>/delegations/", views.api_region_delegations, name="api_region_delegations"),
     path("api/delegations/all/", views.api_all_delegations, name="api_all_delegations"),

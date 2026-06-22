@@ -1219,3 +1219,70 @@ class CustomerHistory(models.Model):
 
     def __str__(self):
         return f"{self.phone}: {self.historic_delivered} livré / {self.historic_returned} retour"
+
+
+class MessengerConversation(models.Model):
+    """An incoming Messenger/Instagram conversation captured via the Meta
+    webhook. Stores the raw messages, the ad the chat came from (attribution),
+    the Gemini-extracted order data, and a link to the pending Order created
+    for human confirmation.
+
+    Lifecycle:
+      new        → message(s) received, not yet extracted
+      extracted  → Gemini parsed an order; pending Order created
+      confirmed  → a human validated it into a real order
+      ignored    → not an order / spam / dismissed
+    """
+    NEW       = "new"
+    EXTRACTED = "extracted"
+    CONFIRMED = "confirmed"
+    IGNORED   = "ignored"
+    STATUS_CHOICES = [
+        (NEW,       "Nouveau"),
+        (EXTRACTED, "Extrait"),
+        (CONFIRMED, "Confirmé"),
+        (IGNORED,   "Ignoré"),
+    ]
+
+    # Meta identifiers
+    platform        = models.CharField(max_length=20, default="messenger",
+        help_text="messenger / instagram")
+    page_id         = models.CharField(max_length=64, blank=True, default="")
+    sender_id       = models.CharField(max_length=64, db_index=True,
+        help_text="PSID (page-scoped user id) of the customer.")
+    sender_name     = models.CharField(max_length=200, blank=True, default="")
+
+    # Conversation content — appended as messages arrive (JSON list of
+    # {"from": "user"|"page", "text": "...", "ts": "..."}).
+    messages        = models.JSONField(default=list, blank=True)
+
+    # Ad attribution captured from the referral on the first message.
+    source_ad_id        = models.CharField(max_length=120, blank=True, default="")
+    source_ad_ref       = models.CharField(max_length=200, blank=True, default="")
+    source_campaign     = models.CharField(max_length=200, blank=True, default="")
+    ctwa_clid           = models.CharField(max_length=200, blank=True, default="")
+    matched_ad      = models.ForeignKey("Ad", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="conversations")
+
+    # Gemini extraction result (raw JSON) + the pending order it produced.
+    extracted       = models.JSONField(null=True, blank=True)
+    pending_order   = models.ForeignKey("Order", on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="messenger_conversations")
+
+    status          = models.CharField(max_length=20, choices=STATUS_CHOICES,
+        default=NEW, db_index=True)
+    created_at      = models.DateTimeField(auto_now_add=True)
+    updated_at      = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return f"{self.platform}:{self.sender_name or self.sender_id} ({self.status})"
+
+    @property
+    def last_message_text(self):
+        for m in reversed(self.messages or []):
+            if m.get("from") == "user" and m.get("text"):
+                return m["text"]
+        return ""

@@ -51,6 +51,59 @@ NAVEX_API_URL = (
 )
 
 
+def _gemini_generate(prompt, max_tokens=1024, temperature=0.0):
+    """Module-level Gemini call (gemini-2.5-flash-lite). Returns the response
+    text or None on failure. Supports classic (AIza...) and OAuth-style keys.
+    Reused by the Messenger DM order extractor and other callers."""
+    import urllib.request as _ureq
+    import json as _json
+    import time as _time
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key or not prompt:
+        return None
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
+    }
+    base_url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        "gemini-2.5-flash-lite:generateContent"
+    )
+    data = _json.dumps(body).encode("utf-8")
+    attempts = []
+    if api_key.startswith("AIza"):
+        attempts.append((base_url + "?key=" + api_key, None))
+    else:
+        attempts.append((base_url, {"Authorization": "Bearer " + api_key}))
+        attempts.append((base_url, {"x-goog-api-key": api_key}))
+        attempts.append((base_url + "?key=" + api_key, None))
+    for url, headers in attempts:
+        for retry in range(2):
+            try:
+                req = _ureq.Request(url, data=data, method="POST")
+                req.add_header("Content-Type", "application/json")
+                for h, v in (headers or {}).items():
+                    req.add_header(h, v)
+                with _ureq.urlopen(req, timeout=12) as resp:
+                    rd = _json.loads(resp.read().decode("utf-8"))
+                cands = rd.get("candidates") or []
+                if not cands:
+                    break
+                parts = cands[0].get("content", {}).get("parts") or []
+                if not parts:
+                    break
+                txt = (parts[0].get("text") or "").strip()
+                if txt:
+                    return txt
+                break
+            except Exception as e:
+                if "429" in str(e) and retry == 0:
+                    _time.sleep(2)
+                    continue
+                break
+    return None
+
+
 # ---------------------------------------------------------------------------
 # SCAN PAGES
 # ---------------------------------------------------------------------------
@@ -8433,3 +8486,248 @@ def stats_commandes(request):
         "source_filter": source_filter,
         "n_days": len(days),
     })
+
+
+# ---------------------------------------------------------------------------
+# MESSENGER DM ORDER AUTOMATION
+# Webhook receives Messenger messages + ad referral, stores the conversation,
+# and (when complete) extracts an order via Gemini into a pending non_confirmee
+# Order for human confirmation.
+# ---------------------------------------------------------------------------
+@csrf_exempt
+def api_messenger_webhook(request):
+    """Meta Messenger webhook.
+      GET  → verification: echo hub.challenge if hub.verify_token matches.
+      POST → message events: store messages + capture ad referral.
+    """
+    # --- GET: Meta verification handshake ---
+    if request.method == "GET":
+        verify_token = os.environ.get("MESSENGER_VERIFY_TOKEN", "")
+        mode = request.GET.get("hub.mode")
+        token = request.GET.get("hub.verify_token")
+        challenge = request.GET.get("hub.challenge", "")
+        if mode == "subscribe" and token and token == verify_token:
+            return HttpResponse(challenge, content_type="text/plain")
+        return HttpResponse("Verification failed", status=403)
+
+    # --- POST: incoming events ---
+    if request.method != "POST":
+        return HttpResponse(status=405)
+
+    from .models import MessengerConversation, log_action, AuditLog
+    import json as _json
+    try:
+        payload = _json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return JsonResponse({"status": "ok"})  # ack anyway so Meta doesn't retry
+
+    try:
+        for entry in payload.get("entry", []):
+            page_id = str(entry.get("id") or "")
+            for ev in entry.get("messaging", []):
+                sender_id = str((ev.get("sender") or {}).get("id") or "")
+                if not sender_id:
+                    continue
+                conv, _created = MessengerConversation.objects.get_or_create(
+                    sender_id=sender_id,
+                    status__in=[MessengerConversation.NEW, MessengerConversation.EXTRACTED],
+                    defaults={"platform": "messenger", "page_id": page_id},
+                )
+
+                # Capture ad referral (attribution). Present on the first message
+                # from an ad, or as a standalone 'referral' event.
+                referral = ev.get("referral") or (ev.get("message") or {}).get("referral")
+                if referral:
+                    conv.source_ad_id = str(referral.get("ad_id") or conv.source_ad_id or "")
+                    conv.source_ad_ref = str(referral.get("ref") or conv.source_ad_ref or "")
+                    conv.source_campaign = str(referral.get("ads_context_data", {}).get("ad_title")
+                                               or conv.source_campaign or "")
+                    conv.ctwa_clid = str(referral.get("ctwa_clid") or conv.ctwa_clid or "")
+
+                # Capture the message text.
+                msg = ev.get("message") or {}
+                text = msg.get("text")
+                if text:
+                    msgs = conv.messages or []
+                    msgs.append({
+                        "from": "user",
+                        "text": text,
+                        "ts": str(ev.get("timestamp") or ""),
+                    })
+                    conv.messages = msgs
+                conv.save()
+
+                # B) Auto-extract when the conversation looks complete.
+                try:
+                    _try_extract_and_create_pending(conv)
+                except Exception:
+                    pass
+    except Exception as e:
+        try:
+            log_action(None, AuditLog.OTHER,
+                       description=f"Messenger webhook erreur: {str(e)[:300]}")
+        except Exception:
+            pass
+
+    # Always 200 so Meta considers it delivered.
+    return JsonResponse({"status": "ok"})
+
+
+def _conversation_looks_complete(conv):
+    """Cheap rule check: does the accumulated conversation look like a real
+    order yet? We require (a) a Tunisian phone number (8 digits) somewhere, and
+    (b) at least a few words of customer text (a product mention is likely).
+    This gates the Gemini call so we don't extract on 'bonjour'."""
+    import re
+    text = " ".join(m.get("text", "") for m in (conv.messages or [])
+                     if m.get("from") == "user")
+    if not text:
+        return False
+    digits = re.sub(r"\D", "", text)
+    # A Tunisian mobile is 8 digits; look for any 8-digit run.
+    has_phone = bool(re.search(r"\d{8}", digits))
+    # Some substance beyond a greeting.
+    enough_words = len(text.split()) >= 4
+    return has_phone and enough_words
+
+
+def _extract_order_from_conversation(conv):
+    """Send the conversation to Gemini and parse a structured order JSON.
+    Returns a dict or None. Tuned for Tunisian Arabic / French / English."""
+    import json as _json
+    convo_text = "\n".join(
+        f"{'CLIENT' if m.get('from') == 'user' else 'PAGE'}: {m.get('text','')}"
+        for m in (conv.messages or []) if m.get("text")
+    )
+    if not convo_text.strip():
+        return None
+    prompt = (
+        "Tu es un assistant qui extrait une commande à partir d'une conversation "
+        "Messenger d'une boutique de vêtements tunisienne. La conversation est en "
+        "arabe tunisien, français ou anglais (souvent mélangés).\n\n"
+        "Lis la conversation et réponds UNIQUEMENT avec un objet JSON valide, sans "
+        "texte avant ou après, sans backticks. Schéma:\n"
+        "{\n"
+        '  "is_order": true/false,        // false si ce n\'est pas une vraie commande\n'
+        '  "customer_name": "",\n'
+        '  "phone": "",                    // 8 chiffres tunisiens\n'
+        '  "city": "",                     // gouvernorat/ville de livraison\n'
+        '  "address": "",\n'
+        '  "items": [\n'
+        '    {"product": "", "color": "", "size": "", "qty": 1}\n'
+        "  ]\n"
+        "}\n\n"
+        "Règles: si une info manque, mets une chaîne vide \"\" (ou 1 pour qty). "
+        "Ne devine pas un produit qui n'est pas mentionné. Garde les noms de "
+        "produits tels qu'écrits par le client.\n\n"
+        "Conversation:\n" + convo_text
+    )
+    raw = _gemini_generate(prompt, max_tokens=800, temperature=0.0)
+    if not raw:
+        return None
+    # Strip accidental code fences.
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:]
+    cleaned = cleaned.strip()
+    try:
+        data = _json.loads(cleaned)
+    except Exception:
+        # Try to salvage the first {...} block.
+        import re
+        m = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if not m:
+            return None
+        try:
+            data = _json.loads(m.group(0))
+        except Exception:
+            return None
+    return data
+
+
+def _build_shopify_shape_from_extraction(data, conv):
+    """Convert Gemini's extracted order dict into the Shopify-shaped payload
+    that _create_order_from_shopify_shaped_payload expects."""
+    items = data.get("items") or []
+    line_items = []
+    for it in items:
+        prod = (it.get("product") or "").strip()
+        if not prod:
+            continue
+        color = (it.get("color") or "").strip()
+        size = (it.get("size") or "").strip()
+        vt_parts = [p for p in (size, color) if p]
+        line_items.append({
+            "title": prod,
+            "name": prod,
+            "variant_title": " / ".join(vt_parts),
+            "properties": [
+                {"name": "couleur", "value": color} if color else {"name": "", "value": ""},
+            ],
+            "quantity": int(it.get("qty") or 1),
+            "price": "0",
+            "sku": "",
+        })
+    return {
+        "id": f"dm_{conv.id}",
+        "order_number": f"DM{conv.id}",
+        "name": f"DM{conv.id}",
+        "shipping_address": {
+            "phone": data.get("phone") or "",
+            "name": data.get("customer_name") or conv.sender_name or "",
+            "city": data.get("city") or "",
+            "address1": data.get("address") or "",
+        },
+        "customer": {"phone": data.get("phone") or "",
+                     "first_name": data.get("customer_name") or conv.sender_name or ""},
+        "phone": data.get("phone") or "",
+        "line_items": line_items,
+        "shipping_lines": [],
+    }
+
+
+def _try_extract_and_create_pending(conv):
+    """If the conversation looks complete, extract via Gemini and create a
+    pending non_confirmee Order. Stores the result on the conversation."""
+    from .models import MessengerConversation, Order, Ad
+    if conv.status not in (MessengerConversation.NEW, MessengerConversation.EXTRACTED):
+        return
+    if not _conversation_looks_complete(conv):
+        return
+    data = _extract_order_from_conversation(conv)
+    if not data or not data.get("is_order"):
+        # Not a real order (or extraction failed) — leave as-is for retry later.
+        if data is not None:
+            conv.extracted = data
+            conv.save(update_fields=["extracted", "updated_at"])
+        return
+
+    conv.extracted = data
+    # Link the source ad if we can match the campaign/ad to a known Ad row.
+    if conv.source_campaign and not conv.matched_ad_id:
+        ad = Ad.objects.filter(campaign_name__iexact=conv.source_campaign).first()
+        if ad:
+            conv.matched_ad = ad
+
+    # Reuse the proven order-creation engine via a Shopify-shaped payload.
+    shaped = _build_shopify_shape_from_extraction(data, conv)
+    if not shaped["line_items"] or not shaped["phone"]:
+        conv.save(update_fields=["extracted", "matched_ad", "updated_at"])
+        return
+    try:
+        _create_order_from_shopify_shaped_payload(
+            shaped, source="messenger", external_id=f"dm_{conv.id}",
+        )
+        # Find the order we just created (external id stored in notes).
+        order = Order.objects.filter(
+            notes__contains=f"shopify_order_id=dm_{conv.id}"
+        ).order_by("-id").first()
+        if order:
+            conv.pending_order = order
+            conv.status = MessengerConversation.EXTRACTED
+    except Exception:
+        pass
+    conv.save(update_fields=["extracted", "matched_ad", "pending_order",
+                             "status", "updated_at"])
