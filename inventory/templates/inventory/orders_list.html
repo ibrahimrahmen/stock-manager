@@ -835,6 +835,18 @@ function openCreateRow(opts) {
         // Hold focus until valid — refuse to let them leave
         setTimeout(() => phoneEl.focus(), 0);
         setSaveStatus('error', `Téléphone : ${cleaned.length} chiffre(s), 8 requis`);
+      } else if (cleaned.length === 8) {
+        checkDuplicatePhone(cleaned);
+      }
+    });
+    // Also check as soon as 8 digits are typed (don't wait for blur).
+    phoneEl.addEventListener('input', () => {
+      const cleaned = cleanPhone(phoneEl.value);
+      if (cleaned.length === 8) {
+        clearTimeout(window._dupCheckTimer);
+        window._dupCheckTimer = setTimeout(() => checkDuplicatePhone(cleaned), 350);
+      } else {
+        removeDupWarning();
       }
     });
   }
@@ -1120,6 +1132,42 @@ async function discardCreateRow() {
   pendingSavePayload = null;
   setSaveStatus('hide');
   window.location.reload();
+}
+
+async function checkDuplicatePhone(phone) {
+  if (!phone || phone.length !== 8) return;
+  try {
+    const data = await fetchJson(`/api/sales-orders/search/?q=${encodeURIComponent(phone)}`);
+    const results = (data && data.results) || [];
+    // Exclude the draft we're currently editing from the match count.
+    const others = results.filter(o => !currentDraftId || o.id != currentDraftId);
+    if (others.length > 0) {
+      showDupWarning(phone, others);
+    } else {
+      removeDupWarning();
+    }
+  } catch (_) { /* silent */ }
+}
+
+function showDupWarning(phone, orders) {
+  removeDupWarning();
+  const phoneEl = document.getElementById('cr-phone');
+  if (!phoneEl) return;
+  // Summarize the existing orders (statuses).
+  const n = orders.length;
+  const statuses = {};
+  orders.forEach(o => { const s = o.status_display || o.status || '?'; statuses[s] = (statuses[s]||0)+1; });
+  const summary = Object.entries(statuses).map(([s,c]) => `${c} ${s}`).join(', ');
+  const div = document.createElement('div');
+  div.id = 'dup-phone-warning';
+  div.style.cssText = 'margin-top:6px;padding:7px 10px;background:rgba(245,166,35,0.15);border:0.5px solid rgba(245,166,35,0.5);border-radius:8px;font-size:11px;color:#b8780f;font-weight:600;cursor:pointer;';
+  div.innerHTML = `⚠ Ce numéro a déjà ${n} commande${n>1?'s':''} (${summary}). <u>Voir</u>`;
+  div.onclick = () => { try { searchPhone(phone); } catch(_){} };
+  phoneEl.insertAdjacentElement('afterend', div);
+}
+
+function removeDupWarning() {
+  document.getElementById('dup-phone-warning')?.remove();
 }
 
 async function cancelCreateRow() {
