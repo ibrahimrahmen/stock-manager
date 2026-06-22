@@ -3825,6 +3825,46 @@ def _is_draft_editable(order):
 @csrf_exempt
 @require_POST
 @login_required(login_url="/login/")
+def api_order_draft_discard(request, pk):
+    """Discard (delete) a draft order — used when the operator abandons an order
+    they started entering (e.g. realised it's a duplicate). Only allowed while
+    the order is still an editable draft (not confirmed/pushed to Navex)."""
+    from .models import Order, log_action, AuditLog
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    try:
+        order = Order.objects.get(pk=pk)
+    except Order.DoesNotExist:
+        # Already gone — treat as success so the UI cleans up.
+        return JsonResponse({"status": "ok", "deleted": False})
+    if not _is_draft_editable(order):
+        return JsonResponse({
+            "status": "error",
+            "message": "Cette commande n'est plus un brouillon — suppression impossible.",
+            "locked": True,
+        }, status=400)
+    oid = order.id
+    # Clean up any attached lines/offers first.
+    try:
+        order.lines.all().delete()
+        order.order_offers.all().delete()
+    except Exception:
+        pass
+    order.delete()
+    try:
+        log_action(
+            request.user, AuditLog.DELETE,
+            description=f"Brouillon commande #{oid} supprimé (abandonné)",
+            request=request, target_model="Order", target_id=oid,
+        )
+    except Exception:
+        pass
+    return JsonResponse({"status": "ok", "deleted": True})
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
 def api_order_draft_upsert(request):
     """Create or update a draft order.
     - If 'order_id' is in payload → update existing draft (with edit-lock check)

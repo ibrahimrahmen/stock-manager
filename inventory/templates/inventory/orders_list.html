@@ -670,7 +670,7 @@ function openCreateRow(opts) {
   tr.className = 'create-row';
   tr.id = 'create-row';
   tr.innerHTML = `
-    <td><button class="cancel-btn" onclick="cancelCreateRow()">×</button></td>
+    <td><button class="cancel-btn" onclick="cancelCreateRow()" title="Fermer (garder le brouillon)">×</button><button class="discard-btn" onclick="discardCreateRow()" title="Supprimer ce brouillon (annuler la commande)" style="background:transparent;border:none;cursor:pointer;font-size:15px;margin-left:4px;opacity:0.7;">🗑</button></td>
     <td class="muted">${currentDraftId ? '#' + currentDraftId : '—'}</td>
     <td>
       <select id="cr-page" onchange="onPagePicked(this.value)" required>
@@ -1091,6 +1091,35 @@ function buildOrderRowHtml(o) {
 // Clean a phone string: keep only digits.
 function cleanPhone(s) {
   return (s || '').replace(/\D/g, '');
+}
+
+async function discardCreateRow() {
+  // Delete the draft entirely (operator abandons the order, e.g. duplicate).
+  if (!confirm('Supprimer ce brouillon ? La commande ne sera pas enregistrée.')) return;
+  // Cancel any pending autosave so it can't recreate the draft after delete.
+  pendingSavePayload = null;
+  const idToDelete = currentDraftId;
+  document.removeEventListener('mousedown', _outsideClickHandler, true);
+  if (idToDelete) {
+    try {
+      await fetch(`/api/sales-orders/${idToDelete}/discard/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+      });
+    } catch (_) {}
+  }
+  document.getElementById('cr-row-error-tr')?.remove();
+  document.getElementById('exchange-banner')?.remove();
+  document.getElementById('create-row')?.remove();
+  creatingRow = false;
+  pickedPageId = null;
+  offersForPage = [];
+  modalOffers = [];
+  currentDraftId = null;
+  lastSaveAt = null;
+  pendingSavePayload = null;
+  setSaveStatus('hide');
+  window.location.reload();
 }
 
 async function cancelCreateRow() {

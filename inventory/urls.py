@@ -85,6 +85,7 @@ urlpatterns = [
     path("api/sales-orders/create/", views.api_create_order_inline, name="api_create_order_inline"),
     # Phase A — auto-save / draft flow
     path("api/sales-orders/draft/upsert/", views.api_order_draft_upsert, name="api_order_draft_upsert"),
+    path("api/sales-orders/<int:pk>/discard/", views.api_order_draft_discard, name="api_order_draft_discard"),
     path("api/sales-orders/<int:pk>/draft/", views.api_order_draft_get, name="api_order_draft_get"),
     # User theme preference (dark/light)
     path("api/user/theme/", views.api_user_theme, name="api_user_theme"),
