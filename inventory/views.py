@@ -6298,28 +6298,15 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
 
         # --- (D) Process the final pick ---
         if offer:
-            # Found a bundle — create OrderOffer + child OrderLines (one per product in offer).
-            # The merchant uses Shopify variant titles like "Gris/Blanc" where
-            # each part (split on "/") corresponds, IN ORDER, to a sub-product
-            # of the offer. So we split the variant title and pass each part
-            # to the matching sub-product.
-            order_offer = OrderOffer.objects.create(
-                order=order, offer=offer,
-                offer_name=offer.name,
-                bundle_price=offer.price_for_page(order.sales_page),
-                quantity=quantity,
-            )
-            # Split variant_title by "/" to get one color (or size) per slot.
-            # We do NOT assume order matches our sub-products order. Instead, for
-            # each sub-product, we try ALL color candidates in the title and
-            # pick the one that actually matches one of its variants. If a
-            # candidate is "claimed" by one sub-product, the others can still
-            # use it (e.g. two sub-products with the same Gray variant).
+            # Found a bundle. An offer ordered with quantity N should come in as
+            # N SEPARATE offer instances (e.g. "Pull Camo" + "Pull Camo"), each
+            # its own priced bundle — NOT one OrderOffer with quantity N (which
+            # mis-prints and mis-prices). So we loop N times, creating one
+            # OrderOffer (qty 1) per unit ordered.
+            offer_products = list(offer.products.all())
+            # --- resolve colours/sizes ONCE (same for every copy) ---
             v_title_full = (li.get("variant_title") or "").strip()
             parts = [p.strip() for p in v_title_full.split("/") if p.strip()]
-            offer_products = list(offer.products.all())
-            # Heuristic to separate the size token from color tokens.
-            # A size token is short and matches "S/M/L/XL/XXL/2XL/3XL" or just digits.
             import re as _re_local
             def _looks_like_size(tok):
                 t = (tok or "").strip().lower()
@@ -6328,9 +6315,6 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
                 return bool(_re_local.match(r"^(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|4xl|\d{1,2})$", t))
             color_parts = [p for p in parts if not _looks_like_size(p)]
             size_parts  = [p for p in parts if _looks_like_size(p)]
-            # Also harvest color/size tokens from parentheses in the TITLE, e.g.
-            # "PULL SORA (BLACK, L), Short et Pantalon Sora (BLACK, L)" — websites
-            # that don't populate variant_title put the variant here instead.
             _li_title_for_color = (li.get("title") or li.get("name") or "")
             for paren in _re_local.findall(r"\(([^)]*)\)", _li_title_for_color):
                 for tok in _re_local.split(r"[/|\\,;]| - ", paren):
@@ -6343,18 +6327,7 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
                         color_parts.append(tok)
             shared_size_hint = size_parts[-1] if size_parts else ""
 
-            # Track which color candidates have been "claimed" so we don't
-            # assign the same color to two sub-products if there's a better match.
-            # First pass: prefer assigning each sub-product a color UNIQUE to it.
-            # Fallback pass: if a sub-product has no unique match, allow shared.
-            assignments = [None] * len(offer_products)  # color string for each sub
-            # POSITIONAL assignment (priority): when the SKU/variant carries one
-            # color per sub-product in order, e.g. SKU "BLANC/NOIR" for an
-            # offer [PULL SORA, Short Sora] means PULL→BLANC, Short→NOIR. If the
-            # number of color tokens equals the number of sub-products, map them
-            # 1:1 by position — but only keep a positional color if it actually
-            # matches a variant of that sub-product (otherwise leave it for the
-            # match-based pass below).
+            assignments = [None] * len(offer_products)
             if len(color_parts) == len(offer_products) and len(offer_products) > 1:
                 for i, op in enumerate(offer_products):
                     cand = color_parts[i]
@@ -6362,8 +6335,6 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
                     synthetic_li_test["variant_title"] = cand
                     if _extract_variant(synthetic_li_test, op.product, strict=True) is not None:
                         assignments[i] = cand
-            # Match-based fallback for any sub-product not yet assigned: try each
-            # color candidate and use the first that matches one of its variants.
             for i, op in enumerate(offer_products):
                 if assignments[i] is not None:
                     continue
@@ -6375,39 +6346,45 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
                         assignments[i] = cand
                         break
 
+            # Pre-compute each sub-product's variant + size once.
+            sub_resolved = []  # list of (op, variant_guess, size_guess)
             for i, op in enumerate(offer_products):
                 color_for_this = assignments[i] or ""
                 synthetic_title = (color_for_this + "/" + shared_size_hint) if shared_size_hint else color_for_this
                 synthetic_li = dict(li)
                 synthetic_li["variant_title"] = synthetic_title
-
                 size_guess = _extract_size(synthetic_li, op.product)
                 variant_guess = _extract_variant(synthetic_li, op.product, strict=True)
-                # Fallback: if strict color matching found no variant (e.g. the
-                # Pants in an Ensemble has a single colour, or its colour wasn't
-                # sent), use the sub-product's only variant so the line isn't
-                # left blank. Only safe when there's exactly one variant.
                 if variant_guess is None:
                     sub_variants = list(op.product.variants.all())
                     if len(sub_variants) == 1:
                         variant_guess = sub_variants[0]
                     else:
-                        # try a non-strict match (first/any) as a last resort
                         variant_guess = _extract_variant(synthetic_li, op.product, strict=False)
-                # If size still empty but we have a shared hint, apply it.
                 if not size_guess and shared_size_hint:
                     synthetic_li2 = dict(li)
                     synthetic_li2["variant_title"] = shared_size_hint
                     size_guess = _extract_size(synthetic_li2, op.product)
-                OrderLine.objects.create(
-                    order=order,
-                    order_offer=order_offer,
-                    product=op.product,
-                    variant=variant_guess,
-                    size=size_guess,
-                    quantity=op.quantity * quantity,
-                    unit_price=0,
+                sub_resolved.append((op, variant_guess, size_guess))
+
+            # Create ONE OrderOffer per unit ordered (quantity copies).
+            for _copy in range(max(quantity, 1)):
+                order_offer = OrderOffer.objects.create(
+                    order=order, offer=offer,
+                    offer_name=offer.name,
+                    bundle_price=offer.price_for_page(order.sales_page),
+                    quantity=1,
                 )
+                for op, variant_guess, size_guess in sub_resolved:
+                    OrderLine.objects.create(
+                        order=order,
+                        order_offer=order_offer,
+                        product=op.product,
+                        variant=variant_guess,
+                        size=size_guess,
+                        quantity=op.quantity,
+                        unit_price=0,
+                    )
             continue  # Done with this line_item
 
         # --- (E) Process as simple product ---
