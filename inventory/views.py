@@ -8747,6 +8747,47 @@ def _build_shopify_shape_from_extraction(data, conv):
     }
 
 
+def _match_offers_from_text(order, conv):
+    """Gemini-independent: scan the raw conversation text for any active offer
+    or product NAME and add matches to the order. Works even when Gemini is
+    down/empty. Catches loose mentions like 'pull camo' → offer 'Pull Camo'."""
+    from .models import Offer, Product, OrderOffer, OrderLine
+    text = " ".join(m.get("text", "") for m in (conv.messages or [])
+                    if m.get("from") == "user").lower()
+    if not text:
+        return
+    existing_names = set()
+    for oo in order.order_offers.all():
+        existing_names.add((oo.offer_name or "").strip().lower())
+    for l in order.lines.filter(order_offer__isnull=True):
+        if l.product:
+            existing_names.add(l.product.name.strip().lower())
+
+    # Active offers, longest name first (so "Ensemble Camo ZR" wins over "Camo").
+    offers = sorted(Offer.objects.filter(is_active=True),
+                    key=lambda o: len(o.name or ""), reverse=True)
+    for offer in offers:
+        nm = (offer.name or "").strip().lower()
+        if not nm or nm in existing_names:
+            continue
+        if nm in text:
+            oo = OrderOffer.objects.create(
+                order=order, offer=offer, offer_name=offer.name,
+                bundle_price=offer.price_for_page(order.sales_page), quantity=1,
+            )
+            for op in offer.products.all():
+                OrderLine.objects.create(
+                    order=order, order_offer=oo, product=op.product,
+                    variant=None, size="", quantity=op.quantity, unit_price=0,
+                )
+            existing_names.add(nm)
+    try:
+        order.recalc_total()
+        order.save(update_fields=["total", "updated_at"])
+    except Exception:
+        pass
+
+
 def _add_extracted_items_to_order(order, data):
     """Add products/offers from a Gemini extraction to an existing pending
     order, skipping items already present. Matches each product name against
@@ -8885,6 +8926,11 @@ def _try_extract_and_create_pending(conv):
                 _add_extracted_items_to_order(order, data)
             except Exception:
                 pass
+            # Gemini-independent: also match offers directly from chat text.
+            try:
+                _match_offers_from_text(order, conv)
+            except Exception:
+                pass
             conv.save(update_fields=["extracted", "matched_ad", "updated_at"])
             return
 
@@ -8922,6 +8968,12 @@ def _try_extract_and_create_pending(conv):
                 order.customer.save(update_fields=["customer_psid"])
             conv.pending_order = order
             conv.status = MessengerConversation.EXTRACTED
+            # Gemini-independent: match offers directly from the chat text so a
+            # mention like "pull camo" adds the offer even if Gemini returned {}.
+            try:
+                _match_offers_from_text(order, conv)
+            except Exception:
+                pass
     except Exception:
         pass
     conv.save(update_fields=["extracted", "matched_ad", "pending_order",
