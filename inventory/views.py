@@ -4039,7 +4039,6 @@ def api_order_draft_upsert(request):
             exchange_of_id = data.get("exchange_of_id")
             order = None
             if exchange_of_id:
-                from django.db import transaction
                 try:
                     src_id = int(exchange_of_id)
                     with transaction.atomic():
