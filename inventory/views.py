@@ -50,6 +50,17 @@ NAVEX_API_URL = (
     f"{os.environ.get('NAVEX_API_TOKEN', '')}/v1/post.php"
 )
 
+# Messenger Facebook Page ID → SalesPage id. A DM to each Page creates the
+# order on the mapped sales_page. Unmapped Pages fall back to 3 (Barats).
+# Barats.tn (1) is the SHOPIFY store, NOT a Messenger page — never the default.
+MESSENGER_PAGE_TO_SALESPAGE = {
+    "179384998586489": 2,   # Arrow Sportswear   → Arrow SportsWear
+    "296257303579418": 4,   # Next Generation    → Next Generation
+    "212577788599999": 5,   # Handsome collection→ Handsome Collection
+    "859568317250953": 6,   # Primefit.tn        → PrimeFit
+}
+MESSENGER_DEFAULT_SALESPAGE = 3   # Barats (fallback for unmapped pages)
+
 
 def _gemini_generate(prompt, max_tokens=1024, temperature=0.0):
     """Module-level Gemini call (gemini-2.5-flash-lite). Returns the response
@@ -5045,7 +5056,7 @@ def api_shopify_webhook_order_created(request):
     )
 
 
-def _create_order_from_shopify_shaped_payload(payload, source="shopify", external_id="", request=None):
+def _create_order_from_shopify_shaped_payload(payload, source="shopify", external_id="", request=None, sales_page_id=None):
     """Shared order-creation engine. Takes a Shopify-shaped payload (the Converty
     webhook builds one too) and runs the full matching/AI/region pipeline,
     creating a v2 Order. `source` is 'shopify' or 'converty'; `external_id` is
@@ -5693,7 +5704,12 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
         city = region.name
 
     # 5. Get the SalesPage (or create it if missing)
-    if source == "converty":
+    if sales_page_id is not None:
+        # Explicit sales_page (e.g. Messenger DM routed by Facebook Page).
+        sales_page = SalesPage.objects.filter(pk=sales_page_id).first()
+        if not sales_page:
+            sales_page = SalesPage.objects.filter(name__iexact="Barats").first()
+    elif source == "converty":
         sales_page, created_page = SalesPage.objects.get_or_create(name="Converty", defaults={"is_active": True})
         # Ensure the Converty page exposes the same offers as the main page,
         # otherwise the order form shows "aucune offre attachée". Mirror the
@@ -8743,9 +8759,12 @@ def _try_extract_and_create_pending(conv):
     if not shaped["line_items"] or not shaped["phone"]:
         conv.save(update_fields=["extracted", "matched_ad", "updated_at"])
         return
+    # Route to the sales_page mapped from the Facebook Page this DM came from.
+    sp_id = MESSENGER_PAGE_TO_SALESPAGE.get(str(conv.page_id or ""), MESSENGER_DEFAULT_SALESPAGE)
     try:
         _create_order_from_shopify_shaped_payload(
             shaped, source="messenger", external_id=f"dm_{conv.id}",
+            sales_page_id=sp_id,
         )
         # Find the order we just created (external id stored in notes).
         order = Order.objects.filter(
