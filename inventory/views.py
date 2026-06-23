@@ -8639,9 +8639,9 @@ def _conversation_looks_complete(conv):
     digits = re.sub(r"\D", "", text)
     # A Tunisian mobile is 8 digits; look for any 8-digit run.
     has_phone = bool(re.search(r"\d{8}", digits))
-    # Some substance beyond a greeting.
-    enough_words = len(text.split()) >= 4
-    return has_phone and enough_words
+    # A phone number alone is enough — staff finish the rest, so we never miss
+    # an order. (Previously also required 4+ words, which dropped phone-only DMs.)
+    return has_phone
 
 
 def _extract_order_from_conversation(conv):
@@ -8742,33 +8742,45 @@ def _build_shopify_shape_from_extraction(data, conv):
 
 
 def _try_extract_and_create_pending(conv):
-    """If the conversation looks complete, extract via Gemini and create a
-    pending non_confirmee Order. Stores the result on the conversation."""
+    """When a phone number appears, create a pending non_confirmee Order even if
+    product/size/address are still missing — staff finish the rest so no order
+    is ever missed. We still run Gemini to pre-fill whatever it can extract."""
     from .models import MessengerConversation, Order, Ad
+    import re as _re
     if conv.status not in (MessengerConversation.NEW, MessengerConversation.EXTRACTED):
         return
     if not _conversation_looks_complete(conv):
         return
-    data = _extract_order_from_conversation(conv)
-    if not data or not data.get("is_order"):
-        # Not a real order (or extraction failed) — leave as-is for retry later.
-        if data is not None:
-            conv.extracted = data
-            conv.save(update_fields=["extracted", "updated_at"])
-        return
 
+    data = _extract_order_from_conversation(conv) or {}
     conv.extracted = data
+
     # Link the source ad if we can match the campaign/ad to a known Ad row.
     if conv.source_campaign and not conv.matched_ad_id:
         ad = Ad.objects.filter(campaign_name__iexact=conv.source_campaign).first()
         if ad:
             conv.matched_ad = ad
 
-    # Reuse the proven order-creation engine via a Shopify-shaped payload.
+    # Build the payload from whatever Gemini extracted (may have no line items).
     shaped = _build_shopify_shape_from_extraction(data, conv)
-    if not shaped["line_items"] or not shaped["phone"]:
+
+    # Ensure we have a phone even if Gemini missed it: pull the first 8-digit run
+    # from the conversation text directly.
+    if not shaped.get("phone"):
+        text = " ".join(m.get("text", "") for m in (conv.messages or [])
+                        if m.get("from") == "user")
+        m = _re.search(r"\d{8}", _re.sub(r"\D", "", text))
+        if m:
+            shaped["phone"] = m.group(0)
+            shaped["shipping_address"]["phone"] = m.group(0)
+            shaped["customer"]["phone"] = m.group(0)
+
+    # A phone is the ONLY hard requirement now. No phone → can't create a usable
+    # pending order, so just keep the conversation for later.
+    if not shaped.get("phone"):
         conv.save(update_fields=["extracted", "matched_ad", "updated_at"])
         return
+
     # Route to the sales_page mapped from the Facebook Page this DM came from.
     sp_id = MESSENGER_PAGE_TO_SALESPAGE.get(str(conv.page_id or ""), MESSENGER_DEFAULT_SALESPAGE)
     try:
