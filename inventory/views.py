@@ -54,10 +54,12 @@ NAVEX_API_URL = (
 # order on the mapped sales_page. Unmapped Pages fall back to 3 (Barats).
 # Barats.tn (1) is the SHOPIFY store, NOT a Messenger page — never the default.
 MESSENGER_PAGE_TO_SALESPAGE = {
-    "179384998586489": 2,   # Arrow Sportswear   → Arrow SportsWear
-    "296257303579418": 4,   # Next Generation    → Next Generation
-    "212577788599999": 5,   # Handsome collection→ Handsome Collection
-    "859568317250953": 6,   # Primefit.tn        → PrimeFit
+    "179384998586489": 2,    # Arrow Sportswear    → Arrow SportsWear
+    "580021675198711": 3,    # Barats              → Barats
+    "296257303579418": 4,    # Next Generation     → Next Generation
+    "212577788599999": 5,    # Handsome collection → Handsome Collection
+    "859568317250953": 6,    # Primefit.tn         → PrimeFit
+    "494370360430121": 10,   # Traffic.tn          → Traffic
 }
 MESSENGER_DEFAULT_SALESPAGE = 3   # Barats (fallback for unmapped pages)
 
