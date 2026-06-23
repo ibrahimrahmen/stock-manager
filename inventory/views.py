@@ -7203,6 +7203,33 @@ def _push_order_to_navex_internal(request, order):
     if not (order.address or "").strip():
         return JsonResponse({"status": "error", "message": "Adresse manquante."}, status=400)
 
+    # Require at least one article/offer (not for exchanges, which can be
+    # return-only). An order with no offers and no lines must not be confirmed.
+    if not order.exchange_of_id:
+        has_offers = order.order_offers.exists()
+        has_lines = order.lines.exists()
+        if not has_offers and not has_lines:
+            return JsonResponse({
+                "status": "error",
+                "message": "Aucun article sélectionné. Ajoutez au moins une offre avant de confirmer.",
+            }, status=400)
+
+    # Refuse to confirm if any article is missing its SIZE. Staff were
+    # confirming orders without noticing a blank size, which then ship/print
+    # wrong. A size is required on every line (except exchange placeholders).
+    missing_size = []
+    for line in order.lines.all():
+        if not (line.size or "").strip():
+            pname = line.product.name if line.product else "Article"
+            missing_size.append(pname)
+    if missing_size:
+        uniq = list(dict.fromkeys(missing_size))  # de-dup, keep order
+        return JsonResponse({
+            "status": "error",
+            "message": "Taille manquante pour : " + ", ".join(uniq)
+                       + ". Veuillez choisir la taille avant de confirmer.",
+        }, status=400)
+
     # Defensive: recompute total right before push, in case it was never updated.
     # Without this, a draft created via autosave but never recalculated would push prix=0.
     order.recalc_total()
