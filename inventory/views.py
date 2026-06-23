@@ -78,7 +78,7 @@ def _gemini_generate(prompt, max_tokens=1024, temperature=0.0):
         attempts.append((base_url, {"x-goog-api-key": api_key}))
         attempts.append((base_url + "?key=" + api_key, None))
     for url, headers in attempts:
-        for retry in range(2):
+        for retry in range(4):
             try:
                 req = _ureq.Request(url, data=data, method="POST")
                 req.add_header("Content-Type", "application/json")
@@ -97,8 +97,13 @@ def _gemini_generate(prompt, max_tokens=1024, temperature=0.0):
                     return txt
                 break
             except Exception as e:
-                if "429" in str(e) and retry == 0:
-                    _time.sleep(2)
+                es = str(e)
+                # Retry transient failures: 503 (overloaded), 429 (rate limit),
+                # 500, and timeouts. Exponential-ish backoff: 1s, 2s, 4s.
+                transient = ("503" in es or "429" in es or "500" in es
+                             or "timed out" in es.lower() or "502" in es)
+                if transient and retry < 3:
+                    _time.sleep(2 ** retry)
                     continue
                 break
     return None
@@ -5259,7 +5264,7 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
         last_error = None
         for mode, url, headers in attempts:
             # Try up to 2 times with backoff on 429
-            for retry_attempt in range(2):
+            for retry_attempt in range(4):
                 try:
                     req = _ureq.Request(url, data=data, method="POST")
                     req.add_header("Content-Type", "application/json")
@@ -5282,10 +5287,14 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
                     break
                 except Exception as e:
                     last_error = f"{mode}: {type(e).__name__}: {e}"
-                    # If 429, wait briefly and retry once
-                    if "429" in str(e) and retry_attempt == 0:
+                    # Retry transient failures (503 overloaded, 429 rate limit,
+                    # 500/502, timeouts) with backoff before giving up.
+                    es = str(e)
+                    transient = ("503" in es or "429" in es or "500" in es
+                                 or "502" in es or "timed out" in es.lower())
+                    if transient and retry_attempt < 3:
                         import time as _time
-                        _time.sleep(2)
+                        _time.sleep(2 ** retry_attempt)
                         continue
                     break
 
