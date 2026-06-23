@@ -3054,15 +3054,30 @@ def api_navex_sync(request):
 
             # Calculate hours since close for display
             hours_late = None
+            v2_order_id = None
             try:
                 order_obj2 = ShippingOrder.objects.get(pk=order["id"])
                 if order_obj2.closed_at:
                     hours_late = round((timezone.now() - order_obj2.closed_at).total_seconds() / 3600, 1)
+                # v2 Order linked to this shipping order (if any), so the barcode
+                # can offer "office (v2)" alongside "shipping (v1)".
+                if order_obj2.order_id:
+                    v2_order_id = order_obj2.order_id
             except Exception:
                 pass
+            # Fallback: match a v2 Order by the same bordereau barcode.
+            if v2_order_id is None and bc:
+                try:
+                    from .models import Order as _OrderV2
+                    _v2 = _OrderV2.objects.filter(bordereau_barcode=bc).only("id").first()
+                    if _v2:
+                        v2_order_id = _v2.id
+                except Exception:
+                    pass
 
             merged.append({
                 "id": order["id"],
+                "v2_order_id": v2_order_id,
                 "bordereau_barcode": bc,
                 "our_status": order["status"],
                 "amount_collected": str(order["amount_collected"] or ""),

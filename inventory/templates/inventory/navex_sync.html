@@ -150,6 +150,16 @@
 </div>
 
 <!-- CONFIRM PAYMENT MODAL -->
+<div class="overlay" id="barcode-choice-overlay" onclick="if(event.target===this)closeBarcodeChoice()">
+  <div class="modal" style="max-width:340px;text-align:center;">
+    <div class="modal-title" style="font-family:monospace;" id="bcc-title"></div>
+    <div class="modal-sub" style="margin-bottom:18px;">Ouvrir cette commande dans :</div>
+    <a id="bcc-v1" href="#" class="btn-confirm" style="display:block;margin-bottom:10px;text-decoration:none;text-align:center;">📦 Expédition (scan / v1)</a>
+    <a id="bcc-v2" href="#" class="btn-confirm" style="display:block;text-decoration:none;text-align:center;background:var(--blue);">🏢 Bureau / commande (v2)</a>
+    <button onclick="closeBarcodeChoice()" style="margin-top:14px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;">Annuler</button>
+  </div>
+</div>
+
 <div class="overlay" id="confirm-overlay">
   <div class="modal">
     <div class="modal-title">Confirmer le paiement</div>
@@ -194,6 +204,33 @@
     btn.textContent = '🔄 Synchroniser';
   }
 
+  // Render a barcode cell. Clicking it opens a small popup offering V1
+  // (expédition / scan) and V2 (bureau / commande) when both exist.
+  function barcodeCell(r) {
+    var bc = r.bordereau_barcode;
+    var v1 = r.id;
+    var v2 = r.v2_order_id;
+    if (!v2) {
+      // Only v1 available → direct link (current behaviour).
+      return '<td><a href="/orders/' + v1 + '/" class="order-link">' + bc + '</a></td>';
+    }
+    // Both → clickable that opens the choice popup.
+    return '<td><span class="order-link" style="cursor:pointer;" '
+         + 'onclick="openBarcodeChoice(\'' + bc + '\',' + v1 + ',' + v2 + ')">'
+         + bc + '</span></td>';
+  }
+
+  function openBarcodeChoice(bc, v1Id, v2Id) {
+    var ov = document.getElementById('barcode-choice-overlay');
+    document.getElementById('bcc-title').textContent = bc;
+    document.getElementById('bcc-v1').href = '/orders/' + v1Id + '/';
+    document.getElementById('bcc-v2').href = '/sales-orders/' + v2Id + '/';
+    ov.style.display = 'flex';
+  }
+  function closeBarcodeChoice() {
+    document.getElementById('barcode-choice-overlay').style.display = 'none';
+  }
+
   function renderResults(results) {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('last-sync').style.display = 'block';
@@ -221,7 +258,7 @@
           : navexPrix;
         var tr = document.createElement('tr');
         tr.innerHTML =
-          '<td><a href="/orders/' + r.id + '/" class="order-link">' + r.bordereau_barcode + '</a></td>' +
+          barcodeCell(r) +
           '<td style="color:var(--muted);font-size:12px;">' + r.opened_at + '</td>' +
           '<td style="text-align:center;font-weight:500;">' + (r.unit_count || '—') + '</td>' +
           '<td>' + ourTotal + '</td>' +
@@ -241,7 +278,7 @@
       attente.forEach(function(r) {
         var tr = document.createElement('tr');
         tr.innerHTML =
-          '<td><a href="/orders/' + r.id + '/" class="order-link">' + r.bordereau_barcode + '</a></td>' +
+          barcodeCell(r) +
           '<td style="color:var(--muted);font-size:12px;">' + r.opened_at + '</td>' +
           '<td><span class="navex-badge nb-attente">' + (r.navex_etat || 'Inconnu') + '</span></td>' +
           '<td style="font-size:12px;color:var(--muted);">' + (r.navex_livreur || '—') + '</td>';
@@ -258,7 +295,7 @@
       anomaly.forEach(function(r) {
         var tr = document.createElement('tr');
         tr.innerHTML =
-          '<td><a href="/orders/' + r.id + '/" class="order-link">' + r.bordereau_barcode + '</a></td>' +
+          barcodeCell(r) +
           '<td style="color:var(--muted);font-size:12px;">' + r.opened_at + '</td>' +
           '<td><span class="navex-badge nb-anomaly">' + r.navex_etat + '</span></td>' +
           '<td style="font-size:12px;color:var(--muted);">' + (r.navex_motif || '—') + '</td>' +
