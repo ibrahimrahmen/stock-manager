@@ -9065,3 +9065,84 @@ def _try_extract_and_create_pending(conv):
         pass
     conv.save(update_fields=["extracted", "matched_ad", "pending_order",
                              "status", "updated_at"])
+
+
+@csrf_exempt
+def privacy_policy(request):
+    """Public privacy policy page (no auth) — required for Meta App Review and
+    for handling customer data received via Messenger."""
+    html = """<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Politique de confidentialité — Barats</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:760px;
+       margin:40px auto;padding:0 20px;line-height:1.6;color:#1a1a1a;}
+  h1{font-size:28px;margin-bottom:4px;}
+  h2{font-size:19px;margin-top:28px;}
+  .updated{color:#666;font-size:14px;margin-bottom:24px;}
+  a{color:#2563eb;}
+</style>
+</head>
+<body>
+<h1>Politique de confidentialité</h1>
+<div class="updated">Dernière mise à jour : juin 2026</div>
+
+<p>Barats (« nous ») exploite une boutique de vêtements en Tunisie avec
+livraison à domicile (paiement à la livraison). Cette politique explique
+quelles données nous collectons, comment nous les utilisons et les droits
+dont vous disposez.</p>
+
+<h2>1. Données que nous collectons</h2>
+<p>Lorsque vous passez une commande — sur notre site web, par message sur nos
+pages Facebook/Messenger, ou par téléphone — nous pouvons collecter :</p>
+<ul>
+  <li>Votre nom</li>
+  <li>Votre numéro de téléphone</li>
+  <li>Votre adresse de livraison (gouvernorat, ville, adresse)</li>
+  <li>Les détails de votre commande (articles, tailles, couleurs, quantités)</li>
+  <li>Le contenu des messages que vous nous envoyez concernant votre commande</li>
+</ul>
+
+<h2>2. Comment nous utilisons vos données</h2>
+<p>Nous utilisons ces informations uniquement pour :</p>
+<ul>
+  <li>Préparer, confirmer et livrer votre commande</li>
+  <li>Vous contacter au sujet de votre commande</li>
+  <li>Gérer les retours, échanges et le service après-vente</li>
+  <li>Tenir notre registre de commandes et notre gestion de stock</li>
+</ul>
+
+<h2>3. Partage des données</h2>
+<p>Nous ne vendons jamais vos données. Nous les partageons uniquement avec
+notre transporteur de livraison afin d'acheminer votre colis. Nous pouvons
+traiter les messages de commande à l'aide d'outils automatisés pour préparer
+votre commande, sans usage publicitaire.</p>
+
+<h2>4. Conservation</h2>
+<p>Nous conservons les données de commande aussi longtemps que nécessaire pour
+le suivi des livraisons, la comptabilité et le service client, puis nous les
+supprimons ou les anonymisons.</p>
+
+<h2>5. Vos droits</h2>
+<p>Vous pouvez nous demander d'accéder à vos données, de les corriger ou de les
+supprimer. Pour toute demande, contactez-nous via notre page Facebook ou par
+message Messenger.</p>
+
+<h2>6. Données Messenger / Facebook</h2>
+<p>Si vous nous contactez via Messenger, nous recevons votre message et un
+identifiant Messenger afin de traiter votre commande. Ces informations ne sont
+utilisées que pour le traitement de votre commande et ne sont pas utilisées à
+des fins publicitaires ni partagées avec des tiers autres que notre
+transporteur.</p>
+
+<h2>7. Contact</h2>
+<p>Pour toute question concernant cette politique ou vos données, contactez-nous
+via l'une de nos pages Facebook (Barats, Arrow Sportswear, Next Generation,
+Handsome Collection, PrimeFit, Traffic).</p>
+
+</body>
+</html>"""
+    return HttpResponse(html)

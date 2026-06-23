@@ -3,6 +3,7 @@ from . import views
 from . import converty
 
 urlpatterns = [
+    path("privacy/", views.privacy_policy, name="privacy_policy"),
     path("statistiques/commandes/", views.stats_commandes, name="stats_commandes"),
     path("converty/connect/", converty.converty_connect, name="converty_connect"),
     path("converty/resubscribe/", converty.converty_resubscribe, name="converty_resubscribe"),
