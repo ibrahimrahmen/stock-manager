@@ -8793,12 +8793,34 @@ def _add_extracted_items_to_order(order, data):
 def _try_extract_and_create_pending(conv):
     """When a phone number appears, create a pending non_confirmee Order even if
     product/size/address are still missing — staff finish the rest so no order
-    is ever missed. We still run Gemini to pre-fill whatever it can extract."""
+    is ever missed. We still run Gemini to pre-fill whatever it can extract.
+
+    Guard rails:
+      - Once the linked order is CONFIRMED (or beyond non_confirmee), we stop
+        touching it — staff have taken over.
+      - Once the conversation is older than 48h, we stop auto-updating (stale).
+    """
     from .models import MessengerConversation, Order, Ad
+    from django.utils import timezone as _tz
+    from datetime import timedelta as _td
     import re as _re
     if conv.status not in (MessengerConversation.NEW, MessengerConversation.EXTRACTED):
         return
     if not _conversation_looks_complete(conv):
+        return
+
+    # Guard: if the linked order is no longer non_confirmee (staff confirmed /
+    # pushed it), do not modify anything further.
+    if conv.pending_order_id:
+        po = conv.pending_order
+        if po and po.status != Order.NON_CONFIRMEE:
+            conv.status = MessengerConversation.CONFIRMED
+            conv.save(update_fields=["status", "updated_at"])
+            return
+
+    # Guard: ignore conversations older than 48h (stale — staff should handle
+    # any late follow-up manually rather than auto-editing an old order).
+    if conv.created_at and (_tz.now() - conv.created_at) > _td(hours=48):
         return
 
     data = _extract_order_from_conversation(conv) or {}
