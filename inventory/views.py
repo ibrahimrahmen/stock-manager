@@ -9097,7 +9097,8 @@ dont vous disposez.</p>
 
 <h2>1. Données que nous collectons</h2>
 <p>Lorsque vous passez une commande — sur notre site web, par message sur nos
-pages Facebook/Messenger, ou par téléphone — nous pouvons collecter :</p>
+pages Facebook/Messenger ou Instagram, ou par téléphone — nous pouvons
+collecter :</p>
 <ul>
   <li>Votre nom</li>
   <li>Votre numéro de téléphone</li>
@@ -9131,17 +9132,17 @@ supprimons ou les anonymisons.</p>
 supprimer. Pour toute demande, contactez-nous via notre page Facebook ou par
 message Messenger.</p>
 
-<h2>6. Données Messenger / Facebook</h2>
-<p>Si vous nous contactez via Messenger, nous recevons votre message et un
-identifiant Messenger afin de traiter votre commande. Ces informations ne sont
-utilisées que pour le traitement de votre commande et ne sont pas utilisées à
-des fins publicitaires ni partagées avec des tiers autres que notre
-transporteur.</p>
+<h2>6. Données Messenger / Instagram / Facebook</h2>
+<p>Si vous nous contactez via Messenger ou Instagram, nous recevons votre
+message et un identifiant de messagerie afin de traiter votre commande. Ces
+informations ne sont utilisées que pour le traitement de votre commande et ne
+sont pas utilisées à des fins publicitaires ni partagées avec des tiers autres
+que notre transporteur.</p>
 
 <h2>7. Contact</h2>
 <p>Pour toute question concernant cette politique ou vos données, contactez-nous
-via l'une de nos pages Facebook (Barats, Arrow Sportswear, Next Generation,
-Handsome Collection, PrimeFit, Traffic).</p>
+via l'une de nos pages Facebook ou Instagram (Barats, Arrow Sportswear, Next
+Generation, Handsome Collection, PrimeFit, Traffic).</p>
 
 </body>
 </html>"""
