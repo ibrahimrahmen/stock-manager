@@ -8747,6 +8747,76 @@ def _build_shopify_shape_from_extraction(data, conv):
     }
 
 
+def _fill_color_size_from_text(order, conv):
+    """Scan the chat for COLOR and SIZE words and apply them to order lines that
+    are still missing a variant/size. Lets a later message like 'noir taille L'
+    complete a Pull Camo line that was added earlier."""
+    from .models import ProductVariant
+    import re as _re
+    text = " ".join(m.get("text", "") for m in (conv.messages or [])
+                    if m.get("from") == "user").lower()
+    if not text:
+        return
+
+    # Color aliases (FR/EN) → match against each product's variants.
+    color_aliases = {
+        "noir": ["noir", "black", "noire"],
+        "blanc": ["blanc", "white", "blanche"],
+        "rouge": ["rouge", "red"],
+        "bleu": ["bleu", "blue", "blue"],
+        "vert": ["vert", "green"],
+        "gris": ["gris", "gray", "grey"],
+        "jaune": ["jaune", "yellow"],
+        "rose": ["rose", "pink"],
+        "beige": ["beige"],
+        "marron": ["marron", "brown"],
+        "orange": ["orange"],
+        "violet": ["violet", "purple"],
+    }
+    # Which color words appear in the chat?
+    mentioned_colors = []
+    for canon, words in color_aliases.items():
+        if any(_re.search(r"\b" + _re.escape(w) + r"\b", text) for w in words):
+            mentioned_colors.append((canon, words))
+
+    # Detect a size token (S/M/L/XL/XXL/2XL/3XL or a 1-2 digit number after
+    # "taille"/"size" or standalone).
+    size_found = ""
+    msize = _re.search(r"\b(taille|size)\s*[:\-]?\s*([a-z0-9]{1,3})\b", text)
+    if msize:
+        size_found = msize.group(2).upper()
+    if not size_found:
+        m2 = _re.search(r"\b(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|4xl)\b", text)
+        if m2:
+            size_found = m2.group(1).upper()
+
+    changed = False
+    for line in order.lines.all():
+        if not line.product:
+            continue
+        # Fill VARIANT (color) if missing and a matching color was mentioned.
+        if line.variant is None and mentioned_colors:
+            for canon, words in mentioned_colors:
+                variant = None
+                for v in line.product.variants.all():
+                    lbl = (v.color_label or "").strip().lower()
+                    cn = (v.color_name or "").strip().lower()
+                    if lbl in words or cn in words or canon in (lbl, cn):
+                        variant = v
+                        break
+                if variant:
+                    line.variant = variant
+                    changed = True
+                    break
+        # Fill SIZE if missing.
+        if not (line.size or "").strip() and size_found:
+            line.size = size_found
+            changed = True
+        if changed:
+            line.save(update_fields=["variant", "size"])
+            changed = False
+
+
 def _match_offers_from_text(order, conv):
     """Gemini-independent: scan the raw conversation text for any active offer
     or product NAME and add matches to the order. Works even when Gemini is
@@ -8931,6 +9001,11 @@ def _try_extract_and_create_pending(conv):
                 _match_offers_from_text(order, conv)
             except Exception:
                 pass
+            # Fill color/size on lines from later messages (e.g. "noir taille L").
+            try:
+                _fill_color_size_from_text(order, conv)
+            except Exception:
+                pass
             conv.save(update_fields=["extracted", "matched_ad", "updated_at"])
             return
 
@@ -8972,6 +9047,10 @@ def _try_extract_and_create_pending(conv):
             # mention like "pull camo" adds the offer even if Gemini returned {}.
             try:
                 _match_offers_from_text(order, conv)
+            except Exception:
+                pass
+            try:
+                _fill_color_size_from_text(order, conv)
             except Exception:
                 pass
     except Exception:
