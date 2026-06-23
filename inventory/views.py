@@ -8789,6 +8789,14 @@ def _fill_color_size_from_text(order, conv):
         m2 = _re.search(r"\b(xs|s|m|l|xl|xxl|xxxl|2xl|3xl|4xl)\b", text)
         if m2:
             size_found = m2.group(1).upper()
+    # Sizes are stored as NUMBERS (1=S, 2=M, 3=L, 4=XL, 5=XXL). Convert any
+    # letter size the customer used (e.g. "taille L" -> "3").
+    if size_found:
+        letter_to_number = {
+            "XS": "1", "S": "1", "M": "2", "L": "3",
+            "XL": "4", "XXL": "5", "2XL": "5", "XXXL": "5", "3XL": "5",
+        }
+        size_found = letter_to_number.get(size_found, size_found)
 
     changed = False
     for line in order.lines.all():
