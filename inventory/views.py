@@ -8741,6 +8741,55 @@ def _build_shopify_shape_from_extraction(data, conv):
     }
 
 
+def _add_extracted_items_to_order(order, data):
+    """Add products/offers from a Gemini extraction to an existing pending
+    order, skipping items already present. Matches each product name against
+    active offers first, then products. Best-effort; staff finalize."""
+    from .models import Offer, Product, OrderOffer, OrderLine
+    items = data.get("items") or []
+    if not items:
+        return
+    existing_names = set()
+    for oo in order.order_offers.all():
+        existing_names.add((oo.offer_name or "").strip().lower())
+    for l in order.lines.filter(order_offer__isnull=True):
+        if l.product:
+            existing_names.add(l.product.name.strip().lower())
+
+    for it in items:
+        pname = (it.get("product") or "").strip()
+        if not pname or pname.lower() in existing_names:
+            continue
+        qty = int(it.get("qty") or 1)
+        offer = Offer.objects.filter(name__iexact=pname, is_active=True).first()
+        if offer:
+            for _ in range(max(qty, 1)):
+                oo = OrderOffer.objects.create(
+                    order=order, offer=offer, offer_name=offer.name,
+                    bundle_price=offer.price_for_page(order.sales_page), quantity=1,
+                )
+                for op in offer.products.all():
+                    OrderLine.objects.create(
+                        order=order, order_offer=oo, product=op.product,
+                        variant=None, size=(it.get("size") or ""),
+                        quantity=op.quantity, unit_price=0,
+                    )
+            existing_names.add(pname.lower())
+            continue
+        product = Product.objects.filter(name__iexact=pname).first()
+        if product:
+            OrderLine.objects.create(
+                order=order, product=product, variant=None,
+                size=(it.get("size") or ""), quantity=qty, unit_price=0,
+            )
+            existing_names.add(pname.lower())
+    try:
+        order.recalc_total()
+        order.save(update_fields=["total", "updated_at"])
+    except Exception:
+        pass
+
+
 def _try_extract_and_create_pending(conv):
     """When a phone number appears, create a pending non_confirmee Order even if
     product/size/address are still missing — staff finish the rest so no order
@@ -8783,6 +8832,34 @@ def _try_extract_and_create_pending(conv):
 
     # Route to the sales_page mapped from the Facebook Page this DM came from.
     sp_id = MESSENGER_PAGE_TO_SALESPAGE.get(str(conv.page_id or ""), MESSENGER_DEFAULT_SALESPAGE)
+
+    # If a pending order ALREADY exists for this conversation (the customer is
+    # sending info across several messages), UPDATE it instead of creating a
+    # duplicate: refresh the saved chat and add any newly-mentioned products
+    # that aren't on the order yet.
+    if conv.pending_order_id:
+        from django.utils import timezone as _tz
+        order = conv.pending_order
+        if order and order.status == Order.NON_CONFIRMEE:
+            convo_text = "\n".join(
+                f"{'Client' if m.get('from') == 'user' else 'Page'}: {m.get('text','')}"
+                for m in (conv.messages or []) if m.get("text")
+            )
+            order.conversation_text = convo_text
+            order.conversation_updated_at = _tz.now()
+            # Fill address/name if newly available and still empty on the order.
+            if data.get("address") and not (order.address or "").strip():
+                order.address = data.get("address")
+            order.save(update_fields=["conversation_text", "conversation_updated_at",
+                                      "address", "updated_at"])
+            # Add newly-extracted offers/products not already present.
+            try:
+                _add_extracted_items_to_order(order, data)
+            except Exception:
+                pass
+            conv.save(update_fields=["extracted", "matched_ad", "updated_at"])
+            return
+
     try:
         _create_order_from_shopify_shaped_payload(
             shaped, source="messenger", external_id=f"dm_{conv.id}",
