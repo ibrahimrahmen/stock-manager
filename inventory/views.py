@@ -8566,6 +8566,14 @@ def api_messenger_webhook(request):
     except Exception:
         return JsonResponse({"status": "ok"})  # ack anyway so Meta doesn't retry
 
+    # TEMP DIAGNOSTIC: log the raw payload so we can see Instagram vs Messenger
+    # structure. Remove once Instagram handling is confirmed.
+    try:
+        log_action(None, AuditLog.OTHER,
+                   description="DM webhook RAW: " + _json.dumps(payload)[:1500])
+    except Exception:
+        pass
+
     try:
         for entry in payload.get("entry", []):
             page_id = str(entry.get("id") or "")
