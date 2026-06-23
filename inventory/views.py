@@ -8597,17 +8597,23 @@ def api_messenger_webhook(request):
                                                or conv.source_campaign or "")
                     conv.ctwa_clid = str(referral.get("ctwa_clid") or conv.ctwa_clid or "")
 
-                # Capture the message text.
+                # Capture the message text. Dedupe by Meta's message id (mid):
+                # Meta retries webhook deliveries, and without this the same
+                # message gets appended many times.
                 msg = ev.get("message") or {}
                 text = msg.get("text")
+                mid = msg.get("mid") or ""
                 if text:
                     msgs = conv.messages or []
-                    msgs.append({
-                        "from": "user",
-                        "text": text,
-                        "ts": str(ev.get("timestamp") or ""),
-                    })
-                    conv.messages = msgs
+                    already = mid and any(m.get("mid") == mid for m in msgs)
+                    if not already:
+                        msgs.append({
+                            "from": "user",
+                            "text": text,
+                            "ts": str(ev.get("timestamp") or ""),
+                            "mid": mid,
+                        })
+                        conv.messages = msgs
                 conv.save()
 
                 # B) Auto-extract when the conversation looks complete.
