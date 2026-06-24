@@ -8583,8 +8583,9 @@ def api_messenger_webhook(request):
                     continue
                 conv, _created = MessengerConversation.objects.get_or_create(
                     sender_id=sender_id,
+                    page_id=page_id,
                     status__in=[MessengerConversation.NEW, MessengerConversation.EXTRACTED],
-                    defaults={"platform": "messenger", "page_id": page_id},
+                    defaults={"platform": "messenger"},
                 )
 
                 # Capture ad referral (attribution). Present on the first message
