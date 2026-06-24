@@ -3373,6 +3373,37 @@ def product_detail(request, pk):
             "all_units": variant.units.all(),
         })
 
+    # In COMBINED ("all") mode with multiple versions, merge variants that share
+    # the same colour so each colour shows ONCE with summed sizes — instead of a
+    # separate card per version (BLUE-v1, BLUE-v2). Single-version pages and
+    # per-version views keep the raw per-variant cards.
+    if sel == "all" and len(family) > 1:
+        merged = {}   # color_label -> aggregated entry
+        order = []
+        for vd in variants_data:
+            v = vd["variant"]
+            key = (v.color_label or v.color_name or "—").strip().lower()
+            if key not in merged:
+                merged[key] = {
+                    "variant": v,                       # representative (for color/name/links)
+                    "size_map": dict(vd["size_map"]),
+                    "size_forecasts": dict(vd["size_forecasts"]),
+                    "total_stock": vd["total_stock"],
+                    "all_units": list(vd["all_units"]),
+                    "merged_variant_ids": [v.id],
+                }
+                order.append(key)
+            else:
+                m = merged[key]
+                for s, n in vd["size_map"].items():
+                    m["size_map"][s] = m["size_map"].get(s, 0) + n
+                for s, f in vd["size_forecasts"].items():
+                    m["size_forecasts"].setdefault(s, f)
+                m["total_stock"] += vd["total_stock"]
+                m["all_units"].extend(vd["all_units"])
+                m["merged_variant_ids"].append(v.id)
+        variants_data = [merged[k] for k in order]
+
     # Stock totals for the scoped products.
     in_stock_total = returned_total = early_return_total = at_depot_total = 0
     for p in scope_products:
@@ -8669,9 +8700,22 @@ def api_messenger_webhook(request):
                 conv.save()
 
                 # Send the one-time Arabic auto-reply (reassures the customer
-                # and gives App Review reviewers a visible response).
+                # and gives App Review reviewers a visible response). Suppress it
+                # if THIS sender already received an auto-reply recently (within
+                # 6h) on any conversation — avoids re-greeting someone who keeps
+                # chatting or places a quick follow-up after a confirmed order.
                 if not conv.auto_replied and text:
-                    if _messenger_send_text(page_id, sender_id, MESSENGER_AUTOREPLY_AR):
+                    from django.utils import timezone as _tz2
+                    from datetime import timedelta as _td2
+                    recently_greeted = (MessengerConversation.objects
+                        .filter(sender_id=sender_id, page_id=page_id,
+                                auto_replied=True,
+                                updated_at__gte=_tz2.now() - _td2(hours=6))
+                        .exclude(pk=conv.pk).exists())
+                    if recently_greeted:
+                        conv.auto_replied = True
+                        conv.save(update_fields=["auto_replied", "updated_at"])
+                    elif _messenger_send_text(page_id, sender_id, MESSENGER_AUTOREPLY_AR):
                         conv.auto_replied = True
                         conv.save(update_fields=["auto_replied", "updated_at"])
 

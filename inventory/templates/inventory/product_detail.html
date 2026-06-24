@@ -124,6 +124,10 @@
     .us-paid{background:var(--purple-bg);color:var(--purple);}
     .us-returned{background:var(--red-bg);color:var(--red);}
 .version-filter{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 18px 0;}
+.stock-hist-toggle{display:inline-flex;align-items:center;gap:8px;margin:20px 0 8px 0;background:var(--surface2);border:0.5px solid var(--border);color:var(--muted);border-radius:10px;padding:9px 14px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}
+.stock-hist-toggle:hover{color:var(--text);background:var(--border);}
+.stock-hist-toggle .shi-caret{transition:transform .15s;}
+.stock-hist-toggle.open .shi-caret{transform:rotate(90deg);}
 .vfilter{padding:8px 16px;border-radius:10px;border:0.5px solid var(--border,rgba(255,255,255,0.1));background:var(--surface,#1a1a17);color:var(--muted,#999);text-decoration:none;font-size:13px;font-weight:600;}
 .vfilter:hover{color:var(--text,#fff);}
 .vfilter.active{background:var(--text,#fff);color:var(--bg,#000);border-color:var(--text,#fff);}
@@ -169,8 +173,10 @@
   {% endif %}
 
   {% if stock_added %}
-  <div class="sec" style="margin-top:20px;margin-bottom:8px;">Historique d'ajout de stock</div>
-  <div class="stock-added-list">
+  <button type="button" class="stock-hist-toggle" onclick="toggleStockHist(this)">
+    📦 Historique d'ajout de stock <span class="shi-caret">▸</span>
+  </button>
+  <div class="stock-added-list" id="stockHist" style="display:none;">
     {% for entry in stock_added %}
     <div class="stock-added-row">
       <span class="sa-date">{{ entry.date|date:"d M Y" }}</span>
@@ -416,6 +422,14 @@ applyAll();
 
 <script>
 function closeGap() { document.getElementById('gap-overlay').style.display = 'none'; }
+
+function toggleStockHist(btn){
+  var el = document.getElementById('stockHist');
+  if(!el) return;
+  var open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'block';
+  btn.classList.toggle('open', !open);
+}
 
 async function checkGaps(productId, variantId, version) {
   document.getElementById('gap-overlay').style.display = 'flex';
