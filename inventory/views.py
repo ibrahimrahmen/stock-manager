@@ -64,6 +64,53 @@ MESSENGER_PAGE_TO_SALESPAGE = {
 MESSENGER_DEFAULT_SALESPAGE = 3   # Barats (fallback for unmapped pages)
 
 
+def _messenger_page_token(page_id):
+    """Page access token for sending replies. Tokens are stored in the env var
+    MESSENGER_PAGE_TOKENS as 'page_id:token,page_id:token,...' so they're never
+    hard-coded. Returns the token for the page, or '' if not configured."""
+    raw = os.environ.get("MESSENGER_PAGE_TOKENS", "")
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair or ":" not in pair:
+            continue
+        pid, _, tok = pair.partition(":")
+        if pid.strip() == str(page_id):
+            return tok.strip()
+    return ""
+
+
+# Auto-reply sent (once) when a customer messages — in Arabic, reassuring them
+# the order was received and staff will follow up.
+MESSENGER_AUTOREPLY_AR = (
+    "أهلا بيك 🤍 وصلنا طلبك، فريقنا باش يتواصل معاك في أقرب وقت لتأكيد الكوموند. "
+    "يرجى التثبت من رقم الهاتف، العنوان، المقاس واللون. شكرا لثقتك في Barats 🛍️"
+)
+
+
+def _messenger_send_text(page_id, recipient_id, text):
+    """Send a text message back to a user via the Meta Send API. Best-effort:
+    returns True on success, False otherwise (never raises)."""
+    import urllib.request as _ureq
+    import json as _json
+    token = _messenger_page_token(page_id)
+    if not token or not recipient_id or not text:
+        return False
+    url = ("https://graph.facebook.com/v25.0/me/messages?access_token="
+           + _ureq.quote(token, safe=""))
+    body = _json.dumps({
+        "recipient": {"id": str(recipient_id)},
+        "messaging_type": "RESPONSE",
+        "message": {"text": text},
+    }).encode("utf-8")
+    try:
+        req = _ureq.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", "application/json")
+        with _ureq.urlopen(req, timeout=10) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
 def _gemini_generate(prompt, max_tokens=1024, temperature=0.0):
     """Module-level Gemini call (gemini-2.5-flash-lite). Returns the response
     text or None on failure. Supports classic (AIza...) and OAuth-style keys.
@@ -8616,6 +8663,13 @@ def api_messenger_webhook(request):
                         })
                         conv.messages = msgs
                 conv.save()
+
+                # Send the one-time Arabic auto-reply (reassures the customer
+                # and gives App Review reviewers a visible response).
+                if not conv.auto_replied and text:
+                    if _messenger_send_text(page_id, sender_id, MESSENGER_AUTOREPLY_AR):
+                        conv.auto_replied = True
+                        conv.save(update_fields=["auto_replied", "updated_at"])
 
                 # B) Auto-extract when the conversation looks complete.
                 try:
