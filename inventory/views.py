@@ -8628,12 +8628,16 @@ def api_messenger_webhook(request):
                 sender_id = str((ev.get("sender") or {}).get("id") or "")
                 if not sender_id:
                     continue
-                conv, _created = MessengerConversation.objects.get_or_create(
-                    sender_id=sender_id,
-                    page_id=page_id,
-                    status__in=[MessengerConversation.NEW, MessengerConversation.EXTRACTED],
-                    defaults={"platform": "messenger"},
-                )
+                conv = (MessengerConversation.objects
+                        .filter(sender_id=sender_id, page_id=page_id,
+                                status__in=[MessengerConversation.NEW,
+                                            MessengerConversation.EXTRACTED])
+                        .order_by("-id").first())
+                if conv is None:
+                    conv = MessengerConversation.objects.create(
+                        sender_id=sender_id, page_id=page_id,
+                        platform="messenger",
+                    )
 
                 # Capture ad referral (attribution). Present on the first message
                 # from an ad, or as a standalone 'referral' event.
