@@ -130,14 +130,16 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
         <button class="btn-status danger" onclick="openCancelModal()">❌ Annuler la commande</button>
       </div>
 
-    {% elif order.status == 'livree' or order.status == 'payee' %}
+    {% elif order.status == 'livree' %}
       <div class="muted" style="font-size:13px;color:var(--muted);margin-bottom:10px;">
-        {% if order.status == 'payee' %}💰 Cette commande a été livrée et payée.{% else %}✓ Cette commande a été livrée par Navex.{% endif %}
+        ✓ Cette commande a été livrée par Navex.
       </div>
       <div class="status-actions">
+        {% if not order.exchange_of %}
         <a href="{% url 'orders_list' %}?create_exchange={{ order.id }}" class="btn-status" style="background:var(--blue,#60a5fa);color:#0a0a08;border-color:var(--blue,#60a5fa);text-decoration:none;display:inline-block;">
           🔄 Créer un échange
         </a>
+        {% endif %}
       </div>
 
       {% if order.exchanges.exists %}
@@ -166,7 +168,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
   <div class="card">
     <div class="card-title">Client</div>
     <div class="row">
-      <div class="field-display"><label>Nom</label><div class="val">{{ order.display_name|default:"—" }}</div></div>
+      <div class="field-display"><label>Nom</label><div class="val">{{ order.customer.name|default:"—" }}</div></div>
       <div class="field-display"><label>Téléphone</label><div class="val">{{ order.customer.phone }}</div></div>
       <div class="field-display"><label>Gouvernorat</label><div class="val">{{ order.region.name|default:"—" }}</div></div>
       <div class="field-display"><label>Ville</label><div class="val">{{ order.ville|default:"—" }}</div></div>
@@ -298,6 +300,50 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 <script>
 const csrf = () => document.cookie.split('csrftoken=')[1]?.split(';')[0] || '';
 
+function renderChatBubbles(text) {
+  const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const lines = (text || '').split('\n');
+  let html = '<div style="display:flex;flex-direction:column;gap:6px;padding:4px 2px;">';
+  let curWho = null, curText = [];
+  const flush = () => {
+    if (curText.length === 0) return;
+    const isPage = (curWho === 'page');
+    const msg = esc(curText.join('\n')).replace(/\n/g,'<br>');
+    const align = isPage ? 'flex-end' : 'flex-start';
+    const bg = isPage ? '#0084ff' : 'var(--surface2,#262626)';
+    const color = isPage ? '#fff' : 'var(--text,#e8e8e8)';
+    const radius = isPage ? '16px 16px 4px 16px' : '16px 16px 16px 4px';
+    html += `<div style="display:flex;justify-content:${align};">`
+          + `<div style="max-width:75%;background:${bg};color:${color};`
+          + `padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.4;`
+          + `word-wrap:break-word;white-space:normal;">${msg}</div></div>`;
+    curText = [];
+  };
+  for (const line of lines) {
+    let m = line.match(/^\s*(Client|Page)\s*:\s?(.*)$/);
+    if (m) {
+      const who = (m[1] === 'Page') ? 'page' : 'client';
+      if (who !== curWho) { flush(); curWho = who; }
+      curText.push(m[2]);
+    } else if (curWho) {
+      curText.push(line);
+    }
+  }
+  flush();
+  html += '</div>';
+  return html || '<div class="muted">Conversation vide.</div>';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var box = document.getElementById('conv-text');
+  if (box && box.textContent.trim()) {
+    var raw = box.textContent;
+    box.style.whiteSpace = 'normal';
+    box.innerHTML = renderChatBubbles(raw);
+    box.scrollTop = box.scrollHeight;
+  }
+});
+
 async function refreshConversation(btn) {
   const orig = btn.textContent;
   btn.textContent = '…';
@@ -311,9 +357,10 @@ async function refreshConversation(btn) {
     if (data.status === 'ok') {
       const box = document.getElementById('conv-text');
       if (data.conversation_text) {
-        box.style.whiteSpace = 'pre-wrap';
+        box.style.whiteSpace = 'normal';
         box.style.color = '';
-        box.textContent = data.conversation_text;
+        box.innerHTML = renderChatBubbles(data.conversation_text);
+        box.scrollTop = box.scrollHeight;
       } else {
         box.textContent = data.message || "Aucune conversation disponible.";
       }
