@@ -8903,8 +8903,12 @@ def _extract_order_from_conversation(conv):
         "  ]\n"
         "}\n\n"
         "Règles: si une info manque, mets une chaîne vide \"\" (ou 1 pour qty). "
-        "Ne devine pas un produit qui n'est pas mentionné. Garde les noms de "
-        "produits tels qu'écrits par le client.\n\n"
+        "Le PAGE (vendeur) propose souvent les produits et prix (ex: 'Pull 59dt, "
+        "Ensemble 99dt'); le CLIENT choisit ensuite. Extrais le produit que le "
+        "CLIENT veut réellement commander d'après tout l'échange, même si c'est "
+        "le PAGE qui a nommé le produit. Pour l'adresse/ville, utilise ce "
+        "qu'écrit le CLIENT (gouvernorat tunisien). Ne devine pas un produit qui "
+        "n'est mentionné nulle part.\n\n"
         "Conversation:\n" + convo_text
     )
     raw = _gemini_generate(prompt, max_tokens=800, temperature=0.0)
@@ -9245,6 +9249,49 @@ def _messenger_poll_page(page_id, limit=25):
     return (convs_seen, msgs_added)
 
 
+def _messenger_enrich_settled(batch=4, quiet_minutes=5):
+    """Deferred Gemini pass: for conversations that have gone quiet (customer
+    stopped messaging) and whose order still lacks address/products, run Gemini
+    ONCE to extract address/region + product/offer from the FULL conversation
+    (both customer and page messages). Processes a small batch to avoid the
+    Gemini rate-limit / worker-timeout issues that bulk extraction caused.
+
+    Returns the number of conversations enriched."""
+    from .models import MessengerConversation, Order
+    from django.utils import timezone as _tz
+    from datetime import timedelta as _td
+
+    cutoff = _tz.now() - _td(minutes=quiet_minutes)
+    # Candidates: not yet enriched, has a pending non_confirmee order, conversation
+    # settled (updated_at older than the quiet window), and not too old (48h).
+    floor = _tz.now() - _td(hours=48)
+    qs = (MessengerConversation.objects
+          .filter(gemini_enriched=False,
+                  pending_order__isnull=False,
+                  pending_order__status=Order.NON_CONFIRMEE,
+                  updated_at__lte=cutoff,
+                  updated_at__gte=floor)
+          .order_by("updated_at")[:batch])
+
+    enriched = 0
+    for conv in qs:
+        try:
+            # Re-run the pipeline WITH Gemini (skip_gemini=False) so it extracts
+            # address/region and products (incl. offers named by the page).
+            _try_extract_and_create_pending(conv, skip_gemini=False)
+        except Exception:
+            pass
+        # Mark as enriched regardless so we don't retry the same one forever
+        # (a failed Gemini call shouldn't loop; staff can fill manually).
+        conv.gemini_enriched = True
+        try:
+            conv.save(update_fields=["gemini_enriched", "updated_at"])
+        except Exception:
+            pass
+        enriched += 1
+    return enriched
+
+
 @login_required(login_url="/login/")
 def api_messenger_poll(request):
     """Manually trigger a poll of all configured pages. Returns a summary.
@@ -9258,8 +9305,9 @@ def api_messenger_poll(request):
         seen, added = _messenger_poll_page(page_id)
         results[page_id] = {"conversations": seen, "new_messages": added}
         total_msgs += added
+    enriched = _messenger_enrich_settled()
     return JsonResponse({"status": "ok", "total_new_messages": total_msgs,
-                         "pages": results})
+                         "enriched": enriched, "pages": results})
 
 
 @csrf_exempt
@@ -9280,6 +9328,10 @@ def api_messenger_poll_cron(request):
             total_msgs += added
         except Exception:
             pass
+    try:
+        _messenger_enrich_settled()
+    except Exception:
+        pass
     return JsonResponse({"status": "ok", "total_new_messages": total_msgs})
 
 

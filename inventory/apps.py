@@ -42,12 +42,19 @@ class InventoryConfig(AppConfig):
             while True:
                 try:
                     from .views import (MESSENGER_PAGE_TO_SALESPAGE,
-                                        _messenger_poll_page)
+                                        _messenger_poll_page,
+                                        _messenger_enrich_settled)
                     for page_id in MESSENGER_PAGE_TO_SALESPAGE.keys():
                         try:
                             _messenger_poll_page(page_id)
                         except Exception:
                             pass
+                    # Deferred Gemini pass on settled conversations (address +
+                    # product/offer extraction once the customer goes quiet).
+                    try:
+                        _messenger_enrich_settled()
+                    except Exception:
+                        pass
                 except Exception:
                     pass
                 time.sleep(max(interval, 60))

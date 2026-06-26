@@ -1277,6 +1277,8 @@ class MessengerConversation(models.Model):
 
     auto_replied    = models.BooleanField(default=False,
         help_text="Whether the one-time auto-reply was already sent.")
+    gemini_enriched = models.BooleanField(default=False,
+        help_text="Whether the deferred Gemini address/product pass has run.")
     status          = models.CharField(max_length=20, choices=STATUS_CHOICES,
         default=NEW, db_index=True)
     created_at      = models.DateTimeField(auto_now_add=True)
