@@ -8936,6 +8936,98 @@ def _extract_order_from_conversation(conv):
     return data
 
 
+def _resolve_region_for_order(order):
+    """Match an order's free-text address/city to a Region (gouvernorat) and
+    Delegation (ville) from our list, using Gemini. Fills order.region and
+    order.ville if a confident match is found. Best-effort; no-op on failure.
+
+    Used for Messenger orders whose address arrives as free Tunisian text
+    (e.g. 'sidi Makhlouf') rather than structured Shopify fields."""
+    import re as _re
+    from .models import Region, Delegation
+    if not order or order.region_id:
+        return  # already has a region
+    addr = (order.address or "").strip()
+    ville = (order.ville or "").strip()
+    if not addr and not ville:
+        return
+    all_regions = list(Region.objects.filter(is_active=True))
+    all_delegations = list(Delegation.objects.filter(is_active=True))
+    if not all_regions:
+        return
+
+    def _norm(s):
+        s = (s or "").lower().strip()
+        return _re.sub(r"[^a-z0-9\u0600-\u06FF]+", "", s)
+
+    options_lines = []
+    for r in all_regions:
+        r_dlgs = [d for d in all_delegations if d.region_id == r.id]
+        if r_dlgs:
+            options_lines.append(f"{r.name}: " + ", ".join(d.name for d in r_dlgs))
+        else:
+            options_lines.append(r.name)
+    if not options_lines:
+        return
+
+    prompt = (
+        "Tu es un assistant qui matche une adresse tunisienne (écrite en arabe, "
+        "français ou transcription) à notre liste de gouvernorats (régions) et "
+        "délégations (villes). Choisis le couple REGION + VILLE qui correspond "
+        "le mieux. Tu DOIS choisir des noms EXACTS de la liste. "
+        "Les Tunisiens utilisent des chiffres (3=ع, 5=خ, 7=ح, 9=ق, 2=ء). "
+        "Si rien ne correspond clairement, réponds 'NONE'. "
+        "Réponds UNIQUEMENT au format : 'REGION: nom | VILLE: nom' ou 'NONE'.\n\n"
+        f"Adresse du client : {addr} {ville}\n\n"
+        "Liste des régions et délégations :\n" + "\n".join(options_lines)
+        + "\n\nRéponse :"
+    )
+    resp = _gemini_generate(prompt, max_tokens=80, temperature=0.0)
+    if not resp or resp.strip().upper() == "NONE":
+        return
+    m = _re.match(r"REGION:\s*(.+?)\s*\|\s*VILLE:\s*(.+)", resp.strip(), _re.IGNORECASE)
+    if not m:
+        return
+    region_name = m.group(1).strip()
+    ville_name = m.group(2).strip()
+    # Resolve region (exact then normalized contains).
+    region_match = None
+    for r in all_regions:
+        if r.name.lower() == region_name.lower():
+            region_match = r
+            break
+    if not region_match:
+        rn = _norm(region_name)
+        for r in all_regions:
+            if rn and (_norm(r.name) == rn or rn in _norm(r.name) or _norm(r.name) in rn):
+                region_match = r
+                break
+    if not region_match:
+        return
+    # Resolve delegation within the region.
+    ville_match = None
+    for d in all_delegations:
+        if d.region_id == region_match.id and d.name.lower() == ville_name.lower():
+            ville_match = d
+            break
+    if not ville_match:
+        vn = _norm(ville_name)
+        for d in all_delegations:
+            if d.region_id == region_match.id and vn and (_norm(d.name) == vn or vn in _norm(d.name) or _norm(d.name) in vn):
+                ville_match = d
+                break
+    order.region = region_match
+    if ville_match:
+        order.ville = ville_match.name
+    fields = ["region", "updated_at"]
+    if ville_match:
+        fields.append("ville")
+    try:
+        order.save(update_fields=fields)
+    except Exception:
+        pass
+
+
 def _build_shopify_shape_from_extraction(data, conv):
     """Convert Gemini's extracted order dict into the Shopify-shaped payload
     that _create_order_from_shopify_shaped_payload expects."""
@@ -9449,8 +9541,15 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
             # Fill address/name if newly available and still empty on the order.
             if data.get("address") and not (order.address or "").strip():
                 order.address = data.get("address")
+            if data.get("city") and not (order.ville or "").strip():
+                order.ville = data.get("city")
             order.save(update_fields=["conversation_text", "conversation_updated_at",
-                                      "address", "updated_at"])
+                                      "address", "ville", "updated_at"])
+            # Resolve region/ville from the free-text address against our list.
+            try:
+                _resolve_region_for_order(order)
+            except Exception:
+                pass
             # Add newly-extracted offers/products not already present.
             try:
                 _add_extracted_items_to_order(order, data)
