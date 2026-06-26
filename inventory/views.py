@@ -9298,20 +9298,26 @@ def _messenger_enrich_settled(batch=4, quiet_minutes=5):
         if effective and effective > cutoff:
             continue
 
+        ok = False
         try:
-            # Re-run the pipeline WITH Gemini (skip_gemini=False) so it extracts
-            # address/region and products (incl. offers named by the page).
-            _try_extract_and_create_pending(conv, skip_gemini=False)
+            # Pre-check Gemini so we only mark enriched when it actually worked.
+            data = _extract_order_from_conversation(conv)
+            if data:
+                conv.extracted = data
+                # Pass the data we already extracted so we don't call Gemini twice.
+                _try_extract_and_create_pending(conv, pre_data=data)
+                ok = True
         except Exception:
-            pass
-        # Mark as enriched regardless so we don't retry the same one forever
-        # (a failed Gemini call shouldn't loop; staff can fill manually).
-        conv.gemini_enriched = True
-        try:
-            conv.save(update_fields=["gemini_enriched", "updated_at"])
-        except Exception:
-            pass
-        enriched += 1
+            ok = False
+        # Only mark enriched if Gemini succeeded — otherwise leave it for a later
+        # pass (e.g. after a rate-limit window clears) instead of giving up.
+        if ok:
+            conv.gemini_enriched = True
+            try:
+                conv.save(update_fields=["gemini_enriched", "updated_at"])
+            except Exception:
+                pass
+            enriched += 1
     return enriched
 
 
@@ -9358,7 +9364,7 @@ def api_messenger_poll_cron(request):
     return JsonResponse({"status": "ok", "total_new_messages": total_msgs})
 
 
-def _try_extract_and_create_pending(conv, skip_gemini=False):
+def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
     """When a phone number appears, create a pending non_confirmee Order even if
     product/size/address are still missing — staff finish the rest so no order
     is ever missed. We still run Gemini to pre-fill whatever it can extract.
@@ -9391,7 +9397,10 @@ def _try_extract_and_create_pending(conv, skip_gemini=False):
     if conv.created_at and (_tz.now() - conv.created_at) > _td(hours=48):
         return
 
-    data = ({} if skip_gemini else _extract_order_from_conversation(conv)) or {}
+    if pre_data is not None:
+        data = pre_data or {}
+    else:
+        data = ({} if skip_gemini else _extract_order_from_conversation(conv)) or {}
     conv.extracted = data
 
     # Link the source ad if we can match the campaign/ad to a known Ad row.
