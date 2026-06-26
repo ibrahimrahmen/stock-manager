@@ -64,6 +64,33 @@ MESSENGER_PAGE_TO_SALESPAGE = {
 MESSENGER_DEFAULT_SALESPAGE = 3   # Barats (fallback for unmapped pages)
 
 
+def _extract_tn_phone(text):
+    """Extract a valid Tunisian mobile (8 digits) from free text.
+
+    Returns the 8-digit string or '' if none found. Guards against grabbing
+    digits out of URLs / Facebook post IDs (e.g. 'replied to a post' lines)
+    and only accepts realistic Tunisian mobile prefixes (2, 4, 5, 7, 9).
+    """
+    import re as _r
+    if not text:
+        return ""
+    # Drop URLs and the FB "replied to a post" noise — their long numeric IDs
+    # were being mis-read as phone numbers.
+    cleaned = _r.sub(r"https?://\S+", " ", text)
+    cleaned = _r.sub(r"(?i)replied to a post\.?", " ", cleaned)
+    cleaned = _r.sub(r"(?i)a répondu à une publication\.?", " ", cleaned)
+    cleaned = _r.sub(r"(?i)view post", " ", cleaned)
+    # Find 8-digit groups that stand alone (allow spaces inside like "20 123 456"),
+    # not embedded in a longer digit run.
+    for raw in _r.findall(r"(?<!\d)(?:\+?216[\s-]?)?(\d[\d\s-]{6,}\d)(?!\d)", cleaned):
+        digits = _r.sub(r"\D", "", raw)
+        if len(digits) == 11 and digits.startswith("216"):
+            digits = digits[3:]
+        if len(digits) == 8 and digits[0] in "2457 9".replace(" ", ""):
+            return digits
+    return ""
+
+
 def _messenger_page_token(page_id):
     """Page access token for sending replies. Tokens are stored in the env var
     MESSENGER_PAGE_TOKENS as 'page_id:token,page_id:token,...' so they're never
@@ -8842,9 +8869,8 @@ def _conversation_looks_complete(conv):
                      if m.get("from") == "user")
     if not text:
         return False
-    digits = re.sub(r"\D", "", text)
-    # A Tunisian mobile is 8 digits; look for any 8-digit run.
-    has_phone = bool(re.search(r"\d{8}", digits))
+    # A valid Tunisian mobile (proper prefix, not digits from a post URL).
+    has_phone = bool(_extract_tn_phone(text))
     # A phone number alone is enough — staff finish the rest, so we never miss
     # an order. (Previously also required 4+ words, which dropped phone-only DMs.)
     return has_phone
@@ -9307,11 +9333,11 @@ def _try_extract_and_create_pending(conv, skip_gemini=False):
     if not shaped.get("phone"):
         text = " ".join(m.get("text", "") for m in (conv.messages or [])
                         if m.get("from") == "user")
-        m = _re.search(r"\d{8}", _re.sub(r"\D", "", text))
-        if m:
-            shaped["phone"] = m.group(0)
-            shaped["shipping_address"]["phone"] = m.group(0)
-            shaped["customer"]["phone"] = m.group(0)
+        ph = _extract_tn_phone(text)
+        if ph:
+            shaped["phone"] = ph
+            shaped["shipping_address"]["phone"] = ph
+            shaped["customer"]["phone"] = ph
 
     # A phone is the ONLY hard requirement now. No phone → can't create a usable
     # pending order, so just keep the conversation for later.
