@@ -9108,6 +9108,113 @@ def _add_extracted_items_to_order(order, data):
         pass
 
 
+def _messenger_poll_page(page_id, limit=25):
+    """Poll a single page's recent Messenger conversations via the Graph API
+    and feed new messages into the same pipeline as the webhook. Works in
+    Development mode with the page's own token — no App Review needed.
+
+    Returns (conversations_seen, messages_added)."""
+    import urllib.request as _ureq
+    import urllib.parse as _uparse
+    import json as _json
+    from .models import MessengerConversation
+
+    token = _messenger_page_token(page_id)
+    if not token:
+        return (0, 0)
+
+    # Fetch conversations with their messages and ad referral context.
+    fields = (
+        "id,updated_time,"
+        "messages.limit(15){id,message,from,created_time},"
+        "participants"
+    )
+    base = (f"https://graph.facebook.com/v25.0/{page_id}/conversations"
+            f"?platform=messenger&fields={_uparse.quote(fields)}"
+            f"&limit={int(limit)}&access_token={_uparse.quote(token, safe='')}")
+    try:
+        with _ureq.urlopen(base, timeout=20) as resp:
+            data = _json.loads(resp.read().decode("utf-8", "ignore"))
+    except Exception:
+        return (0, 0)
+
+    convs_seen = 0
+    msgs_added = 0
+    for thread in data.get("data", []):
+        convs_seen += 1
+        # Identify the customer participant (the one that isn't the page).
+        sender_id = ""
+        sender_name = ""
+        for part in (thread.get("participants", {}) or {}).get("data", []):
+            if str(part.get("id")) != str(page_id):
+                sender_id = str(part.get("id") or "")
+                sender_name = part.get("name") or ""
+                break
+        if not sender_id:
+            continue
+
+        # Reuse the same active-conversation lookup as the webhook.
+        conv = (MessengerConversation.objects
+                .filter(sender_id=sender_id, page_id=page_id,
+                        status__in=[MessengerConversation.NEW,
+                                    MessengerConversation.EXTRACTED])
+                .order_by("-id").first())
+        if conv is None:
+            conv = MessengerConversation.objects.create(
+                sender_id=sender_id, page_id=page_id, platform="messenger",
+                sender_name=sender_name,
+            )
+        elif sender_name and not conv.sender_name:
+            conv.sender_name = sender_name
+
+        # Messages come newest-first from the API; insert oldest-first.
+        msg_nodes = list(reversed((thread.get("messages", {}) or {}).get("data", [])))
+        existing_mids = {m.get("mid") for m in (conv.messages or [])}
+        msgs = conv.messages or []
+        for mn in msg_nodes:
+            mid = mn.get("id") or ""
+            text = mn.get("message") or ""
+            frm = (mn.get("from") or {}).get("id")
+            # Only store CUSTOMER messages (not the page's own replies).
+            if str(frm) == str(page_id):
+                continue
+            if not text or (mid and mid in existing_mids):
+                continue
+            msgs.append({
+                "from": "user", "text": text,
+                "ts": mn.get("created_time", ""), "mid": mid,
+            })
+            existing_mids.add(mid)
+            msgs_added += 1
+        conv.messages = msgs
+        conv.save()
+
+        # Run the same extraction/order-creation pipeline.
+        try:
+            _try_extract_and_create_pending(conv)
+        except Exception:
+            pass
+
+    return (convs_seen, msgs_added)
+
+
+@login_required(login_url="/login/")
+def api_messenger_poll(request):
+    """Manually trigger a poll of all configured pages. Returns a summary.
+    Call this on a schedule (cron/Railway) or from a button to pull new DMs
+    without relying on the webhook (works in Development mode)."""
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error"}, status=403)
+    results = {}
+    total_msgs = 0
+    for page_id in MESSENGER_PAGE_TO_SALESPAGE.keys():
+        seen, added = _messenger_poll_page(page_id)
+        results[page_id] = {"conversations": seen, "new_messages": added}
+        total_msgs += added
+    return JsonResponse({"status": "ok", "total_new_messages": total_msgs,
+                         "pages": results})
+
+
 def _try_extract_and_create_pending(conv):
     """When a phone number appears, create a pending non_confirmee Order even if
     product/size/address are still missing — staff finish the rest so no order
