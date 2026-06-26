@@ -9196,7 +9196,7 @@ def _messenger_poll_page(page_id, limit=25):
         # on every poll and keeps the request fast.
         if added_this_conv:
             try:
-                _try_extract_and_create_pending(conv)
+                _try_extract_and_create_pending(conv, skip_gemini=True)
             except Exception:
                 pass
 
@@ -9220,7 +9220,7 @@ def api_messenger_poll(request):
                          "pages": results})
 
 
-def _try_extract_and_create_pending(conv):
+def _try_extract_and_create_pending(conv, skip_gemini=False):
     """When a phone number appears, create a pending non_confirmee Order even if
     product/size/address are still missing — staff finish the rest so no order
     is ever missed. We still run Gemini to pre-fill whatever it can extract.
@@ -9253,7 +9253,7 @@ def _try_extract_and_create_pending(conv):
     if conv.created_at and (_tz.now() - conv.created_at) > _td(hours=48):
         return
 
-    data = _extract_order_from_conversation(conv) or {}
+    data = ({} if skip_gemini else _extract_order_from_conversation(conv)) or {}
     conv.extracted = data
 
     # Link the source ad if we can match the campaign/ad to a known Ad row.
