@@ -4961,7 +4961,8 @@ def api_exchange_source_items(request, pk):
     # → OrderItems → unit. This lets the office worker see which barcode(s)
     # correspond to each item being returned.
     barcodes_by_key = {}
-    barcodes_by_variant = {}   # fallback: variant_id -> units (any size)
+    barcodes_by_variant = {}   # variant_id -> units
+    barcodes_by_color = {}     # color_label(lower) -> units
     for so in source.shipping_orders.all():
         for oi in so.items.select_related("unit__variant").all():
             unit = oi.unit
@@ -4976,17 +4977,26 @@ def api_exchange_source_items(request, pk):
             k = (unit.variant_id, unit.size or "")
             barcodes_by_key.setdefault(k, []).append(entry)
             barcodes_by_variant.setdefault(unit.variant_id, []).append(entry)
-    used_variant_fallback = set()
+            clbl = ((unit.variant.color_label if unit.variant else "")
+                    or (unit.variant.color_name if unit.variant else "")).strip().lower()
+            if clbl:
+                barcodes_by_color.setdefault(clbl, []).append(entry)
+    # Map each item's variant to its colour label for the colour fallback.
+    from .models import ProductVariant
     for it in items:
-        exact = barcodes_by_key.get((it["variant_id"], it["size"]), [])
-        if exact:
-            it["units"] = exact
-        else:
-            # Size didn't match (e.g. line size "L" vs unit size "3"): fall back
-            # to all units of this variant so the barcode still shows. Avoid
-            # handing the same variant's units to two different size rows twice.
-            fallback = barcodes_by_variant.get(it["variant_id"], [])
-            it["units"] = fallback
+        # 1) exact variant+size
+        units = barcodes_by_key.get((it["variant_id"], it["size"]), [])
+        # 2) same variant, any size
+        if not units:
+            units = barcodes_by_variant.get(it["variant_id"], [])
+        # 3) same COLOUR across product versions (variant IDs differ between
+        #    V1/V2 of the same item, but the colour matches — e.g. line points
+        #    to variant 44 BLUE while the scanned unit is variant 109 BLUE V2).
+        if not units:
+            clbl = (it.get("color_label") or "").strip().lower()
+            if clbl:
+                units = barcodes_by_color.get(clbl, [])
+        it["units"] = units
 
     # Also check what's already been selected (if return_items already exist for this exchange)
     selected = list(exchange.return_items.values_list("variant_id", "size"))
