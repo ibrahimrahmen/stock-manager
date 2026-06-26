@@ -4883,20 +4883,27 @@ def api_order_refresh_conversation(request, pk):
 
     psid = (order.customer.customer_psid or "").strip() if order.customer_id else ""
 
-    # --- Live re-fetch hook (future) ---------------------------------------
-    # When the Messenger integration is live, attempt a fresh pull here, e.g.:
-    #     new_text = _messenger_fetch_conversation(psid)
-    #     if new_text:
-    #         order.conversation_text = new_text
-    #         order.conversation_updated_at = timezone.now()
-    #         order.save(update_fields=["conversation_text",
-    #                                   "conversation_updated_at", "updated_at"])
-    # For now we just return whatever is stored.
+    # If a MessengerConversation is linked to this order, return its structured
+    # messages (with image attachments) so the chat view can show photos.
+    structured = []
+    try:
+        from .models import MessengerConversation
+        conv = MessengerConversation.objects.filter(pending_order_id=order.id).order_by("-id").first()
+        if conv and conv.messages:
+            for m in conv.messages:
+                structured.append({
+                    "from": m.get("from", "user"),
+                    "text": m.get("text", ""),
+                    "images": m.get("images", []),
+                })
+    except Exception:
+        structured = []
 
     if order.conversation_text:
         return JsonResponse({
             "status": "ok",
             "conversation_text": order.conversation_text,
+            "messages": structured,
             "updated_at": order.conversation_updated_at.strftime("%d/%m/%Y %H:%M") if order.conversation_updated_at else "",
         })
     if psid:
@@ -9126,7 +9133,7 @@ def _messenger_poll_page(page_id, limit=25):
     # Fetch conversations with their messages and ad referral context.
     fields = (
         "id,updated_time,"
-        "messages.limit(15){id,message,from,created_time},"
+        "messages.limit(15){id,message,from,created_time,attachments{image_data,mime_type,name,file_url}},"
         "participants"
     )
     base = (f"https://graph.facebook.com/v25.0/{page_id}/conversations"
@@ -9176,19 +9183,25 @@ def _messenger_poll_page(page_id, limit=25):
             mid = mn.get("id") or ""
             text = mn.get("message") or ""
             frm = (mn.get("from") or {}).get("id")
-            if not text or (mid and mid in existing_mids):
+            # Collect attachment image URLs (photos, stickers, shared posts).
+            img_urls = []
+            for att in ((mn.get("attachments") or {}).get("data") or []):
+                url = (att.get("image_data") or {}).get("url") or att.get("file_url") or ""
+                mime = att.get("mime_type") or ""
+                if url and (mime.startswith("image") or not mime):
+                    img_urls.append(url)
+            # Skip only if there's NOTHING (no text and no image) or already seen.
+            if (not text and not img_urls) or (mid and mid in existing_mids):
                 continue
-            # Store BOTH sides so the conversation view shows the full thread.
-            # 'from' = 'page' for our own replies, 'user' for the customer.
             is_page = (str(frm) == str(page_id))
             msgs.append({
                 "from": "page" if is_page else "user",
                 "text": text,
+                "images": img_urls,
                 "ts": mn.get("created_time", ""), "mid": mid,
             })
             existing_mids.add(mid)
             msgs_added += 1
-            # Only a new CUSTOMER message should trigger re-extraction.
             if not is_page:
                 added_this_conv += 1
         conv.messages = msgs

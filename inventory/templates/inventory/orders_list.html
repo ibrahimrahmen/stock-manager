@@ -1232,10 +1232,13 @@ async function openConversation(ev, orderId) {
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
     });
     const data = await res.json();
-    if (data.status === 'ok' && data.conversation_text) {
+    if (data.status === 'ok' && (data.conversation_text || (data.messages && data.messages.length))) {
       body.style.color = '';
-      body.innerHTML = renderChatBubbles(data.conversation_text);
-      // scroll to newest (bottom)
+      if (data.messages && data.messages.length) {
+        body.innerHTML = renderChatBubblesStructured(data.messages);
+      } else {
+        body.innerHTML = renderChatBubbles(data.conversation_text);
+      }
       body.scrollTop = body.scrollHeight;
       meta.textContent = data.updated_at ? ('Capturée le ' + data.updated_at + ' — peut ne pas inclure les messages plus récents.') : '';
     } else {
@@ -1246,6 +1249,34 @@ async function openConversation(ev, orderId) {
     body.style.color = 'var(--muted)';
     body.textContent = "Erreur réseau lors du chargement de la conversation.";
   }
+}
+
+function _bubbleHtml(isPage, innerHtml) {
+  const align = isPage ? 'flex-end' : 'flex-start';
+  const bg = isPage ? '#0084ff' : 'var(--surface2,#262626)';
+  const color = isPage ? '#fff' : 'var(--text,#e8e8e8)';
+  const radius = isPage ? '16px 16px 4px 16px' : '16px 16px 16px 4px';
+  return `<div style="display:flex;justify-content:${align};">`
+       + `<div style="max-width:75%;background:${bg};color:${color};`
+       + `padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.4;`
+       + `word-wrap:break-word;white-space:normal;">${innerHtml}</div></div>`;
+}
+
+function renderChatBubblesStructured(messages) {
+  const esc = (s) => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  let html = '<div style="display:flex;flex-direction:column;gap:6px;padding:4px 2px;">';
+  for (const m of messages) {
+    const isPage = (m.from === 'page');
+    let inner = '';
+    if (m.text) inner += esc(m.text).replace(/\n/g,'<br>');
+    for (const url of (m.images || [])) {
+      inner += `<a href="${url}" target="_blank"><img src="${url}" style="max-width:180px;border-radius:10px;margin-top:${inner?'6px':'0'};display:block;"></a>`;
+    }
+    if (!inner) continue;
+    html += _bubbleHtml(isPage, inner);
+  }
+  html += '</div>';
+  return html;
 }
 
 function renderChatBubbles(text) {
