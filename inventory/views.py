@@ -9256,25 +9256,48 @@ def _messenger_enrich_settled(batch=4, quiet_minutes=5):
     (both customer and page messages). Processes a small batch to avoid the
     Gemini rate-limit / worker-timeout issues that bulk extraction caused.
 
+    "Quiet" is measured from the NEWEST message's real timestamp (not the row's
+    updated_at, which the poll refreshes every cycle).
+
     Returns the number of conversations enriched."""
     from .models import MessengerConversation, Order
     from django.utils import timezone as _tz
     from datetime import timedelta as _td
+    from django.utils.dateparse import parse_datetime as _pdt
 
-    cutoff = _tz.now() - _td(minutes=quiet_minutes)
-    # Candidates: not yet enriched, has a pending non_confirmee order, conversation
-    # settled (updated_at older than the quiet window), and not too old (48h).
-    floor = _tz.now() - _td(hours=48)
-    qs = (MessengerConversation.objects
-          .filter(gemini_enriched=False,
-                  pending_order__isnull=False,
-                  pending_order__status=Order.NON_CONFIRMEE,
-                  updated_at__lte=cutoff,
-                  updated_at__gte=floor)
-          .order_by("updated_at")[:batch])
+    now = _tz.now()
+    cutoff = now - _td(minutes=quiet_minutes)
+    floor = now - _td(hours=48)
+
+    # Candidate rows: not yet enriched, pending non_confirmee order, created in
+    # the last 48h. We then check each one's last-message timestamp in Python.
+    candidates = (MessengerConversation.objects
+                  .filter(gemini_enriched=False,
+                          pending_order__isnull=False,
+                          pending_order__status=Order.NON_CONFIRMEE,
+                          created_at__gte=floor)
+                  .order_by("created_at"))
 
     enriched = 0
-    for conv in qs:
+    for conv in candidates:
+        if enriched >= batch:
+            break
+        # Find the newest message timestamp in the stored messages.
+        last_ts = None
+        for m in (conv.messages or []):
+            ts = m.get("ts") or ""
+            dt = _pdt(ts) if ts else None
+            if dt is not None:
+                if _tz.is_naive(dt):
+                    dt = _tz.make_aware(dt, _tz.get_default_timezone())
+                if last_ts is None or dt > last_ts:
+                    last_ts = dt
+        # If we couldn't read any message timestamp, fall back to updated_at.
+        effective = last_ts or conv.updated_at
+        # Skip if the conversation is still active (last message < quiet window).
+        if effective and effective > cutoff:
+            continue
+
         try:
             # Re-run the pipeline WITH Gemini (skip_gemini=False) so it extracts
             # address/region and products (incl. offers named by the page).
