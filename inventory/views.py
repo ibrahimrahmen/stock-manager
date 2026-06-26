@@ -5785,7 +5785,25 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
         reg_norm = _normalize(region.name)
         if prov_norm and reg_norm and prov_norm != reg_norm and prov_norm not in reg_norm and reg_norm not in prov_norm:
             province_conflict = True
-    if not region or not matched_delegation_name or province_conflict:
+    # Detect a "defaulted" delegation: the ville just took the governorate's
+    # namesake delegation while the address field clearly names a DIFFERENT
+    # locality (e.g. region=Ben Arous, ville=Ben Arous, but address="Hamamchat"
+    # which is really Hammam Chatt). In that case let Gemini re-decide.
+    delegation_defaulted = False
+    if region and matched_delegation_name:
+        try:
+            md_norm = _normalize(matched_delegation_name)
+            reg_norm2 = _normalize(region.name)
+            # ville == governorate namesake?
+            if md_norm and reg_norm2 and md_norm == reg_norm2:
+                # Is there another locality in the address/city fields?
+                for ct in candidate_texts_norm[1:]:
+                    if ct and ct != md_norm and len(ct) >= 4:
+                        delegation_defaulted = True
+                        break
+        except Exception:
+            delegation_defaulted = False
+    if not region or not matched_delegation_name or province_conflict or delegation_defaulted:
         try:
             # Build the catalog of options. Group delegations under their region.
             options_lines = []
