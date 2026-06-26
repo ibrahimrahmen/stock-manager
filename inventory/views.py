@@ -4961,19 +4961,32 @@ def api_exchange_source_items(request, pk):
     # → OrderItems → unit. This lets the office worker see which barcode(s)
     # correspond to each item being returned.
     barcodes_by_key = {}
+    barcodes_by_variant = {}   # fallback: variant_id -> units (any size)
     for so in source.shipping_orders.all():
         for oi in so.items.select_related("unit__variant").all():
             unit = oi.unit
             if not unit:
                 continue
-            k = (unit.variant_id, unit.size or "")
-            barcodes_by_key.setdefault(k, []).append({
+            entry = {
                 "barcode": unit.barcode,
                 "status": unit.status,
                 "status_label": unit.get_status_display(),
-            })
+                "size": unit.size or "",
+            }
+            k = (unit.variant_id, unit.size or "")
+            barcodes_by_key.setdefault(k, []).append(entry)
+            barcodes_by_variant.setdefault(unit.variant_id, []).append(entry)
+    used_variant_fallback = set()
     for it in items:
-        it["units"] = barcodes_by_key.get((it["variant_id"], it["size"]), [])
+        exact = barcodes_by_key.get((it["variant_id"], it["size"]), [])
+        if exact:
+            it["units"] = exact
+        else:
+            # Size didn't match (e.g. line size "L" vs unit size "3"): fall back
+            # to all units of this variant so the barcode still shows. Avoid
+            # handing the same variant's units to two different size rows twice.
+            fallback = barcodes_by_variant.get(it["variant_id"], [])
+            it["units"] = fallback
 
     # Also check what's already been selected (if return_items already exist for this exchange)
     selected = list(exchange.return_items.values_list("variant_id", "size"))
