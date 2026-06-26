@@ -677,6 +677,12 @@ class Order(models.Model):
         help_text="Nom du livreur / agence Navex")
     navex_livreur_tel = models.CharField(max_length=30, blank=True, default="")
 
+    # SMS notification dedup flags — each customer SMS fires once per order.
+    sms_created_sent     = models.BooleanField(default=False)
+    sms_injoignable_sent = models.BooleanField(default=False)
+    sms_expedie_sent     = models.BooleanField(default=False)
+    sms_en_cours_sent    = models.BooleanField(default=False)
+
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_WEBFORM)
     # Converty order _id (MongoDB ObjectId), used to push status changes back
     # to Converty (confirmed / rejected / delivered) and to dedupe webhooks.

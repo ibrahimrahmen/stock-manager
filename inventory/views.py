@@ -3076,6 +3076,7 @@ def api_navex_sync(request):
                         old_label = dict(Order.STATUS_CHOICES).get(linked_order.status, linked_order.status)
                         linked_order.status = new_v2_status
                         linked_order.save(update_fields=["status", "updated_at"])
+                        _maybe_send_status_sms(linked_order)
                         log_action(
                             request.user, AuditLog.STATUS_CHANGE,
                             description=f"Auto sync Navex: commande #{linked_order.id} {old_label} → "
@@ -5136,6 +5137,52 @@ def api_shopify_webhook_order_created(request):
     )
 
 
+def _maybe_send_status_sms(order):
+    """Send the customer SMS appropriate to the order's CURRENT status, once.
+    Covers: injoignable, expédié (en_cours covers shipped+delivery in our flow),
+    en_cours (with livreur phone + amount). Best-effort, never raises."""
+    try:
+        from . import sms_service
+    except Exception:
+        return
+    if not order or not order.customer:
+        return
+    phone = order.customer.phone
+    try:
+        if order.status == Order.INJOIGNABLE and not order.sms_injoignable_sent:
+            ok, _ = sms_service.send_sms(phone, sms_service.msg_injoignable())
+            if ok:
+                order.sms_injoignable_sent = True
+                order.save(update_fields=["sms_injoignable_sent"])
+        elif order.status == Order.EN_COURS and not order.sms_en_cours_sent:
+            total = sms_service._fmt_total(order)
+            tel = (order.navex_livreur_tel or "").strip()
+            ok, _ = sms_service.send_sms(phone, sms_service.msg_en_cours(total, tel))
+            if ok:
+                order.sms_en_cours_sent = True
+                order.save(update_fields=["sms_en_cours_sent"])
+    except Exception:
+        pass
+
+
+def _maybe_send_expedie_sms(order):
+    """Send the 'expédié' SMS once when an order's colis is shipped."""
+    try:
+        from . import sms_service
+    except Exception:
+        return
+    if not order or not order.customer or order.sms_expedie_sent:
+        return
+    try:
+        total = sms_service._fmt_total(order)
+        ok, _ = sms_service.send_sms(order.customer.phone, sms_service.msg_expedie(total))
+        if ok:
+            order.sms_expedie_sent = True
+            order.save(update_fields=["sms_expedie_sent"])
+    except Exception:
+        pass
+
+
 def _create_order_from_shopify_shaped_payload(payload, source="shopify", external_id="", request=None, sales_page_id=None):
     """Shared order-creation engine. Takes a Shopify-shaped payload (the Converty
     webhook builds one too) and runs the full matching/AI/region pipeline,
@@ -6524,6 +6571,25 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
         extra=audit_extra[:50000],
     )
 
+    # --- Customer SMS: order received (today/tomorrow by Tunisia time) ---
+    # Only for website/Converty orders, NOT Messenger DMs (those get the
+    # Messenger auto-reply). Fires once per order.
+    if source in ("shopify", "converty") and not order.sms_created_sent:
+        try:
+            from . import sms_service
+            local_now = timezone.localtime(timezone.now())
+            cutoff_min = 16 * 60 + 30   # 16:30
+            when_today = (local_now.hour * 60 + local_now.minute) < cutoff_min
+            ok, _info = sms_service.send_sms(
+                order.customer.phone if order.customer else "",
+                sms_service.msg_created(when_today),
+            )
+            if ok:
+                order.sms_created_sent = True
+                order.save(update_fields=["sms_created_sent"])
+        except Exception:
+            pass
+
     return JsonResponse({
         "status": "ok",
         "order_id": order.id,
@@ -7244,6 +7310,7 @@ def api_order_change_status(request, pk):
         update_fields.append("status_note")
         update_fields.append("status_note_at")
     order.save(update_fields=update_fields)
+    _maybe_send_status_sms(order)
     log_action(
         request.user, AuditLog.STATUS_CHANGE,
         description=f"Commande #{order.id} : {old_label} → {valid[new_status]}"
