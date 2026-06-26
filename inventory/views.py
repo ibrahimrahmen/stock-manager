@@ -9223,6 +9223,27 @@ def api_messenger_poll(request):
                          "pages": results})
 
 
+@csrf_exempt
+def api_messenger_poll_cron(request):
+    """Token-protected poll endpoint for an EXTERNAL scheduler (cron-job.org,
+    etc.). No login needed — protected by a secret token that must match the
+    MESSENGER_POLL_TOKEN env var. Call as:
+        /api/messenger/poll-cron/?token=YOUR_SECRET
+    """
+    secret = os.environ.get("MESSENGER_POLL_TOKEN", "")
+    given = request.GET.get("token", "")
+    if not secret or given != secret:
+        return JsonResponse({"status": "error", "message": "forbidden"}, status=403)
+    total_msgs = 0
+    for page_id in MESSENGER_PAGE_TO_SALESPAGE.keys():
+        try:
+            _seen, added = _messenger_poll_page(page_id)
+            total_msgs += added
+        except Exception:
+            pass
+    return JsonResponse({"status": "ok", "total_new_messages": total_msgs})
+
+
 def _try_extract_and_create_pending(conv, skip_gemini=False):
     """When a phone number appears, create a pending non_confirmee Order even if
     product/size/address are still missing — staff finish the rest so no order

@@ -112,6 +112,7 @@ urlpatterns = [
     # Messenger DM webhook: receives messages + ad referral, stores conversation.
     path("webhooks/messenger/", views.api_messenger_webhook, name="api_messenger_webhook"),
     path("api/messenger/poll/", views.api_messenger_poll, name="api_messenger_poll"),
+    path("api/messenger/poll-cron/", views.api_messenger_poll_cron, name="api_messenger_poll_cron"),
     # Regions / delegations (cascaded dropdown)
     path("api/regions/<int:region_id>/delegations/", views.api_region_delegations, name="api_region_delegations"),
     path("api/delegations/all/", views.api_all_delegations, name="api_all_delegations"),
