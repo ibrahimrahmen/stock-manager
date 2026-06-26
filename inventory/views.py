@@ -9133,7 +9133,7 @@ def _messenger_poll_page(page_id, limit=25):
             f"?platform=messenger&fields={_uparse.quote(fields)}"
             f"&limit={int(limit)}&access_token={_uparse.quote(token, safe='')}")
     try:
-        with _ureq.urlopen(base, timeout=20) as resp:
+        with _ureq.urlopen(base, timeout=8) as resp:
             data = _json.loads(resp.read().decode("utf-8", "ignore"))
     except Exception:
         return (0, 0)
@@ -9171,6 +9171,7 @@ def _messenger_poll_page(page_id, limit=25):
         msg_nodes = list(reversed((thread.get("messages", {}) or {}).get("data", [])))
         existing_mids = {m.get("mid") for m in (conv.messages or [])}
         msgs = conv.messages or []
+        added_this_conv = 0
         for mn in msg_nodes:
             mid = mn.get("id") or ""
             text = mn.get("message") or ""
@@ -9186,14 +9187,18 @@ def _messenger_poll_page(page_id, limit=25):
             })
             existing_mids.add(mid)
             msgs_added += 1
+            added_this_conv += 1
         conv.messages = msgs
         conv.save()
 
-        # Run the same extraction/order-creation pipeline.
-        try:
-            _try_extract_and_create_pending(conv)
-        except Exception:
-            pass
+        # Only run the (slow) extraction pipeline if we actually added a new
+        # customer message this poll — avoids re-processing old conversations
+        # on every poll and keeps the request fast.
+        if added_this_conv:
+            try:
+                _try_extract_and_create_pending(conv)
+            except Exception:
+                pass
 
     return (convs_seen, msgs_added)
 
