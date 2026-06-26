@@ -5956,7 +5956,7 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
     # 8. Create the Order draft
     line_items = payload.get("line_items") or []
     notes_parts = [
-        f"shopify_order_id={shopify_order_id}",
+        f"{'converty_order_id' if source == 'converty' else 'shopify_order_id'}={shopify_order_id}",
         f"shopify_order_number={shopify_order_number}",
     ]
     customer_note = payload.get("note") or ""
@@ -6632,6 +6632,17 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
     # relations from earlier (otherwise the freshly-created OrderOffer might
     # not appear in self.order_offers.all()).
     order.refresh_from_db()
+    # Shopify free-shipping offer: if the articles subtotal (excluding delivery,
+    # before discount) is 150 DT or more, shipping is free. Shopify orders only.
+    if source == "shopify":
+        try:
+            offers_sum = sum((oo.offer_total for oo in order.order_offers.all()), Decimal("0"))
+            lines_sum = sum((l.line_total for l in order.lines.filter(order_offer__isnull=True)), Decimal("0"))
+            if (offers_sum + lines_sum) >= Decimal("150"):
+                order.delivery_fee = Decimal("0")
+                order.save(update_fields=["delivery_fee"])
+        except Exception:
+            pass
     order.recalc_total()
 
     # 12. Audit log — put line_items first so they're not truncated.
