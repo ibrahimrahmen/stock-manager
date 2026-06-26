@@ -8936,19 +8936,41 @@ def _extract_order_from_conversation(conv):
     return data
 
 
-def _resolve_region_for_order(order):
+def _resolve_region_for_order(order, conv=None):
     """Match an order's free-text address/city to a Region (gouvernorat) and
     Delegation (ville) from our list, using Gemini. Fills order.region and
     order.ville if a confident match is found. Best-effort; no-op on failure.
 
     Used for Messenger orders whose address arrives as free Tunisian text
-    (e.g. 'sidi Makhlouf') rather than structured Shopify fields."""
+    (e.g. 'korba (sidi Ali)') rather than structured Shopify fields. If the
+    order's address field is empty, falls back to scanning the conversation."""
     import re as _re
     from .models import Region, Delegation
     if not order or order.region_id:
         return  # already has a region
     addr = (order.address or "").strip()
     ville = (order.ville or "").strip()
+    # Fallback: if no address on the order, scan the conversation for an
+    # "adresse: ..." line (customers often label it explicitly).
+    convo_text = ""
+    if conv is not None and conv.messages:
+        convo_text = " ".join(m.get("text", "") for m in conv.messages
+                              if m.get("from") == "user")
+    if not addr:
+        # Capture the address after an "adresse:" label, stopping before the
+        # next labeled field (numéro/téléphone/couleur/taille) or end.
+        m = _re.search(
+            r"(?:adresse|3adress|address|عنوان)\s*[:\-]?\s*"
+            r"(.+?)(?=\s*(?:num[ée]ro|t[ée]l|phone|couleur|color|taille|size|\d{8})|$)",
+            convo_text, _re.IGNORECASE)
+        if m:
+            addr = m.group(1).strip(" :-")[:120]
+            if addr and not (order.address or "").strip():
+                order.address = addr
+                try:
+                    order.save(update_fields=["address", "updated_at"])
+                except Exception:
+                    pass
     if not addr and not ville:
         return
     all_regions = list(Region.objects.filter(is_active=True))
@@ -8971,13 +8993,15 @@ def _resolve_region_for_order(order):
         return
 
     prompt = (
-        "Tu es un assistant qui matche une adresse tunisienne (écrite en arabe, "
-        "français ou transcription) à notre liste de gouvernorats (régions) et "
-        "délégations (villes). Choisis le couple REGION + VILLE qui correspond "
-        "le mieux. Tu DOIS choisir des noms EXACTS de la liste. "
-        "Les Tunisiens utilisent des chiffres (3=ع, 5=خ, 7=ح, 9=ق, 2=ء). "
-        "Si rien ne correspond clairement, réponds 'NONE'. "
-        "Réponds UNIQUEMENT au format : 'REGION: nom | VILLE: nom' ou 'NONE'.\n\n"
+        "Tu matches une adresse tunisienne à notre liste de gouvernorats "
+        "(régions) et délégations (villes). La ville/localité principale est le "
+        "plus important (ex: 'korba (sidi Ali)' → la localité est KORBA, qui est "
+        "à Nabeul ; 'sidi Ali' n'est qu'un détail secondaire). "
+        "Choisis le couple REGION + VILLE le plus proche en te basant surtout sur "
+        "la localité principale. Si tu n'es PAS sûr, réponds 'NONE' plutôt que de "
+        "deviner. Les Tunisiens utilisent des chiffres (3=ع, 5=خ, 7=ح, 9=ق, 2=ء). "
+        "Tu DOIS choisir des noms EXACTS de la liste. "
+        "Réponds UNIQUEMENT : 'REGION: nom | VILLE: nom' ou 'NONE'.\n\n"
         f"Adresse du client : {addr} {ville}\n\n"
         "Liste des régions et délégations :\n" + "\n".join(options_lines)
         + "\n\nRéponse :"
@@ -9547,7 +9571,7 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
                                       "address", "ville", "updated_at"])
             # Resolve region/ville from the free-text address against our list.
             try:
-                _resolve_region_for_order(order)
+                _resolve_region_for_order(order, conv=conv)
             except Exception:
                 pass
             # Add newly-extracted offers/products not already present.
