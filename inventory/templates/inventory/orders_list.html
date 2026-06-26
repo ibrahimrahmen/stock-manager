@@ -929,9 +929,10 @@ function buildOrderRowHtml(o) {
   // _is_draft_editable check so the UI matches what the server allows.
   const lockedStatuses = ['confirmee', 'livree'];
   const isEditable = !lockedStatuses.includes(o.status) && !o.bordereau_barcode;
-  const idCell = isEditable
+  const convBtn = `<button class="conv-btn" onclick="openConversation(event, ${o.id})" title="Voir la conversation" style="margin-left:6px;border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;opacity:0.7;">💬</button>`;
+  const idCell = (isEditable
     ? `<a class="row-link" href="javascript:void(0)" onclick="editOrder(${o.id})" title="Modifier le brouillon">#${o.id} <span style="font-size:10px;opacity:0.7;">✎</span></a>`
-    : `<a class="row-link" href="/sales-orders/${o.id}/">#${o.id}</a>`;
+    : `<a class="row-link" href="/sales-orders/${o.id}/">#${o.id}</a>`) + convBtn;
 
   const villeBlock = ville ? ` · ${ville}` : '';
   const addressBlock = address ? `<div class="muted" style="font-size:11px;">${address.length > 50 ? address.slice(0,50)+'…' : address}</div>` : '';
