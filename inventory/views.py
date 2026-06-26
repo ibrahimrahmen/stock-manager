@@ -9176,18 +9176,21 @@ def _messenger_poll_page(page_id, limit=25):
             mid = mn.get("id") or ""
             text = mn.get("message") or ""
             frm = (mn.get("from") or {}).get("id")
-            # Only store CUSTOMER messages (not the page's own replies).
-            if str(frm) == str(page_id):
-                continue
             if not text or (mid and mid in existing_mids):
                 continue
+            # Store BOTH sides so the conversation view shows the full thread.
+            # 'from' = 'page' for our own replies, 'user' for the customer.
+            is_page = (str(frm) == str(page_id))
             msgs.append({
-                "from": "user", "text": text,
+                "from": "page" if is_page else "user",
+                "text": text,
                 "ts": mn.get("created_time", ""), "mid": mid,
             })
             existing_mids.add(mid)
             msgs_added += 1
-            added_this_conv += 1
+            # Only a new CUSTOMER message should trigger re-extraction.
+            if not is_page:
+                added_this_conv += 1
         conv.messages = msgs
         conv.save()
 
