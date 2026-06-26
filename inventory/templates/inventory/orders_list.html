@@ -251,18 +251,28 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
   </div>
   {% endif %}
 
+  <!-- Source + date filters -->
+  <div class="chips" style="margin-bottom:8px;">
+    <a href="?status={{ status_filter }}&source=all{% if today_on %}&today=1{% endif %}" class="chip {% if source_filter == 'all' or not source_filter %}active{% endif %}">Toutes sources</a>
+    <a href="?status={{ status_filter }}&source=barats{% if today_on %}&today=1{% endif %}" class="chip {% if source_filter == 'barats' %}active{% endif %}">Barats.tn</a>
+    <a href="?status={{ status_filter }}&source=converty{% if today_on %}&today=1{% endif %}" class="chip {% if source_filter == 'converty' %}active{% endif %}">Converty</a>
+    <a href="?status={{ status_filter }}&source=facebook{% if today_on %}&today=1{% endif %}" class="chip {% if source_filter == 'facebook' %}active{% endif %}">Facebook</a>
+    <span style="display:inline-block;width:14px;"></span>
+    <a href="?status={{ status_filter }}{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if not today_on %}&today=1{% endif %}" class="chip {% if today_on %}active{% endif %}" style="border-color:var(--blue,#0084ff);color:{% if today_on %}#fff{% else %}var(--blue,#0084ff){% endif %};{% if today_on %}background:var(--blue,#0084ff);{% endif %}">📅 Aujourd'hui</a>
+  </div>
+
   <div class="chips">
-    <a href="?status=all" class="chip {% if status_filter == 'all' %}active{% endif %}">Toutes <span class="count">{{ total }}</span></a>
-    <a href="?status=non_confirmee" class="chip {% if status_filter == 'non_confirmee' %}active{% endif %}">Non confirmée <span class="count">{{ counts.non_confirmee|default:0 }}</span></a>
-    <a href="?status=confirmee" class="chip {% if status_filter == 'confirmee' %}active{% endif %}">Confirmée <span class="count">{{ counts.confirmee|default:0 }}</span></a>
-    <a href="?status=en_cours" class="chip {% if status_filter == 'en_cours' %}active{% endif %}">En cours <span class="count">{{ counts.en_cours|default:0 }}</span></a>
-    <a href="?status=au_magasin" class="chip {% if status_filter == 'au_magasin' %}active{% endif %}" style="border-color:var(--amber);color:var(--amber);">Au magasin <span class="count">{{ counts.au_magasin|default:0 }}</span></a>
-    <a href="?status=rappeler_plus_tard" class="chip {% if status_filter == 'rappeler_plus_tard' %}active{% endif %}">Rappeler <span class="count">{{ counts.rappeler_plus_tard|default:0 }}</span></a>
-    <a href="?status=injoignable" class="chip {% if status_filter == 'injoignable' %}active{% endif %}">Injoignable <span class="count">{{ counts.injoignable|default:0 }}</span></a>
-    <a href="?status=pas_serieux" class="chip {% if status_filter == 'pas_serieux' %}active{% endif %}">Pas sérieux <span class="count">{{ counts.pas_serieux|default:0 }}</span></a>
-    <a href="?status=annulee" class="chip {% if status_filter == 'annulee' %}active{% endif %}">Annulée <span class="count">{{ counts.annulee|default:0 }}</span></a>
-    <a href="?status=livree" class="chip {% if status_filter == 'livree' %}active{% endif %}" style="border-color:var(--green);color:var(--green);">✓ Livrée <span class="count">{{ counts.livree|default:0 }}</span></a>
-    <a href="?status=supprime_navex" class="chip {% if status_filter == 'supprime_navex' %}active{% endif %}" style="border-color:var(--red);color:var(--red);">⚠ Supprimé Navex <span class="count">{{ counts.supprime_navex|default:0 }}</span></a>
+    <a href="?status=all{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'all' %}active{% endif %}">Toutes <span class="count">{{ total }}</span></a>
+    <a href="?status=non_confirmee{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'non_confirmee' %}active{% endif %}">Non confirmée <span class="count">{{ counts.non_confirmee|default:0 }}</span></a>
+    <a href="?status=confirmee{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'confirmee' %}active{% endif %}">Confirmée <span class="count">{{ counts.confirmee|default:0 }}</span></a>
+    <a href="?status=en_cours{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'en_cours' %}active{% endif %}">En cours <span class="count">{{ counts.en_cours|default:0 }}</span></a>
+    <a href="?status=au_magasin{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'au_magasin' %}active{% endif %}" style="border-color:var(--amber);color:var(--amber);">Au magasin <span class="count">{{ counts.au_magasin|default:0 }}</span></a>
+    <a href="?status=rappeler_plus_tard{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'rappeler_plus_tard' %}active{% endif %}">Rappeler <span class="count">{{ counts.rappeler_plus_tard|default:0 }}</span></a>
+    <a href="?status=injoignable{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'injoignable' %}active{% endif %}">Injoignable <span class="count">{{ counts.injoignable|default:0 }}</span></a>
+    <a href="?status=pas_serieux{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'pas_serieux' %}active{% endif %}">Pas sérieux <span class="count">{{ counts.pas_serieux|default:0 }}</span></a>
+    <a href="?status=annulee{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'annulee' %}active{% endif %}">Annulée <span class="count">{{ counts.annulee|default:0 }}</span></a>
+    <a href="?status=livree{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'livree' %}active{% endif %}" style="border-color:var(--green);color:var(--green);">✓ Livrée <span class="count">{{ counts.livree|default:0 }}</span></a>
+    <a href="?status=supprime_navex{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'supprime_navex' %}active{% endif %}" style="border-color:var(--red);color:var(--red);">⚠ Supprimé Navex <span class="count">{{ counts.supprime_navex|default:0 }}</span></a>
   </div>
 
   <div class="table-wrap">
@@ -296,7 +306,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
           <td>{{ o.sales_page.name|default:"—" }}</td>
           <td>
             <div>{{ o.customer.name|default:o.customer.phone }}</div>
-            <div class="muted" style="font-size:11px;">{{ o.customer.phone }}{% if o.phone_order_count > 1 %} <span title="Ce numéro a {{ o.phone_order_count }} commandes" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;">{{ o.phone_order_count }} cmd</span>{% endif %}</div>
+            <div class="muted" style="font-size:11px;">{{ o.customer.phone }}{% if o.phone_order_count > 1 %} <span onclick="searchByPhone(event, '{{ o.customer.phone|escapejs }}')" title="Voir les {{ o.phone_order_count }} commandes de ce numéro" style="cursor:pointer;display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;">{{ o.phone_order_count }} cmd</span>{% endif %}</div>
           </td>
           <td>
             <div>{{ o.region.name|default:"" }}{% if o.ville %} · {{ o.ville }}{% endif %}</div>
@@ -944,7 +954,7 @@ function buildOrderRowHtml(o) {
     <td>${pageName}</td>
     <td>
       <div>${name}</div>
-      <div class="muted" style="font-size:11px;">${phone}${(o.phone_order_count && o.phone_order_count > 1) ? ` <span title="Ce numéro a ${o.phone_order_count} commandes" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;">${o.phone_order_count} cmd</span>` : ''}</div>
+      <div class="muted" style="font-size:11px;">${phone}${(o.phone_order_count && o.phone_order_count > 1) ? ` <span onclick="searchByPhone(event, '${phone}')" title="Voir les ${o.phone_order_count} commandes de ce numéro" style="cursor:pointer;display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;">${o.phone_order_count} cmd</span>` : ''}</div>
       ${phone2Block}
     </td>
     <td>
@@ -2062,6 +2072,14 @@ function initSearchBar() {
     // Debounce: wait 200ms after user stops typing before searching
     _searchTimer = setTimeout(() => runSearch(q), 200);
   });
+}
+
+// Clicking a "N cmd" badge searches all orders from that phone number.
+function searchByPhone(ev, phone) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  const input = document.getElementById('search-input');
+  if (input) { input.value = phone; }
+  runSearch(phone);
 }
 
 async function runSearch(q) {
