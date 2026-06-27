@@ -49,7 +49,14 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .add-btn{background:var(--green);color:#0a0a08;padding:11px 18px;border-radius:10px;border:none;font-weight:500;font-size:15px;cursor:pointer;}
 .add-btn:hover{background:#3acb88;}
 .add-btn:disabled{opacity:0.6;}
-.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;}
+.chips{display:flex;gap:8px;flex-wrap:nowrap;margin-bottom:18px;align-items:flex-start;}
+.source-filter{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.src-btn{padding:7px 14px;border-radius:8px;border:0.5px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;font-size:13px;text-decoration:none;font-weight:500;transition:all .15s;}
+.src-btn:hover{background:var(--surface2);color:var(--text);}
+.src-date{background:var(--input-bg,rgba(255,255,255,0.05));border:0.5px solid var(--border);color:var(--text);border-radius:7px;padding:6px 8px;font-family:inherit;font-size:12px;}
+.src-btn.active{background:var(--text);color:var(--bg);border-color:var(--text);}
+.chip-group{display:flex;gap:8px;flex-wrap:wrap;min-width:0;}
+.chip-group-right{margin-left:auto;justify-content:flex-end;flex-shrink:0;}
 /* Search bar */
 .search-bar input{
   width:100%;padding:13px 18px;border-radius:10px;
@@ -78,6 +85,8 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .date-cell{cursor:pointer;color:var(--muted);font-size:13px;padding:4px 8px;border-radius:6px;display:inline-block;}
 .date-cell:hover{background:var(--surface2);color:var(--text);}
 .scheduled-badge{background:var(--amber-dim);color:var(--amber);padding:3px 8px;border-radius:6px;font-weight:500;}
+tr.exchange-row > td{background:#fffdf0;}
+[data-theme="dark"] tr.exchange-row > td{background:rgba(245,224,80,0.05);}
 /* Date picker mini-modal */
 .date-picker-overlay{
   position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:100;
@@ -127,6 +136,27 @@ a.row-link:hover{text-decoration:underline;}
 .status-menu .danger{color:var(--red);}
 .status-menu .confirm{color:var(--green);}
 .status-menu .sep{height:0.5px;background:var(--border);margin:4px 0;}
+.note-wrap{display:block;margin-top:6px;}
+.note-icon{display:inline-flex;align-items:flex-start;text-align:left;cursor:pointer;padding:6px 8px;border:none;font-family:inherit;
+  width:96px;min-height:54px;border-radius:2px 2px 2px 10px;
+  background:linear-gradient(135deg,#fff6b0 0%,#ffe98a 100%);
+  color:#6b5800;font-size:10.5px;line-height:1.25;
+  box-shadow:1px 2px 5px rgba(0,0,0,0.25);
+  transform:rotate(-2deg);transition:transform .12s, box-shadow .12s;
+  overflow:hidden;position:relative;}
+.note-icon:hover{transform:rotate(-2deg) scale(1.04);box-shadow:2px 4px 9px rgba(0,0,0,0.32);}
+.note-icon .note-text{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;word-break:break-word;}
+.note-icon .note-empty{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;color:#a8922f;font-style:italic;opacity:0.85;}
+.note-icon.has-note{background:linear-gradient(135deg,#fff09a 0%,#ffdf5e 100%);}
+.note-plus{background:transparent;border:0.5px dashed var(--border);color:var(--muted);font-size:11px;cursor:pointer;padding:3px 9px;border-radius:6px;margin-top:5px;font-family:inherit;transition:all .15s;}
+.note-time{display:block;margin-top:3px;opacity:0.55;font-size:0.8em;font-weight:500;}
+.note-plus:hover{border-color:#d97706;color:#d97706;background:rgba(217,119,6,0.08);}
+.note-pop{position:absolute;z-index:60;background:var(--surface);border:0.5px solid var(--border);border-radius:10px;padding:10px;box-shadow:0 10px 28px rgba(0,0,0,0.45);width:250px;}
+.note-pop textarea{width:100%;box-sizing:border-box;background:var(--surface2);color:var(--text);border:0.5px solid var(--border);border-radius:8px;padding:8px;font-family:inherit;font-size:12.5px;resize:vertical;min-height:64px;outline:none;}
+.note-pop textarea:focus{border-color:#d97706;}
+.note-pop .note-actions{display:flex;gap:6px;justify-content:flex-end;margin-top:8px;}
+.note-pop button{padding:6px 12px;border-radius:7px;border:0.5px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:12px;font-family:inherit;}
+.note-pop button.save{background:#d97706;color:#fff;border-color:#d97706;font-weight:600;}
 .status-non_confirmee{background:var(--red-dim);color:var(--red);}
 .status-confirmee{background:var(--green-dim);color:var(--green);}
 .status-injoignable{background:var(--amber-dim);color:var(--amber);}
@@ -135,6 +165,9 @@ a.row-link:hover{text-decoration:underline;}
 .status-annulee{background:rgba(120,120,120,0.2);color:var(--muted);text-decoration:line-through;}
 .status-livree{background:var(--green-dim);color:var(--green);font-weight:600;}
 .status-supprime_navex{background:var(--red);color:#fff;font-weight:600;animation:pulseRed 2s ease-in-out infinite;}
+.status-returning{background:rgba(234,88,12,0.15);color:#ea580c;}
+.status-returned{background:rgba(120,120,120,0.2);color:var(--muted);}
+.status-payee{background:rgba(21,128,61,0.18);color:#15803d;font-weight:600;}
 @keyframes pulseRed{0%,100%{opacity:1;}50%{opacity:0.65;}}
 tr.create-row{background:rgba(74,222,154,0.04);}
 tr.create-row td{border-top:0.5px solid var(--green);}
@@ -180,7 +213,13 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
 .modal-close{background:transparent;border:none;color:var(--muted);font-size:22px;cursor:pointer;}
 .modal-body{padding:18px 22px;}
 .offer-block{background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px;}
-.offer-pick-row{display:grid;grid-template-columns:1fr 80px 30px;gap:10px;align-items:end;margin-bottom:10px;}
+.offer-pick-row{display:grid;grid-template-columns:1fr 30px;gap:10px;align-items:end;margin-bottom:10px;}
+.offer-search{width:100%;box-sizing:border-box;background:var(--input-bg,rgba(255,255,255,0.05));border:0.5px solid var(--border);color:var(--text);border-radius:8px;padding:9px 10px;font-family:inherit;font-size:13px;}
+.offer-list{position:fixed;z-index:9999;background:var(--surface);border:0.5px solid var(--border);border-radius:8px;max-height:240px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.35);}
+.offer-list-item{padding:9px 11px;font-size:13px;cursor:pointer;border-bottom:0.5px solid var(--border);}
+.offer-list-item:last-child{border-bottom:none;}
+.offer-list-item:hover{background:var(--surface2);}
+.offer-list-item.muted{color:var(--muted);cursor:default;}
 .offer-pick-row label{font-size:11px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px;}
 .offer-pick-row select,.offer-pick-row input{background:var(--surface);border:0.5px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-size:13px;width:100%;font-family:inherit;}
 .offer-products-table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;}
@@ -241,38 +280,51 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
   {% if future_count > 0 and not show_scheduled %}
   <div class="future-banner">
     <span>📅 {{ future_count }} commande{{ future_count|pluralize }} planifiée{{ future_count|pluralize }} pour plus tard, non affichée{{ future_count|pluralize }}.</span>
-    <a href="?status={{ status_filter }}&show_scheduled=1">Voir aussi les commandes planifiées →</a>
+    <a href="?status={{ status_filter }}&show_scheduled=1&source={{ source_filter }}{% if today_on %}&today=1{% endif %}">Voir aussi les commandes planifiées →</a>
   </div>
   {% endif %}
   {% if show_scheduled %}
   <div class="future-banner">
     <span>📅 Affichage de TOUTES les commandes, y compris celles planifiées pour plus tard.</span>
-    <a href="?status={{ status_filter }}">Masquer les futures</a>
+    <a href="?status={{ status_filter }}&source={{ source_filter }}{% if today_on %}&today=1{% endif %}">Masquer les futures</a>
   </div>
   {% endif %}
 
-  <!-- Source + date filters -->
-  <div class="chips" style="margin-bottom:8px;">
-    <a href="?status={{ status_filter }}&source=all{% if today_on %}&today=1{% endif %}" class="chip {% if source_filter == 'all' or not source_filter %}active{% endif %}">Toutes sources</a>
-    <a href="?status={{ status_filter }}&source=barats{% if today_on %}&today=1{% endif %}" class="chip {% if source_filter == 'barats' %}active{% endif %}">Barats.tn</a>
-    <a href="?status={{ status_filter }}&source=converty{% if today_on %}&today=1{% endif %}" class="chip {% if source_filter == 'converty' %}active{% endif %}">Converty</a>
-    <a href="?status={{ status_filter }}&source=facebook{% if today_on %}&today=1{% endif %}" class="chip {% if source_filter == 'facebook' %}active{% endif %}">Facebook</a>
-    <span style="display:inline-block;width:14px;"></span>
-    <a href="?status={{ status_filter }}{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if not today_on %}&today=1{% endif %}" class="chip {% if today_on %}active{% endif %}" style="border-color:var(--blue,#0084ff);color:{% if today_on %}#fff{% else %}var(--blue,#0084ff){% endif %};{% if today_on %}background:var(--blue,#0084ff);{% endif %}">📅 Aujourd'hui</a>
+  <div class="source-filter" style="margin-bottom:10px;">
+    {% if today_on %}
+    <a href="?status={{ status_filter }}&source={{ source_filter }}" class="src-btn active" style="background:#1a9e6e;color:#fff;border-color:#1a9e6e;">📅 Aujourd'hui ✓</a>
+    {% else %}
+    <a href="?status={{ status_filter }}&source={{ source_filter }}&today=1" class="src-btn">📅 Aujourd'hui</a>
+    {% endif %}
+  </div>
+
+  <div class="source-filter">
+    <a href="?status={{ status_filter }}&source=all{% if today_on %}&today=1{% endif %}" class="src-btn {% if source_filter == 'all' %}active{% endif %}">Toutes les sources</a>
+    <a href="?status={{ status_filter }}&source=barats{% if today_on %}&today=1{% endif %}" class="src-btn {% if source_filter == 'barats' %}active{% endif %}">🌐 Barats.tn</a>
+    <a href="?status={{ status_filter }}&source=converty{% if today_on %}&today=1{% endif %}" class="src-btn {% if source_filter == 'converty' %}active{% endif %}">🛒 Converty</a>
+    <a href="?status={{ status_filter }}&source=facebook{% if today_on %}&today=1{% endif %}" class="src-btn {% if source_filter == 'facebook' %}active{% endif %}">📘 Facebook</a>
   </div>
 
   <div class="chips">
-    <a href="?status=all{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'all' %}active{% endif %}">Toutes <span class="count">{{ total }}</span></a>
-    <a href="?status=non_confirmee{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'non_confirmee' %}active{% endif %}">Non confirmée <span class="count">{{ counts.non_confirmee|default:0 }}</span></a>
-    <a href="?status=confirmee{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'confirmee' %}active{% endif %}">Confirmée <span class="count">{{ counts.confirmee|default:0 }}</span></a>
-    <a href="?status=en_cours{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'en_cours' %}active{% endif %}">En cours <span class="count">{{ counts.en_cours|default:0 }}</span></a>
-    <a href="?status=au_magasin{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'au_magasin' %}active{% endif %}" style="border-color:var(--amber);color:var(--amber);">Au magasin <span class="count">{{ counts.au_magasin|default:0 }}</span></a>
-    <a href="?status=rappeler_plus_tard{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'rappeler_plus_tard' %}active{% endif %}">Rappeler <span class="count">{{ counts.rappeler_plus_tard|default:0 }}</span></a>
-    <a href="?status=injoignable{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'injoignable' %}active{% endif %}">Injoignable <span class="count">{{ counts.injoignable|default:0 }}</span></a>
-    <a href="?status=pas_serieux{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'pas_serieux' %}active{% endif %}">Pas sérieux <span class="count">{{ counts.pas_serieux|default:0 }}</span></a>
-    <a href="?status=annulee{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'annulee' %}active{% endif %}">Annulée <span class="count">{{ counts.annulee|default:0 }}</span></a>
-    <a href="?status=livree{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'livree' %}active{% endif %}" style="border-color:var(--green);color:var(--green);">✓ Livrée <span class="count">{{ counts.livree|default:0 }}</span></a>
-    <a href="?status=supprime_navex{% if source_filter and source_filter != 'all' %}&source={{ source_filter }}{% endif %}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'supprime_navex' %}active{% endif %}" style="border-color:var(--red);color:var(--red);">⚠ Supprimé Navex <span class="count">{{ counts.supprime_navex|default:0 }}</span></a>
+    <div class="chip-group chip-group-left">
+    <a href="?status=all&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'all' %}active{% endif %}">Toutes <span class="count">{{ total }}</span></a>
+    <a href="?status=non_confirmee&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'non_confirmee' %}active{% endif %}">Non confirmée <span class="count">{{ counts.non_confirmee|default:0 }}</span></a>
+    <a href="?status=confirmee&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'confirmee' %}active{% endif %}">Confirmée <span class="count">{{ counts.confirmee|default:0 }}</span></a>
+    <a href="?status=rappeler_plus_tard&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'rappeler_plus_tard' %}active{% endif %}">Rappeler <span class="count">{{ counts.rappeler_plus_tard|default:0 }}</span></a>
+    <a href="?status=injoignable&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'injoignable' %}active{% endif %}">Injoignable <span class="count">{{ counts.injoignable|default:0 }}</span></a>
+    <a href="?status=pas_serieux&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'pas_serieux' %}active{% endif %}">Pas sérieux <span class="count">{{ counts.pas_serieux|default:0 }}</span></a>
+    <a href="?status=annulee&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'annulee' %}active{% endif %}">Annulée <span class="count">{{ counts.annulee|default:0 }}</span></a>
+    <a href="?status=supprime_navex&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'supprime_navex' %}active{% endif %}" style="border-color:var(--red);color:var(--red);">⚠ Supprimé Navex <span class="count">{{ counts.supprime_navex|default:0 }}</span></a>
+    </div>
+
+    <div class="chip-group chip-group-right">
+    <a href="?status=en_cours&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'en_cours' %}active{% endif %}">En cours <span class="count">{{ counts.en_cours|default:0 }}</span></a>
+    <a href="?status=au_magasin&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'au_magasin' %}active{% endif %}" style="border-color:var(--amber);color:var(--amber);">Au magasin <span class="count">{{ counts.au_magasin|default:0 }}</span></a>
+    <a href="?status=returning&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'returning' %}active{% endif %}" style="border-color:#ea580c;color:#ea580c;">↩ En retour <span class="count">{{ counts.returning|default:0 }}</span></a>
+    <a href="?status=returned&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'returned' %}active{% endif %}">↩ Retourné <span class="count">{{ counts.returned|default:0 }}</span></a>
+    <a href="?status=livree&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'livree' %}active{% endif %}" style="border-color:var(--green);color:var(--green);">✓ Livrée <span class="count">{{ counts.livree|default:0 }}</span></a>
+    <a href="?status=payee&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'payee' %}active{% endif %}" style="border-color:#15803d;color:#15803d;background:rgba(21,128,61,0.08);">💰 Payée <span class="count">{{ counts.payee|default:0 }}</span></a>
+    </div>
   </div>
 
   <div class="table-wrap">
@@ -287,11 +339,13 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
       </thead>
       <tbody id="orders-tbody">
         {% for o in orders %}
-        <tr data-order-id="{{ o.id }}">
+        <tr data-order-id="{{ o.id }}"{% if o.exchange_of_id %} class="exchange-row"{% endif %}>
           <td>
-            {% if o.status != 'confirmee' and o.status != 'livree' and o.status != 'payee' and o.status != 'en_cours' and o.status != 'au_magasin' and o.status != 'returning' and o.status != 'returned' and not o.bordereau_barcode %}
+            {% if o.status == 'non_confirmee' or o.status == 'injoignable' or o.status == 'pas_serieux' or o.status == 'rappeler_plus_tard' %}{% if not o.bordereau_barcode %}
               <a class="row-link" href="javascript:void(0)" onclick="editOrder({{ o.id }})" title="Modifier le brouillon">#{{ o.id }} <span style="font-size:10px;opacity:0.7;">✎</span></a>
             {% else %}
+              <a class="row-link" href="{% url 'order_view' o.pk %}">#{{ o.id }}</a>
+            {% endif %}{% else %}
               <a class="row-link" href="{% url 'order_view' o.pk %}">#{{ o.id }}</a>
             {% endif %}
             {% if o.is_shipping_closed %}<span title="Scan expédition terminé" style="color:#1a9e6e;font-size:14px;font-weight:600;margin-left:4px;">✓</span>{% endif %}
@@ -303,29 +357,21 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
               {% if o.scheduled_for %}<span class="scheduled-badge">📅 {{ o.scheduled_for|date:"d/m" }}</span>{% else %}{{ o.created_at|date:"d/m H:i" }}{% endif %}
             </span>
           </td>
-          <td>
-            <div style="display:flex;align-items:center;gap:5px;">
-              <span>{{ o.sales_page.name|default:"—" }}</span>
-              <button onclick="toggleStickyNote(event, {{ o.id }})" title="Note"
-                      style="border:none;background:rgba(245,200,35,0.18);color:#d9a300;width:18px;height:18px;border-radius:5px;cursor:pointer;font-size:13px;line-height:1;padding:0;font-weight:700;">+</button>
-            </div>
-            <div class="sticky-note" id="note-{{ o.id }}" data-order-id="{{ o.id }}"
-                 style="margin-top:5px;{% if not o.status_note %}display:none;{% endif %}">
-              <textarea class="sticky-note-input" onblur="saveStickyNote({{ o.id }})"
-                        placeholder="Écrire une note…"
-                        style="width:135px;min-height:42px;background:#fff8d6;border:0.5px solid #e6cf6a;border-radius:6px;color:#5a4a00;font-size:11px;padding:5px 6px;resize:vertical;font-family:inherit;">{{ o.status_note }}</textarea>
+          <td>{{ o.sales_page.name|default:"—" }}
+            <div class="note-wrap">
+              {% if o.status == 'injoignable' or o.status == 'rappeler_plus_tard' %}<button class="note-icon {% if o.status_note %}has-note{% endif %}" onclick="openNoteEditor(this, {{ o.id }})" title="{% if o.status_note %}{{ o.status_note }}{% if o.status_note_at %} · {{ o.status_note_at }}{% endif %}{% else %}Ajouter une note{% endif %}" data-note="{{ o.status_note|escape }}">{% if o.status_note %}<span class="note-text">{{ o.status_note }}</span>{% if o.status_note_at %}<span class="note-time"> · {{ o.status_note_at }}</span>{% endif %}{% else %}<span class="note-empty">+ note</span>{% endif %}</button>{% elif o.status == 'non_confirmee' or o.status == 'annulee' %}{% if o.status_note %}<button class="note-icon has-note" onclick="openNoteEditor(this, {{ o.id }})" title="{{ o.status_note }}{% if o.status_note_at %} · {{ o.status_note_at }}{% endif %}" data-note="{{ o.status_note|escape }}"><span class="note-text">{{ o.status_note }}</span>{% if o.status_note_at %}<span class="note-time"> · {{ o.status_note_at }}</span>{% endif %}</button>{% else %}<button class="note-plus" onclick="openNoteEditor(this, {{ o.id }})" title="Ajouter une note" data-note="">＋ note</button>{% endif %}{% endif %}
             </div>
           </td>
           <td>
-            <div>{{ o.customer.name|default:o.customer.phone }}</div>
-            <div class="muted" style="font-size:11px;">{{ o.customer.phone }}{% if o.phone_order_count > 1 %} <span onclick="searchByPhone(event, '{{ o.customer.phone|escapejs }}')" title="Voir les {{ o.phone_order_count }} commandes de ce numéro" style="cursor:pointer;display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;">{{ o.phone_order_count }} cmd</span>{% endif %}</div>
+            <div>{{ o.display_name|default:o.customer.phone }}</div>
+            <div class="muted" style="font-size:11px;">{{ o.customer.phone }}{% if o.phone_order_count > 1 %} <span onclick="searchPhone('{{ o.customer.phone }}', event)" title="Voir les commandes en système de ce numéro ({{ o.combined_delivered }} livré / {{ o.combined_returned }} retour au total){% if o.has_history %} — inclut l'historique{% endif %}" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;cursor:pointer;">{{ o.phone_order_count }} cmd</span>{% if o.combined_delivered or o.combined_returned %} <span title="Livré / Retour (historique inclus, annulé exclu)" style="display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;margin-left:2px;{% if o.combined_returned > o.combined_delivered %}background:rgba(220,80,80,0.15);color:#dc5050;{% else %}background:rgba(26,158,110,0.15);color:#1a9e6e;{% endif %}">✓{{ o.combined_delivered }} / ↩{{ o.combined_returned }}</span>{% endif %}{% endif %}</div>
           </td>
           <td>
             <div>{{ o.region.name|default:"" }}{% if o.ville %} · {{ o.ville }}{% endif %}</div>
             {% if o.address %}<div class="muted" style="font-size:11px;">{{ o.address|truncatechars:50 }}</div>{% endif %}
           </td>
           <td class="muted">{{ o.article_summary }}</td>
-          <td style="text-align:right;font-weight:500;">{{ o.total|floatformat:0 }} DT</td>
+          <td style="text-align:right;font-weight:500;">{% if o.amount_collected is not None %}<span title="Montant encaissé (Navex)">{{ o.amount_collected|floatformat:0 }} DT</span>{% if o.amount_collected != o.total %}<div class="muted" style="font-size:10px;font-weight:400;" title="Total commande">({{ o.total|floatformat:0 }})</div>{% endif %}{% else %}{{ o.total|floatformat:0 }} DT{% endif %}</td>
           <td>
             {% if o.status == 'annulee' %}
               <span class="status status-annulee">{{ o.get_status_display }}</span>
@@ -334,7 +380,6 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
               <button class="status status-{{ o.status }} status-btn" onclick="openStatusMenu(this, {{ o.id }}, '{{ o.status }}', {{ o.bordereau_barcode|yesno:'true,false' }})" title="Changer le statut">
                 {{ o.get_status_display }} <span style="opacity:0.6;">▾</span>
               </button>
-              {% if o.status_note %}<div class="muted" style="font-size:10px;margin-top:2px;font-style:italic;">📝 {{ o.status_note }}</div>{% endif %}
             {% endif %}
           </td>
           <td>
@@ -380,11 +425,11 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
       </div>
       <div class="foot-field">
         <label>Prix Livraison</label>
-        <input id="modal-delivery" type="number" min="0" step="0.001" value="7" oninput="recalcModalTotal()">
+        <input id="modal-delivery" type="number" min="0" step="0.001" value="7" autocomplete="off" oninput="recalcModalTotal()">
       </div>
       <div class="foot-field">
         <label>Remise</label>
-        <input id="modal-discount" type="number" min="0" step="0.001" value="0" oninput="recalcModalTotal()">
+        <input id="modal-discount" type="number" min="0" step="0.001" value="0" autocomplete="off" oninput="recalcModalTotal()">
       </div>
       <div class="foot-field">
         <label>Prix Total</label>
@@ -403,7 +448,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
       <button class="modal-close" onclick="closeConversationModal()">×</button>
     </div>
     <div class="modal-body">
-      <div id="conv-modal-body" style="font-size:13px;line-height:1.55;max-height:55vh;overflow-y:auto;padding:12px;background:var(--bg,#0a0a08);border:0.5px solid var(--border);border-radius:10px;min-height:80px;">
+      <div id="conv-modal-body" style="white-space:pre-wrap;font-size:13px;line-height:1.55;max-height:55vh;overflow-y:auto;padding:12px;background:var(--bg,#0a0a08);border:0.5px solid var(--border);border-radius:10px;min-height:80px;">
         Chargement…
       </div>
       <div id="conv-modal-meta" class="muted" style="font-size:11px;margin-top:8px;"></div>
@@ -435,6 +480,17 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
 </div>
 
 <script>
+// Make the browser "back" button go to the Dashboard from this page,
+// regardless of where the user came from (for everyone).
+(function() {
+  const DASHBOARD_URL = "{% url 'dashboard' %}";
+  // Push an extra history entry so the first "back" press fires popstate here
+  // instead of leaving the page, then redirect to the dashboard.
+  history.pushState(null, "", location.href);
+  window.addEventListener("popstate", function() {
+    window.location.href = DASHBOARD_URL;
+  });
+})();
 const SALES_PAGES = [
   {% for p in sales_pages %}{ id: {{ p.id }}, name: "{{ p.name|escapejs }}" },{% endfor %}
 ];
@@ -599,6 +655,12 @@ function openCreateRow(opts) {
   creatingRow = true;
   document.getElementById('btn-new-order').disabled = true;
   currentDraftId = (opts && opts.editingId) || null;
+  // Reset delivery/discount to defaults for a brand-new order so a stale value
+  // from a previously-edited order doesn't carry over.
+  if (!currentDraftId) {
+    var md0 = document.getElementById('modal-delivery'); if (md0) md0.value = '7';
+    var mdi0 = document.getElementById('modal-discount'); if (mdi0) mdi0.value = '0';
+  }
   lastSaveAt = null;
   pendingSavePayload = null;
   setSaveStatus(currentDraftId ? 'saved' : 'hide', currentDraftId ? 'Brouillon chargé' : '');
@@ -608,7 +670,7 @@ function openCreateRow(opts) {
   tr.className = 'create-row';
   tr.id = 'create-row';
   tr.innerHTML = `
-    <td><button class="cancel-btn" onclick="cancelCreateRow()">×</button></td>
+    <td><button class="cancel-btn" onclick="cancelCreateRow()" title="Fermer (garder le brouillon)">×</button><button class="discard-btn" onclick="discardCreateRow()" title="Supprimer ce brouillon (annuler la commande)" style="background:transparent;border:none;cursor:pointer;font-size:15px;margin-left:4px;opacity:0.7;">🗑</button></td>
     <td class="muted">${currentDraftId ? '#' + currentDraftId : '—'}</td>
     <td>
       <select id="cr-page" onchange="onPagePicked(this.value)" required>
@@ -649,7 +711,7 @@ function openCreateRow(opts) {
     const existing = tbody.querySelector(`tr[data-order-id="${currentDraftId}"]`);
     if (existing) {
       replacedOriginalHtml = existing.outerHTML;
-      existing.replaceWith(tr);
+      window._allowDraftRemoval = true; existing.replaceWith(tr); window._allowDraftRemoval = false;
     } else {
       tbody.insertBefore(tr, tbody.firstChild);
     }
@@ -729,6 +791,26 @@ function openCreateRow(opts) {
     const el = document.getElementById(id);
     if (el) el.addEventListener('blur', () => autoSaveDraft(id));
   });
+
+  // Diagnostic + guard: catch anything that removes the create-row while the
+  // user is actively editing, so a stray remove() can't make the row vanish.
+  // We mark the row as "editing active"; only explicit close/cancel/confirm
+  // (which set _allowDraftRemoval=true) may remove it.
+  try {
+    const crEl = document.getElementById('create-row');
+    if (crEl && !crEl._removeGuarded) {
+      crEl._removeGuarded = true;
+      window._allowDraftRemoval = false;
+      const origRemove = crEl.remove.bind(crEl);
+      crEl.remove = function() {
+        if (!window._allowDraftRemoval) {
+          console.warn('[order] BLOCKED unexpected create-row removal', new Error().stack);
+          return; // refuse to vanish while editing
+        }
+        return origRemove();
+      };
+    }
+  } catch (_) {}
   // Init the unified region/delegation picker
   initLocationPicker();
 
@@ -753,6 +835,18 @@ function openCreateRow(opts) {
         // Hold focus until valid — refuse to let them leave
         setTimeout(() => phoneEl.focus(), 0);
         setSaveStatus('error', `Téléphone : ${cleaned.length} chiffre(s), 8 requis`);
+      } else if (cleaned.length === 8) {
+        checkDuplicatePhone(cleaned);
+      }
+    });
+    // Also check as soon as 8 digits are typed (don't wait for blur).
+    phoneEl.addEventListener('input', () => {
+      const cleaned = cleanPhone(phoneEl.value);
+      if (cleaned.length === 8) {
+        clearTimeout(window._dupCheckTimer);
+        window._dupCheckTimer = setTimeout(() => checkDuplicatePhone(cleaned), 350);
+      } else {
+        removeDupWarning();
       }
     });
   }
@@ -803,6 +897,12 @@ function _outsideClickHandler(ev) {
   if (ev.target.closest('.status-menu')) return;
   // Don't close if click is inside the location dropdown
   if (ev.target.closest('.loc-dropdown')) return;
+  // Don't close if click is inside the offer search dropdown (it's position:fixed
+  // so it lives outside the create-row in the DOM, but is logically part of it).
+  if (ev.target.closest('.offer-list')) return;
+  if (ev.target.closest('.offer-search')) return;
+  // Any element explicitly marked to keep the draft open.
+  if (ev.target.closest('[data-keep-draft-open]')) return;
   // Check phone validity — only close if empty or exactly 8 digits
   const phoneEl = document.getElementById('cr-phone');
   if (phoneEl) {
@@ -834,16 +934,23 @@ function _outsideClickHandler(ev) {
 
 // Close the create row WITHOUT discarding the draft (it stays in DB).
 async function closeDraftPanel() {
-  // If we have a draft saved in DB, refresh its row in the list before closing.
-  // This way the user sees the up-to-date Articles, Region, Total, etc. without
-  // having to reload the whole page.
-  const draftIdToRefresh = currentDraftId;
-  // Force a final autosave to make sure Order.total is up-to-date in DB,
-  // since the backend recalculates total on every upsert. Without this, opening
-  // and immediately closing a draft would leave it with stale (often 0) total.
-  if (draftIdToRefresh && modalOffers.length > 0) {
-    try { await autoSaveDraft('close'); } catch(_) {}
+  window._allowDraftRemoval = true;
+  // Wait for any in-flight autosave to finish so currentDraftId is set.
+  let _guard = 0;
+  while (saveInFlight && _guard < 40) { await new Promise(r => setTimeout(r, 50)); _guard++; }
+  // Always run a final autosave before closing so the draft is persisted AND
+  // currentDraftId is set — even if the operator only filled page + phone (no
+  // articles). Without this, closing too quickly left the row unsaved in the
+  // view (it only reappeared after a full page refresh).
+  try { await autoSaveDraft('close'); } catch(_) {}
+  // Drain any queued save too.
+  while (saveInFlight && _guard < 80) { await new Promise(r => setTimeout(r, 50)); _guard++; }
+  if (pendingSavePayload) {
+    pendingSavePayload = null;
+    try { await autoSaveDraft('close-queued'); } catch(_) {}
+    while (saveInFlight && _guard < 120) { await new Promise(r => setTimeout(r, 50)); _guard++; }
   }
+  const draftIdToRefresh = currentDraftId;
   document.removeEventListener('mousedown', _outsideClickHandler, true);
   document.getElementById('cr-row-error-tr')?.remove();
   document.getElementById('exchange-banner')?.remove();
@@ -868,6 +975,7 @@ async function closeDraftPanel() {
 // Fetch the latest draft data, build a fresh order row, and put it where the
 // create-row was. This preserves the row's vertical position in the list.
 async function replaceCreateRowWithRefreshedRow(orderId) {
+  window._allowDraftRemoval = true;
   const createRow = document.getElementById('create-row');
   let data;
   try {
@@ -933,6 +1041,12 @@ function buildOrderRowHtml(o) {
   const articleSummary = (o.article_summary || '—').replace(/</g,'&lt;');
   const pageName = (o.sales_page_name || '—').replace(/</g,'&lt;');
   const total = parseFloat(o.total || '0').toFixed(0);
+  const hasCollected = (o.amount_collected !== null && o.amount_collected !== undefined && o.amount_collected !== '');
+  const collected = hasCollected ? parseFloat(o.amount_collected).toFixed(0) : null;
+  const totalCellHtml = hasCollected
+    ? `<span title="Montant encaissé (Navex)">${collected} DT</span>` +
+      (collected !== total ? `<div class="muted" style="font-size:10px;font-weight:400;" title="Total commande">(${total})</div>` : '')
+    : `${total} DT`;
   const statusDisplay = (o.status_display || '').replace(/</g,'&lt;');
   const created = o.created_at || '';
 
@@ -940,12 +1054,11 @@ function buildOrderRowHtml(o) {
   // Editable = everything except confirmée / livrée (and anything already
   // pushed to Navex, which carries a bordereau). Mirrors the backend
   // _is_draft_editable check so the UI matches what the server allows.
-  const lockedStatuses = ['confirmee', 'livree', 'payee', 'en_cours', 'au_magasin', 'returning', 'returned'];
-  const isEditable = !lockedStatuses.includes(o.status) && !o.bordereau_barcode;
-  const convBtn = `<button class="conv-btn" onclick="openConversation(event, ${o.id})" title="Voir la conversation" style="margin-left:6px;border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;opacity:0.7;">💬</button>`;
-  const idCell = (isEditable
+  const editableStatuses = ['non_confirmee', 'injoignable', 'pas_serieux', 'rappeler_plus_tard'];
+  const isEditable = editableStatuses.includes(o.status) && !o.bordereau_barcode;
+  const idCell = isEditable
     ? `<a class="row-link" href="javascript:void(0)" onclick="editOrder(${o.id})" title="Modifier le brouillon">#${o.id} <span style="font-size:10px;opacity:0.7;">✎</span></a>`
-    : `<a class="row-link" href="/sales-orders/${o.id}/">#${o.id}</a>`) + convBtn;
+    : `<a class="row-link" href="/sales-orders/${o.id}/">#${o.id}</a>`;
 
   const villeBlock = ville ? ` · ${ville}` : '';
   const addressBlock = address ? `<div class="muted" style="font-size:11px;">${address.length > 50 ? address.slice(0,50)+'…' : address}</div>` : '';
@@ -962,21 +1075,17 @@ function buildOrderRowHtml(o) {
     ? `<span class="scheduled-badge">📅 ${scheduledDisplay}</span>`
     : created;
 
-  return `<tr data-order-id="${o.id}">
+  return `<tr data-order-id="${o.id}"${(o.is_exchange || o.exchange_of_id) ? ' class="exchange-row"' : ''}>
     <td>${idCell}</td>
     <td><span class="date-cell" data-order-id="${o.id}" data-scheduled="${scheduled}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">${dateCellInner}</span></td>
-    <td>
-      <div style="display:flex;align-items:center;gap:5px;">
-        <span>${pageName}</span>
-        <button onclick="toggleStickyNote(event, ${o.id})" title="Note" style="border:none;background:rgba(245,200,35,0.18);color:#d9a300;width:18px;height:18px;border-radius:5px;cursor:pointer;font-size:13px;line-height:1;padding:0;font-weight:700;">+</button>
-      </div>
-      <div class="sticky-note" id="note-${o.id}" data-order-id="${o.id}" style="margin-top:5px;${o.status_note ? '' : 'display:none;'}">
-        <textarea class="sticky-note-input" onblur="saveStickyNote(${o.id})" placeholder="Écrire une note…" style="width:135px;min-height:42px;background:#fff8d6;border:0.5px solid #e6cf6a;border-radius:6px;color:#5a4a00;font-size:11px;padding:5px 6px;resize:vertical;font-family:inherit;">${(o.status_note||'').replace(/</g,'&lt;')}</textarea>
+    <td>${pageName}
+      <div class="note-wrap">
+        ${(o.status === 'injoignable' || o.status === 'rappeler_plus_tard') ? `<button class="note-icon ${o.status_note ? 'has-note' : ''}" onclick="openNoteEditor(this, ${o.id})" title="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') + (o.status_note_at ? ' · ' + o.status_note_at : '') : 'Ajouter une note'}" data-note="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : ''}">${o.status_note ? `<span class="note-text">${String(o.status_note).replace(/</g,'&lt;')}</span>${o.status_note_at ? `<span class="note-time"> · ${o.status_note_at}</span>` : ''}` : '<span class="note-empty">+ note</span>'}</button>` : ((o.status === 'non_confirmee' || o.status === 'annulee') ? (o.status_note ? `<button class="note-icon has-note" onclick="openNoteEditor(this, ${o.id})" title="${String(o.status_note).replace(/"/g,'&quot;') + (o.status_note_at ? ' · ' + o.status_note_at : '')}" data-note="${String(o.status_note).replace(/"/g,'&quot;')}"><span class="note-text">${String(o.status_note).replace(/</g,'&lt;')}</span>${o.status_note_at ? `<span class="note-time"> · ${o.status_note_at}</span>` : ''}</button>` : `<button class="note-plus" onclick="openNoteEditor(this, ${o.id})" title="Ajouter une note" data-note="">＋ note</button>`) : '')}
       </div>
     </td>
     <td>
       <div>${name}</div>
-      <div class="muted" style="font-size:11px;">${phone}${(o.phone_order_count && o.phone_order_count > 1) ? ` <span onclick="searchByPhone(event, '${phone}')" title="Voir les ${o.phone_order_count} commandes de ce numéro" style="cursor:pointer;display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;">${o.phone_order_count} cmd</span>` : ''}</div>
+      <div class="muted" style="font-size:11px;">${phone}${(o.phone_order_count && o.phone_order_count > 1) ? ` <span onclick="searchPhone('${phone}', event)" title="Voir les commandes en système de ce numéro" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;cursor:pointer;">${o.phone_order_count} cmd</span>${(o.combined_delivered || o.combined_returned) ? ` <span title="Livré / Retour (historique inclus, annulé exclu)" style="display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;margin-left:2px;${o.combined_returned > o.combined_delivered ? 'background:rgba(220,80,80,0.15);color:#dc5050;' : 'background:rgba(26,158,110,0.15);color:#1a9e6e;'}">✓${o.combined_delivered} / ↩${o.combined_returned}</span>` : ''}` : ''}</div>
       ${phone2Block}
     </td>
     <td>
@@ -984,7 +1093,7 @@ function buildOrderRowHtml(o) {
       ${addressBlock}
     </td>
     <td class="muted">${articleSummary}</td>
-    <td style="text-align:right;font-weight:500;">${total} DT</td>
+    <td style="text-align:right;font-weight:500;">${totalCellHtml}</td>
     <td>${o.status === 'annulee'
         ? `<span class="status status-annulee">${statusDisplay}</span>`
         : `<button class="status status-${o.status} status-btn" onclick="openStatusMenu(this, ${o.id}, '${o.status}', false)" title="Changer le statut">${statusDisplay} <span style="opacity:0.6;">▾</span></button>`
@@ -1002,10 +1111,76 @@ function cleanPhone(s) {
   return (s || '').replace(/\D/g, '');
 }
 
+async function discardCreateRow() {
+  // Delete the draft entirely (operator abandons the order, e.g. duplicate).
+  if (!confirm('Supprimer ce brouillon ? La commande ne sera pas enregistrée.')) return;
+  // Cancel any pending autosave so it can't recreate the draft after delete.
+  pendingSavePayload = null;
+  const idToDelete = currentDraftId;
+  document.removeEventListener('mousedown', _outsideClickHandler, true);
+  if (idToDelete) {
+    try {
+      await fetch(`/api/sales-orders/${idToDelete}/discard/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+      });
+    } catch (_) {}
+  }
+  document.getElementById('cr-row-error-tr')?.remove();
+  document.getElementById('exchange-banner')?.remove();
+  document.getElementById('create-row')?.remove();
+  creatingRow = false;
+  pickedPageId = null;
+  offersForPage = [];
+  modalOffers = [];
+  currentDraftId = null;
+  lastSaveAt = null;
+  pendingSavePayload = null;
+  setSaveStatus('hide');
+  window.location.reload();
+}
+
+async function checkDuplicatePhone(phone) {
+  if (!phone || phone.length !== 8) return;
+  try {
+    const data = await fetchJson(`/api/sales-orders/search/?q=${encodeURIComponent(phone)}`);
+    const results = (data && data.results) || [];
+    // Exclude the draft we're currently editing from the match count.
+    const others = results.filter(o => !currentDraftId || o.id != currentDraftId);
+    if (others.length > 0) {
+      showDupWarning(phone, others);
+    } else {
+      removeDupWarning();
+    }
+  } catch (_) { /* silent */ }
+}
+
+function showDupWarning(phone, orders) {
+  removeDupWarning();
+  const phoneEl = document.getElementById('cr-phone');
+  if (!phoneEl) return;
+  // Summarize the existing orders (statuses).
+  const n = orders.length;
+  const statuses = {};
+  orders.forEach(o => { const s = o.status_display || o.status || '?'; statuses[s] = (statuses[s]||0)+1; });
+  const summary = Object.entries(statuses).map(([s,c]) => `${c} ${s}`).join(', ');
+  const div = document.createElement('div');
+  div.id = 'dup-phone-warning';
+  div.style.cssText = 'margin-top:6px;padding:7px 10px;background:rgba(245,166,35,0.15);border:0.5px solid rgba(245,166,35,0.5);border-radius:8px;font-size:11px;color:#b8780f;font-weight:600;cursor:pointer;';
+  div.innerHTML = `⚠ Ce numéro a déjà ${n} commande${n>1?'s':''} (${summary}). <u>Voir</u>`;
+  div.onclick = () => { try { searchPhone(phone); } catch(_){} };
+  phoneEl.insertAdjacentElement('afterend', div);
+}
+
+function removeDupWarning() {
+  document.getElementById('dup-phone-warning')?.remove();
+}
+
 async function cancelCreateRow() {
   // Same as closeDraftPanel but explicitly called by the × button.
   const draftIdToRefresh = currentDraftId;
   if (draftIdToRefresh && modalOffers.length > 0) {
+    window._allowDraftRemoval = true;
     try { await autoSaveDraft('cancel'); } catch(_) {}
   }
   document.removeEventListener('mousedown', _outsideClickHandler, true);
@@ -1239,7 +1414,6 @@ function updateArticlesSummary() {
 }
 
 function openArticlesModal() {
-  if (offersForPage.length === 0) { alert("Aucune offre disponible pour cette page."); return; }
   document.getElementById('modal-error').style.display = 'none';
   document.getElementById('articles-modal').classList.add('show');
   if (modalOffers.length === 0) addOfferBlock();
@@ -1264,14 +1438,9 @@ async function openConversation(ev, orderId) {
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
     });
     const data = await res.json();
-    if (data.status === 'ok' && (data.conversation_text || (data.messages && data.messages.length))) {
+    if (data.status === 'ok' && data.conversation_text) {
       body.style.color = '';
-      if (data.messages && data.messages.length) {
-        body.innerHTML = renderChatBubblesStructured(data.messages);
-      } else {
-        body.innerHTML = renderChatBubbles(data.conversation_text);
-      }
-      body.scrollTop = body.scrollHeight;
+      body.textContent = data.conversation_text;
       meta.textContent = data.updated_at ? ('Capturée le ' + data.updated_at + ' — peut ne pas inclure les messages plus récents.') : '';
     } else {
       body.style.color = 'var(--muted)';
@@ -1282,83 +1451,13 @@ async function openConversation(ev, orderId) {
     body.textContent = "Erreur réseau lors du chargement de la conversation.";
   }
 }
-
-function _bubbleHtml(isPage, innerHtml) {
-  const align = isPage ? 'flex-end' : 'flex-start';
-  const bg = isPage ? '#0084ff' : 'var(--surface2,#262626)';
-  const color = isPage ? '#fff' : 'var(--text,#e8e8e8)';
-  const radius = isPage ? '16px 16px 4px 16px' : '16px 16px 16px 4px';
-  return `<div style="display:flex;justify-content:${align};">`
-       + `<div style="max-width:75%;background:${bg};color:${color};`
-       + `padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.4;`
-       + `word-wrap:break-word;white-space:normal;">${innerHtml}</div></div>`;
-}
-
-function renderChatBubblesStructured(messages) {
-  const esc = (s) => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const linkify = (s) => esc(s).replace(
-    /(https?:\/\/[^\s<]+)/g,
-    '<a href="$1" target="_blank" style="color:inherit;text-decoration:underline;">$1</a>'
-  );
-  let html = '<div style="display:flex;flex-direction:column;gap:6px;padding:4px 2px;">';
-  for (const m of messages) {
-    const isPage = (m.from === 'page');
-    let inner = '';
-    if (m.text) inner += linkify(m.text).replace(/\n/g,'<br>');
-    for (const url of (m.images || [])) {
-      inner += `<a href="${url}" target="_blank"><img src="${url}" style="max-width:180px;border-radius:10px;margin-top:${inner?'6px':'0'};display:block;"></a>`;
-    }
-    if (!inner) continue;
-    html += _bubbleHtml(isPage, inner);
-  }
-  html += '</div>';
-  return html;
-}
-
-function renderChatBubbles(text) {
-  // The stored text is lines like "Client: ..." (customer) and "Page: ..."
-  // (our replies). Render Messenger-style: customer left, page right.
-  const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const lines = (text || '').split('\n');
-  let html = '<div style="display:flex;flex-direction:column;gap:6px;padding:4px 2px;">';
-  let curWho = null, curText = [];
-  const flush = () => {
-    if (curText.length === 0) return;
-    const isPage = (curWho === 'page');
-    const msg = esc(curText.join('\n')).replace(/\n/g,'<br>');
-    const align = isPage ? 'flex-end' : 'flex-start';
-    const bg = isPage ? '#0084ff' : 'var(--surface2,#262626)';
-    const color = isPage ? '#fff' : 'var(--text,#e8e8e8)';
-    const radius = isPage ? '16px 16px 4px 16px' : '16px 16px 16px 4px';
-    html += `<div style="display:flex;justify-content:${align};">`
-          + `<div style="max-width:75%;background:${bg};color:${color};`
-          + `padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.4;`
-          + `word-wrap:break-word;white-space:normal;">${msg}</div></div>`;
-    curText = [];
-  };
-  for (const raw of lines) {
-    const line = raw; // keep as-is
-    let m = line.match(/^\s*(Client|Page)\s*:\s?(.*)$/);
-    if (m) {
-      const who = (m[1] === 'Page') ? 'page' : 'client';
-      if (who !== curWho) { flush(); curWho = who; }
-      curText.push(m[2]);
-    } else if (curWho) {
-      // continuation line of the current message
-      curText.push(line);
-    }
-  }
-  flush();
-  html += '</div>';
-  return html || '<div class="muted">Conversation vide.</div>';
-}
 function closeConversationModal() { document.getElementById('conversation-modal').classList.remove('show'); }
 document.addEventListener('DOMContentLoaded', function() {
   var cm = document.getElementById('conversation-modal');
   if (cm) { cm.addEventListener('click', function(ev) { if (ev.target === cm) closeConversationModal(); }); }
 });
 
-function addOfferBlock() { modalOffers.push({ offer_id: null, quantity: 1, products: [] }); renderOfferBlocks(); }
+function addOfferBlock() { modalOffers.push({ offer_id: null, quantity: 1, products: [], use_all: false }); renderOfferBlocks(); }
 function removeOfferBlock(idx) { modalOffers.splice(idx, 1); renderOfferBlocks(); }
 
 function renderOfferBlocks() {
@@ -1366,22 +1465,83 @@ function renderOfferBlocks() {
   wrap.innerHTML = modalOffers.map((mo, idx) => `
     <div class="offer-block">
       <div class="offer-pick-row">
-        <div>
-          <label>Offre</label>
-          <select onchange="onOfferPicked(${idx}, this.value)">
-            <option value="">— Choisir —</option>
-            ${offersForPage.map(o => `<option value="${o.id}" ${mo.offer_id == o.id ? 'selected' : ''}>${o.name} — ${o.bundle_price} DT</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <label>Qté</label>
-          <input type="number" min="1" value="${mo.quantity}" onchange="modalOffers[${idx}].quantity=Math.max(1,parseInt(this.value)||1);recalcModalTotal()">
+        <div style="position:relative;">
+          <label>Offre <span style="float:right;font-weight:400;font-size:10px;cursor:pointer;color:var(--blue);" onclick="toggleAllOffers(${idx})">${mo.use_all ? '↩ Page actuelle' : '＋ Autres pages'}</span></label>
+          <input type="text" class="offer-search" autocomplete="off"
+                 placeholder="🔍 Rechercher une offre..."
+                 value="${mo.offer_id ? (offerLabel(mo.offer_id, mo.use_all)) : (mo.search || '')}"
+                 oninput="onOfferSearch(${idx}, this.value)"
+                 onfocus="onOfferSearch(${idx}, this.value); this.select();"
+                 onblur="setTimeout(()=>closeOfferList(${idx}), 200)">
+          <div class="offer-list" id="offer-list-${idx}" style="display:none;"></div>
         </div>
         <div>${modalOffers.length > 1 ? `<button class="remove-offer-btn" onclick="removeOfferBlock(${idx})">×</button>` : ''}</div>
       </div>
       <div id="offer-products-${idx}">${renderOfferProducts(idx)}</div>
     </div>
   `).join('');
+}
+
+function offerLabel(offerId, useAll) {
+  const list = useAll ? allOffers : offersForPage;
+  const o = list.find(x => x.id == offerId) || offersForPage.find(x => x.id == offerId) || allOffers.find(x => x.id == offerId);
+  return o ? `${o.name} — ${o.bundle_price} DT` : '';
+}
+
+function onOfferSearch(idx, q) {
+  const mo = modalOffers[idx];
+  mo.search = q;
+  const list = mo.use_all ? allOffers : offersForPage;
+  const ql = q.trim().toLowerCase();
+  const matches = ql ? list.filter(o => o.name.toLowerCase().includes(ql)) : list;
+  const box = document.getElementById('offer-list-' + idx);
+  if (!box) return;
+  if (matches.length === 0) {
+    box.innerHTML = '<div class="offer-list-item muted">Aucune offre</div>';
+  } else {
+    box.innerHTML = matches.slice(0, 50).map(o =>
+      `<div class="offer-list-item" onmousedown="pickOffer(${idx}, ${o.id})">${o.name} — ${o.bundle_price} DT</div>`
+    ).join('');
+  }
+  // Position the fixed dropdown right under the search input so the modal's
+  // overflow doesn't clip it.
+  const input = box.previousElementSibling;
+  if (input) {
+    const r = input.getBoundingClientRect();
+    box.style.left = r.left + 'px';
+    box.style.top = (r.bottom + 3) + 'px';
+    box.style.width = r.width + 'px';
+  }
+  box.style.display = 'block';
+}
+
+function pickOffer(idx, offerId) {
+  closeOfferList(idx);
+  modalOffers[idx].search = '';
+  onOfferPicked(idx, offerId);
+}
+
+function closeOfferList(idx) {
+  const box = document.getElementById('offer-list-' + idx);
+  if (box) box.style.display = 'none';
+}
+
+let allOffers = [];
+async function toggleAllOffers(idx) {
+  const mo = modalOffers[idx];
+  if (!mo.use_all) {
+    // Switching to all-pages: load the full list once.
+    if (allOffers.length === 0) {
+      try {
+        const data = await fetchJson('/api/offers-all/');
+        allOffers = data.offers || [];
+      } catch (e) { alert('Erreur de chargement des offres.'); return; }
+    }
+    mo.use_all = true;
+  } else {
+    mo.use_all = false;
+  }
+  renderOfferBlocks();
 }
 
 function renderOfferProducts(idx) {
@@ -1430,11 +1590,18 @@ function renderOfferProducts(idx) {
 async function onOfferPicked(idx, offerId) {
   modalOffers[idx].offer_id = offerId ? parseInt(offerId) : null;
   modalOffers[idx].products = [];
-  if (offerId && !offerCache[offerId]) {
+  // Cache key includes the page so the per-page price is correct (an offer can
+  // be 89 on one page and 79 on another).
+  const cacheKey = offerId ? `${offerId}@${pickedPageId || ''}` : null;
+  if (offerId && !offerCache[cacheKey]) {
     try {
-      const data = await fetchJson(`/api/offers/${offerId}/`);
-      if (data.status === 'ok') offerCache[offerId] = data.offer;
+      let url = `/api/offers/${offerId}/`;
+      if (pickedPageId) url += `?page=${encodeURIComponent(pickedPageId)}`;
+      const data = await fetchJson(url);
+      if (data.status === 'ok') { offerCache[cacheKey] = data.offer; offerCache[offerId] = data.offer; }
     } catch (e) { alert('Erreur: ' + e.message); }
+  } else if (offerId && offerCache[cacheKey]) {
+    offerCache[offerId] = offerCache[cacheKey];
   }
   if (offerId && offerCache[offerId]) {
     modalOffers[idx].products = offerCache[offerId].products.map(p => ({
@@ -1582,12 +1749,22 @@ async function submitNewOrder() {
       btn.textContent = '✓ Envoyé';
       // Force unload all editor state before reload
       try {
+        window._allowDraftRemoval = true;
         document.removeEventListener('mousedown', _outsideClickHandler, true);
         document.getElementById('create-row')?.remove();
         document.getElementById('exchange-banner')?.remove();
         document.getElementById('cr-row-error-tr')?.remove();
       } catch(_) {}
-      // Reload to refresh the list
+      // Reload to refresh the list. Strip ?create_exchange so the exchange
+      // editor doesn't auto-reopen after the reload.
+      try {
+        const u = new URL(window.location.href);
+        if (u.searchParams.has('create_exchange')) {
+          u.searchParams.delete('create_exchange');
+          window.location.replace(u.pathname + u.search);
+          return;
+        }
+      } catch(_) {}
       window.location.reload();
       return;
     } else {
@@ -1636,6 +1813,12 @@ async function editOrder(orderId) {
       document.getElementById('cr-loc-search').value = '';
     }
     document.getElementById('cr-address').value = o.address || '';
+    // Restore delivery fee and discount from the order (avoid leaking a stale
+    // value from a previously-opened order into this one).
+    var mdEl = document.getElementById('modal-delivery');
+    if (mdEl) mdEl.value = (o.delivery_fee !== undefined && o.delivery_fee !== null && o.delivery_fee !== '') ? o.delivery_fee : '7';
+    var mdiscEl = document.getElementById('modal-discount');
+    if (mdiscEl) mdiscEl.value = (o.discount !== undefined && o.discount !== null && o.discount !== '') ? o.discount : '0';
     // Restore offers
     modalOffers = o.offers || [];
     // Pre-fetch each offer's detail into offerCache so the modal can re-render
@@ -1674,13 +1857,72 @@ document.addEventListener('click', (e) => {
   }
 });
 
+function openNoteEditor(btn, orderId) {
+  // close any existing popup
+  const existing = document.querySelector('.note-pop');
+  if (existing) existing.remove();
+  const current = btn.getAttribute('data-note') || '';
+  const pop = document.createElement('div');
+  pop.className = 'note-pop';
+  pop.innerHTML = `
+    <textarea placeholder="Note / raison...">${current.replace(/</g,'&lt;')}</textarea>
+    <div class="note-actions">
+      <button class="cancel">Annuler</button>
+      <button class="save">Enregistrer</button>
+    </div>`;
+  document.body.appendChild(pop);
+  const r = btn.getBoundingClientRect();
+  pop.style.left = (r.left + window.scrollX) + 'px';
+  pop.style.top = (r.bottom + window.scrollY + 4) + 'px';
+  // keep it on screen
+  const pr = pop.getBoundingClientRect();
+  if (pr.right > window.innerWidth - 8) {
+    pop.style.left = (window.innerWidth - pr.width - 8 + window.scrollX) + 'px';
+  }
+  const ta = pop.querySelector('textarea');
+  ta.focus();
+  const close = () => { pop.remove(); document.removeEventListener('click', onDoc, true); };
+  const onDoc = (e) => { if (!pop.contains(e.target) && e.target !== btn) close(); };
+  setTimeout(() => document.addEventListener('click', onDoc, true), 0);
+  pop.querySelector('.cancel').addEventListener('click', close);
+  pop.querySelector('.save').addEventListener('click', async () => {
+    const note = ta.value.trim();
+    try {
+      const res = await fetch(`/api/sales-orders/${orderId}/note/`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken()},
+        body: JSON.stringify({note}),
+      });
+      const data = await res.json();
+      if (data.status === 'ok') {
+        btn.setAttribute('data-note', data.note);
+        btn.setAttribute('title', (data.note || 'Ajouter une note') + (data.note && data.note_at ? ' · ' + data.note_at : ''));
+        btn.className = 'note-icon' + (data.note ? ' has-note' : '');
+        btn.innerHTML = data.note
+          ? `<span class="note-text">${String(data.note).replace(/</g,'&lt;')}</span>${data.note_at ? `<span class="note-time"> · ${data.note_at}</span>` : ''}`
+          : '<span class="note-empty">+ note</span>';
+        close();
+      } else {
+        alert(data.message || 'Erreur.');
+      }
+    } catch (e) { alert('Erreur réseau.'); }
+  });
+}
+
 function openStatusMenu(btn, orderId, currentStatus, hasBordereau) {
   closeStatusMenu();
   // Decide which transitions are allowed (mirror server-side rules)
   let options = [];
-  if (hasBordereau) {
-    // Confirmée with barcode → only annulation allowed
+  // Statuses that are already in Navex's hands or finalised — no manual status
+  // change from here (can't cancel an order that's en route, delivered, paid,
+  // returning or returned).
+  const lockedStatuses = ['en_cours', 'au_magasin', 'returning', 'returned', 'livree', 'payee', 'supprime_navex', 'annulee'];
+  if (currentStatus === 'confirmee') {
+    // Confirmée (sent to Navex) → only annulation allowed
     options = [{label: '❌ Annuler la commande', cls: 'danger', action: 'cancel'}];
+  } else if (lockedStatuses.includes(currentStatus)) {
+    // Locked: nothing to do from the status menu
+    options = [];
   } else if (currentStatus === 'pas_serieux') {
     options = [{label: '❌ Annuler', cls: 'danger', action: 'cancel'}];
   } else {
@@ -1688,6 +1930,10 @@ function openStatusMenu(btn, orderId, currentStatus, hasBordereau) {
     options = [
       {label: '✓ Confirmée (envoie à Navex)', cls: 'confirm', action: 'confirm'},
     ];
+    // From injoignable / rappeler, allow returning to Non confirmée.
+    if (currentStatus === 'injoignable' || currentStatus === 'rappeler_plus_tard') {
+      options.push({label: '↩ Remettre en Non confirmée', action: 'set:non_confirmee'});
+    }
     if (currentStatus !== 'rappeler_plus_tard') options.push({label: '📞 Rappeler plus tard', action: 'set:rappeler_plus_tard'});
     if (currentStatus !== 'injoignable')        options.push({label: '📵 Injoignable',        action: 'set:injoignable'});
     if (currentStatus !== 'pas_serieux')        options.push({label: '🚫 Pas sérieux',        action: 'set:pas_serieux'});
@@ -1695,10 +1941,16 @@ function openStatusMenu(btn, orderId, currentStatus, hasBordereau) {
     options.push({label: '❌ Annuler', cls: 'danger', action: 'cancel'});
   }
 
+  if (options.length === 0) {
+    // Nothing actionable — show a small disabled note instead of an empty menu.
+    options = [{label: 'Aucune action disponible', cls: 'muted', disabled: true}];
+  }
+
   const menu = document.createElement('div');
   menu.className = 'status-menu';
   menu.innerHTML = options.map(o => {
     if (o.type === 'sep') return '<div class="sep"></div>';
+    if (o.disabled) return `<div class="${o.cls || ''}" style="padding:8px 12px;font-size:12px;opacity:0.6;cursor:default;">${o.label}</div>`;
     return `<button class="${o.cls || ''}" data-action="${o.action}">${o.label}</button>`;
   }).join('');
   document.body.appendChild(menu);
@@ -1718,23 +1970,29 @@ function openStatusMenu(btn, orderId, currentStatus, hasBordereau) {
       } else if (action === 'cancel') {
         openInlineCancelModal(orderId, btn);
       } else if (action.startsWith('set:')) {
-        await sendStatusChange(orderId, action.slice(4), null, btn);
+        const newStatus = action.slice(4);
+        // These statuses require a note explaining the reason.
+        const noteRequired = ['injoignable', 'rappeler_plus_tard', 'pas_serieux'];
+        if (noteRequired.includes(newStatus)) {
+          const note = prompt('Raison / note (obligatoire) :', '');
+          if (note === null) return;            // cancelled
+          if (!note.trim()) {
+            alert('Une note est obligatoire pour ce statut.');
+            return;
+          }
+          await sendStatusChange(orderId, newStatus, null, btn, note.trim());
+        } else {
+          await sendStatusChange(orderId, newStatus, null, btn);
+        }
       }
     });
   });
 }
 
-async function sendStatusChange(orderId, newStatus, cancelReason, originBtn) {
+async function sendStatusChange(orderId, newStatus, cancelReason, originBtn, statusNote) {
   const body = {status: newStatus};
   if (cancelReason) body.cancel_reason = cancelReason;
-  // These statuses require a note — ask for it up front.
-  const noteRequired = ['injoignable', 'rappeler_plus_tard', 'pas_serieux'];
-  if (noteRequired.includes(newStatus)) {
-    const note = prompt('Ajoutez une note pour ce statut :', '');
-    if (note === null) return;            // user cancelled
-    if (!note.trim()) { alert('Une note est obligatoire pour ce statut.'); return; }
-    body.status_note = note.trim();
-  }
+  if (statusNote) body.status_note = statusNote;
   try {
     const res = await fetch(`/api/sales-orders/${orderId}/status/`, {
       method: 'POST',
@@ -1762,41 +2020,6 @@ async function sendStatusChange(orderId, newStatus, cancelReason, originBtn) {
       alert(data.message || 'Erreur');
     }
   } catch (e) { alert('Erreur réseau : ' + e.message); }
-}
-
-// Sticky note: yellow + under the page name reveals an inline editable note.
-function toggleStickyNote(ev, orderId) {
-  if (ev) ev.stopPropagation();
-  const wrap = document.getElementById(`note-${orderId}`);
-  if (!wrap) return;
-  if (wrap.style.display === 'none') {
-    wrap.style.display = 'block';
-    const ta = wrap.querySelector('.sticky-note-input');
-    if (ta) ta.focus();
-  } else {
-    // If empty, hide it again; if it has text, keep showing.
-    const ta = wrap.querySelector('.sticky-note-input');
-    if (ta && !ta.value.trim()) wrap.style.display = 'none';
-  }
-}
-
-async function saveStickyNote(orderId) {
-  const wrap = document.getElementById(`note-${orderId}`);
-  if (!wrap) return;
-  const ta = wrap.querySelector('.sticky-note-input');
-  if (!ta) return;
-  const note = ta.value.trim();
-  try {
-    const res = await fetch(`/api/sales-orders/${orderId}/note/`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken()},
-      body: JSON.stringify({note: note}),
-    });
-    const data = await res.json();
-    if (data.status !== 'ok') { alert(data.message || 'Erreur'); return; }
-    // Hide the note box if it was cleared.
-    if (!note) wrap.style.display = 'none';
-  } catch (e) { /* silent: keep the text so the user can retry */ }
 }
 
 // Inline cancel: opens a small modal for picking the reason (same 3 reasons)
@@ -1860,10 +2083,12 @@ async function syncNavex() {
 
 // Auto-open editor for orders that were just "annulé pour changement"
 window.addEventListener('DOMContentLoaded', () => {
+  let _autoOpenedExisting = false;
   try {
     const autoOpenId = sessionStorage.getItem('autoOpenEditOrder');
     if (autoOpenId) {
       sessionStorage.removeItem('autoOpenEditOrder');
+      _autoOpenedExisting = true;
       // Small delay so all init code finishes first
       setTimeout(() => { editOrder(parseInt(autoOpenId)); }, 100);
     }
@@ -1873,7 +2098,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // If the page was opened with ?create_exchange=X, the backend put the source
   // order's data in window.EXCHANGE_SOURCE. Open a pre-filled editor row.
-  if (window.EXCHANGE_SOURCE && window.EXCHANGE_SOURCE.id) {
+  // BUT only if we're not already re-opening an existing order for edit —
+  // otherwise both fire and a duplicate exchange draft gets created.
+  if (!_autoOpenedExisting && window.EXCHANGE_SOURCE && window.EXCHANGE_SOURCE.id) {
     setTimeout(() => { openExchangeEditor(window.EXCHANGE_SOURCE); }, 200);
   }
 });
@@ -1929,7 +2156,8 @@ async function openReturnsModal() {
     for (const it of returnsItemsCache) {
       if (it.is_selected) {
         returnsSelected.set(`${it.variant_id}|${it.size}`, {
-          variant_id: it.variant_id, size: it.size, qty: it.qty
+          variant_id: it.variant_id, size: it.size, qty: it.qty,
+          barcodes: (it.units || []).map(u => u.barcode),
         });
       }
     }
@@ -1987,7 +2215,10 @@ function toggleReturn(key) {
   if (returnsSelected.has(key)) {
     returnsSelected.delete(key);
   } else {
-    returnsSelected.set(key, { variant_id: it.variant_id, size: it.size, qty: it.qty });
+    returnsSelected.set(key, {
+      variant_id: it.variant_id, size: it.size, qty: it.qty,
+      barcodes: (it.units || []).map(u => u.barcode),
+    });
   }
   renderReturnsGrid();
 }
@@ -2139,12 +2370,17 @@ function initSearchBar() {
   });
 }
 
-// Clicking a "N cmd" badge searches all orders from that phone number.
-function searchByPhone(ev, phone) {
-  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+function searchPhone(phone, ev) {
+  if (ev) { ev.stopPropagation(); ev.preventDefault(); }
   const input = document.getElementById('search-input');
-  if (input) { input.value = phone; }
-  runSearch(phone);
+  if (!input) return;
+  const q = String(phone || '').replace(/\D/g, '');
+  if (!q) return;
+  input.value = q;
+  if (_searchTimer) clearTimeout(_searchTimer);
+  input.focus();
+  try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, 0); }
+  runSearch(q);
 }
 
 async function runSearch(q) {
