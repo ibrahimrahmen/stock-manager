@@ -9044,15 +9044,20 @@ def _resolve_region_for_order(order, conv=None):
         "Liste des régions et délégations :\n" + "\n".join(options_lines)
         + "\n\nRéponse :"
     )
-    resp = _gemini_generate(prompt, max_tokens=80, temperature=0.0,
+    resp = _gemini_generate(prompt, max_tokens=512, temperature=0.0,
                             model="gemini-2.5-flash")
     if not resp or resp.strip().upper() == "NONE":
         return
-    m = _re.match(r"REGION:\s*(.+?)\s*\|\s*VILLE:\s*(.+)", resp.strip(), _re.IGNORECASE)
-    if not m:
+    # Parse REGION and VILLE independently so a partial/varied response still
+    # works (e.g. 'REGION: Siliana' with no ville, or different separators).
+    rm = _re.search(r"REGION\s*[:\-]?\s*([^\|\n]+)", resp, _re.IGNORECASE)
+    vm = _re.search(r"VILLE\s*[:\-]?\s*([^\|\n]+)", resp, _re.IGNORECASE)
+    if not rm:
         return
-    region_name = m.group(1).strip()
-    ville_name = m.group(2).strip()
+    region_name = rm.group(1).strip(" :-|")
+    ville_name = vm.group(1).strip(" :-|") if vm else ""
+    if not region_name:
+        return
     # Resolve region (exact then normalized contains).
     region_match = None
     for r in all_regions:
