@@ -289,7 +289,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
         {% for o in orders %}
         <tr data-order-id="{{ o.id }}">
           <td>
-            {% if o.status != 'confirmee' and o.status != 'livree' and not o.bordereau_barcode %}
+            {% if o.status != 'confirmee' and o.status != 'livree' and o.status != 'payee' and o.status != 'en_cours' and o.status != 'au_magasin' and o.status != 'returning' and o.status != 'returned' and not o.bordereau_barcode %}
               <a class="row-link" href="javascript:void(0)" onclick="editOrder({{ o.id }})" title="Modifier le brouillon">#{{ o.id }} <span style="font-size:10px;opacity:0.7;">✎</span></a>
             {% else %}
               <a class="row-link" href="{% url 'order_view' o.pk %}">#{{ o.id }}</a>
@@ -927,7 +927,7 @@ function buildOrderRowHtml(o) {
   // Editable = everything except confirmée / livrée (and anything already
   // pushed to Navex, which carries a bordereau). Mirrors the backend
   // _is_draft_editable check so the UI matches what the server allows.
-  const lockedStatuses = ['confirmee', 'livree'];
+  const lockedStatuses = ['confirmee', 'livree', 'payee', 'en_cours', 'au_magasin', 'returning', 'returned'];
   const isEditable = !lockedStatuses.includes(o.status) && !o.bordereau_barcode;
   const convBtn = `<button class="conv-btn" onclick="openConversation(event, ${o.id})" title="Voir la conversation" style="margin-left:6px;border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;opacity:0.7;">💬</button>`;
   const idCell = (isEditable
