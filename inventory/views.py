@@ -9007,7 +9007,11 @@ def _resolve_region_for_order(order, conv=None):
         return
 
     def _norm(s):
+        import unicodedata as _ud
         s = (s or "").lower().strip()
+        # Strip accents (Gabés -> gabes) for robust matching.
+        s = "".join(c for c in _ud.normalize("NFD", s)
+                    if _ud.category(c) != "Mn")
         return _re.sub(r"[^a-z0-9\u0600-\u06FF]+", "", s)
 
     options_lines = []
@@ -9068,6 +9072,37 @@ def _resolve_region_for_order(order, conv=None):
             if d.region_id == region_match.id and vn and (_norm(d.name) == vn or vn in _norm(d.name) or _norm(d.name) in vn):
                 ville_match = d
                 break
+
+    # ANTI-HALLUCINATION GUARD: only accept the match if the matched region or
+    # delegation name actually appears (fuzzy) in what the customer wrote.
+    # Gemini sometimes invents a region (e.g. defaults to 'Sfax/Jebeniana') when
+    # the address is vague or absent — this rejects those.
+    source_text = _norm((addr or "") + " " + (ville or "") + " " + (convo_text or ""))
+    def _appears(name):
+        n = _norm(name)
+        if not n or len(n) < 3:
+            return False
+        if n in source_text:
+            return True
+        # Match on the DISTINCTIVE PREFIX of the name (first 4-5 chars) to allow
+        # spelling/vowel variants (seliana~siliana, jbenyana~jebeniana) while
+        # avoiding false hits on shared suffixes like '-iana'. A hallucinated
+        # name whose start never appears in the text is rejected.
+        prefix = n[:5] if len(n) >= 5 else n
+        if prefix in source_text:
+            return True
+        # Also try first 4 chars for shorter tolerance.
+        if len(n) >= 4 and n[:4] in source_text:
+            return True
+        return False
+    region_ok = _appears(region_match.name)
+    ville_ok = ville_match and _appears(ville_match.name)
+    if not region_ok and not ville_ok:
+        # Neither the governorate nor the delegation is mentioned anywhere in the
+        # customer's text → almost certainly a hallucinated default. Skip it and
+        # leave the region blank for staff to fill manually.
+        return
+
     order.region = region_match
     if ville_match:
         order.ville = ville_match.name
@@ -9593,11 +9628,12 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
             # Fill address/name if newly available and still empty on the order.
             if data.get("address") and not (order.address or "").strip():
                 order.address = data.get("address")
-            if data.get("city") and not (order.ville or "").strip():
-                order.ville = data.get("city")
             order.save(update_fields=["conversation_text", "conversation_updated_at",
-                                      "address", "ville", "updated_at"])
-            # Resolve region/ville from the free-text address against our list.
+                                      "address", "updated_at"])
+            # Resolve region/ville from the address text against our list, with
+            # an anti-hallucination guard (verified against the conversation).
+            # We do NOT blindly trust Gemini's raw 'city' — the resolver checks
+            # the matched name actually appears in what the customer wrote.
             try:
                 _resolve_region_for_order(order, conv=conv)
             except Exception:
