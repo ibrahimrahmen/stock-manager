@@ -61,6 +61,67 @@ def _get_navex_info(barcode: str):
     return {}
 
 
+def _matched_products_from_order(order) -> list:
+    """Build prediction cards directly from a v2 Order's real line items.
+    This is the ACCURATE source (no fuzzy designation parsing) — products,
+    colors and sizes come straight from what the customer ordered.
+
+    Returns the same card shape as _get_matched_products so the scan page can
+    render them identically. Each line's quantity produces that many cards.
+    """
+    try:
+        from .models import ProductUnit
+        cards = []
+        STATUS_TO_COLOR = {
+            "exact": "green", "plus1": "green", "minus1": "yellow",
+            "plus2": "orange", "minus2": "red", "none": "red",
+        }
+        for line in order.lines.all():
+            product = line.product
+            variant = line.variant
+            size = (line.size or "").strip()
+            qty = line.quantity or 1
+            # Count in-stock units for this product/variant/size.
+            in_stock_count = 0
+            try:
+                qs = ProductUnit.objects.filter(status=ProductUnit.IN_STOCK)
+                if variant is not None:
+                    qs = qs.filter(variant=variant)
+                else:
+                    qs = qs.filter(variant__product=product)
+                if size:
+                    qs = qs.filter(size=size)
+                in_stock_count = qs.count()
+            except Exception:
+                in_stock_count = 0
+            stock_status = "exact" if in_stock_count >= qty else "none"
+            badge_color = STATUS_TO_COLOR.get(stock_status, "red")
+            img = None
+            try:
+                if variant is not None and variant.image:
+                    img = variant.image.url
+            except Exception:
+                img = None
+            # One card per unit ordered (qty), so the warehouse scans each.
+            for _ in range(qty):
+                cards.append({
+                    "id": product.id,
+                    "name": product.name,
+                    "code": getattr(product, "code", "") or "",
+                    "color_matched": variant.color_label if variant else "",
+                    "image_url": img,
+                    "size": size,
+                    "in_stock": in_stock_count,
+                    "stock_ok": badge_color == "green",
+                    "stock_status": stock_status,
+                    "badge_color": badge_color,
+                    "found_size": size,
+                })
+        return cards
+    except Exception:
+        return []
+
+
 def _get_matched_products(designation: str) -> list:
     """Match products from a Navex designation string.
     Creates one card per product+color item in the designation.
