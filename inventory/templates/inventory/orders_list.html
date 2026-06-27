@@ -297,16 +297,25 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
             {% if o.is_shipping_closed %}<span title="Scan expédition terminé" style="color:#1a9e6e;font-size:14px;font-weight:600;margin-left:4px;">✓</span>{% endif %}
             <button class="conv-btn" onclick="openConversation(event, {{ o.id }})" title="Voir la conversation"
                     style="margin-left:6px;border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;opacity:0.7;">💬</button>
-            <button class="note-btn" onclick="openStickyNote(event, {{ o.id }})" title="Note"
-                    data-note="{{ o.status_note|escapejs }}"
-                    style="margin-left:2px;border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;opacity:{% if o.status_note %}1{% else %}0.5{% endif %};">📝</button>
           </td>
           <td>
             <span class="date-cell" data-order-id="{{ o.id }}" data-scheduled="{% if o.scheduled_for %}{{ o.scheduled_for|date:'Y-m-d' }}{% endif %}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">
               {% if o.scheduled_for %}<span class="scheduled-badge">📅 {{ o.scheduled_for|date:"d/m" }}</span>{% else %}{{ o.created_at|date:"d/m H:i" }}{% endif %}
             </span>
           </td>
-          <td>{{ o.sales_page.name|default:"—" }}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:5px;">
+              <span>{{ o.sales_page.name|default:"—" }}</span>
+              <button onclick="toggleStickyNote(event, {{ o.id }})" title="Note"
+                      style="border:none;background:rgba(245,200,35,0.18);color:#d9a300;width:18px;height:18px;border-radius:5px;cursor:pointer;font-size:13px;line-height:1;padding:0;font-weight:700;">+</button>
+            </div>
+            <div class="sticky-note" id="note-{{ o.id }}" data-order-id="{{ o.id }}"
+                 style="margin-top:5px;{% if not o.status_note %}display:none;{% endif %}">
+              <textarea class="sticky-note-input" onblur="saveStickyNote({{ o.id }})"
+                        placeholder="Écrire une note…"
+                        style="width:135px;min-height:42px;background:#fff8d6;border:0.5px solid #e6cf6a;border-radius:6px;color:#5a4a00;font-size:11px;padding:5px 6px;resize:vertical;font-family:inherit;">{{ o.status_note }}</textarea>
+            </div>
+          </td>
           <td>
             <div>{{ o.customer.name|default:o.customer.phone }}</div>
             <div class="muted" style="font-size:11px;">{{ o.customer.phone }}{% if o.phone_order_count > 1 %} <span onclick="searchByPhone(event, '{{ o.customer.phone|escapejs }}')" title="Voir les {{ o.phone_order_count }} commandes de ce numéro" style="cursor:pointer;display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;">{{ o.phone_order_count }} cmd</span>{% endif %}</div>
@@ -933,8 +942,7 @@ function buildOrderRowHtml(o) {
   // _is_draft_editable check so the UI matches what the server allows.
   const lockedStatuses = ['confirmee', 'livree', 'payee', 'en_cours', 'au_magasin', 'returning', 'returned'];
   const isEditable = !lockedStatuses.includes(o.status) && !o.bordereau_barcode;
-  const convBtn = `<button class="conv-btn" onclick="openConversation(event, ${o.id})" title="Voir la conversation" style="margin-left:6px;border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;opacity:0.7;">💬</button>` +
-    `<button class="note-btn" onclick="openStickyNote(event, ${o.id})" title="Note" data-note="${(o.status_note||'').replace(/"/g,'&quot;')}" style="margin-left:2px;border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;opacity:${o.status_note?'1':'0.5'};">📝</button>`;
+  const convBtn = `<button class="conv-btn" onclick="openConversation(event, ${o.id})" title="Voir la conversation" style="margin-left:6px;border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;opacity:0.7;">💬</button>`;
   const idCell = (isEditable
     ? `<a class="row-link" href="javascript:void(0)" onclick="editOrder(${o.id})" title="Modifier le brouillon">#${o.id} <span style="font-size:10px;opacity:0.7;">✎</span></a>`
     : `<a class="row-link" href="/sales-orders/${o.id}/">#${o.id}</a>`) + convBtn;
@@ -957,7 +965,15 @@ function buildOrderRowHtml(o) {
   return `<tr data-order-id="${o.id}">
     <td>${idCell}</td>
     <td><span class="date-cell" data-order-id="${o.id}" data-scheduled="${scheduled}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">${dateCellInner}</span></td>
-    <td>${pageName}</td>
+    <td>
+      <div style="display:flex;align-items:center;gap:5px;">
+        <span>${pageName}</span>
+        <button onclick="toggleStickyNote(event, ${o.id})" title="Note" style="border:none;background:rgba(245,200,35,0.18);color:#d9a300;width:18px;height:18px;border-radius:5px;cursor:pointer;font-size:13px;line-height:1;padding:0;font-weight:700;">+</button>
+      </div>
+      <div class="sticky-note" id="note-${o.id}" data-order-id="${o.id}" style="margin-top:5px;${o.status_note ? '' : 'display:none;'}">
+        <textarea class="sticky-note-input" onblur="saveStickyNote(${o.id})" placeholder="Écrire une note…" style="width:135px;min-height:42px;background:#fff8d6;border:0.5px solid #e6cf6a;border-radius:6px;color:#5a4a00;font-size:11px;padding:5px 6px;resize:vertical;font-family:inherit;">${(o.status_note||'').replace(/</g,'&lt;')}</textarea>
+      </div>
+    </td>
     <td>
       <div>${name}</div>
       <div class="muted" style="font-size:11px;">${phone}${(o.phone_order_count && o.phone_order_count > 1) ? ` <span onclick="searchByPhone(event, '${phone}')" title="Voir les ${o.phone_order_count} commandes de ce numéro" style="cursor:pointer;display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;">${o.phone_order_count} cmd</span>` : ''}</div>
@@ -1748,26 +1764,39 @@ async function sendStatusChange(orderId, newStatus, cancelReason, originBtn) {
   } catch (e) { alert('Erreur réseau : ' + e.message); }
 }
 
-// Sticky note: add/edit a free-text note on any order (saved to status_note).
-async function openStickyNote(ev, orderId) {
+// Sticky note: yellow + under the page name reveals an inline editable note.
+function toggleStickyNote(ev, orderId) {
   if (ev) ev.stopPropagation();
-  const btn = ev ? ev.currentTarget : null;
-  const current = btn ? (btn.getAttribute('data-note') || '') : '';
-  const note = prompt('Note pour cette commande :', current);
-  if (note === null) return;  // cancelled
+  const wrap = document.getElementById(`note-${orderId}`);
+  if (!wrap) return;
+  if (wrap.style.display === 'none') {
+    wrap.style.display = 'block';
+    const ta = wrap.querySelector('.sticky-note-input');
+    if (ta) ta.focus();
+  } else {
+    // If empty, hide it again; if it has text, keep showing.
+    const ta = wrap.querySelector('.sticky-note-input');
+    if (ta && !ta.value.trim()) wrap.style.display = 'none';
+  }
+}
+
+async function saveStickyNote(orderId) {
+  const wrap = document.getElementById(`note-${orderId}`);
+  if (!wrap) return;
+  const ta = wrap.querySelector('.sticky-note-input');
+  if (!ta) return;
+  const note = ta.value.trim();
   try {
     const res = await fetch(`/api/sales-orders/${orderId}/note/`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken()},
-      body: JSON.stringify({note: note.trim()}),
+      body: JSON.stringify({note: note}),
     });
     const data = await res.json();
-    if (data.status === 'ok') {
-      window.location.reload();
-    } else {
-      alert(data.message || 'Erreur');
-    }
-  } catch (e) { alert('Erreur réseau : ' + e.message); }
+    if (data.status !== 'ok') { alert(data.message || 'Erreur'); return; }
+    // Hide the note box if it was cleared.
+    if (!note) wrap.style.display = 'none';
+  } catch (e) { /* silent: keep the text so the user can retry */ }
 }
 
 // Inline cancel: opens a small modal for picking the reason (same 3 reasons)
