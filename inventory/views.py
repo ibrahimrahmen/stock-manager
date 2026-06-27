@@ -138,7 +138,7 @@ def _messenger_send_text(page_id, recipient_id, text):
         return False
 
 
-def _gemini_generate(prompt, max_tokens=1024, temperature=0.0):
+def _gemini_generate(prompt, max_tokens=1024, temperature=0.0, model="gemini-2.5-flash-lite"):
     """Module-level Gemini call (gemini-2.5-flash-lite). Returns the response
     text or None on failure. Supports classic (AIza...) and OAuth-style keys.
     Reused by the Messenger DM order extractor and other callers."""
@@ -154,7 +154,7 @@ def _gemini_generate(prompt, max_tokens=1024, temperature=0.0):
     }
     base_url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        "gemini-2.5-flash-lite:generateContent"
+        + model + ":generateContent"
     )
     data = _json.dumps(body).encode("utf-8")
     attempts = []
@@ -9044,7 +9044,8 @@ def _resolve_region_for_order(order, conv=None):
         "Liste des régions et délégations :\n" + "\n".join(options_lines)
         + "\n\nRéponse :"
     )
-    resp = _gemini_generate(prompt, max_tokens=80, temperature=0.0)
+    resp = _gemini_generate(prompt, max_tokens=80, temperature=0.0,
+                            model="gemini-2.5-flash")
     if not resp or resp.strip().upper() == "NONE":
         return
     m = _re.match(r"REGION:\s*(.+?)\s*\|\s*VILLE:\s*(.+)", resp.strip(), _re.IGNORECASE)
@@ -9091,15 +9092,30 @@ def _resolve_region_for_order(order, conv=None):
         if n in source_text:
             return True
         # Match on the DISTINCTIVE PREFIX of the name (first 4-5 chars) to allow
-        # spelling/vowel variants (seliana~siliana, jbenyana~jebeniana) while
-        # avoiding false hits on shared suffixes like '-iana'. A hallucinated
-        # name whose start never appears in the text is rejected.
+        # spelling/vowel variants while avoiding false hits on shared suffixes.
         prefix = n[:5] if len(n) >= 5 else n
         if prefix in source_text:
             return True
-        # Also try first 4 chars for shorter tolerance.
         if len(n) >= 4 and n[:4] in source_text:
             return True
+        # Fuzzy: scan words in the source text for a near-match (<=2 edits) to
+        # the name — catches vowel variants like 'seliana'~'siliana' while still
+        # rejecting totally different names ('gabes' vs 'jebeniana').
+        def _lev(a, b):
+            if abs(len(a) - len(b)) > 2:
+                return 99
+            prev = list(range(len(b) + 1))
+            for i, ca in enumerate(a, 1):
+                cur = [i]
+                for j, cb in enumerate(b, 1):
+                    cur.append(min(prev[j] + 1, cur[j - 1] + 1,
+                                   prev[j - 1] + (ca != cb)))
+                prev = cur
+            return prev[-1]
+        for word in _re.split(r"\s+", (addr or "") + " " + (ville or "") + " " + (convo_text or "")):
+            wn = _norm(word)
+            if len(wn) >= 5 and abs(len(wn) - len(n)) <= 2 and _lev(wn, n) <= 2:
+                return True
         return False
     region_ok = _appears(region_match.name)
     ville_ok = ville_match and _appears(ville_match.name)
