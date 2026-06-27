@@ -8999,6 +8999,12 @@ def _resolve_region_for_order(order, conv=None):
                     order.save(update_fields=["address", "updated_at"])
                 except Exception:
                     pass
+    # If still no explicit address but we have conversation text, use the full
+    # customer text as the matching input — the city is often inline (e.g.
+    # 'Ensemble Taille L Gabés 23467059'). The anti-hallucination guard below
+    # still verifies the match against this same text.
+    if not addr and not ville and convo_text.strip():
+        addr = convo_text.strip()[:300]
     if not addr and not ville:
         return
     all_regions = list(Region.objects.filter(is_active=True))
@@ -9034,7 +9040,7 @@ def _resolve_region_for_order(order, conv=None):
         "deviner. Les Tunisiens utilisent des chiffres (3=ع, 5=خ, 7=ح, 9=ق, 2=ء). "
         "Tu DOIS choisir des noms EXACTS de la liste. "
         "Réponds UNIQUEMENT : 'REGION: nom | VILLE: nom' ou 'NONE'.\n\n"
-        f"Adresse du client : {addr} {ville}\n\n"
+        f"Texte du client (peut contenir la localité parmi d'autres infos) : {addr} {ville}\n\n"
         "Liste des régions et délégations :\n" + "\n".join(options_lines)
         + "\n\nRéponse :"
     )
