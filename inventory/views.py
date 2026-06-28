@@ -9004,7 +9004,10 @@ def _resolve_region_for_order(order, conv=None):
     # 'Ensemble Taille L Gabés 23467059'). The anti-hallucination guard below
     # still verifies the match against this same text.
     if not addr and not ville and convo_text.strip():
-        addr = convo_text.strip()[:300]
+        # Use a generous slice — in long exchange chats the address line can
+        # appear well past the first few hundred chars (we saw 'سليانة' at ~char
+        # 600 in a 1200-char conversation). Cap high enough not to lose it.
+        addr = convo_text.strip()[:2000]
     if not addr and not ville:
         return
     all_regions = list(Region.objects.filter(is_active=True))
