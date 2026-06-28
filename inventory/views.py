@@ -9039,8 +9039,10 @@ def _resolve_region_for_order(order, conv=None):
         "plus important (ex: 'korba (sidi Ali)' → la localité est KORBA, qui est "
         "à Nabeul ; 'sidi Ali' n'est qu'un détail secondaire). "
         "Choisis le couple REGION + VILLE le plus proche en te basant surtout sur "
-        "la localité principale. Si tu n'es PAS sûr, réponds 'NONE' plutôt que de "
-        "deviner. Les Tunisiens utilisent des chiffres (3=ع, 5=خ, 7=ح, 9=ق, 2=ء). "
+        "la localité principale. Si tu reconnais le GOUVERNORAT mais pas la "
+        "délégation exacte, donne quand même la REGION et mets VILLE: NONE. "
+        "Ne réponds NONE complet que si AUCUN lieu tunisien n'est mentionné. "
+        "Les Tunisiens utilisent des chiffres (3=ع, 5=خ, 7=ح, 9=ق, 2=ء). "
         "Tu DOIS choisir des noms EXACTS de la liste. "
         "Réponds UNIQUEMENT : 'REGION: nom | VILLE: nom' ou 'NONE'.\n\n"
         f"Texte du client (peut contenir la localité parmi d'autres infos) : {addr} {ville}\n\n"
@@ -9059,6 +9061,10 @@ def _resolve_region_for_order(order, conv=None):
         return
     region_name = rm.group(1).strip(" :-|")
     ville_name = vm.group(1).strip(" :-|") if vm else ""
+    if region_name.upper() == "NONE":
+        return
+    if ville_name.upper() == "NONE":
+        ville_name = ""
     if not region_name:
         return
     # Resolve region (exact then normalized contains).
