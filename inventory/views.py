@@ -9124,7 +9124,15 @@ def _resolve_region_for_order(order, conv=None):
         return False
     region_ok = _appears(region_match.name)
     ville_ok = ville_match and _appears(ville_match.name)
-    if not region_ok and not ville_ok:
+    # Script-mismatch escape: the guard does a character match, which fails when
+    # the customer writes in Arabic (المنزه) but our region names are in Latin
+    # (El Menzah) — different scripts can't be compared char-by-char. In that
+    # case trust flash (it's reliable cross-script) instead of rejecting.
+    src_all = (addr or "") + " " + (ville or "") + " " + (convo_text or "")
+    has_arabic = any("\u0600" <= ch <= "\u06FF" for ch in src_all)
+    names_latin = all(ord(ch) < 128 for ch in (region_match.name + (ville_match.name if ville_match else "")))
+    script_mismatch = has_arabic and names_latin
+    if not region_ok and not ville_ok and not script_mismatch:
         # Neither the governorate nor the delegation is mentioned anywhere in the
         # customer's text → almost certainly a hallucinated default. Skip it and
         # leave the region blank for staff to fill manually.
