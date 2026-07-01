@@ -5075,6 +5075,50 @@ def api_exchange_set_returns(request, pk):
     claimed = set()  # original-order unit ids already linked, across all selections
     original = exchange.exchange_of
     from .models import ProductUnit
+
+    # ---- Build a pool of the REAL physical units from the original delivered
+    # order, so every return item gets linked to an actual barcode (e.g.
+    # PRC2-BLU-5-016) instead of a RETURN-<id> placeholder. Units are reachable
+    # via the v2 Order → v1 ShippingOrders → OrderItems → unit.
+    # We index the same three ways the display endpoint does, so matching here
+    # is guaranteed to line up with what the office worker sees.
+    units_by_key = {}      # (variant_id, size_str) -> [units]
+    units_by_variant = {}  # variant_id -> [units]
+    units_by_color = {}    # color_label_lower -> [units]
+    all_units = []
+    if original is not None:
+        for so in original.shipping_orders.all():
+            for oi in so.items.select_related("unit__variant").all():
+                u = oi.unit
+                if not u:
+                    continue
+                all_units.append(u)
+                units_by_key.setdefault((u.variant_id, str(u.size or "")), []).append(u)
+                units_by_variant.setdefault(u.variant_id, []).append(u)
+                clbl = ((u.variant.color_label if u.variant else "")
+                        or (u.variant.color_name if u.variant else "")).strip().lower()
+                if clbl:
+                    units_by_color.setdefault(clbl, []).append(u)
+
+    def _take_unit(variant, size):
+        """Pick one still-unclaimed real unit for this variant+size, using the
+        same layered fallback as the display: exact variant+size → same variant
+        → same colour. Returns a ProductUnit or None."""
+        size_str = str(size or "")
+        pools = [
+            units_by_key.get((variant.id, size_str), []),
+            units_by_variant.get(variant.id, []),
+        ]
+        clbl = ((variant.color_label or variant.color_name or "").strip().lower())
+        if clbl:
+            pools.append(units_by_color.get(clbl, []))
+        for pool in pools:
+            for u in pool:
+                if u.id not in claimed:
+                    claimed.add(u.id)
+                    return u
+        return None
+
     for it in raw_items:
         try:
             variant_id = int(it.get("variant_id"))
@@ -5107,27 +5151,17 @@ def api_exchange_set_returns(request, pk):
                 used_from_sent += 1
                 created += 1
 
-        # Fallback (legacy): if no/insufficient barcodes were sent, match the
-        # remaining qty by variant+size from the original delivered order.
+        # For any remaining qty with no explicit barcode, always try to attach a
+        # real unit from the original delivered order. Only if the original has
+        # no matchable unit at all do we fall back to unit=None.
         remaining = qty - used_from_sent
         for _ in range(remaining):
-            matched_unit = None
-            if original is not None:
-                for oi in original.shipping_orders.all():
-                    for item in oi.items.select_related("unit", "unit__variant").all():
-                        u = item.unit
-                        if (u and u.id not in claimed and u.variant_id == variant.id
-                                and str(u.size) == str(size)):
-                            matched_unit = u
-                            claimed.add(u.id)
-                            break
-                    if matched_unit:
-                        break
+            matched_unit = _take_unit(variant, size)
             ExchangeReturnItem.objects.create(
                 exchange_order=exchange,
                 unit=matched_unit,
                 variant=variant,
-                size=size,
+                size=size or (str(matched_unit.size) if matched_unit and matched_unit.size else ""),
                 product_name_snapshot=variant.product.name,
             )
             created += 1
