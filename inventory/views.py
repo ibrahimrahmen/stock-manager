@@ -3732,6 +3732,8 @@ def orders_list(request):
         o.combined_delivered = insystem_delivered.get(o.customer_id, 0) + hist_deliv
         o.combined_returned = insystem_returned.get(o.customer_id, 0) + hist_ret
         o.has_history = hist_total > 0
+        # VIP: a customer with 3+ delivered orders (livrée/payée + historic).
+        o.is_vip = o.combined_delivered >= 3
 
     # Count of currently-hidden future-scheduled orders, for an info banner
     future_count = Order.objects.filter(scheduled_for__gt=today).count()
@@ -4513,6 +4515,7 @@ def api_orders_search(request):
             "phone_order_count": pcounts.get(o.customer_id, 1) + h_total,
             "combined_delivered": deliv.get(o.customer_id, 0) + h_deliv,
             "combined_returned": retd.get(o.customer_id, 0) + h_ret,
+            "is_vip": (deliv.get(o.customer_id, 0) + h_deliv) >= 3,
             "name": o.customer.name if o.customer else "",
             "status": o.status,
             "status_display": o.get_status_display(),

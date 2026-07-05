@@ -363,7 +363,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
             </div>
           </td>
           <td>
-            <div>{{ o.display_name|default:o.customer.phone }}</div>
+            <div>{{ o.display_name|default:o.customer.phone }}{% if o.is_vip %} <span title="Client VIP — {{ o.combined_delivered }} commandes livrées" style="display:inline-block;background:linear-gradient(135deg,#f5c518,#e0a800);color:#1a1500;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;margin-left:5px;letter-spacing:0.5px;vertical-align:middle;">⭐ VIP</span>{% endif %}</div>
             <div class="muted" style="font-size:11px;">{{ o.customer.phone }}{% if o.phone_order_count > 1 %} <span onclick="searchPhone('{{ o.customer.phone }}', event)" title="Voir les commandes en système de ce numéro ({{ o.combined_delivered }} livré / {{ o.combined_returned }} retour au total){% if o.has_history %} — inclut l'historique{% endif %}" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;cursor:pointer;">{{ o.phone_order_count }} cmd</span>{% if o.combined_delivered or o.combined_returned %} <span title="Livré / Retour (historique inclus, annulé exclu)" style="display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;margin-left:2px;{% if o.combined_returned > o.combined_delivered %}background:rgba(220,80,80,0.15);color:#dc5050;{% else %}background:rgba(26,158,110,0.15);color:#1a9e6e;{% endif %}">✓{{ o.combined_delivered }} / ↩{{ o.combined_returned }}</span>{% endif %}{% endif %}</div>
           </td>
           <td>
@@ -1084,7 +1084,7 @@ function buildOrderRowHtml(o) {
       </div>
     </td>
     <td>
-      <div>${name}</div>
+      <div>${name}${o.is_vip ? ` <span title="Client VIP — ${o.combined_delivered} commandes livrées" style="display:inline-block;background:linear-gradient(135deg,#f5c518,#e0a800);color:#1a1500;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;margin-left:5px;letter-spacing:0.5px;vertical-align:middle;">⭐ VIP</span>` : ''}</div>
       <div class="muted" style="font-size:11px;">${phone}${(o.phone_order_count && o.phone_order_count > 1) ? ` <span onclick="searchPhone('${phone}', event)" title="Voir les commandes en système de ce numéro" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;cursor:pointer;">${o.phone_order_count} cmd</span>${(o.combined_delivered || o.combined_returned) ? ` <span title="Livré / Retour (historique inclus, annulé exclu)" style="display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;margin-left:2px;${o.combined_returned > o.combined_delivered ? 'background:rgba(220,80,80,0.15);color:#dc5050;' : 'background:rgba(26,158,110,0.15);color:#1a9e6e;'}">✓${o.combined_delivered} / ↩${o.combined_returned}</span>` : ''}` : ''}</div>
       ${phone2Block}
     </td>
