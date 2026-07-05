@@ -3734,6 +3734,8 @@ def orders_list(request):
         o.has_history = hist_total > 0
         # VIP: a customer with 3+ delivered orders (livrée/payée + historic).
         o.is_vip = o.combined_delivered >= 3
+        # Risky: more returned orders than delivered (returns > livrées).
+        o.is_risky = o.combined_returned > o.combined_delivered and o.combined_returned > 0
 
     # Count of currently-hidden future-scheduled orders, for an info banner
     future_count = Order.objects.filter(scheduled_for__gt=today).count()
@@ -4516,6 +4518,7 @@ def api_orders_search(request):
             "combined_delivered": deliv.get(o.customer_id, 0) + h_deliv,
             "combined_returned": retd.get(o.customer_id, 0) + h_ret,
             "is_vip": (deliv.get(o.customer_id, 0) + h_deliv) >= 3,
+            "is_risky": (retd.get(o.customer_id, 0) + h_ret) > (deliv.get(o.customer_id, 0) + h_deliv) and (retd.get(o.customer_id, 0) + h_ret) > 0,
             "name": o.customer.name if o.customer else "",
             "status": o.status,
             "status_display": o.get_status_display(),
