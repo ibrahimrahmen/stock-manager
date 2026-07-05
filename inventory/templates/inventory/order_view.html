@@ -214,15 +214,34 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
         <tr><th>Produit</th><th>Couleur</th><th>Taille</th><th style="text-align:center;">Qté</th><th style="text-align:right;">Prix unit.</th><th style="text-align:right;">Total ligne</th></tr>
       </thead>
       <tbody>
-        {% for line in order.lines.all %}
-        <tr>
-          <td>{{ line.product.name }}</td>
-          <td>{{ line.variant.color_label|default:"—" }}</td>
-          <td>{{ line.size|default:"—" }}</td>
-          <td style="text-align:center;">{{ line.quantity }}</td>
-          <td style="text-align:right;">{{ line.unit_price|floatformat:3 }} DT</td>
-          <td style="text-align:right;">{{ line.line_total|floatformat:3 }} DT</td>
+        {% for oo in order.order_offers.all %}
+        <tr style="background:rgba(96,165,250,0.08);">
+          <td colspan="4" style="font-weight:700;">📦 {{ oo.offer_name|default:"Offre" }}{% if oo.quantity > 1 %} ×{{ oo.quantity }}{% endif %}</td>
+          <td style="text-align:right;">{{ oo.bundle_price|floatformat:3 }} DT</td>
+          <td style="text-align:right;">{{ oo.offer_total|floatformat:3 }} DT</td>
         </tr>
+          {% for line in oo.lines.all %}
+          <tr>
+            <td style="padding-left:1.5rem;">↳ {{ line.product.name }}</td>
+            <td>{{ line.variant.color_label|default:"—" }}</td>
+            <td>{{ line.size|default:"—" }}</td>
+            <td style="text-align:center;">{{ line.quantity }}</td>
+            <td style="text-align:right;color:var(--muted,#888);">inclus</td>
+            <td style="text-align:right;color:var(--muted,#888);">—</td>
+          </tr>
+          {% endfor %}
+        {% endfor %}
+        {% for line in order.lines.all %}
+          {% if not line.order_offer_id %}
+          <tr>
+            <td>{{ line.product.name }}</td>
+            <td>{{ line.variant.color_label|default:"—" }}</td>
+            <td>{{ line.size|default:"—" }}</td>
+            <td style="text-align:center;">{{ line.quantity }}</td>
+            <td style="text-align:right;">{{ line.unit_price|floatformat:3 }} DT</td>
+            <td style="text-align:right;">{{ line.line_total|floatformat:3 }} DT</td>
+          </tr>
+          {% endif %}
         {% endfor %}
       </tbody>
     </table>
