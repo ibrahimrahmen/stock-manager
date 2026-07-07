@@ -94,7 +94,7 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
     <div class="stat"><div class="label">Dépense totale</div><div class="value">{{ total_spend|floatformat:2 }}</div></div>
     <div class="stat"><div class="label">Revenu (qualifié)</div><div class="value">{{ total_revenue|floatformat:2 }}</div></div>
     <div class="stat"><div class="label">Profit</div><div class="value {% if total_profit < 0 %}neg{% else %}pos{% endif %}">{{ total_profit|floatformat:2 }}</div></div>
-    {% if unlinked %}<div class="stat"><div class="label">Pubs à lier</div><div class="value" style="color:var(--amber);">{{ unlinked }}</div></div>{% endif %}
+    {% if unlinked_count %}<div class="stat"><div class="label">Pubs à lier</div><div class="value" style="color:var(--amber);">{{ unlinked_count }}</div></div>{% endif %}
   </div>
 
   <!-- ============ BARATS.TN CARROUSEL (pooled) ============ -->
@@ -128,79 +128,34 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
     {% endif %}
   </div>
 
-  <!-- ============ OFFER-LINKED ADS (Converty / Facebook) ============ -->
-  <div class="section-title">📦 Pubs liées à des offres (Converty / Facebook)</div>
-  {% if rows %}
-    {% for r in rows %}
-    <div class="campaign" data-ad="{{ r.ad.id }}">
-      <div class="cname">{{ r.ad.campaign_name }}</div>
-      <div>
-        <div class="clabel">Dépense</div>
-        <div class="cspend">{{ r.spend|floatformat:2 }}</div>
-      </div>
-      <div class="offer-pickers">
-        <div class="clabel">Offres + Page · illimité</div>
-        <div class="pairs-wrap">
-          {% for lk in r.links %}
-          <div class="pair">
-            <select class="off">
-              <option value="none">— Offre —</option>
-              {% for offer in offers %}
-              <option value="{{ offer.id }}" {% if lk.offer_id == offer.id %}selected{% endif %}>{{ offer.name }}</option>
-              {% endfor %}
-            </select>
-            <select class="pg">
-              <option value="none">— Page —</option>
-              {% for pg in pages %}
-              <option value="{{ pg.id }}" {% if lk.page_id == pg.id %}selected{% endif %}>{{ pg.name }}</option>
-              {% endfor %}
-            </select>
-            <button class="btn-x" onclick="rmPair(this)" title="Retirer">✕</button>
-          </div>
-          {% endfor %}
-          {# one empty row to add a new link #}
-          <div class="pair">
-            <select class="off">
-              <option value="none">— Offre —</option>
-              {% for offer in offers %}
-              <option value="{{ offer.id }}">{{ offer.name }}</option>
-              {% endfor %}
-            </select>
-            <select class="pg">
-              <option value="none">— Page —</option>
-              {% for pg in pages %}
-              <option value="{{ pg.id }}">{{ pg.name }}</option>
-              {% endfor %}
-            </select>
-            <button class="btn-x" onclick="rmPair(this)" title="Retirer">✕</button>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;">
-          <button class="btn-add" onclick="addPair(this)">+ Offre</button>
-          <button class="btn-save" onclick="savePairs({{ r.ad.id }}, this)">Enregistrer</button>
-        </div>
-        <span class="attr-toggle" onclick="setAttr({{ r.ad.id }}, 'barats')">↳ marquer Carrousel Barats.tn</span>
-      </div>
-      <div class="crev">
-        <div class="clabel">Coût/unité · Revenu · Profit</div>
-        {% if r.links %}
-          <div><span class="cpo">{% if r.cpo %}{{ r.cpo|floatformat:3 }}{% else %}—{% endif %}</span> · {{ r.revenue|floatformat:2 }} · <span class="{% if r.profit < 0 %}neg{% elif r.profit > 0 %}pos{% endif %}">{{ r.profit|floatformat:2 }}</span></div>
-          <div class="muted">{{ r.order_count }} unité(s)
-            {% for lk in r.links %}<span class="pill pill-blue">{{ lk.offer.name }}{% if lk.page %} @ {{ lk.page.name }}{% endif %}</span>{% endfor %}
-          </div>
-        {% else %}
-          <div class="muted">non liée <span class="pill pill-warn">à lier</span></div>
-        {% endif %}
-      </div>
+  <!-- ============ PAGES : box résumé par page + pubs détaillées ============ -->
+  {% for pb in page_blocks %}
+  <div class="section-title">📄 {{ pb.page.name|default:"Page" }}</div>
+  <div class="barats-card">
+    <div class="muted">{{ pb.ads|length }} pub(s) · dépense de la page ÷ toutes les commandes de la page</div>
+    <div class="barats-metrics">
+      <div class="bm"><div class="l">Dépense</div><div class="v">{{ pb.spend|floatformat:2 }}</div></div>
+      <div class="bm"><div class="l">Unités vendues</div><div class="v">{{ pb.order_count }}</div></div>
+      <div class="bm"><div class="l">Coût / unité</div><div class="v cpo">{% if pb.cpo %}{{ pb.cpo|floatformat:3 }}{% else %}—{% endif %}</div></div>
+      <div class="bm"><div class="l">Revenu</div><div class="v">{{ pb.revenue|floatformat:2 }}</div></div>
+      <div class="bm"><div class="l">Profit</div><div class="v {% if pb.profit < 0 %}neg{% else %}pos{% endif %}">{{ pb.profit|floatformat:2 }}</div></div>
     </div>
-    {% endfor %}
-  {% else %}
-    <div class="empty">Aucune pub liée à une offre pour cette période.<br>Vérifiez le token Meta et les dates.</div>
+  </div>
+  {% for r in pb.ads %}
+    {% include "inventory/_ad_card.html" %}
+  {% endfor %}
+  {% endfor %}
+
+  {% if unassigned %}
+  <div class="section-title">❔ Pubs non assignées à une page</div>
+  {% for r in unassigned %}
+    {% include "inventory/_ad_card.html" %}
+  {% endfor %}
   {% endif %}
 
   <p class="muted" style="margin-top:14px;">
-    Coût/commande = dépense de la pub ÷ commandes (En cours + Livrée + Payée) contenant l'une de ses offres liées <b>sur la page choisie</b>, sur la période.
-    Pour Barats.tn : dépense carrousel totale ÷ toutes les commandes Barats.tn.
+    Coût/unité = dépense ÷ unités vendues. Chaque box de page = dépense totale des pubs de la page ÷ toutes les commandes de la page.
+    Barats.tn : dépense carrousel totale ÷ toutes les commandes Barats.tn.
   </p>
 </div>
 

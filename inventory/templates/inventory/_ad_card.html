@@ -1,0 +1,60 @@
+<div class="campaign" data-ad="{{ r.ad.id }}">
+  <div class="cname">{{ r.ad.campaign_name }}</div>
+  <div>
+    <div class="clabel">Dépense</div>
+    <div class="cspend">{{ r.spend|floatformat:2 }}</div>
+  </div>
+  <div class="offer-pickers">
+    <div class="clabel">Offres + Page · illimité</div>
+    <div class="pairs-wrap">
+      {% for lk in r.links %}
+      <div class="pair">
+        <select class="off">
+          <option value="none">— Offre —</option>
+          {% for offer in offers %}
+          <option value="{{ offer.id }}" {% if lk.offer_id == offer.id %}selected{% endif %}>{{ offer.name }}</option>
+          {% endfor %}
+        </select>
+        <select class="pg">
+          <option value="none">— Page —</option>
+          {% for pg in pages %}
+          <option value="{{ pg.id }}" {% if lk.page_id == pg.id %}selected{% endif %}>{{ pg.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn-x" onclick="rmPair(this)" title="Retirer">✕</button>
+      </div>
+      {% endfor %}
+      <div class="pair">
+        <select class="off">
+          <option value="none">— Offre —</option>
+          {% for offer in offers %}
+          <option value="{{ offer.id }}">{{ offer.name }}</option>
+          {% endfor %}
+        </select>
+        <select class="pg">
+          <option value="none">— Page —</option>
+          {% for pg in pages %}
+          <option value="{{ pg.id }}">{{ pg.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn-x" onclick="rmPair(this)" title="Retirer">✕</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-add" onclick="addPair(this)">+ Offre</button>
+      <button class="btn-save" onclick="savePairs({{ r.ad.id }}, this)">Enregistrer</button>
+    </div>
+    <span class="attr-toggle" onclick="setAttr({{ r.ad.id }}, 'barats')">↳ marquer Carrousel Barats.tn</span>
+  </div>
+  <div class="crev">
+    <div class="clabel">Coût/unité · Revenu · Profit</div>
+    {% if r.links %}
+      <div><span class="cpo">{% if r.cpo %}{{ r.cpo|floatformat:3 }}{% else %}—{% endif %}</span> · {{ r.revenue|floatformat:2 }} · <span class="{% if r.profit < 0 %}neg{% elif r.profit > 0 %}pos{% endif %}">{{ r.profit|floatformat:2 }}</span></div>
+      <div class="muted">{{ r.order_count }} unité(s)
+        {% for lk in r.links %}<span class="pill pill-blue">{{ lk.offer.name }}{% if lk.page %} @ {{ lk.page.name }}{% endif %}</span>{% endfor %}
+      </div>
+    {% else %}
+      <div class="muted">non liée <span class="pill pill-warn">à lier</span></div>
+    {% endif %}
+  </div>
+</div>

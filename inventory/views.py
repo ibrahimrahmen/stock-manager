@@ -4761,6 +4761,8 @@ def ads_offers_dashboard(request):
     pair_rev = defaultdict(lambda: Decimal("0"))
     offer_qty_any = defaultdict(int)     # offer_id -> qty (any page)
     offer_rev_any = defaultdict(lambda: Decimal("0"))
+    page_qty = defaultdict(int)          # page_id -> total qty (ALL offers on page)
+    page_rev = defaultdict(lambda: Decimal("0"))
     barats_qty = 0
     barats_rev = Decimal("0")
     for o in q_orders:
@@ -4776,6 +4778,8 @@ def ads_offers_dashboard(request):
             pair_rev[(oo.offer_id, page_id)] += rev
             offer_qty_any[oo.offer_id] += qty
             offer_rev_any[oo.offer_id] += rev
+            page_qty[page_id] += qty
+            page_rev[page_id] += rev
             if is_barats:
                 barats_qty += qty
                 barats_rev += rev
@@ -4829,13 +4833,60 @@ def ads_offers_dashboard(request):
             "revenue": revenue,
             "cpo": cpo,
             "profit": revenue - spend,
+            # page(s) this ad is attributed to (from its links)
+            "page_ids": {lk["page_id"] for lk in link_desc if lk["page_id"]},
         })
     rows.sort(key=lambda r: r["spend"], reverse=True)
+
+    # --- Group ad rows by page, with a per-page summary box (like Barats). ---
+    # A page's box shows: total spend of that page's ads, and the TOTAL units /
+    # revenue of ALL orders on that page (page_qty / page_rev), plus the ads
+    # detailed underneath. An ad with links on several pages appears under each.
+    # Ads with no page link at all go into an "unassigned" group.
+    page_by_id = {p.id: p for p in pages}
+    page_groups = {}   # page_id -> {"page", "spend", "ads":[rows], ...}
+    unassigned = []
+    for r in rows:
+        pids = r["page_ids"]
+        if not pids:
+            unassigned.append(r)
+            continue
+        for pid in pids:
+            g = page_groups.get(pid)
+            if g is None:
+                pg = page_by_id.get(pid)
+                # Skip Barats.tn here — it has its own carousel pool box.
+                if pg and pg.name.strip().lower() == "barats.tn":
+                    continue
+                g = page_groups[pid] = {
+                    "page": pg, "page_id": pid,
+                    "spend": Decimal("0"), "ads": [],
+                }
+            g["spend"] += r["spend"]
+            g["ads"].append(r)
+
+    page_blocks = []
+    for pid, g in page_groups.items():
+        qty = page_qty.get(pid, 0)
+        rev = page_rev.get(pid, Decimal("0"))
+        spend = g["spend"]
+        page_blocks.append({
+            "page": g["page"],
+            "spend": spend,
+            "order_count": qty,            # total units on the page
+            "revenue": rev,                # total revenue on the page
+            "cpo": (spend / qty) if qty else None,
+            "profit": rev - spend,
+            "ads": sorted(g["ads"], key=lambda x: x["spend"], reverse=True),
+        })
+    page_blocks.sort(key=lambda b: b["spend"], reverse=True)
 
     total_revenue = barats_rev + sum((r["revenue"] for r in rows), Decimal("0"))
 
     return render(request, "inventory/ads_offers.html", {
-        "rows": rows,
+        "rows": rows,                 # kept for back-compat / any other use
+        "page_blocks": page_blocks,   # per-page summary + detailed ads
+        "unassigned": unassigned,     # ads with no page link
         "barats": barats_block,
         "offers": offers,
         "pages": pages,
@@ -4846,7 +4897,7 @@ def ads_offers_dashboard(request):
         "total_spend": total_spend,
         "total_revenue": total_revenue,
         "total_profit": total_revenue - total_spend,
-        "unlinked": sum(1 for a in ads if a.attribution == Ad.ATTR_OFFER and not a.links.exists()),
+        "unlinked_count": sum(1 for a in ads if a.attribution == Ad.ATTR_OFFER and not a.links.exists()),
     })
 
 
