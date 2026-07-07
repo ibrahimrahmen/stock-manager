@@ -4690,8 +4690,9 @@ def ads_offers_dashboard(request):
     # Sync spend for the whole range from Meta.
     _sync_ads_from_meta(start_str, end_str)
 
-    ads = list(Ad.objects.prefetch_related("offers").all())
+    ads = list(Ad.objects.prefetch_related("links__offer", "links__sales_page").all())
     offers = list(Offer.objects.filter(is_active=True).order_by("name"))
+    pages = list(SalesPage.objects.filter(is_active=True).order_by("name"))
 
     # Qualifying orders created in the range, with their offer ids + page.
     q_orders = (Order.objects
@@ -4700,18 +4701,22 @@ def ads_offers_dashboard(request):
                 .select_related("sales_page")
                 .prefetch_related("order_offers"))
 
-    # Index: which order ids contain each offer id, plus per-order revenue.
-    offer_order_ids = defaultdict(set)
+    # Index orders by (offer_id, page_id) so we match BOTH. Also keep a
+    # page-only index for the Barats pool, and per-order revenue.
+    pair_order_ids = defaultdict(set)       # (offer_id, page_id) -> {order_id}
+    offer_any_page = defaultdict(set)       # offer_id -> {order_id}  (page ignored)
     order_revenue = {}
     barats_order_ids = set()
     for o in q_orders:
         order_revenue[o.id] = (o.total or Decimal("0"))
+        page_id = o.sales_page_id
         page_name = (o.sales_page.name if o.sales_page else "").strip().lower()
         if page_name == "barats.tn":
             barats_order_ids.add(o.id)
         for oo in o.order_offers.all():
             if oo.offer_id:
-                offer_order_ids[oo.offer_id].add(o.id)
+                pair_order_ids[(oo.offer_id, page_id)].add(o.id)
+                offer_any_page[oo.offer_id].add(o.id)
 
     total_spend = Decimal("0")
 
@@ -4738,18 +4743,28 @@ def ads_offers_dashboard(request):
             continue
         spend = ad.spend or Decimal("0")
         total_spend += spend
-        linked = list(ad.offers.all())
-        # Pool orders across ALL linked offers (union — an order counted once).
+        links = list(ad.links.all())
+        # Pool orders across ALL (offer, page) links (union — order counted once).
         pooled_ids = set()
-        for off in linked:
-            pooled_ids |= offer_order_ids.get(off.id, set())
+        link_desc = []
+        for lk in links:
+            if lk.sales_page_id:
+                ids = pair_order_ids.get((lk.offer_id, lk.sales_page_id), set())
+            else:
+                # No page set on the link → match the offer on any page.
+                ids = offer_any_page.get(lk.offer_id, set())
+            pooled_ids |= ids
+            link_desc.append({
+                "offer": lk.offer, "offer_id": lk.offer_id,
+                "page": lk.sales_page, "page_id": lk.sales_page_id,
+            })
         order_count = len(pooled_ids)
         revenue = sum((order_revenue.get(oid, Decimal("0")) for oid in pooled_ids), Decimal("0"))
         cpo = (spend / order_count) if order_count else None
         rows.append({
             "ad": ad,
             "spend": spend,
-            "linked_offers": linked,
+            "links": link_desc,
             "order_count": order_count,
             "revenue": revenue,
             "cpo": cpo,
@@ -4763,6 +4778,7 @@ def ads_offers_dashboard(request):
         "rows": rows,
         "barats": barats_block,
         "offers": offers,
+        "pages": pages,
         "start": start_str,
         "end": end_str,
         "is_today": start == today and end == today,
@@ -4770,7 +4786,7 @@ def ads_offers_dashboard(request):
         "total_spend": total_spend,
         "total_revenue": total_revenue,
         "total_profit": total_revenue - total_spend,
-        "unlinked": sum(1 for a in ads if a.attribution == Ad.ATTR_OFFER and not a.offers.exists()),
+        "unlinked": sum(1 for a in ads if a.attribution == Ad.ATTR_OFFER and not a.links.exists()),
     })
 
 
@@ -4781,15 +4797,18 @@ def api_ad_link_offer(request, pk):
     """Configure an Ad's attribution.
 
     Body (JSON):
-      {"attribution": "barats"}                      -> Barats.tn carousel pool
-      {"attribution": "offer", "offer_ids": [1,2]}   -> link 1 or 2 offers
-      {"offer_ids": []}                              -> unlink (attribution=offer)
+      {"attribution": "barats"}
+        -> Barats.tn carousel pool (clears all links)
+      {"attribution": "offer", "pairs": [{"offer_id":1,"page_id":3},
+                                         {"offer_id":2,"page_id":3}]}
+        -> link 1 or 2 (offer, page) pairs
+      {"pairs": []}  -> unlink all (attribution stays 'offer')
 
-    Back-compat: {"offer_id": <id>|null} still works (single offer).
+    page_id may be null/omitted to mean "any page" for that offer.
     """
     if not _orders_role_check(request):
         return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
-    from .models import Ad, Offer
+    from .models import Ad, Offer, SalesPage, AdOfferLink
     try:
         ad = Ad.objects.get(pk=pk)
     except Ad.DoesNotExist:
@@ -4800,44 +4819,64 @@ def api_ad_link_offer(request, pk):
         return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
 
     attribution = data.get("attribution")
-    # Normalise offer ids from either offer_ids[] or legacy offer_id.
-    if "offer_ids" in data:
-        raw_ids = data.get("offer_ids") or []
-    elif "offer_id" in data:
-        oid = data.get("offer_id")
-        raw_ids = [] if oid in (None, "", "none") else [oid]
-    else:
-        raw_ids = None  # not provided -> leave offers unchanged
 
     if attribution == Ad.ATTR_BARATS:
         ad.attribution = Ad.ATTR_BARATS
         ad.offer = None
         ad.save(update_fields=["attribution", "offer", "updated_at"])
-        ad.offers.clear()
-        return JsonResponse({"status": "ok", "ad_id": ad.id, "attribution": ad.attribution,
-                             "offer_ids": [], "offer_names": []})
+        ad.links.all().delete()
+        return JsonResponse({"status": "ok", "ad_id": ad.id, "attribution": ad.attribution, "pairs": []})
 
     # attribution == 'offer' (default)
     ad.attribution = Ad.ATTR_OFFER
+    pairs = data.get("pairs")
+    if pairs is None:
+        # Nothing to change about links; just persist attribution.
+        ad.save(update_fields=["attribution", "updated_at"])
+        return JsonResponse({"status": "ok", "ad_id": ad.id, "attribution": ad.attribution})
 
-    if raw_ids is not None:
+    if len(pairs) > 2:
+        return JsonResponse({"status": "error", "message": "Maximum 2 offres par pub."}, status=400)
+
+    cleaned = []
+    seen = set()
+    for p in pairs:
+        oid = p.get("offer_id")
+        pgid = p.get("page_id")
+        if oid in (None, "", "none"):
+            continue
         try:
-            ids = [int(x) for x in raw_ids if str(x) not in ("", "none")][:2]
+            oid = int(oid)
         except (ValueError, TypeError):
-            return JsonResponse({"status": "error", "message": "Offre(s) invalide(s)."}, status=400)
-        if len(raw_ids) > 2:
-            return JsonResponse({"status": "error", "message": "Maximum 2 offres par pub."}, status=400)
-        found = list(Offer.objects.filter(pk__in=ids))
-        if len(found) != len(set(ids)):
+            return JsonResponse({"status": "error", "message": "Offre invalide."}, status=400)
+        if not Offer.objects.filter(pk=oid).exists():
             return JsonResponse({"status": "error", "message": "Offre introuvable."}, status=400)
-        ad.offers.set(found)
-        ad.offer = found[0] if found else None  # keep legacy FK in sync
+        if pgid in (None, "", "none"):
+            pgid = None
+        else:
+            try:
+                pgid = int(pgid)
+            except (ValueError, TypeError):
+                return JsonResponse({"status": "error", "message": "Page invalide."}, status=400)
+            if not SalesPage.objects.filter(pk=pgid).exists():
+                return JsonResponse({"status": "error", "message": "Page introuvable."}, status=400)
+        key = (oid, pgid)
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(key)
 
+    # Replace all links atomically.
+    ad.links.all().delete()
+    for oid, pgid in cleaned:
+        AdOfferLink.objects.create(ad=ad, offer_id=oid, sales_page_id=pgid)
+    ad.offer_id = cleaned[0][0] if cleaned else None  # keep legacy FK in sync
     ad.save(update_fields=["attribution", "offer", "updated_at"])
-    linked = list(ad.offers.all())
-    return JsonResponse({"status": "ok", "ad_id": ad.id, "attribution": ad.attribution,
-                         "offer_ids": [o.id for o in linked],
-                         "offer_names": [o.name for o in linked]})
+
+    return JsonResponse({
+        "status": "ok", "ad_id": ad.id, "attribution": ad.attribution,
+        "pairs": [{"offer_id": o, "page_id": p} for o, p in cleaned],
+    })
 
 
 @login_required(login_url="/login/")

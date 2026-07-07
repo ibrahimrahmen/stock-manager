@@ -967,10 +967,13 @@ class Ad(models.Model):
     offer = models.ForeignKey(Offer, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="ads",
         help_text="(Ancien) Offre unique liée. Utiliser plutôt 'offers'.")
-    # Converty / Facebook ads link to ONE or TWO offers. Spend is pooled across
-    # the linked offers' orders (sum orders, divide spend by total).
-    offers = models.ManyToManyField(Offer, related_name="linked_ads", blank=True,
-        help_text="1 ou 2 offres liées à cette pub (Converty/Facebook).")
+    # Converty / Facebook ads link to ONE or TWO (offer, page) pairs. The page
+    # matters: the same offer (e.g. Ensemble ICY MAZE) is sold on several pages
+    # and each page has its OWN ad. Linking through AdOfferLink lets us match
+    # orders on BOTH offer AND sales_page. Spend is pooled across the ad's links.
+    offers = models.ManyToManyField(Offer, through="AdOfferLink",
+        related_name="linked_ads", blank=True,
+        help_text="1 ou 2 paires (offre, page) liées à cette pub.")
     last_synced_at = models.DateTimeField(null=True, blank=True,
         help_text="Dernière synchronisation de la dépense depuis le Sheet.")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -981,6 +984,24 @@ class Ad(models.Model):
 
     def __str__(self):
         return f"{self.campaign_name} ({self.spend})"
+
+
+class AdOfferLink(models.Model):
+    """One (offer, page) pair covered by an ad. An ad may have 1 or 2 of these.
+    Orders are attributed to the ad only when they match BOTH the offer and the
+    sales page, so the same offer on different pages goes to different ads."""
+    ad = models.ForeignKey(Ad, on_delete=models.CASCADE, related_name="links")
+    offer = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name="ad_links")
+    sales_page = models.ForeignKey(SalesPage, on_delete=models.CASCADE,
+        related_name="ad_links", null=True, blank=True,
+        help_text="Page de vente. Vide = toutes pages (rare).")
+
+    class Meta:
+        unique_together = (("ad", "offer", "sales_page"),)
+
+    def __str__(self):
+        pg = self.sales_page.name if self.sales_page else "toutes pages"
+        return f"{self.ad.campaign_name} → {self.offer.name} @ {pg}"
 
 
 # ---------------------------------------------------------------------------

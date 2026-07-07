@@ -1,14 +1,16 @@
 from django.db import migrations, models
+import django.db.models.deletion
 
 
-def copy_offer_to_m2m(apps, schema_editor):
-    """Seed the new M2M `offers` from the legacy single `offer` FK, and set a
-    sensible attribution: if the ad's linked offer sells only on Barats.tn,
-    mark it as the Barats carousel pool; otherwise 'offer'."""
+def seed_links_from_legacy(apps, schema_editor):
+    """Create an AdOfferLink from each ad's legacy single `offer`. Sales page is
+    left null (unknown historically); the user re-picks the page in the UI."""
     Ad = apps.get_model("inventory", "Ad")
+    AdOfferLink = apps.get_model("inventory", "AdOfferLink")
     for ad in Ad.objects.all():
         if ad.offer_id:
-            ad.offers.add(ad.offer_id)
+            AdOfferLink.objects.get_or_create(ad_id=ad.id, offer_id=ad.offer_id,
+                                              sales_page=None)
 
 
 def noop_reverse(apps, schema_editor):
@@ -32,27 +34,38 @@ class Migration(migrations.Migration):
                 max_length=10,
             ),
         ),
-        migrations.AddField(
-            model_name="ad",
-            name="offers",
-            field=models.ManyToManyField(
-                blank=True,
-                help_text="1 ou 2 offres liées à cette pub (Converty/Facebook).",
-                related_name="linked_ads",
-                to="inventory.offer",
-            ),
-        ),
         migrations.AlterField(
             model_name="ad",
             name="offer",
             field=models.ForeignKey(
                 blank=True,
-                help_text="(Ancien) Offre unique liée. Utiliser plutôt 'offers'.",
+                help_text="(Ancien) Offre unique liée. Utiliser plutôt les liens.",
                 null=True,
-                on_delete=models.SET_NULL,
+                on_delete=django.db.models.deletion.SET_NULL,
                 related_name="ads",
                 to="inventory.offer",
             ),
         ),
-        migrations.RunPython(copy_offer_to_m2m, noop_reverse),
+        migrations.CreateModel(
+            name="AdOfferLink",
+            fields=[
+                ("id", models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("ad", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="links", to="inventory.ad")),
+                ("offer", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="ad_links", to="inventory.offer")),
+                ("sales_page", models.ForeignKey(blank=True, help_text="Page de vente. Vide = toutes pages (rare).", null=True, on_delete=django.db.models.deletion.CASCADE, related_name="ad_links", to="inventory.salespage")),
+            ],
+            options={"unique_together": {("ad", "offer", "sales_page")}},
+        ),
+        migrations.AddField(
+            model_name="ad",
+            name="offers",
+            field=models.ManyToManyField(
+                blank=True,
+                help_text="1 ou 2 paires (offre, page) liees a cette pub.",
+                related_name="linked_ads",
+                through="inventory.AdOfferLink",
+                to="inventory.offer",
+            ),
+        ),
+        migrations.RunPython(seed_links_from_legacy, noop_reverse),
     ]

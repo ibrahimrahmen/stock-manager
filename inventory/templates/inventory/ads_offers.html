@@ -45,7 +45,10 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .campaign .clabel{font-size:11px;color:var(--muted);text-transform:uppercase;}
 .campaign .crev{min-width:150px;text-align:right;}
 select{background:var(--surface2);color:var(--text);border:0.5px solid var(--border);border-radius:8px;padding:7px 9px;font-family:inherit;font-size:13px;min-width:150px;margin:2px 0;}
-.offer-pickers{display:flex;flex-direction:column;gap:4px;min-width:170px;}
+.offer-pickers{display:flex;flex-direction:column;gap:4px;min-width:320px;}
+.pair{display:flex;gap:6px;}
+.pair select{min-width:150px;flex:1;}
+.btn-save{background:var(--green-dim);color:var(--green);border:0.5px solid var(--green);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:4px;align-self:flex-start;}
 .attr-toggle{font-size:11px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:5px;margin-top:4px;}
 .pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;margin-left:6px;}
 .pill-warn{background:var(--amber-dim);color:var(--amber);}
@@ -126,34 +129,53 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
   <div class="section-title">📦 Pubs liées à des offres (Converty / Facebook)</div>
   {% if rows %}
     {% for r in rows %}
-    <div class="campaign">
+    <div class="campaign" data-ad="{{ r.ad.id }}">
       <div class="cname">{{ r.ad.campaign_name }}</div>
       <div>
         <div class="clabel">Dépense</div>
         <div class="cspend">{{ r.spend|floatformat:2 }}</div>
       </div>
       <div class="offer-pickers">
-        <div class="clabel">Offre(s) · max 2</div>
-        <select onchange="setOffers({{ r.ad.id }}, this)" data-slot="0">
-          <option value="none">— Offre 1 —</option>
-          {% for offer in offers %}
-          <option value="{{ offer.id }}" {% if r.linked_offers.0.id == offer.id %}selected{% endif %}>{{ offer.name }}</option>
-          {% endfor %}
-        </select>
-        <select onchange="setOffers({{ r.ad.id }}, this)" data-slot="1">
-          <option value="none">— Offre 2 (option) —</option>
-          {% for offer in offers %}
-          <option value="{{ offer.id }}" {% if r.linked_offers.1.id == offer.id %}selected{% endif %}>{{ offer.name }}</option>
-          {% endfor %}
-        </select>
-        <span class="attr-toggle" onclick="setAttr({{ r.ad.id }}, 'barats', this)">↳ marquer Carrousel Barats.tn</span>
+        <div class="clabel">Offre + Page · max 2</div>
+        {# Slot 0 #}
+        <div class="pair" data-slot="0">
+          <select class="off">
+            <option value="none">— Offre 1 —</option>
+            {% for offer in offers %}
+            <option value="{{ offer.id }}" {% if r.links.0.offer_id == offer.id %}selected{% endif %}>{{ offer.name }}</option>
+            {% endfor %}
+          </select>
+          <select class="pg">
+            <option value="none">— Page —</option>
+            {% for pg in pages %}
+            <option value="{{ pg.id }}" {% if r.links.0.page_id == pg.id %}selected{% endif %}>{{ pg.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {# Slot 1 #}
+        <div class="pair" data-slot="1">
+          <select class="off">
+            <option value="none">— Offre 2 (option) —</option>
+            {% for offer in offers %}
+            <option value="{{ offer.id }}" {% if r.links.1.offer_id == offer.id %}selected{% endif %}>{{ offer.name }}</option>
+            {% endfor %}
+          </select>
+          <select class="pg">
+            <option value="none">— Page —</option>
+            {% for pg in pages %}
+            <option value="{{ pg.id }}" {% if r.links.1.page_id == pg.id %}selected{% endif %}>{{ pg.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button class="btn-save" onclick="savePairs({{ r.ad.id }}, this)">Enregistrer</button>
+        <span class="attr-toggle" onclick="setAttr({{ r.ad.id }}, 'barats')">↳ marquer Carrousel Barats.tn</span>
       </div>
       <div class="crev">
         <div class="clabel">Coût/cmd · Revenu · Profit</div>
-        {% if r.linked_offers %}
+        {% if r.links %}
           <div><span class="cpo">{% if r.cpo %}{{ r.cpo|floatformat:3 }}{% else %}—{% endif %}</span> · {{ r.revenue|floatformat:2 }} · <span class="{% if r.profit < 0 %}neg{% elif r.profit > 0 %}pos{% endif %}">{{ r.profit|floatformat:2 }}</span></div>
           <div class="muted">{{ r.order_count }} cmd
-            {% for o in r.linked_offers %}<span class="pill pill-blue">{{ o.name }}</span>{% endfor %}
+            {% for lk in r.links %}<span class="pill pill-blue">{{ lk.offer.name }}{% if lk.page %} @ {{ lk.page.name }}{% endif %}</span>{% endfor %}
           </div>
         {% else %}
           <div class="muted">non liée <span class="pill pill-warn">à lier</span></div>
@@ -166,7 +188,7 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
   {% endif %}
 
   <p class="muted" style="margin-top:14px;">
-    Coût/commande = dépense de la pub ÷ nombre de commandes (En cours + Livrée + Payée) contenant l'une de ses offres liées, sur la période.
+    Coût/commande = dépense de la pub ÷ commandes (En cours + Livrée + Payée) contenant l'une de ses offres liées <b>sur la page choisie</b>, sur la période.
     Pour Barats.tn : dépense carrousel totale ÷ toutes les commandes Barats.tn.
   </p>
 </div>
@@ -183,22 +205,25 @@ async function post(adId, payload) {
   return res.json();
 }
 
-// Read both offer selects for an ad row and send up to 2 ids.
-async function setOffers(adId, sel) {
-  const row = sel.closest('.offer-pickers');
-  const selects = row.querySelectorAll('select[data-slot]');
-  const ids = [];
-  selects.forEach(s => { if (s.value && s.value !== 'none') ids.push(s.value); });
-  // Dedupe (can't link the same offer twice).
-  const uniq = [...new Set(ids)];
-  const data = await post(adId, {attribution: 'offer', offer_ids: uniq});
-  if (data.status === 'ok') { setTimeout(() => location.reload(), 350); }
+// Read both (offer, page) pairs for an ad and save up to 2.
+async function savePairs(adId, btn) {
+  const card = btn.closest('[data-ad]');
+  const pairs = [];
+  card.querySelectorAll('.pair').forEach(row => {
+    const off = row.querySelector('.off').value;
+    const pg = row.querySelector('.pg').value;
+    if (off && off !== 'none') {
+      pairs.push({offer_id: off, page_id: (pg && pg !== 'none') ? pg : null});
+    }
+  });
+  const data = await post(adId, {attribution: 'offer', pairs});
+  if (data.status === 'ok') { setTimeout(() => location.reload(), 300); }
   else { alert(data.message || 'Erreur.'); }
 }
 
-async function setAttr(adId, attribution, el) {
+async function setAttr(adId, attribution) {
   const data = await post(adId, {attribution});
-  if (data.status === 'ok') { setTimeout(() => location.reload(), 350); }
+  if (data.status === 'ok') { setTimeout(() => location.reload(), 300); }
   else { alert(data.message || 'Erreur.'); }
 }
 </script>
