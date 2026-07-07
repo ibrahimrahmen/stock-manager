@@ -45,10 +45,13 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .campaign .clabel{font-size:11px;color:var(--muted);text-transform:uppercase;}
 .campaign .crev{min-width:150px;text-align:right;}
 select{background:var(--surface2);color:var(--text);border:0.5px solid var(--border);border-radius:8px;padding:7px 9px;font-family:inherit;font-size:13px;min-width:150px;margin:2px 0;}
-.offer-pickers{display:flex;flex-direction:column;gap:4px;min-width:320px;}
-.pair{display:flex;gap:6px;}
-.pair select{min-width:150px;flex:1;}
-.btn-save{background:var(--green-dim);color:var(--green);border:0.5px solid var(--green);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:4px;align-self:flex-start;}
+.offer-pickers{display:flex;flex-direction:column;gap:6px;min-width:340px;}
+.pairs-wrap{display:flex;flex-direction:column;gap:4px;}
+.pair{display:flex;gap:6px;align-items:center;}
+.pair select{min-width:140px;flex:1;}
+.btn-x{background:var(--red-dim);color:var(--red);border:none;border-radius:6px;width:26px;height:30px;cursor:pointer;font-size:12px;flex:0 0 auto;}
+.btn-add{background:var(--surface2);color:var(--muted);border:0.5px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;}
+.btn-save{background:var(--green-dim);color:var(--green);border:0.5px solid var(--green);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;}
 .attr-toggle{font-size:11px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:5px;margin-top:4px;}
 .pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;margin-left:6px;}
 .pill-warn{background:var(--amber-dim);color:var(--amber);}
@@ -101,8 +104,8 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
       <div class="muted">{{ barats.ads|length }} pub(s) carrousel · dépense répartie sur toutes les commandes Barats.tn de la période</div>
       <div class="barats-metrics">
         <div class="bm"><div class="l">Dépense</div><div class="v">{{ barats.spend|floatformat:2 }}</div></div>
-        <div class="bm"><div class="l">Commandes Barats.tn</div><div class="v">{{ barats.order_count }}</div></div>
-        <div class="bm"><div class="l">Coût / commande</div><div class="v cpo">{% if barats.cpo %}{{ barats.cpo|floatformat:3 }}{% else %}—{% endif %}</div></div>
+        <div class="bm"><div class="l">Unités vendues</div><div class="v">{{ barats.order_count }}</div></div>
+        <div class="bm"><div class="l">Coût / unité</div><div class="v cpo">{% if barats.cpo %}{{ barats.cpo|floatformat:3 }}{% else %}—{% endif %}</div></div>
         <div class="bm"><div class="l">Revenu</div><div class="v">{{ barats.revenue|floatformat:2 }}</div></div>
         <div class="bm"><div class="l">Profit</div><div class="v {% if barats.profit < 0 %}neg{% else %}pos{% endif %}">{{ barats.profit|floatformat:2 }}</div></div>
       </div>
@@ -136,45 +139,53 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
         <div class="cspend">{{ r.spend|floatformat:2 }}</div>
       </div>
       <div class="offer-pickers">
-        <div class="clabel">Offre + Page · max 2</div>
-        {# Slot 0 #}
-        <div class="pair" data-slot="0">
-          <select class="off">
-            <option value="none">— Offre 1 —</option>
-            {% for offer in offers %}
-            <option value="{{ offer.id }}" {% if r.links.0.offer_id == offer.id %}selected{% endif %}>{{ offer.name }}</option>
-            {% endfor %}
-          </select>
-          <select class="pg">
-            <option value="none">— Page —</option>
-            {% for pg in pages %}
-            <option value="{{ pg.id }}" {% if r.links.0.page_id == pg.id %}selected{% endif %}>{{ pg.name }}</option>
-            {% endfor %}
-          </select>
+        <div class="clabel">Offres + Page · illimité</div>
+        <div class="pairs-wrap">
+          {% for lk in r.links %}
+          <div class="pair">
+            <select class="off">
+              <option value="none">— Offre —</option>
+              {% for offer in offers %}
+              <option value="{{ offer.id }}" {% if lk.offer_id == offer.id %}selected{% endif %}>{{ offer.name }}</option>
+              {% endfor %}
+            </select>
+            <select class="pg">
+              <option value="none">— Page —</option>
+              {% for pg in pages %}
+              <option value="{{ pg.id }}" {% if lk.page_id == pg.id %}selected{% endif %}>{{ pg.name }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn-x" onclick="rmPair(this)" title="Retirer">✕</button>
+          </div>
+          {% endfor %}
+          {# one empty row to add a new link #}
+          <div class="pair">
+            <select class="off">
+              <option value="none">— Offre —</option>
+              {% for offer in offers %}
+              <option value="{{ offer.id }}">{{ offer.name }}</option>
+              {% endfor %}
+            </select>
+            <select class="pg">
+              <option value="none">— Page —</option>
+              {% for pg in pages %}
+              <option value="{{ pg.id }}">{{ pg.name }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn-x" onclick="rmPair(this)" title="Retirer">✕</button>
+          </div>
         </div>
-        {# Slot 1 #}
-        <div class="pair" data-slot="1">
-          <select class="off">
-            <option value="none">— Offre 2 (option) —</option>
-            {% for offer in offers %}
-            <option value="{{ offer.id }}" {% if r.links.1.offer_id == offer.id %}selected{% endif %}>{{ offer.name }}</option>
-            {% endfor %}
-          </select>
-          <select class="pg">
-            <option value="none">— Page —</option>
-            {% for pg in pages %}
-            <option value="{{ pg.id }}" {% if r.links.1.page_id == pg.id %}selected{% endif %}>{{ pg.name }}</option>
-            {% endfor %}
-          </select>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-add" onclick="addPair(this)">+ Offre</button>
+          <button class="btn-save" onclick="savePairs({{ r.ad.id }}, this)">Enregistrer</button>
         </div>
-        <button class="btn-save" onclick="savePairs({{ r.ad.id }}, this)">Enregistrer</button>
         <span class="attr-toggle" onclick="setAttr({{ r.ad.id }}, 'barats')">↳ marquer Carrousel Barats.tn</span>
       </div>
       <div class="crev">
-        <div class="clabel">Coût/cmd · Revenu · Profit</div>
+        <div class="clabel">Coût/unité · Revenu · Profit</div>
         {% if r.links %}
           <div><span class="cpo">{% if r.cpo %}{{ r.cpo|floatformat:3 }}{% else %}—{% endif %}</span> · {{ r.revenue|floatformat:2 }} · <span class="{% if r.profit < 0 %}neg{% elif r.profit > 0 %}pos{% endif %}">{{ r.profit|floatformat:2 }}</span></div>
-          <div class="muted">{{ r.order_count }} cmd
+          <div class="muted">{{ r.order_count }} unité(s)
             {% for lk in r.links %}<span class="pill pill-blue">{{ lk.offer.name }}{% if lk.page %} @ {{ lk.page.name }}{% endif %}</span>{% endfor %}
           </div>
         {% else %}
@@ -205,7 +216,7 @@ async function post(adId, payload) {
   return res.json();
 }
 
-// Read both (offer, page) pairs for an ad and save up to 2.
+// Read ALL (offer, page) pairs for an ad and save (unlimited).
 async function savePairs(adId, btn) {
   const card = btn.closest('[data-ad]');
   const pairs = [];
@@ -219,6 +230,22 @@ async function savePairs(adId, btn) {
   const data = await post(adId, {attribution: 'offer', pairs});
   if (data.status === 'ok') { setTimeout(() => location.reload(), 300); }
   else { alert(data.message || 'Erreur.'); }
+}
+
+// Clone the last pair row (empty) to add another offer link.
+function addPair(btn) {
+  const wrap = btn.closest('.offer-pickers').querySelector('.pairs-wrap');
+  const rows = wrap.querySelectorAll('.pair');
+  const clone = rows[rows.length - 1].cloneNode(true);
+  clone.querySelectorAll('select').forEach(s => s.value = 'none');
+  wrap.appendChild(clone);
+}
+
+function rmPair(btn) {
+  const wrap = btn.closest('.pairs-wrap');
+  const row = btn.closest('.pair');
+  if (wrap.querySelectorAll('.pair').length > 1) row.remove();
+  else { row.querySelectorAll('select').forEach(s => s.value = 'none'); }
 }
 
 async function setAttr(adId, attribution) {

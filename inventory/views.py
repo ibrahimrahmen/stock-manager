@@ -4590,10 +4590,12 @@ def api_order_set_scheduled(request, pk):
 
 def _meta_fetch_spend_by_campaign(start_date, end_date):
     """Fetch ad spend PER CAMPAIGN from Meta between two dates (inclusive).
-    Returns a dict {campaign_name: spend_float}. Empty dict on any error.
+    Returns a dict {campaign_id: {"name": str, "spend": float}}. Empty on error.
 
-    Reuses the same env vars as the existing daily-total fetch:
-    META_ACCESS_TOKEN and META_AD_ACCOUNT_ID.
+    Keyed on campaign_id (STABLE) so renaming a campaign in Ads Manager doesn't
+    create a duplicate. Spend from multiple rows of the same campaign is summed.
+
+    Env vars: META_ACCESS_TOKEN and META_AD_ACCOUNT_ID.
     """
     import urllib.request
     token = os.environ.get("META_ACCESS_TOKEN", "").strip()
@@ -4604,29 +4606,37 @@ def _meta_fetch_spend_by_campaign(start_date, end_date):
         account_id = f"act_{account_id}"
     url = (
         f"https://graph.facebook.com/v18.0/{account_id}/insights"
-        f"?level=campaign&fields=campaign_name,spend"
+        f"?level=campaign&fields=campaign_id,campaign_name,spend"
         f"&time_range={{'since':'{start_date}','until':'{end_date}'}}"
-        f"&limit=200&access_token={token}"
+        f"&limit=500&access_token={token}"
     )
     try:
         with urllib.request.urlopen(url, timeout=20) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
         result = {}
         for entry in data.get("data", []):
-            name = entry.get("campaign_name", "")
-            if not name:
+            cid = entry.get("campaign_id", "")
+            name = entry.get("campaign_name", "") or cid
+            if not cid:
                 continue
             try:
-                result[name] = float(entry.get("spend", "0"))
+                spend = float(entry.get("spend", "0"))
             except (ValueError, TypeError):
-                result[name] = 0.0
+                spend = 0.0
+            if cid in result:
+                result[cid]["spend"] += spend
+                result[cid]["name"] = name
+            else:
+                result[cid] = {"name": name, "spend": spend}
         return result
     except Exception:
         return {}
 
 
 def _sync_ads_from_meta(start_date, end_date):
-    """Upsert Ad rows from Meta per-campaign spend. Returns (ok, message, n)."""
+    """Upsert Ad rows from Meta per-campaign spend, keyed on campaign_id.
+    Also refreshes the display name and migrates any legacy name-only rows.
+    Returns (ok, message, n)."""
     from decimal import Decimal
     from django.utils import timezone
     from .models import Ad
@@ -4635,11 +4645,22 @@ def _sync_ads_from_meta(start_date, end_date):
         return False, "Aucune donnée Meta (vérifier le token / la période).", 0
     now = timezone.now()
     n = 0
-    for name, spend in spend_map.items():
-        ad, _ = Ad.objects.get_or_create(campaign_name=name)
+    for cid, info in spend_map.items():
+        name = info["name"]
+        spend = info["spend"]
+        ad = Ad.objects.filter(campaign_id=cid).first()
+        if ad is None:
+            # Legacy row synced by name before campaign_id existed? Adopt it so
+            # its offer links are preserved, then stamp the id.
+            ad = Ad.objects.filter(campaign_id__isnull=True, campaign_name=name).first()
+            if ad is None:
+                ad = Ad(campaign_id=cid, campaign_name=name)
+            else:
+                ad.campaign_id = cid
+        ad.campaign_name = name  # refresh display name (handles renames)
         ad.spend = Decimal(str(round(spend, 2)))
         ad.last_synced_at = now
-        ad.save(update_fields=["spend", "last_synced_at", "updated_at"])
+        ad.save()
         n += 1
     return True, f"{n} publicité(s) synchronisée(s) depuis Meta.", n
 
@@ -4696,49 +4717,59 @@ def ads_offers_dashboard(request):
     offers = list(Offer.objects.filter(is_active=True).order_by("name"))
     pages = list(SalesPage.objects.filter(is_active=True).order_by("name"))
 
-    # Qualifying orders created in the range, with their offer ids + page.
+    # Qualifying orders created in the range, with their offer lines + page.
     q_orders = (Order.objects
                 .filter(status__in=QUALIFYING, created_at__date__gte=start,
                         created_at__date__lte=end)
                 .select_related("sales_page")
                 .prefetch_related("order_offers"))
 
-    # Index orders by (offer_id, page_id) so we match BOTH. Also keep a
-    # page-only index for the Barats pool, and per-order revenue.
-    pair_order_ids = defaultdict(set)       # (offer_id, page_id) -> {order_id}
-    offer_any_page = defaultdict(set)       # offer_id -> {order_id}  (page ignored)
-    order_revenue = {}
-    barats_order_ids = set()
+    # Index by (offer_id, page_id) and by offer_id (any page). For each we track
+    # the total QUANTITY of that offer sold (3× ICY MAZE counts as 3) and the
+    # revenue that offer generated (bundle_price × quantity), so an ad's cost is
+    # divided by units sold, and revenue is the offer's own share (no
+    # over-counting on multi-offer orders).
+    from collections import defaultdict
+    pair_qty = defaultdict(int)          # (offer_id, page_id) -> qty
+    pair_rev = defaultdict(lambda: Decimal("0"))
+    offer_qty_any = defaultdict(int)     # offer_id -> qty (any page)
+    offer_rev_any = defaultdict(lambda: Decimal("0"))
+    barats_qty = 0
+    barats_rev = Decimal("0")
     for o in q_orders:
-        order_revenue[o.id] = (o.total or Decimal("0"))
         page_id = o.sales_page_id
         page_name = (o.sales_page.name if o.sales_page else "").strip().lower()
-        if page_name == "barats.tn":
-            barats_order_ids.add(o.id)
+        is_barats = page_name == "barats.tn"
         for oo in o.order_offers.all():
-            if oo.offer_id:
-                pair_order_ids[(oo.offer_id, page_id)].add(o.id)
-                offer_any_page[oo.offer_id].add(o.id)
+            if not oo.offer_id:
+                continue
+            qty = oo.quantity or 1
+            rev = (oo.bundle_price or Decimal("0")) * qty
+            pair_qty[(oo.offer_id, page_id)] += qty
+            pair_rev[(oo.offer_id, page_id)] += rev
+            offer_qty_any[oo.offer_id] += qty
+            offer_rev_any[oo.offer_id] += rev
+            if is_barats:
+                barats_qty += qty
+                barats_rev += rev
 
     total_spend = Decimal("0")
 
-    # --- Section 1: Barats.tn carousel pool (blended) ---
+    # --- Section 1: Barats.tn carousel pool (blended, by quantity) ---
     barats_ads = [a for a in ads if a.attribution == Ad.ATTR_BARATS]
     barats_spend = sum((a.spend or Decimal("0")) for a in barats_ads)
-    barats_order_count = len(barats_order_ids)
-    barats_revenue = sum((order_revenue.get(oid, Decimal("0")) for oid in barats_order_ids), Decimal("0"))
-    barats_cpo = (barats_spend / barats_order_count) if barats_order_count else None
+    barats_cpo = (barats_spend / barats_qty) if barats_qty else None
     total_spend += barats_spend
     barats_block = {
         "ads": sorted(barats_ads, key=lambda a: a.spend or 0, reverse=True),
         "spend": barats_spend,
-        "order_count": barats_order_count,
-        "revenue": barats_revenue,
+        "order_count": barats_qty,
+        "revenue": barats_rev,
         "cpo": barats_cpo,
-        "profit": barats_revenue - barats_spend,
+        "profit": barats_rev - barats_spend,
     }
 
-    # --- Section 2: offer-linked ads (Converty / Facebook) ---
+    # --- Section 2: offer-linked ads (Converty / Facebook), by quantity ---
     rows = []
     for ad in ads:
         if ad.attribution == Ad.ATTR_BARATS:
@@ -4746,35 +4777,35 @@ def ads_offers_dashboard(request):
         spend = ad.spend or Decimal("0")
         total_spend += spend
         links = list(ad.links.all())
-        # Pool orders across ALL (offer, page) links (union — order counted once).
-        pooled_ids = set()
+        qty_sum = 0
+        revenue = Decimal("0")
         link_desc = []
         for lk in links:
             if lk.sales_page_id:
-                ids = pair_order_ids.get((lk.offer_id, lk.sales_page_id), set())
+                q = pair_qty.get((lk.offer_id, lk.sales_page_id), 0)
+                r = pair_rev.get((lk.offer_id, lk.sales_page_id), Decimal("0"))
             else:
-                # No page set on the link → match the offer on any page.
-                ids = offer_any_page.get(lk.offer_id, set())
-            pooled_ids |= ids
+                q = offer_qty_any.get(lk.offer_id, 0)
+                r = offer_rev_any.get(lk.offer_id, Decimal("0"))
+            qty_sum += q
+            revenue += r
             link_desc.append({
                 "offer": lk.offer, "offer_id": lk.offer_id,
-                "page": lk.sales_page, "page_id": lk.sales_page_id,
+                "page": lk.sales_page, "page_id": lk.sales_page_id, "qty": q,
             })
-        order_count = len(pooled_ids)
-        revenue = sum((order_revenue.get(oid, Decimal("0")) for oid in pooled_ids), Decimal("0"))
-        cpo = (spend / order_count) if order_count else None
+        cpo = (spend / qty_sum) if qty_sum else None
         rows.append({
             "ad": ad,
             "spend": spend,
             "links": link_desc,
-            "order_count": order_count,
+            "order_count": qty_sum,
             "revenue": revenue,
             "cpo": cpo,
             "profit": revenue - spend,
         })
     rows.sort(key=lambda r: r["spend"], reverse=True)
 
-    total_revenue = barats_revenue + sum((r["revenue"] for r in rows), Decimal("0"))
+    total_revenue = barats_rev + sum((r["revenue"] for r in rows), Decimal("0"))
 
     return render(request, "inventory/ads_offers.html", {
         "rows": rows,
@@ -4836,9 +4867,6 @@ def api_ad_link_offer(request, pk):
         # Nothing to change about links; just persist attribution.
         ad.save(update_fields=["attribution", "updated_at"])
         return JsonResponse({"status": "ok", "ad_id": ad.id, "attribution": ad.attribution})
-
-    if len(pairs) > 2:
-        return JsonResponse({"status": "error", "message": "Maximum 2 offres par pub."}, status=400)
 
     cleaned = []
     seen = set()

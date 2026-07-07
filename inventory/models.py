@@ -956,9 +956,13 @@ class Ad(models.Model):
     ATTR_BARATS = "barats"
     ATTR_CHOICES = [(ATTR_OFFER, "Offre(s) liée(s)"), (ATTR_BARATS, "Carrousel Barats.tn")]
 
-    # campaign_name from the sheet is the unique key we match/sync on.
-    campaign_name = models.CharField(max_length=200, unique=True,
-        help_text="Nom de la campagne (clé de synchronisation avec le Google Sheet).")
+    # Meta campaign id — the STABLE key. Names can be renamed in Ads Manager,
+    # so we sync/match on this id and only display the (latest) name.
+    campaign_id = models.CharField(max_length=64, unique=True, null=True, blank=True,
+        help_text="ID de campagne Meta (clé stable de synchronisation).")
+    # campaign_name is now just a display label, refreshed on each sync.
+    campaign_name = models.CharField(max_length=200, db_index=True,
+        help_text="Nom de la campagne (affichage ; peut changer).")
     spend = models.DecimalField(max_digits=12, decimal_places=2, default=0,
         help_text="Dépense synchronisée depuis le Google Sheet (devise du compte).")
     attribution = models.CharField(max_length=10, choices=ATTR_CHOICES, default=ATTR_OFFER,
