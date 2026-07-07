@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Publicités du jour — Stock Manager</title>
+<title>Publicités & Coût par commande — Stock Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -13,34 +13,44 @@
   --green:#4ade9a;--green-dim:rgba(74,222,154,0.15);
   --amber:#f5a623;--amber-dim:rgba(245,166,35,0.15);
   --red:#f87171;--red-dim:rgba(248,113,113,0.15);
+  --blue:#60a5fa;--blue-dim:rgba(96,165,250,0.15);
 }
 body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
 .topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
 .brand{font-family:'DM Serif Display',serif;font-size:22px;}
 .userbar{display:flex;gap:14px;align-items:center;}
 .userbar a{color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;font-size:13px;}
-.container{padding:24px;max-width:1000px;margin:0 auto;}
+.container{padding:24px;max-width:1040px;margin:0 auto;}
 .head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px;flex-wrap:wrap;gap:12px;}
 .title{font-family:'DM Serif Display',serif;font-size:28px;}
 .subtitle{color:var(--muted);font-size:13px;margin-top:4px;}
-.daypick{display:flex;gap:8px;align-items:flex-end;}
+.daypick{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;}
 .daypick label{font-size:11px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:4px;}
 .daypick input{background:var(--surface2);color:var(--text);border:0.5px solid var(--border);border-radius:8px;padding:8px 10px;font-family:inherit;}
 .btn{background:var(--amber);color:#0a0a08;border:none;border-radius:10px;padding:9px 16px;font-weight:600;font-size:13px;cursor:pointer;font-family:inherit;}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:20px;}
+.chip{background:var(--surface2);color:var(--muted);border:0.5px solid var(--border);border-radius:20px;padding:6px 12px;font-size:12px;text-decoration:none;}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:24px;}
 .stat{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;padding:18px;}
 .stat .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;}
 .stat .value{font-size:24px;font-weight:600;margin-top:6px;}
-.day-header{font-family:'DM Serif Display',serif;font-size:20px;margin-bottom:14px;padding-bottom:10px;border-bottom:0.5px solid var(--border);}
+.section-title{font-family:'DM Serif Display',serif;font-size:20px;margin:26px 0 12px;padding-bottom:10px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:10px;}
+.barats-card{background:linear-gradient(135deg,rgba(96,165,250,0.10),var(--surface));border:0.5px solid var(--blue);border-radius:16px;padding:20px;margin-bottom:12px;}
+.barats-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:16px;margin-top:12px;}
+.bm .l{font-size:11px;color:var(--muted);text-transform:uppercase;}
+.bm .v{font-size:20px;font-weight:600;margin-top:4px;}
+.cpo{color:var(--amber);font-weight:700;}
 .campaign{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;padding:16px 18px;margin-bottom:10px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
-.campaign .cname{flex:1;min-width:200px;font-weight:500;}
-.campaign .cspend{font-size:18px;font-weight:600;min-width:90px;text-align:right;}
+.campaign .cname{flex:1;min-width:180px;font-weight:500;}
+.campaign .cspend{font-size:18px;font-weight:600;min-width:80px;text-align:right;}
 .campaign .clabel{font-size:11px;color:var(--muted);text-transform:uppercase;}
-.campaign .crev{min-width:120px;text-align:right;}
-select{background:var(--surface2);color:var(--text);border:0.5px solid var(--border);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:13px;min-width:200px;}
-.pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;margin-left:8px;}
+.campaign .crev{min-width:150px;text-align:right;}
+select{background:var(--surface2);color:var(--text);border:0.5px solid var(--border);border-radius:8px;padding:7px 9px;font-family:inherit;font-size:13px;min-width:150px;margin:2px 0;}
+.offer-pickers{display:flex;flex-direction:column;gap:4px;min-width:170px;}
+.attr-toggle{font-size:11px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:5px;margin-top:4px;}
+.pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;margin-left:6px;}
 .pill-warn{background:var(--amber-dim);color:var(--amber);}
 .pill-ok{background:var(--green-dim);color:var(--green);}
+.pill-blue{background:var(--blue-dim);color:var(--blue);}
 .pos{color:var(--green);} .neg{color:var(--red);}
 .muted{color:var(--muted);font-size:12px;}
 .empty{text-align:center;color:var(--muted);padding:40px;background:var(--surface);border:0.5px solid var(--border);border-radius:14px;}
@@ -59,23 +69,61 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
 <div class="container">
   <div class="head">
     <div>
-      <div class="title">Publicités du jour</div>
-      <div class="subtitle">Dépense Meta par campagne · liez chaque campagne à une offre · revenu toutes sources</div>
+      <div class="title">Coût par commande</div>
+      <div class="subtitle">Dépense Meta vs commandes (En cours + Livrée + Payée) · Barats.tn en pool · autres pages par offre(s)</div>
     </div>
     <form class="daypick" method="get">
-      <div><label>Jour</label><input type="date" name="day" value="{{ day }}"></div>
+      <div><label>Début</label><input type="date" name="start" value="{{ start }}"></div>
+      <div><label>Fin</label><input type="date" name="end" value="{{ end }}"></div>
       <button class="btn" type="submit">Voir</button>
     </form>
   </div>
 
-  <div class="stats">
-    <div class="stat"><div class="label">Dépense du jour</div><div class="value">{{ total_spend|floatformat:2 }}</div></div>
-    <div class="stat"><div class="label">Revenu (payé)</div><div class="value">{{ total_revenue|floatformat:2 }}</div></div>
-    <div class="stat"><div class="label">Profit</div><div class="value {% if total_profit < 0 %}neg{% else %}pos{% endif %}">{{ total_profit|floatformat:2 }}</div></div>
+  <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;">
+    <a class="chip" href="?">Aujourd'hui</a>
+    <a class="chip" href="?start={{ start }}&end={{ start }}">Jour de début seul</a>
   </div>
 
-  <div class="day-header">{% if is_today %}Aujourd'hui · {% endif %}{{ day }}</div>
+  <div class="stats">
+    <div class="stat"><div class="label">Dépense totale</div><div class="value">{{ total_spend|floatformat:2 }}</div></div>
+    <div class="stat"><div class="label">Revenu (qualifié)</div><div class="value">{{ total_revenue|floatformat:2 }}</div></div>
+    <div class="stat"><div class="label">Profit</div><div class="value {% if total_profit < 0 %}neg{% else %}pos{% endif %}">{{ total_profit|floatformat:2 }}</div></div>
+    {% if unlinked %}<div class="stat"><div class="label">Pubs à lier</div><div class="value" style="color:var(--amber);">{{ unlinked }}</div></div>{% endif %}
+  </div>
 
+  <!-- ============ BARATS.TN CARROUSEL (pooled) ============ -->
+  <div class="section-title">🌐 Barats.tn — Carrousel (coût mixte)</div>
+  <div class="barats-card">
+    {% if barats.ads %}
+      <div class="muted">{{ barats.ads|length }} pub(s) carrousel · dépense répartie sur toutes les commandes Barats.tn de la période</div>
+      <div class="barats-metrics">
+        <div class="bm"><div class="l">Dépense</div><div class="v">{{ barats.spend|floatformat:2 }}</div></div>
+        <div class="bm"><div class="l">Commandes Barats.tn</div><div class="v">{{ barats.order_count }}</div></div>
+        <div class="bm"><div class="l">Coût / commande</div><div class="v cpo">{% if barats.cpo %}{{ barats.cpo|floatformat:3 }}{% else %}—{% endif %}</div></div>
+        <div class="bm"><div class="l">Revenu</div><div class="v">{{ barats.revenue|floatformat:2 }}</div></div>
+        <div class="bm"><div class="l">Profit</div><div class="v {% if barats.profit < 0 %}neg{% else %}pos{% endif %}">{{ barats.profit|floatformat:2 }}</div></div>
+      </div>
+      <div style="margin-top:14px;">
+        {% for ad in barats.ads %}
+        <div class="campaign" style="margin-bottom:6px;padding:10px 14px;">
+          <div class="cname">{{ ad.campaign_name }}</div>
+          <div class="cspend">{{ ad.spend|floatformat:2 }}</div>
+          <div>
+            <select onchange="setAttr({{ ad.id }}, this.value, this)">
+              <option value="barats" selected>🌐 Carrousel Barats.tn</option>
+              <option value="offer">↳ Passer en offre(s)</option>
+            </select>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="muted">Aucune pub marquée « Carrousel Barats.tn ». Utilisez le menu d'une pub ci-dessous pour l'y ajouter.</div>
+    {% endif %}
+  </div>
+
+  <!-- ============ OFFER-LINKED ADS (Converty / Facebook) ============ -->
+  <div class="section-title">📦 Pubs liées à des offres (Converty / Facebook)</div>
   {% if rows %}
     {% for r in rows %}
     <div class="campaign">
@@ -84,49 +132,74 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
         <div class="clabel">Dépense</div>
         <div class="cspend">{{ r.spend|floatformat:2 }}</div>
       </div>
-      <div>
-        <div class="clabel">Offre</div>
-        <select onchange="linkOffer({{ r.ad.id }}, this.value, this)">
-          <option value="none">— Choisir —</option>
+      <div class="offer-pickers">
+        <div class="clabel">Offre(s) · max 2</div>
+        <select onchange="setOffers({{ r.ad.id }}, this)" data-slot="0">
+          <option value="none">— Offre 1 —</option>
           {% for offer in offers %}
-          <option value="{{ offer.id }}" {% if r.ad.offer_id == offer.id %}selected{% endif %}>{{ offer.name }}</option>
+          <option value="{{ offer.id }}" {% if r.linked_offers.0.id == offer.id %}selected{% endif %}>{{ offer.name }}</option>
           {% endfor %}
         </select>
-        {% if r.ad.offer_id %}<span class="pill pill-ok" data-linked>liée</span>{% else %}<span class="pill pill-warn" data-linked>à lier</span>{% endif %}
+        <select onchange="setOffers({{ r.ad.id }}, this)" data-slot="1">
+          <option value="none">— Offre 2 (option) —</option>
+          {% for offer in offers %}
+          <option value="{{ offer.id }}" {% if r.linked_offers.1.id == offer.id %}selected{% endif %}>{{ offer.name }}</option>
+          {% endfor %}
+        </select>
+        <span class="attr-toggle" onclick="setAttr({{ r.ad.id }}, 'barats', this)">↳ marquer Carrousel Barats.tn</span>
       </div>
       <div class="crev">
-        <div class="clabel">Revenu / Profit</div>
-        {% if r.ad.offer_id %}
-        <div>{{ r.revenue|floatformat:2 }} · <span class="{% if r.profit < 0 %}neg{% elif r.profit > 0 %}pos{% endif %}">{{ r.profit|floatformat:2 }}</span></div>
-        <div class="muted">{{ r.order_count }} cmd</div>
-        {% else %}<div class="muted">—</div>{% endif %}
+        <div class="clabel">Coût/cmd · Revenu · Profit</div>
+        {% if r.linked_offers %}
+          <div><span class="cpo">{% if r.cpo %}{{ r.cpo|floatformat:3 }}{% else %}—{% endif %}</span> · {{ r.revenue|floatformat:2 }} · <span class="{% if r.profit < 0 %}neg{% elif r.profit > 0 %}pos{% endif %}">{{ r.profit|floatformat:2 }}</span></div>
+          <div class="muted">{{ r.order_count }} cmd
+            {% for o in r.linked_offers %}<span class="pill pill-blue">{{ o.name }}</span>{% endfor %}
+          </div>
+        {% else %}
+          <div class="muted">non liée <span class="pill pill-warn">à lier</span></div>
+        {% endif %}
       </div>
     </div>
     {% endfor %}
   {% else %}
-    <div class="empty">Aucune dépense de campagne pour ce jour.<br>Vérifiez le token Meta et la date.</div>
+    <div class="empty">Aucune pub liée à une offre pour cette période.<br>Vérifiez le token Meta et les dates.</div>
   {% endif %}
 
-  <p class="muted" style="margin-top:14px;">Revenu = commandes payées (Livrée) créées ce jour, contenant l'offre liée, toutes sources confondues.</p>
+  <p class="muted" style="margin-top:14px;">
+    Coût/commande = dépense de la pub ÷ nombre de commandes (En cours + Livrée + Payée) contenant l'une de ses offres liées, sur la période.
+    Pour Barats.tn : dépense carrousel totale ÷ toutes les commandes Barats.tn.
+  </p>
 </div>
 
 <script>
 const csrf = () => document.cookie.split('csrftoken=')[1]?.split(';')[0] || '';
-async function linkOffer(adId, offerId, sel) {
-  const pill = sel.parentNode.querySelector('[data-linked]');
-  try {
-    const res = await fetch('/api/ads/' + adId + '/link-offer/', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
-      body: JSON.stringify({offer_id: offerId === 'none' ? null : offerId}),
-    });
-    const data = await res.json();
-    if (data.status === 'ok') {
-      if (data.offer_id) { pill.className = 'pill pill-ok'; pill.textContent = 'liée'; }
-      else { pill.className = 'pill pill-warn'; pill.textContent = 'à lier'; }
-      setTimeout(() => window.location.reload(), 400);
-    } else { alert(data.message || 'Erreur.'); }
-  } catch (e) { alert("Erreur réseau."); }
+
+async function post(adId, payload) {
+  const res = await fetch('/api/ads/' + adId + '/link-offer/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+// Read both offer selects for an ad row and send up to 2 ids.
+async function setOffers(adId, sel) {
+  const row = sel.closest('.offer-pickers');
+  const selects = row.querySelectorAll('select[data-slot]');
+  const ids = [];
+  selects.forEach(s => { if (s.value && s.value !== 'none') ids.push(s.value); });
+  // Dedupe (can't link the same offer twice).
+  const uniq = [...new Set(ids)];
+  const data = await post(adId, {attribution: 'offer', offer_ids: uniq});
+  if (data.status === 'ok') { setTimeout(() => location.reload(), 350); }
+  else { alert(data.message || 'Erreur.'); }
+}
+
+async function setAttr(adId, attribution, el) {
+  const data = await post(adId, {attribution});
+  if (data.status === 'ok') { setTimeout(() => location.reload(), 350); }
+  else { alert(data.message || 'Erreur.'); }
 }
 </script>
 </body>

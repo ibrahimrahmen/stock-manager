@@ -949,14 +949,28 @@ class OfferProduct(models.Model):
 # the sheet; the offer link is set manually in the ads interface.
 # ---------------------------------------------------------------------------
 class Ad(models.Model):
+    # attribution kind: 'offer' = linked to 1-2 specific offers (Converty/FB),
+    # 'barats' = part of the barats.tn carousel pool (spend blended over ALL
+    # barats.tn orders, not any single offer).
+    ATTR_OFFER = "offer"
+    ATTR_BARATS = "barats"
+    ATTR_CHOICES = [(ATTR_OFFER, "Offre(s) liée(s)"), (ATTR_BARATS, "Carrousel Barats.tn")]
+
     # campaign_name from the sheet is the unique key we match/sync on.
     campaign_name = models.CharField(max_length=200, unique=True,
         help_text="Nom de la campagne (clé de synchronisation avec le Google Sheet).")
     spend = models.DecimalField(max_digits=12, decimal_places=2, default=0,
         help_text="Dépense synchronisée depuis le Google Sheet (devise du compte).")
+    attribution = models.CharField(max_length=10, choices=ATTR_CHOICES, default=ATTR_OFFER,
+        help_text="Comment cette pub est attribuée : à des offres précises, ou au pool Barats.tn.")
+    # Legacy single link — kept for back-compat. New code uses `offers` (M2M).
     offer = models.ForeignKey(Offer, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="ads",
-        help_text="Offre liée à cette publicité (une offre peut avoir plusieurs pubs).")
+        help_text="(Ancien) Offre unique liée. Utiliser plutôt 'offers'.")
+    # Converty / Facebook ads link to ONE or TWO offers. Spend is pooled across
+    # the linked offers' orders (sum orders, divide spend by total).
+    offers = models.ManyToManyField(Offer, related_name="linked_ads", blank=True,
+        help_text="1 ou 2 offres liées à cette pub (Converty/Facebook).")
     last_synced_at = models.DateTimeField(null=True, blank=True,
         help_text="Dernière synchronisation de la dépense depuis le Sheet.")
     created_at = models.DateTimeField(auto_now_add=True)

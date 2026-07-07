@@ -4644,68 +4644,133 @@ def _sync_ads_from_meta(start_date, end_date):
 
 @login_required(login_url="/login/")
 def ads_offers_dashboard(request):
-    """Ads page: shows ONE day (latest/today by default), with each campaign
-    listed underneath its spend, a dropdown to link each campaign to an offer,
-    and cross-source paid revenue per linked offer (web + DM + manual).
+    """Ads / cost-per-order dashboard over a date range (default: today).
+
+    Two attribution models:
+
+    * BARATS.TN CARROUSEL (ad.attribution == 'barats'): every barats.tn ad is
+      one carousel for the whole site. We can't attribute spend to a single
+      offer, so we POOL: sum all barats-ad spend and divide by ALL qualifying
+      orders whose sales_page is Barats.tn in the period. => one blended
+      cost-per-order for the website.
+
+    * OFFER-LINKED (ad.attribution == 'offer'): each Converty/Facebook ad is
+      linked to 1 or 2 offers. Spend is pooled across that ad's linked offers:
+      count all qualifying orders that contain ANY of the linked offers, then
+      cost-per-order = ad.spend / that count. (E.g. 10$ ad linked to offer A
+      (3 orders) + offer B (7 orders) => 10 orders => 1$/order.)
+
+    Qualifying order statuses = En cours (expédié) + Livrée + Payée. On today's
+    date you'll mostly see 'en_cours'; livrée/payée fill in over the next days.
     """
     if not _orders_role_check(request):
         return redirect("home")
     from datetime import date, datetime
-    from .models import Ad, Offer, Order
+    from collections import defaultdict
+    from .models import Ad, Offer, Order, SalesPage
 
-    # Single day. Default: today. ?day=YYYY-MM-DD to pick another day.
+    QUALIFYING = [Order.EN_COURS, Order.LIVREE, Order.PAYEE]
+
     today = date.today()
+    # Date range. Default: today only. ?start=YYYY-MM-DD&end=YYYY-MM-DD
+    # Back-compat: ?day=YYYY-MM-DD sets both start and end to that day.
+    day_param = request.GET.get("day", "")
     try:
-        day = datetime.strptime(request.GET.get("day", ""), "%Y-%m-%d").date()
+        start = datetime.strptime(request.GET.get("start", "") or day_param, "%Y-%m-%d").date()
     except ValueError:
-        day = today
-    day_str = day.strftime("%Y-%m-%d")
+        start = today
+    try:
+        end = datetime.strptime(request.GET.get("end", "") or day_param, "%Y-%m-%d").date()
+    except ValueError:
+        end = today
+    if end < start:
+        start, end = end, start
+    start_str, end_str = start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
-    # Sync that day's per-campaign spend from Meta.
-    _sync_ads_from_meta(day_str, day_str)
+    # Sync spend for the whole range from Meta.
+    _sync_ads_from_meta(start_str, end_str)
 
-    ads = list(Ad.objects.select_related("offer").all())
+    ads = list(Ad.objects.prefetch_related("offers").all())
     offers = list(Offer.objects.filter(is_active=True).order_by("name"))
 
-    # Paid orders CREATED on that day, grouped by offer (all sources).
-    from collections import defaultdict
-    paid_orders = (Order.objects
-                   .filter(status=Order.LIVREE, created_at__date=day)
-                   .prefetch_related("order_offers"))
-    offer_orders = defaultdict(set)
-    offer_revenue = defaultdict(lambda: Decimal("0"))
-    for o in paid_orders:
-        distinct_offers = {oo.offer_id for oo in o.order_offers.all() if oo.offer_id}
-        for oid in distinct_offers:
-            offer_orders[oid].add(o.id)
-            offer_revenue[oid] += (o.total or Decimal("0"))
+    # Qualifying orders created in the range, with their offer ids + page.
+    q_orders = (Order.objects
+                .filter(status__in=QUALIFYING, created_at__date__gte=start,
+                        created_at__date__lte=end)
+                .select_related("sales_page")
+                .prefetch_related("order_offers"))
 
-    rows = []
+    # Index: which order ids contain each offer id, plus per-order revenue.
+    offer_order_ids = defaultdict(set)
+    order_revenue = {}
+    barats_order_ids = set()
+    for o in q_orders:
+        order_revenue[o.id] = (o.total or Decimal("0"))
+        page_name = (o.sales_page.name if o.sales_page else "").strip().lower()
+        if page_name == "barats.tn":
+            barats_order_ids.add(o.id)
+        for oo in o.order_offers.all():
+            if oo.offer_id:
+                offer_order_ids[oo.offer_id].add(o.id)
+
     total_spend = Decimal("0")
-    total_revenue = Decimal("0")
+
+    # --- Section 1: Barats.tn carousel pool (blended) ---
+    barats_ads = [a for a in ads if a.attribution == Ad.ATTR_BARATS]
+    barats_spend = sum((a.spend or Decimal("0")) for a in barats_ads)
+    barats_order_count = len(barats_order_ids)
+    barats_revenue = sum((order_revenue.get(oid, Decimal("0")) for oid in barats_order_ids), Decimal("0"))
+    barats_cpo = (barats_spend / barats_order_count) if barats_order_count else None
+    total_spend += barats_spend
+    barats_block = {
+        "ads": sorted(barats_ads, key=lambda a: a.spend or 0, reverse=True),
+        "spend": barats_spend,
+        "order_count": barats_order_count,
+        "revenue": barats_revenue,
+        "cpo": barats_cpo,
+        "profit": barats_revenue - barats_spend,
+    }
+
+    # --- Section 2: offer-linked ads (Converty / Facebook) ---
+    rows = []
     for ad in ads:
+        if ad.attribution == Ad.ATTR_BARATS:
+            continue
         spend = ad.spend or Decimal("0")
         total_spend += spend
-        order_count = len(offer_orders.get(ad.offer_id, set())) if ad.offer_id else 0
-        revenue = offer_revenue.get(ad.offer_id, Decimal("0")) if ad.offer_id else Decimal("0")
-        if ad.offer_id:
-            total_revenue += revenue
+        linked = list(ad.offers.all())
+        # Pool orders across ALL linked offers (union — an order counted once).
+        pooled_ids = set()
+        for off in linked:
+            pooled_ids |= offer_order_ids.get(off.id, set())
+        order_count = len(pooled_ids)
+        revenue = sum((order_revenue.get(oid, Decimal("0")) for oid in pooled_ids), Decimal("0"))
+        cpo = (spend / order_count) if order_count else None
         rows.append({
-            "ad": ad, "spend": spend, "order_count": order_count,
-            "revenue": revenue, "profit": revenue - spend,
+            "ad": ad,
+            "spend": spend,
+            "linked_offers": linked,
+            "order_count": order_count,
+            "revenue": revenue,
+            "cpo": cpo,
+            "profit": revenue - spend,
         })
-    # Sort by spend desc (highest spenders first).
     rows.sort(key=lambda r: r["spend"], reverse=True)
+
+    total_revenue = barats_revenue + sum((r["revenue"] for r in rows), Decimal("0"))
 
     return render(request, "inventory/ads_offers.html", {
         "rows": rows,
+        "barats": barats_block,
         "offers": offers,
-        "day": day_str,
-        "is_today": day == today,
+        "start": start_str,
+        "end": end_str,
+        "is_today": start == today and end == today,
+        "single_day": start == end,
         "total_spend": total_spend,
         "total_revenue": total_revenue,
         "total_profit": total_revenue - total_spend,
-        "unlinked": sum(1 for a in ads if not a.offer_id),
+        "unlinked": sum(1 for a in ads if a.attribution == Ad.ATTR_OFFER and not a.offers.exists()),
     })
 
 
@@ -4713,7 +4778,15 @@ def ads_offers_dashboard(request):
 @require_POST
 @login_required(login_url="/login/")
 def api_ad_link_offer(request, pk):
-    """Link (or unlink) an Ad to an Offer. Body: {"offer_id": <id> or null}."""
+    """Configure an Ad's attribution.
+
+    Body (JSON):
+      {"attribution": "barats"}                      -> Barats.tn carousel pool
+      {"attribution": "offer", "offer_ids": [1,2]}   -> link 1 or 2 offers
+      {"offer_ids": []}                              -> unlink (attribution=offer)
+
+    Back-compat: {"offer_id": <id>|null} still works (single offer).
+    """
     if not _orders_role_check(request):
         return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
     from .models import Ad, Offer
@@ -4725,17 +4798,46 @@ def api_ad_link_offer(request, pk):
         data = json.loads(request.body or "{}")
     except json.JSONDecodeError:
         return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
-    offer_id = data.get("offer_id")
-    if offer_id in (None, "", "none"):
-        ad.offer = None
+
+    attribution = data.get("attribution")
+    # Normalise offer ids from either offer_ids[] or legacy offer_id.
+    if "offer_ids" in data:
+        raw_ids = data.get("offer_ids") or []
+    elif "offer_id" in data:
+        oid = data.get("offer_id")
+        raw_ids = [] if oid in (None, "", "none") else [oid]
     else:
+        raw_ids = None  # not provided -> leave offers unchanged
+
+    if attribution == Ad.ATTR_BARATS:
+        ad.attribution = Ad.ATTR_BARATS
+        ad.offer = None
+        ad.save(update_fields=["attribution", "offer", "updated_at"])
+        ad.offers.clear()
+        return JsonResponse({"status": "ok", "ad_id": ad.id, "attribution": ad.attribution,
+                             "offer_ids": [], "offer_names": []})
+
+    # attribution == 'offer' (default)
+    ad.attribution = Ad.ATTR_OFFER
+
+    if raw_ids is not None:
         try:
-            ad.offer = Offer.objects.get(pk=int(offer_id))
-        except (Offer.DoesNotExist, ValueError, TypeError):
-            return JsonResponse({"status": "error", "message": "Offre invalide."}, status=400)
-    ad.save(update_fields=["offer", "updated_at"])
-    return JsonResponse({"status": "ok", "ad_id": ad.id, "offer_id": ad.offer_id,
-                         "offer_name": ad.offer.name if ad.offer_id else ""})
+            ids = [int(x) for x in raw_ids if str(x) not in ("", "none")][:2]
+        except (ValueError, TypeError):
+            return JsonResponse({"status": "error", "message": "Offre(s) invalide(s)."}, status=400)
+        if len(raw_ids) > 2:
+            return JsonResponse({"status": "error", "message": "Maximum 2 offres par pub."}, status=400)
+        found = list(Offer.objects.filter(pk__in=ids))
+        if len(found) != len(set(ids)):
+            return JsonResponse({"status": "error", "message": "Offre introuvable."}, status=400)
+        ad.offers.set(found)
+        ad.offer = found[0] if found else None  # keep legacy FK in sync
+
+    ad.save(update_fields=["attribution", "offer", "updated_at"])
+    linked = list(ad.offers.all())
+    return JsonResponse({"status": "ok", "ad_id": ad.id, "attribution": ad.attribution,
+                         "offer_ids": [o.id for o in linked],
+                         "offer_names": [o.name for o in linked]})
 
 
 @login_required(login_url="/login/")
