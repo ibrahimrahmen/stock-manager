@@ -2030,12 +2030,14 @@ def api_check_duplicate_client(request):
             qs = qs.exclude(pk=int(exclude_id))
         except Exception:
             pass
-    # Only orders still in delivery cycle (not paid, not returned, not cancelled)
+    # Only orders still in delivery cycle (not paid, not returned).
+    # ShippingOrder has no "cancelled" status — cancellation lives on the v2
+    # Order (ANNULEE), so we exclude the finalized ShippingOrder states only.
     qs = qs.exclude(status__in=(
         ShippingOrder.PAID,
         ShippingOrder.PARTIAL_PAID,
         ShippingOrder.RETURNED,
-        ShippingOrder.CANCELLED,
+        ShippingOrder.PARTIAL_RETURNED,
     ))
     qs = qs.order_by("-created_at")[:5]
 
