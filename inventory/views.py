@@ -4600,20 +4600,35 @@ def _meta_fetch_spend_by_campaign(start_date, end_date):
     import urllib.request
     token = os.environ.get("META_ACCESS_TOKEN", "").strip()
     accounts_raw = os.environ.get("META_AD_ACCOUNT_ID", "").strip()
-    if not token or not accounts_raw:
+    if not accounts_raw:
         return {}
     # META_AD_ACCOUNT_ID may be a single id or a comma-separated list of ids,
     # so campaigns from several ad accounts (e.g. Barats + Converty) all sync.
     account_ids = [a.strip() for a in accounts_raw.split(",") if a.strip()]
+    # Optional per-account tokens (when accounts live in different portfolios
+    # and no single token can read them all). Format:
+    #   META_AD_ACCOUNT_TOKENS = "1465...:EAA...,1865...:EAB..."
+    # Any account not listed here falls back to META_ACCESS_TOKEN.
+    per_account = {}
+    for pair in os.environ.get("META_AD_ACCOUNT_TOKENS", "").split(","):
+        pair = pair.strip()
+        if pair and ":" in pair:
+            aid, _, tok = pair.partition(":")
+            per_account[aid.strip().replace("act_", "")] = tok.strip()
+    if not token and not per_account:
+        return {}
     result = {}
     for account_id in account_ids:
-        if not account_id.startswith("act_"):
-            account_id = f"act_{account_id}"
+        bare = account_id.replace("act_", "")
+        acc_token = per_account.get(bare, token)
+        if not acc_token:
+            continue
+        acct = account_id if account_id.startswith("act_") else f"act_{account_id}"
         url = (
-            f"https://graph.facebook.com/v18.0/{account_id}/insights"
+            f"https://graph.facebook.com/v18.0/{acct}/insights"
             f"?level=campaign&fields=campaign_id,campaign_name,spend"
             f"&time_range={{'since':'{start_date}','until':'{end_date}'}}"
-            f"&limit=500&access_token={token}"
+            f"&limit=500&access_token={acc_token}"
         )
         try:
             with urllib.request.urlopen(url, timeout=20) as resp:
@@ -4722,9 +4737,17 @@ def ads_offers_dashboard(request):
     pages = list(SalesPage.objects.filter(is_active=True).order_by("name"))
 
     # Qualifying orders created in the range, with their offer lines + page.
+    # An order counts as SHIPPED as soon as it has a bordereau (scan expédition
+    # done), even if Navex hasn't yet flipped it from 'confirmee' to 'en_cours'.
+    # So we accept: en_cours / livree / payee (any bordereau), OR confirmee WITH
+    # a bordereau (freshly expédié today, awaiting the hourly Navex sync).
+    from django.db.models import Q as _Q
     q_orders = (Order.objects
-                .filter(status__in=QUALIFYING, created_at__date__gte=start,
-                        created_at__date__lte=end)
+                .filter(created_at__date__gte=start, created_at__date__lte=end)
+                .filter(
+                    _Q(status__in=QUALIFYING)
+                    | _Q(status=Order.CONFIRMEE, bordereau_barcode__gt="")
+                )
                 .select_related("sales_page")
                 .prefetch_related("order_offers"))
 
@@ -8666,19 +8689,30 @@ def _meta_fetch_spend(start_date, end_date):
     import urllib.request, urllib.parse, urllib.error
     token = os.environ.get("META_ACCESS_TOKEN", "").strip()
     accounts_raw = os.environ.get("META_AD_ACCOUNT_ID", "").strip()
-    if not token or not accounts_raw:
+    if not accounts_raw:
         return {}
     account_ids = [a.strip() for a in accounts_raw.split(",") if a.strip()]
+    per_account = {}
+    for pair in os.environ.get("META_AD_ACCOUNT_TOKENS", "").split(","):
+        pair = pair.strip()
+        if pair and ":" in pair:
+            aid, _, tok = pair.partition(":")
+            per_account[aid.strip().replace("act_", "")] = tok.strip()
+    if not token and not per_account:
+        return {}
     result = {}
     for account_id in account_ids:
-        if not account_id.startswith("act_"):
-            account_id = f"act_{account_id}"
+        bare = account_id.replace("act_", "")
+        acc_token = per_account.get(bare, token)
+        if not acc_token:
+            continue
+        acct = account_id if account_id.startswith("act_") else f"act_{account_id}"
         url = (
-            f"https://graph.facebook.com/v18.0/{account_id}/insights"
+            f"https://graph.facebook.com/v18.0/{acct}/insights"
             f"?fields=spend"
             f"&time_range={{'since':'{start_date}','until':'{end_date}'}}"
             f"&time_increment=1"
-            f"&access_token={token}"
+            f"&access_token={acc_token}"
         )
         try:
             with urllib.request.urlopen(url, timeout=15) as resp:
