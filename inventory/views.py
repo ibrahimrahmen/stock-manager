@@ -4599,21 +4599,27 @@ def _meta_fetch_spend_by_campaign(start_date, end_date):
     """
     import urllib.request
     token = os.environ.get("META_ACCESS_TOKEN", "").strip()
-    account_id = os.environ.get("META_AD_ACCOUNT_ID", "").strip()
-    if not token or not account_id:
+    accounts_raw = os.environ.get("META_AD_ACCOUNT_ID", "").strip()
+    if not token or not accounts_raw:
         return {}
-    if not account_id.startswith("act_"):
-        account_id = f"act_{account_id}"
-    url = (
-        f"https://graph.facebook.com/v18.0/{account_id}/insights"
-        f"?level=campaign&fields=campaign_id,campaign_name,spend"
-        f"&time_range={{'since':'{start_date}','until':'{end_date}'}}"
-        f"&limit=500&access_token={token}"
-    )
-    try:
-        with urllib.request.urlopen(url, timeout=20) as resp:
-            data = json.loads(resp.read().decode("utf-8", errors="replace"))
-        result = {}
+    # META_AD_ACCOUNT_ID may be a single id or a comma-separated list of ids,
+    # so campaigns from several ad accounts (e.g. Barats + Converty) all sync.
+    account_ids = [a.strip() for a in accounts_raw.split(",") if a.strip()]
+    result = {}
+    for account_id in account_ids:
+        if not account_id.startswith("act_"):
+            account_id = f"act_{account_id}"
+        url = (
+            f"https://graph.facebook.com/v18.0/{account_id}/insights"
+            f"?level=campaign&fields=campaign_id,campaign_name,spend"
+            f"&time_range={{'since':'{start_date}','until':'{end_date}'}}"
+            f"&limit=500&access_token={token}"
+        )
+        try:
+            with urllib.request.urlopen(url, timeout=20) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        except Exception:
+            continue  # one account failing shouldn't block the others
         for entry in data.get("data", []):
             cid = entry.get("campaign_id", "")
             name = entry.get("campaign_name", "") or cid
@@ -4628,9 +4634,7 @@ def _meta_fetch_spend_by_campaign(start_date, end_date):
                 result[cid]["name"] = name
             else:
                 result[cid] = {"name": name, "spend": spend}
-        return result
-    except Exception:
-        return {}
+    return result
 
 
 def _sync_ads_from_meta(start_date, end_date):
@@ -8661,36 +8665,34 @@ def _meta_fetch_spend(start_date, end_date):
     """
     import urllib.request, urllib.parse, urllib.error
     token = os.environ.get("META_ACCESS_TOKEN", "").strip()
-    account_id = os.environ.get("META_AD_ACCOUNT_ID", "").strip()
-    if not token or not account_id:
+    accounts_raw = os.environ.get("META_AD_ACCOUNT_ID", "").strip()
+    if not token or not accounts_raw:
         return {}
-    # Meta wants 'act_<id>' format
-    if not account_id.startswith("act_"):
-        account_id = f"act_{account_id}"
-
-    # Use the /insights endpoint with daily breakdown
-    url = (
-        f"https://graph.facebook.com/v18.0/{account_id}/insights"
-        f"?fields=spend"
-        f"&time_range={{'since':'{start_date}','until':'{end_date}'}}"
-        f"&time_increment=1"
-        f"&access_token={token}"
-    )
-    try:
-        with urllib.request.urlopen(url, timeout=15) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-            data = json.loads(raw)
-            result = {}
-            for entry in data.get("data", []):
-                date_start = entry.get("date_start", "")
-                spend = entry.get("spend", "0")
-                try:
-                    result[date_start] = float(spend)
-                except (ValueError, TypeError):
-                    result[date_start] = 0.0
-            return result
-    except Exception:
-        return {}
+    account_ids = [a.strip() for a in accounts_raw.split(",") if a.strip()]
+    result = {}
+    for account_id in account_ids:
+        if not account_id.startswith("act_"):
+            account_id = f"act_{account_id}"
+        url = (
+            f"https://graph.facebook.com/v18.0/{account_id}/insights"
+            f"?fields=spend"
+            f"&time_range={{'since':'{start_date}','until':'{end_date}'}}"
+            f"&time_increment=1"
+            f"&access_token={token}"
+        )
+        try:
+            with urllib.request.urlopen(url, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        except Exception:
+            continue
+        for entry in data.get("data", []):
+            date_start = entry.get("date_start", "")
+            try:
+                spend = float(entry.get("spend", "0"))
+            except (ValueError, TypeError):
+                spend = 0.0
+            result[date_start] = result.get(date_start, 0.0) + spend
+    return result
 
 
 @login_required
