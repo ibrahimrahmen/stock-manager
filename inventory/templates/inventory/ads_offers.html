@@ -102,9 +102,9 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="label">Dépense totale</div><div class="value">{{ total_spend|floatformat:2 }}</div></div>
-    <div class="stat"><div class="label">Revenu (qualifié)</div><div class="value">{{ total_revenue|floatformat:2 }}</div></div>
-    <div class="stat"><div class="label">Profit</div><div class="value {% if total_profit < 0 %}neg{% else %}pos{% endif %}">{{ total_profit|floatformat:2 }}</div></div>
+    <div class="stat"><div class="label">Dépense totale</div><div class="value">{{ total_spend|floatformat:2 }} DT</div></div>
+    <div class="stat"><div class="label">Revenu (qualifié)</div><div class="value">{{ total_revenue|floatformat:2 }} DT</div></div>
+    <div class="stat"><div class="label">Profit</div><div class="value {% if total_profit < 0 %}neg{% else %}pos{% endif %}">{{ total_profit|floatformat:2 }} DT</div></div>
     {% if unlinked_count %}<div class="stat"><div class="label">Pubs à lier</div><div class="value" style="color:var(--amber);">{{ unlinked_count }}</div></div>{% endif %}
   </div>
 
@@ -144,17 +144,17 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
     {% if barats.ads %}
       <div class="muted">{{ barats.ads|length }} pub(s) carrousel · dépense répartie sur toutes les commandes Barats.tn de la période</div>
       <div class="barats-metrics">
-        <div class="bm"><div class="l">Dépense</div><div class="v">{{ barats.spend|floatformat:2 }}</div></div>
+        <div class="bm"><div class="l">Dépense</div><div class="v">{{ barats.spend|floatformat:2 }} DT</div></div>
         <div class="bm"><div class="l">Unités vendues</div><div class="v">{{ barats.order_count }}</div></div>
-        <div class="bm"><div class="l">Coût / unité</div><div class="v cpo">{% if barats.cpo %}{{ barats.cpo|floatformat:3 }}{% else %}—{% endif %}</div></div>
-        <div class="bm"><div class="l">Revenu</div><div class="v">{{ barats.revenue|floatformat:2 }}</div></div>
-        <div class="bm"><div class="l">Profit</div><div class="v {% if barats.profit < 0 %}neg{% else %}pos{% endif %}">{{ barats.profit|floatformat:2 }}</div></div>
+        <div class="bm"><div class="l">Coût / unité</div><div class="v cpo">{% if barats.cpo %}{{ barats.cpo|floatformat:3 }} DT{% else %}—{% endif %}</div></div>
+        <div class="bm"><div class="l">Revenu</div><div class="v">{{ barats.revenue|floatformat:2 }} DT</div></div>
+        <div class="bm"><div class="l">Profit</div><div class="v {% if barats.profit < 0 %}neg{% else %}pos{% endif %}">{{ barats.profit|floatformat:2 }} DT</div></div>
       </div>
       <div style="margin-top:14px;">
         {% for ad in barats.ads %}
         <div class="campaign" style="margin-bottom:6px;padding:10px 14px;">
           <div class="cname">{{ ad.campaign_name }}</div>
-          <div class="cspend">{{ ad.spend|floatformat:2 }}</div>
+          <div class="cspend">{{ ad.spend|floatformat:2 }} DT</div>
           <div>
             <select onchange="setAttr({{ ad.id }}, this.value, this)">
               <option value="barats" selected>🌐 Carrousel Barats.tn</option>
@@ -175,11 +175,11 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
   <div class="barats-card">
     <div class="muted">{{ pb.ads|length }} pub(s) · dépense de la page ÷ toutes les commandes de la page</div>
     <div class="barats-metrics">
-      <div class="bm"><div class="l">Dépense</div><div class="v">{{ pb.spend|floatformat:2 }}</div></div>
+      <div class="bm"><div class="l">Dépense</div><div class="v">{{ pb.spend|floatformat:2 }} DT</div></div>
       <div class="bm"><div class="l">Unités vendues</div><div class="v">{{ pb.order_count }}</div></div>
-      <div class="bm"><div class="l">Coût / unité</div><div class="v cpo">{% if pb.cpo %}{{ pb.cpo|floatformat:3 }}{% else %}—{% endif %}</div></div>
-      <div class="bm"><div class="l">Revenu</div><div class="v">{{ pb.revenue|floatformat:2 }}</div></div>
-      <div class="bm"><div class="l">Profit</div><div class="v {% if pb.profit < 0 %}neg{% else %}pos{% endif %}">{{ pb.profit|floatformat:2 }}</div></div>
+      <div class="bm"><div class="l">Coût / unité</div><div class="v cpo">{% if pb.cpo %}{{ pb.cpo|floatformat:3 }} DT{% else %}—{% endif %}</div></div>
+      <div class="bm"><div class="l">Revenu</div><div class="v">{{ pb.revenue|floatformat:2 }} DT</div></div>
+      <div class="bm"><div class="l">Profit</div><div class="v {% if pb.profit < 0 %}neg{% else %}pos{% endif %}">{{ pb.profit|floatformat:2 }} DT</div></div>
     </div>
   </div>
   {% for r in pb.ads %}

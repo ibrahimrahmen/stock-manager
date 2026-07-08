@@ -2,7 +2,8 @@
   <div class="cname">{{ r.ad.campaign_name }}</div>
   <div>
     <div class="clabel">Dépense</div>
-    <div class="cspend">{{ r.spend|floatformat:2 }}</div>
+    <div class="cspend">{{ r.spend_orig|floatformat:2 }} {{ r.currency }}</div>
+    <div class="muted">{{ r.spend|floatformat:2 }} DT</div>
   </div>
   <div class="offer-pickers">
     <div class="clabel">Offres + Page · illimité</div>
@@ -49,8 +50,9 @@
   <div class="crev">
     <div class="clabel">Coût/unité · Revenu · Profit</div>
     {% if r.links %}
-      <div><span class="cpo">{% if r.cpo %}{{ r.cpo|floatformat:3 }}{% else %}—{% endif %}</span> · {{ r.revenue|floatformat:2 }} · <span class="{% if r.profit < 0 %}neg{% elif r.profit > 0 %}pos{% endif %}">{{ r.profit|floatformat:2 }}</span></div>
-      <div class="muted">{{ r.order_count }} unité(s)
+      <div><span class="cpo">{% if r.cpo_orig %}{{ r.cpo_orig|floatformat:3 }} {{ r.currency }}{% else %}—{% endif %}</span> <span class="muted">/ {% if r.cpo %}{{ r.cpo|floatformat:3 }} DT{% else %}—{% endif %}</span></div>
+      <div>{{ r.revenue|floatformat:2 }} DT · <span class="{% if r.profit < 0 %}neg{% elif r.profit > 0 %}pos{% endif %}">{{ r.profit|floatformat:2 }} DT</span></div>
+      <div class="muted">{{ r.order_count }} unité(s) · marge réelle <span class="{% if r.real_margin < 0 %}neg{% elif r.real_margin >= 15 %}pos{% endif %}">{{ r.real_margin|floatformat:2 }} DT</span>
         {% for lk in r.links %}<span class="pill pill-blue">{{ lk.offer.name }}{% if lk.page %} @ {{ lk.page.name }}{% endif %}</span>{% endfor %}
       </div>
     {% else %}

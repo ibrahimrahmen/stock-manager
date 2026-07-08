@@ -964,7 +964,15 @@ class Ad(models.Model):
     campaign_name = models.CharField(max_length=200, db_index=True,
         help_text="Nom de la campagne (affichage ; peut changer).")
     spend = models.DecimalField(max_digits=12, decimal_places=2, default=0,
-        help_text="Dépense synchronisée depuis le Google Sheet (devise du compte).")
+        help_text="Dépense convertie en TND (dinars).")
+    # Original (pre-conversion) spend and its account/currency, so the dashboard
+    # can show both the account's native amount (EUR/USD) and the TND value.
+    spend_original = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+        help_text="Dépense dans la devise d'origine du compte.")
+    account_id = models.CharField(max_length=64, blank=True, default="",
+        help_text="Compte publicitaire Meta d'où vient cette pub.")
+    currency = models.CharField(max_length=8, blank=True, default="",
+        help_text="Devise d'origine du compte (EUR, USD, TND…).")
     attribution = models.CharField(max_length=10, choices=ATTR_CHOICES, default=ATTR_OFFER,
         help_text="Comment cette pub est attribuée : à des offres précises, ou au pool Barats.tn.")
     # Legacy single link — kept for back-compat. New code uses `offers` (M2M).

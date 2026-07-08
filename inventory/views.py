@@ -4619,19 +4619,28 @@ def _meta_fetch_spend_by_campaign(start_date, end_date):
         return {}
     # Per-account currency conversion to TND (dinars). Ad accounts can be in
     # different currencies (e.g. Ibrahim=EUR, Converty=USD) while our system and
-    # revenue are in TND, so raw spend can't be summed directly. Configure rates
-    # per account via META_ACCOUNT_RATES = "accountid:rate,accountid:rate"
-    # where rate = how many TND for 1 unit of that account's currency.
-    # Any account not listed defaults to 1.0 (assumed already in TND).
-    account_rates = {}
+    # revenue are in TND, so raw spend can't be summed directly. Configure per
+    # account via META_ACCOUNT_RATES = "accountid:CURRENCY:rate,..." where rate =
+    # how many TND for 1 unit of that currency. Back-compat: "accountid:rate"
+    # (no currency) still works. Any account not listed defaults to rate 1.0.
+    account_rates = {}      # bare_id -> float rate
+    account_currency = {}   # bare_id -> "EUR"/"USD"/...
     for pair in os.environ.get("META_ACCOUNT_RATES", "").split(","):
         pair = pair.strip()
-        if pair and ":" in pair:
-            aid, _, rate = pair.partition(":")
-            try:
-                account_rates[aid.strip().replace("act_", "")] = float(rate.strip())
-            except (ValueError, TypeError):
-                pass
+        if not pair or ":" not in pair:
+            continue
+        parts = [p.strip() for p in pair.split(":")]
+        aid = parts[0].replace("act_", "")
+        if len(parts) >= 3:
+            cur, rate = parts[1], parts[2]
+        else:
+            cur, rate = "", parts[1]
+        try:
+            account_rates[aid] = float(rate)
+        except (ValueError, TypeError):
+            continue
+        if cur:
+            account_currency[aid] = cur.upper()
     result = {}
     for account_id in account_ids:
         bare = account_id.replace("act_", "")
@@ -4639,6 +4648,7 @@ def _meta_fetch_spend_by_campaign(start_date, end_date):
         if not acc_token:
             continue
         rate = account_rates.get(bare, 1.0)  # TND per 1 unit of account currency
+        cur = account_currency.get(bare, "TND")
         acct = account_id if account_id.startswith("act_") else f"act_{account_id}"
         url = (
             f"https://graph.facebook.com/v18.0/{acct}/insights"
@@ -4657,14 +4667,19 @@ def _meta_fetch_spend_by_campaign(start_date, end_date):
             if not cid:
                 continue
             try:
-                spend = float(entry.get("spend", "0")) * rate  # -> TND
+                orig = float(entry.get("spend", "0"))
             except (ValueError, TypeError):
-                spend = 0.0
+                orig = 0.0
+            tnd = orig * rate
             if cid in result:
-                result[cid]["spend"] += spend
+                result[cid]["spend"] += tnd
+                result[cid]["spend_original"] += orig
                 result[cid]["name"] = name
             else:
-                result[cid] = {"name": name, "spend": spend}
+                result[cid] = {
+                    "name": name, "spend": tnd, "spend_original": orig,
+                    "currency": cur, "account_id": bare,
+                }
     return result
 
 
@@ -4694,6 +4709,9 @@ def _sync_ads_from_meta(start_date, end_date):
                 ad.campaign_id = cid
         ad.campaign_name = name  # refresh display name (handles renames)
         ad.spend = Decimal(str(round(spend, 2)))
+        ad.spend_original = Decimal(str(round(info.get("spend_original", 0.0), 2)))
+        ad.currency = info.get("currency", "") or ad.currency
+        ad.account_id = info.get("account_id", "") or ad.account_id
         ad.last_synced_at = now
         ad.save()
         n += 1
@@ -4878,9 +4896,14 @@ def ads_offers_dashboard(request):
         # Real margin = net revenue of orders attributed to this ad − ad spend.
         real_net = ad_real_margin.get(ad.id, Decimal("0"))
         real_margin = real_net - spend
+        spend_orig = ad.spend_original or Decimal("0")
+        cpo_orig = (spend_orig / qty_sum) if qty_sum else None
         rows.append({
             "ad": ad,
             "spend": spend,
+            "spend_orig": spend_orig,
+            "currency": ad.currency or "TND",
+            "cpo_orig": cpo_orig,
             "links": link_desc,
             "order_count": qty_sum,
             "revenue": revenue,
