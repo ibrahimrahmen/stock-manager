@@ -4709,7 +4709,7 @@ def ads_offers_dashboard(request):
         return redirect("home")
     from datetime import date, datetime
     from collections import defaultdict
-    from .models import Ad, Offer, Order, SalesPage
+    from .models import Ad, Offer, Order, SalesPage, ShippingOrder
 
     QUALIFYING = [Order.EN_COURS, Order.LIVREE, Order.PAYEE]
 
@@ -4737,17 +4737,20 @@ def ads_offers_dashboard(request):
     pages = list(SalesPage.objects.filter(is_active=True).order_by("name"))
 
     # Qualifying orders created in the range, with their offer lines + page.
-    # An order counts as SHIPPED as soon as it has a bordereau (scan expédition
-    # done), even if Navex hasn't yet flipped it from 'confirmee' to 'en_cours'.
-    # So we accept: en_cours / livree / payee (any bordereau), OR confirmee WITH
-    # a bordereau (freshly expédié today, awaiting the hourly Navex sync).
+    # An order counts as SHIPPED when it has been scanned at expedition — i.e. a
+    # linked ShippingOrder reached a CLOSED state (units marked SHIPPED). Having
+    # only a bordereau isn't enough: bordereaux are assigned at Navex push, well
+    # before the parcel is physically scanned out. So we accept:
+    #   en_cours / livree / payee  (Navex already advanced them), OR
+    #   any order with a ShippingOrder in a closed/shipped state.
     from django.db.models import Q as _Q
     q_orders = (Order.objects
                 .filter(created_at__date__gte=start, created_at__date__lte=end)
                 .filter(
                     _Q(status__in=QUALIFYING)
-                    | _Q(status=Order.CONFIRMEE, bordereau_barcode__gt="")
+                    | _Q(shipping_orders__status__in=ShippingOrder.CLOSED_STATUSES)
                 )
+                .distinct()
                 .select_related("sales_page")
                 .prefetch_related("order_offers"))
 
