@@ -58,6 +58,17 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
 .pill-ok{background:var(--green-dim);color:var(--green);}
 .pill-blue{background:var(--blue-dim);color:var(--blue);}
 .pos{color:var(--green);} .neg{color:var(--red);}
+.advice-wrap{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:24px;}
+@media(max-width:700px){.advice-wrap{grid-template-columns:1fr;}}
+.advice{border-radius:14px;padding:16px 18px;border:0.5px solid var(--border);}
+.advice-good{background:linear-gradient(135deg,rgba(74,222,154,0.10),var(--surface));border-color:var(--green);}
+.advice-bad{background:linear-gradient(135deg,rgba(248,113,113,0.10),var(--surface));border-color:var(--red);}
+.advice-head{font-weight:700;font-size:14px;margin-bottom:10px;}
+.advice-row{display:flex;align-items:baseline;gap:8px;padding:5px 0;border-top:0.5px solid var(--border);flex-wrap:wrap;}
+.advice-row:first-of-type{border-top:none;}
+.advice-name{flex:1;min-width:120px;font-size:13px;}
+.advice-num{font-weight:700;font-size:14px;}
+.advice-sub{color:var(--muted);font-size:11px;width:100%;}
 .muted{color:var(--muted);font-size:12px;}
 .empty{text-align:center;color:var(--muted);padding:40px;background:var(--surface);border:0.5px solid var(--border);border-radius:14px;}
 </style>
@@ -96,6 +107,36 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
     <div class="stat"><div class="label">Profit</div><div class="value {% if total_profit < 0 %}neg{% else %}pos{% endif %}">{{ total_profit|floatformat:2 }}</div></div>
     {% if unlinked_count %}<div class="stat"><div class="label">Pubs à lier</div><div class="value" style="color:var(--amber);">{{ unlinked_count }}</div></div>{% endif %}
   </div>
+
+  <!-- ============ CONSEILS (marge réelle) ============ -->
+  {% if advice_boost or advice_losing %}
+  <div class="advice-wrap">
+    {% if advice_boost %}
+    <div class="advice advice-good">
+      <div class="advice-head">🚀 À booster — meilleures marges</div>
+      {% for r in advice_boost %}
+      <div class="advice-row">
+        <span class="advice-name">{{ r.ad.campaign_name }}</span>
+        <span class="advice-num pos">+{{ r.real_margin|floatformat:2 }} DT</span>
+        <span class="advice-sub">revenu net {{ r.real_net|floatformat:0 }} · pub {{ r.spend|floatformat:2 }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if advice_losing %}
+    <div class="advice advice-bad">
+      <div class="advice-head">⚠️ À surveiller / couper — marge &lt; 15 DT</div>
+      {% for r in advice_losing %}
+      <div class="advice-row">
+        <span class="advice-name">{{ r.ad.campaign_name }}</span>
+        <span class="advice-num {% if r.real_margin < 0 %}neg{% endif %}">{{ r.real_margin|floatformat:2 }} DT</span>
+        <span class="advice-sub">revenu net {{ r.real_net|floatformat:0 }} · pub {{ r.spend|floatformat:2 }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
 
   <!-- ============ BARATS.TN CARROUSEL (pooled) ============ -->
   <div class="section-title">🌐 Barats.tn — Carrousel (coût mixte)</div>

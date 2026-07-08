@@ -4752,6 +4752,21 @@ def ads_offers_dashboard(request):
     offers = list(Offer.objects.filter(is_active=True).order_by("name"))
     pages = list(SalesPage.objects.filter(is_active=True).order_by("name"))
 
+    # Map each (offer_id, page_id) -> ad, and offer_id -> ad (any page), so an
+    # order can be attributed to the FIRST linked ad found. Used for real-margin
+    # profit: the whole order's net (total − delivery) goes to one ad, casquette
+    # and all, since that ad's campaign brought the customer.
+    offer_page_to_ad = {}
+    offer_to_ad = {}
+    ad_real_margin = {a.id: Decimal("0") for a in ads}  # net revenue attributed
+    for a in ads:
+        if a.attribution == Ad.ATTR_BARATS:
+            continue
+        for lk in a.links.all():
+            if lk.sales_page_id:
+                offer_page_to_ad.setdefault((lk.offer_id, lk.sales_page_id), a)
+            offer_to_ad.setdefault(lk.offer_id, a)
+
     # Qualifying orders created in the range, with their offer lines + page.
     # An order counts as SHIPPED when it has been scanned at expedition — i.e. a
     # linked ShippingOrder reached a CLOSED state (units marked SHIPPED). Having
@@ -4788,6 +4803,22 @@ def ads_offers_dashboard(request):
         page_id = o.sales_page_id
         page_name = (o.sales_page.name if o.sales_page else "").strip().lower()
         is_barats = page_name == "barats.tn"
+        # ---- Real-margin attribution: the whole order's NET revenue
+        # (total − delivery_fee, discount already baked into total) goes to the
+        # FIRST ad whose linked offer appears in this order. Everything the
+        # customer bought (incl. unrelated items) counts, since that campaign
+        # brought them. An order is attributed to at most one ad.
+        order_net = (o.total or Decimal("0")) - (o.delivery_fee or Decimal("0"))
+        attributed_ad = None
+        for oo in o.order_offers.all():
+            if not oo.offer_id:
+                continue
+            a = offer_page_to_ad.get((oo.offer_id, page_id)) or offer_to_ad.get(oo.offer_id)
+            if a is not None:
+                attributed_ad = a
+                break
+        if attributed_ad is not None:
+            ad_real_margin[attributed_ad.id] += order_net
         for oo in o.order_offers.all():
             if not oo.offer_id:
                 continue
@@ -4844,6 +4875,9 @@ def ads_offers_dashboard(request):
                 "page": lk.sales_page, "page_id": lk.sales_page_id, "qty": q,
             })
         cpo = (spend / qty_sum) if qty_sum else None
+        # Real margin = net revenue of orders attributed to this ad − ad spend.
+        real_net = ad_real_margin.get(ad.id, Decimal("0"))
+        real_margin = real_net - spend
         rows.append({
             "ad": ad,
             "spend": spend,
@@ -4852,7 +4886,8 @@ def ads_offers_dashboard(request):
             "revenue": revenue,
             "cpo": cpo,
             "profit": revenue - spend,
-            # page(s) this ad is attributed to (from its links)
+            "real_net": real_net,
+            "real_margin": real_margin,
             "page_ids": {lk["page_id"] for lk in link_desc if lk["page_id"]},
         })
     rows.sort(key=lambda r: r["spend"], reverse=True)
@@ -4902,11 +4937,25 @@ def ads_offers_dashboard(request):
 
     total_revenue = barats_rev + sum((r["revenue"] for r in rows), Decimal("0"))
 
+    # ---- Advice: which ads to cut vs boost, based on REAL margin.
+    # Losing / too thin: real margin < 15 DT AND the ad actually spent something.
+    # Boost: the top 3 ads by real net revenue that are also profitable.
+    advice_losing = sorted(
+        [r for r in rows if r["spend"] > 0 and r["real_margin"] < 15],
+        key=lambda r: r["real_margin"],
+    )
+    advice_boost = sorted(
+        [r for r in rows if r["real_margin"] >= 15],
+        key=lambda r: r["real_net"], reverse=True,
+    )[:3]
+
     return render(request, "inventory/ads_offers.html", {
         "rows": rows,                 # kept for back-compat / any other use
         "page_blocks": page_blocks,   # per-page summary + detailed ads
         "unassigned": unassigned,     # ads with no page link
         "barats": barats_block,
+        "advice_losing": advice_losing,
+        "advice_boost": advice_boost,
         "offers": offers,
         "pages": pages,
         "start": start_str,
