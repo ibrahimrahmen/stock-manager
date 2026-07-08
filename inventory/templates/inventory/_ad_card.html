@@ -57,7 +57,7 @@
       </div>
       {% if r.extras %}
       <div style="margin-top:6px;">
-        <button class="btn-extra" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display==='block'?'none':'block';">+ Extra ({{ r.extras|length }})</button>
+        <button class="btn-extra" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display==='block'?'none':'block';">🎁 Offres extra ({{ r.extras|length }})</button>
         <div class="extras-list" style="display:none;margin-top:5px;">
           {% for e in r.extras %}<span class="pill pill-extra">{{ e.name }} ×{{ e.qty }}</span>{% endfor %}
         </div>
