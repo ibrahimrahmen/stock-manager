@@ -4745,7 +4745,7 @@ def ads_offers_dashboard(request):
     from collections import defaultdict
     from .models import Ad, Offer, Order, SalesPage, ShippingOrder
 
-    QUALIFYING = [Order.EN_COURS, Order.LIVREE, Order.PAYEE]
+    QUALIFYING = [Order.EN_COURS, Order.AU_MAGASIN, Order.LIVREE, Order.PAYEE]
 
     today = date.today()
     # Date range. Default: today only. ?start=YYYY-MM-DD&end=YYYY-MM-DD
@@ -4786,19 +4786,21 @@ def ads_offers_dashboard(request):
             offer_to_ad.setdefault(lk.offer_id, a)
 
     # Qualifying orders created in the range, with their offer lines + page.
-    # An order counts as SHIPPED when it has been scanned at expedition — i.e. a
-    # linked ShippingOrder reached a CLOSED state (units marked SHIPPED). Having
-    # only a bordereau isn't enough: bordereaux are assigned at Navex push, well
-    # before the parcel is physically scanned out. So we accept:
-    #   en_cours / livree / payee  (Navex already advanced them), OR
-    #   any order with a ShippingOrder in a closed/shipped state.
+    # Counted statuses: en_cours / au_magasin (may still be delivered) / livree /
+    # payee, PLUS orders scanned out today (ShippingOrder CLOSED) so the current
+    # day isn't empty before Navex advances them. We EXCLUDE returns and
+    # cancellations (returning / returned / annulee) and EXCHANGE orders
+    # (exchange_of set) — those aren't real ad-driven sales.
     from django.db.models import Q as _Q
+    RETURN_LIKE = [Order.RETURNING, Order.RETURNED, Order.ANNULEE]
     q_orders = (Order.objects
                 .filter(created_at__date__gte=start, created_at__date__lte=end)
                 .filter(
                     _Q(status__in=QUALIFYING)
                     | _Q(shipping_orders__status__in=ShippingOrder.CLOSED_STATUSES)
                 )
+                .exclude(status__in=RETURN_LIKE)
+                .filter(exchange_of__isnull=True)
                 .distinct()
                 .select_related("sales_page")
                 .prefetch_related("order_offers"))
