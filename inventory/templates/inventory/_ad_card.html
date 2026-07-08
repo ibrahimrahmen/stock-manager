@@ -46,6 +46,7 @@
       <button class="btn-save" onclick="savePairs({{ r.ad.id }}, this)">Enregistrer</button>
     </div>
     <span class="attr-toggle" onclick="setAttr({{ r.ad.id }}, 'barats')">↳ marquer Carrousel Barats.tn</span>
+    <span class="attr-toggle" onclick="archiveAd({{ r.ad.id }})" style="color:var(--red);">🗑 Archiver (annulée dans Meta)</span>
   </div>
   <div class="crev">
     <div class="clabel">Coût/unité · Revenu · Profit</div>

@@ -973,6 +973,9 @@ class Ad(models.Model):
         help_text="Compte publicitaire Meta d'où vient cette pub.")
     currency = models.CharField(max_length=8, blank=True, default="",
         help_text="Devise d'origine du compte (EUR, USD, TND…).")
+    archived = models.BooleanField(default=False,
+        help_text="Pub annulée/désactivée dans Meta : masquée du dashboard du "
+                  "jour et exclue de l'attribution (l'historique passé reste).")
     attribution = models.CharField(max_length=10, choices=ATTR_CHOICES, default=ATTR_OFFER,
         help_text="Comment cette pub est attribuée : à des offres précises, ou au pool Barats.tn.")
     # Legacy single link — kept for back-compat. New code uses `offers` (M2M).

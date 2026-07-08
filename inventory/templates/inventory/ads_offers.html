@@ -252,6 +252,18 @@ async function setAttr(adId, attribution) {
   if (data.status === 'ok') { setTimeout(() => location.reload(), 300); }
   else { alert(data.message || 'Erreur.'); }
 }
+
+async function archiveAd(adId) {
+  if (!confirm('Archiver cette pub ? Elle sera masquée et ne captera plus de commandes.')) return;
+  const res = await fetch('/api/ads/' + adId + '/archive/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
+    body: JSON.stringify({archived: true}),
+  });
+  const data = await res.json();
+  if (data.status === 'ok') { setTimeout(() => location.reload(), 300); }
+  else { alert(data.message || 'Erreur.'); }
+}
 </script>
 </body>
 </html>

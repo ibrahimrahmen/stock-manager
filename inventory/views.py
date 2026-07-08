@@ -4766,7 +4766,12 @@ def ads_offers_dashboard(request):
     # Sync spend for the whole range from Meta.
     _sync_ads_from_meta(start_str, end_str)
 
-    ads = list(Ad.objects.prefetch_related("links__offer", "links__sales_page").all())
+    # Archived ads (cancelled/disabled in Meta) are hidden and excluded from
+    # attribution — they no longer capture orders. Their past-date data still
+    # shows because on those dates they weren't archived… (archive is a current
+    # flag; simplest correct behaviour: once archived, drop from all views).
+    ads = list(Ad.objects.filter(archived=False)
+               .prefetch_related("links__offer", "links__sales_page").all())
     offers = list(Offer.objects.filter(is_active=True).order_by("name"))
     pages = list(SalesPage.objects.filter(is_active=True).order_by("name"))
 
@@ -5014,6 +5019,28 @@ def ads_offers_dashboard(request):
         "total_profit": total_revenue - total_spend,
         "unlinked_count": sum(1 for a in ads if a.attribution == Ad.ATTR_OFFER and not a.links.exists()),
     })
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
+def api_ad_archive(request, pk):
+    """Archive or unarchive an ad. Body: {"archived": true|false}.
+    Archived ads are hidden from the dashboard and excluded from attribution."""
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import Ad
+    try:
+        ad = Ad.objects.get(pk=pk)
+    except Ad.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Publicité introuvable."}, status=404)
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        data = {}
+    ad.archived = bool(data.get("archived", True))
+    ad.save(update_fields=["archived", "updated_at"])
+    return JsonResponse({"status": "ok", "ad_id": ad.id, "archived": ad.archived})
 
 
 @csrf_exempt
