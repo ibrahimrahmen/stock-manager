@@ -4777,6 +4777,8 @@ def ads_offers_dashboard(request):
     offer_page_to_ad = {}   # (offer_id, page_id) -> ad  (page-specific links)
     offer_nopage_to_ad = {} # offer_id -> ad           (links with no page set)
     ad_real_margin = {a.id: Decimal("0") for a in ads}  # net revenue attributed
+    ad_own_offers = {a.id: set() for a in ads}          # offer ids the ad is linked to
+    ad_extras = {a.id: defaultdict(int) for a in ads}   # extra offer name -> qty
     for a in ads:
         if a.attribution == Ad.ATTR_BARATS:
             continue
@@ -4785,6 +4787,7 @@ def ads_offers_dashboard(request):
                 offer_page_to_ad.setdefault((lk.offer_id, lk.sales_page_id), a)
             else:
                 offer_nopage_to_ad.setdefault(lk.offer_id, a)
+            ad_own_offers[a.id].add(lk.offer_id)
 
     # Qualifying orders created in the range, with their offer lines + page.
     # Counted statuses: en_cours / au_magasin (may still be delivered) / livree /
@@ -4845,6 +4848,14 @@ def ads_offers_dashboard(request):
                 break
         if attributed_ad is not None:
             ad_real_margin[attributed_ad.id] += order_net
+            # Record EXTRA offers in this order — the ones that are NOT among the
+            # ad's own linked offers — so the ad card can show "+ Ensemble Pierce
+            # ×3" etc. Uses offer name + summed quantity.
+            own = ad_own_offers.get(attributed_ad.id, set())
+            for oo in o.order_offers.all():
+                if oo.offer_id and oo.offer_id not in own:
+                    label = oo.offer_name or (oo.offer.name if oo.offer else "?")
+                    ad_extras[attributed_ad.id][label] += (oo.quantity or 1)
         for oo in o.order_offers.all():
             if not oo.offer_id:
                 continue
@@ -4906,6 +4917,10 @@ def ads_offers_dashboard(request):
         real_margin = real_net - spend
         spend_orig = ad.spend_original or Decimal("0")
         cpo_orig = (spend_orig / qty_sum) if qty_sum else None
+        extras = sorted(
+            ({"name": nm, "qty": q} for nm, q in ad_extras.get(ad.id, {}).items()),
+            key=lambda e: e["qty"], reverse=True,
+        )
         rows.append({
             "ad": ad,
             "spend": spend,
@@ -4919,6 +4934,7 @@ def ads_offers_dashboard(request):
             "profit": revenue - spend,
             "real_net": real_net,
             "real_margin": real_margin,
+            "extras": extras,
             "page_ids": {lk["page_id"] for lk in link_desc if lk["page_id"]},
         })
     rows.sort(key=lambda r: r["spend"], reverse=True)

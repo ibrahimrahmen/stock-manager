@@ -55,6 +55,14 @@
       <div class="muted">{{ r.order_count }} unité(s) · marge réelle <span class="{% if r.real_margin < 0 %}neg{% elif r.real_margin >= 15 %}pos{% endif %}">{{ r.real_margin|floatformat:2 }} DT</span>
         {% for lk in r.links %}<span class="pill pill-blue">{{ lk.offer.name }}{% if lk.page %} @ {{ lk.page.name }}{% endif %}</span>{% endfor %}
       </div>
+      {% if r.extras %}
+      <div style="margin-top:6px;">
+        <button class="btn-extra" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display==='block'?'none':'block';">+ Extra ({{ r.extras|length }})</button>
+        <div class="extras-list" style="display:none;margin-top:5px;">
+          {% for e in r.extras %}<span class="pill pill-extra">{{ e.name }} ×{{ e.qty }}</span>{% endfor %}
+        </div>
+      </div>
+      {% endif %}
     {% else %}
       <div class="muted">non liée <span class="pill pill-warn">à lier</span></div>
     {% endif %}
