@@ -4617,12 +4617,28 @@ def _meta_fetch_spend_by_campaign(start_date, end_date):
             per_account[aid.strip().replace("act_", "")] = tok.strip()
     if not token and not per_account:
         return {}
+    # Per-account currency conversion to TND (dinars). Ad accounts can be in
+    # different currencies (e.g. Ibrahim=EUR, Converty=USD) while our system and
+    # revenue are in TND, so raw spend can't be summed directly. Configure rates
+    # per account via META_ACCOUNT_RATES = "accountid:rate,accountid:rate"
+    # where rate = how many TND for 1 unit of that account's currency.
+    # Any account not listed defaults to 1.0 (assumed already in TND).
+    account_rates = {}
+    for pair in os.environ.get("META_ACCOUNT_RATES", "").split(","):
+        pair = pair.strip()
+        if pair and ":" in pair:
+            aid, _, rate = pair.partition(":")
+            try:
+                account_rates[aid.strip().replace("act_", "")] = float(rate.strip())
+            except (ValueError, TypeError):
+                pass
     result = {}
     for account_id in account_ids:
         bare = account_id.replace("act_", "")
         acc_token = per_account.get(bare, token)
         if not acc_token:
             continue
+        rate = account_rates.get(bare, 1.0)  # TND per 1 unit of account currency
         acct = account_id if account_id.startswith("act_") else f"act_{account_id}"
         url = (
             f"https://graph.facebook.com/v18.0/{acct}/insights"
@@ -4641,7 +4657,7 @@ def _meta_fetch_spend_by_campaign(start_date, end_date):
             if not cid:
                 continue
             try:
-                spend = float(entry.get("spend", "0"))
+                spend = float(entry.get("spend", "0")) * rate  # -> TND
             except (ValueError, TypeError):
                 spend = 0.0
             if cid in result:
@@ -8754,12 +8770,22 @@ def _meta_fetch_spend(start_date, end_date):
             per_account[aid.strip().replace("act_", "")] = tok.strip()
     if not token and not per_account:
         return {}
+    account_rates = {}
+    for pair in os.environ.get("META_ACCOUNT_RATES", "").split(","):
+        pair = pair.strip()
+        if pair and ":" in pair:
+            aid, _, rate = pair.partition(":")
+            try:
+                account_rates[aid.strip().replace("act_", "")] = float(rate.strip())
+            except (ValueError, TypeError):
+                pass
     result = {}
     for account_id in account_ids:
         bare = account_id.replace("act_", "")
         acc_token = per_account.get(bare, token)
         if not acc_token:
             continue
+        rate = account_rates.get(bare, 1.0)
         acct = account_id if account_id.startswith("act_") else f"act_{account_id}"
         url = (
             f"https://graph.facebook.com/v18.0/{acct}/insights"
@@ -8776,7 +8802,7 @@ def _meta_fetch_spend(start_date, end_date):
         for entry in data.get("data", []):
             date_start = entry.get("date_start", "")
             try:
-                spend = float(entry.get("spend", "0"))
+                spend = float(entry.get("spend", "0")) * rate
             except (ValueError, TypeError):
                 spend = 0.0
             result[date_start] = result.get(date_start, 0.0) + spend
