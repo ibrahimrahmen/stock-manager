@@ -4774,8 +4774,8 @@ def ads_offers_dashboard(request):
     # order can be attributed to the FIRST linked ad found. Used for real-margin
     # profit: the whole order's net (total − delivery) goes to one ad, casquette
     # and all, since that ad's campaign brought the customer.
-    offer_page_to_ad = {}
-    offer_to_ad = {}
+    offer_page_to_ad = {}   # (offer_id, page_id) -> ad  (page-specific links)
+    offer_nopage_to_ad = {} # offer_id -> ad           (links with no page set)
     ad_real_margin = {a.id: Decimal("0") for a in ads}  # net revenue attributed
     for a in ads:
         if a.attribution == Ad.ATTR_BARATS:
@@ -4783,7 +4783,8 @@ def ads_offers_dashboard(request):
         for lk in a.links.all():
             if lk.sales_page_id:
                 offer_page_to_ad.setdefault((lk.offer_id, lk.sales_page_id), a)
-            offer_to_ad.setdefault(lk.offer_id, a)
+            else:
+                offer_nopage_to_ad.setdefault(lk.offer_id, a)
 
     # Qualifying orders created in the range, with their offer lines + page.
     # Counted statuses: en_cours / au_magasin (may still be delivered) / livree /
@@ -4833,7 +4834,12 @@ def ads_offers_dashboard(request):
         for oo in o.order_offers.all():
             if not oo.offer_id:
                 continue
-            a = offer_page_to_ad.get((oo.offer_id, page_id)) or offer_to_ad.get(oo.offer_id)
+            # Match the ad on (offer, THIS page) first; only if no page-specific
+            # link exists do we fall back to a page-less link for that offer.
+            # This prevents attributing a Next-Generation ad's margin to orders
+            # from a different page that happen to contain the same offer.
+            a = (offer_page_to_ad.get((oo.offer_id, page_id))
+                 or offer_nopage_to_ad.get(oo.offer_id))
             if a is not None:
                 attributed_ad = a
                 break
