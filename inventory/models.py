@@ -976,6 +976,9 @@ class Ad(models.Model):
     archived = models.BooleanField(default=False,
         help_text="Pub annulée/désactivée dans Meta : masquée du dashboard du "
                   "jour et exclue de l'attribution (l'historique passé reste).")
+    effective_status = models.CharField(max_length=32, blank=True, default="",
+        help_text="Statut Meta de la campagne (ACTIVE, PAUSED, DELETED…), "
+                  "rafraîchi à chaque sync.")
     attribution = models.CharField(max_length=10, choices=ATTR_CHOICES, default=ATTR_OFFER,
         help_text="Comment cette pub est attribuée : à des offres précises, ou au pool Barats.tn.")
     # Legacy single link — kept for back-compat. New code uses `offers` (M2M).

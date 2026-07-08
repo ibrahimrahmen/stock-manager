@@ -4683,6 +4683,45 @@ def _meta_fetch_spend_by_campaign(start_date, end_date):
     return result
 
 
+def _meta_fetch_campaign_status():
+    """Fetch effective_status per campaign_id across all configured ad accounts.
+    Returns {campaign_id: "ACTIVE"/"PAUSED"/"CAMPAIGN_PAUSED"/"DELETED"/...}.
+    Uses the /campaigns endpoint (all campaigns, not just those with spend)."""
+    import urllib.request
+    token = os.environ.get("META_ACCESS_TOKEN", "").strip()
+    accounts_raw = os.environ.get("META_AD_ACCOUNT_ID", "").strip()
+    if not accounts_raw:
+        return {}
+    account_ids = [a.strip() for a in accounts_raw.split(",") if a.strip()]
+    per_account = {}
+    for pair in os.environ.get("META_AD_ACCOUNT_TOKENS", "").split(","):
+        pair = pair.strip()
+        if pair and ":" in pair:
+            aid, _, tok = pair.partition(":")
+            per_account[aid.strip().replace("act_", "")] = tok.strip()
+    result = {}
+    for account_id in account_ids:
+        bare = account_id.replace("act_", "")
+        acc_token = per_account.get(bare, token)
+        if not acc_token:
+            continue
+        acct = account_id if account_id.startswith("act_") else f"act_{account_id}"
+        url = (f"https://graph.facebook.com/v18.0/{acct}/campaigns"
+               f"?fields=id,effective_status&limit=500&access_token={acc_token}")
+        while url:
+            try:
+                with urllib.request.urlopen(url, timeout=20) as resp:
+                    data = json.loads(resp.read().decode("utf-8", errors="replace"))
+            except Exception:
+                break
+            for c in data.get("data", []):
+                cid = c.get("id")
+                if cid:
+                    result[cid] = c.get("effective_status", "")
+            url = data.get("paging", {}).get("next")
+    return result
+
+
 def _sync_ads_from_meta(start_date, end_date):
     """Upsert Ad rows from Meta per-campaign spend, keyed on campaign_id.
     Also refreshes the display name and migrates any legacy name-only rows.
@@ -4715,6 +4754,16 @@ def _sync_ads_from_meta(start_date, end_date):
         ad.last_synced_at = now
         ad.save()
         n += 1
+
+    # Refresh effective_status for ALL known ads (not just those with spend
+    # today), so cancelled/paused campaigns get flagged even when idle.
+    status_map = _meta_fetch_campaign_status()
+    if status_map:
+        for ad in Ad.objects.exclude(campaign_id__isnull=True):
+            st = status_map.get(ad.campaign_id)
+            if st is not None and st != ad.effective_status:
+                ad.effective_status = st
+                ad.save(update_fields=["effective_status"])
     return True, f"{n} publicité(s) synchronisée(s) depuis Meta.", n
 
 
@@ -4940,6 +4989,7 @@ def ads_offers_dashboard(request):
             "real_net": real_net,
             "real_margin": real_margin,
             "extras": extras,
+            "status": ad.effective_status or "",
             "page_ids": {lk["page_id"] for lk in link_desc if lk["page_id"]},
         })
     rows.sort(key=lambda r: r["spend"], reverse=True)

@@ -1,5 +1,11 @@
 <div class="campaign" data-ad="{{ r.ad.id }}">
-  <div class="cname">{{ r.ad.campaign_name }}</div>
+  <div class="cname">{{ r.ad.campaign_name }}
+    {% if r.status and r.status != "ACTIVE" %}
+      {% if "PAUSED" in r.status %}<span class="status-badge sb-paused">⏸ En pause</span>
+      {% elif "DELETED" in r.status or "ARCHIVED" in r.status %}<span class="status-badge sb-dead">✖ Annulée dans Meta</span>
+      {% else %}<span class="status-badge sb-other">{{ r.status }}</span>{% endif %}
+    {% endif %}
+  </div>
   <div>
     <div class="clabel">Dépense</div>
     <div class="cspend">{{ r.spend_orig|floatformat:2 }} {{ r.currency }}</div>

@@ -60,6 +60,10 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
 .pill-extra{background:rgba(245,166,35,0.15);color:var(--amber);}
 .btn-extra{background:linear-gradient(135deg,#f5a623,#e0890a);color:#1a1200;border:none;border-radius:14px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 1px 4px rgba(245,166,35,0.4);}
 .btn-extra:hover{filter:brightness(1.1);}
+.status-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;margin-left:6px;vertical-align:middle;}
+.sb-paused{background:var(--amber-dim);color:var(--amber);}
+.sb-dead{background:var(--red-dim);color:var(--red);}
+.sb-other{background:var(--surface2);color:var(--muted);}
 .pos{color:var(--green);} .neg{color:var(--red);}
 .advice-wrap{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:24px;}
 @media(max-width:700px){.advice-wrap{grid-template-columns:1fr;}}
