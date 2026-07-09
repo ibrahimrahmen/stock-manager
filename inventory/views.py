@@ -114,6 +114,33 @@ MESSENGER_AUTOREPLY_AR = (
 )
 
 
+def _fetch_dm_sender_name(page_id, sender_id, platform="messenger"):
+    """Fetch the display name of a Messenger/Instagram user who messaged a page.
+    Uses the page token. Returns the name or "" (best-effort, short timeout,
+    never raises). For Messenger: first_name/last_name. For Instagram: name/
+    username via the IG-scoped endpoint."""
+    import urllib.request as _ureq
+    import json as _json
+    token = _messenger_page_token(page_id)
+    if not token or not sender_id:
+        return ""
+    host = ("graph.instagram.com" if platform == "instagram"
+            else "graph.facebook.com")
+    fields = "name,username" if platform == "instagram" else "first_name,last_name"
+    url = (f"https://{host}/v21.0/{sender_id}?fields={fields}"
+           f"&access_token={_ureq.quote(token, safe='')}")
+    try:
+        with _ureq.urlopen(url, timeout=6) as resp:
+            d = _json.loads(resp.read().decode("utf-8"))
+        if platform == "instagram":
+            return (d.get("name") or d.get("username") or "").strip()
+        first = (d.get("first_name") or "").strip()
+        last = (d.get("last_name") or "").strip()
+        return " ".join(p for p in (first, last) if p)
+    except Exception:
+        return ""
+
+
 def _resolve_ad_campaign_name(ad_id):
     """Resolve a Meta ad_id (from a Click-to-Messenger referral) to its campaign
     name. Returns the campaign name or "" on failure. Best-effort, short timeout,
@@ -9450,6 +9477,13 @@ def api_messenger_webhook(request):
                         sender_id=sender_id, page_id=page_id,
                         platform=platform,
                     )
+                # Fetch the customer's profile name from Meta once, if we don't
+                # have it yet — so orders get filled with the client's real name
+                # even when they only sent a phone number.
+                if not conv.sender_name:
+                    nm = _fetch_dm_sender_name(page_id, sender_id, platform)
+                    if nm:
+                        conv.sender_name = nm
 
                 # Capture ad referral (attribution). Present on the first message
                 # from an ad, or as a standalone 'referral' event.
