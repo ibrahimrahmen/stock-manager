@@ -116,9 +116,9 @@ MESSENGER_AUTOREPLY_AR = (
 
 def _fetch_dm_sender_name(page_id, sender_id, platform="messenger"):
     """Fetch the display name of a Messenger/Instagram user who messaged a page.
-    Uses the page token. Returns the name or "" (best-effort, short timeout,
-    never raises). For Messenger: first_name/last_name. For Instagram: name/
-    username via the IG-scoped endpoint."""
+    Meta blocks the direct /{user_id}?fields=first_name endpoint for privacy, so
+    we read the name from the conversation's participants list instead — the same
+    source that already works for polled conversations. Returns "" on failure."""
     import urllib.request as _ureq
     import json as _json
     token = _messenger_page_token(page_id)
@@ -126,19 +126,23 @@ def _fetch_dm_sender_name(page_id, sender_id, platform="messenger"):
         return ""
     host = ("graph.instagram.com" if platform == "instagram"
             else "graph.facebook.com")
-    fields = "name,username" if platform == "instagram" else "first_name,last_name"
-    url = (f"https://{host}/v21.0/{sender_id}?fields={fields}"
-           f"&access_token={_ureq.quote(token, safe='')}")
+    # Look up the conversation with THIS user and read participant names.
+    plat_q = "instagram" if platform == "instagram" else "messenger"
+    url = (f"https://{host}/v21.0/{page_id}/conversations"
+           f"?platform={plat_q}&user_id={sender_id}"
+           f"&fields=participants&access_token={_ureq.quote(token, safe='')}")
     try:
         with _ureq.urlopen(url, timeout=6) as resp:
             d = _json.loads(resp.read().decode("utf-8"))
-        if platform == "instagram":
-            return (d.get("name") or d.get("username") or "").strip()
-        first = (d.get("first_name") or "").strip()
-        last = (d.get("last_name") or "").strip()
-        return " ".join(p for p in (first, last) if p)
+        for thread in d.get("data", []):
+            for part in (thread.get("participants", {}) or {}).get("data", []):
+                if str(part.get("id")) != str(page_id):
+                    nm = (part.get("name") or part.get("username") or "").strip()
+                    if nm:
+                        return nm
     except Exception:
-        return ""
+        pass
+    return ""
 
 
 def _resolve_ad_campaign_name(ad_id):
