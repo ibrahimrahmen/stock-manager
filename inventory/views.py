@@ -9305,6 +9305,9 @@ def api_messenger_webhook(request):
         pass
 
     try:
+        obj_type = payload.get("object", "")
+        # "instagram" => IG Direct; "page" => Facebook Messenger.
+        platform = "instagram" if obj_type == "instagram" else "messenger"
         for entry in payload.get("entry", []):
             page_id = str(entry.get("id") or "")
             for ev in entry.get("messaging", []):
@@ -9319,7 +9322,7 @@ def api_messenger_webhook(request):
                 if conv is None:
                     conv = MessengerConversation.objects.create(
                         sender_id=sender_id, page_id=page_id,
-                        platform="messenger",
+                        platform=platform,
                     )
 
                 # Capture ad referral (attribution). Present on the first message
