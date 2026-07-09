@@ -114,6 +114,27 @@ MESSENGER_AUTOREPLY_AR = (
 )
 
 
+def _resolve_ad_campaign_name(ad_id):
+    """Resolve a Meta ad_id (from a Click-to-Messenger referral) to its campaign
+    name. Returns the campaign name or "" on failure. Best-effort, short timeout,
+    never raises — so it can't block the webhook."""
+    import urllib.request as _ureq
+    import json as _json
+    if not ad_id:
+        return ""
+    token = os.environ.get("META_ACCESS_TOKEN", "").strip()
+    if not token:
+        return ""
+    url = (f"https://graph.facebook.com/v21.0/{ad_id}"
+           f"?fields=campaign{{name}}&access_token={token}")
+    try:
+        with _ureq.urlopen(url, timeout=6) as resp:
+            d = _json.loads(resp.read().decode("utf-8"))
+        return (d.get("campaign", {}) or {}).get("name", "") or ""
+    except Exception:
+        return ""
+
+
 def _messenger_send_text(page_id, recipient_id, text, platform="messenger"):
     """Send a text message back to a user via the Meta Send API. Best-effort:
     returns True on success, False otherwise (never raises).
@@ -5435,10 +5456,11 @@ def api_order_refresh_conversation(request, pk):
         conv = MessengerConversation.objects.filter(pending_order_id=order.id).order_by("-id").first()
         if conv:
             platform = conv.platform or ""
-            if conv.source_ad_id or conv.source_campaign:
+            if conv.source_ad_id or conv.source_campaign or conv.source_campaign_name:
                 ad_source = {
                     "ad_id": conv.source_ad_id or "",
-                    "campaign": conv.source_campaign or "",
+                    "campaign": conv.source_campaign_name or conv.source_campaign or "",
+                    "post_title": conv.source_campaign or "",
                     "ref": conv.source_ad_ref or "",
                 }
             if conv.messages:
@@ -9438,6 +9460,13 @@ def api_messenger_webhook(request):
                     conv.source_campaign = str(referral.get("ads_context_data", {}).get("ad_title")
                                                or conv.source_campaign or "")
                     conv.ctwa_clid = str(referral.get("ctwa_clid") or conv.ctwa_clid or "")
+                    # Resolve the ad_id to its real Meta campaign name once, so
+                    # the UI can show "Traffic | Jordan" instead of the post
+                    # title. Best-effort; won't block if Meta is slow.
+                    if conv.source_ad_id and not conv.source_campaign_name:
+                        nm = _resolve_ad_campaign_name(conv.source_ad_id)
+                        if nm:
+                            conv.source_campaign_name = nm
 
                 # Capture the message text. Dedupe by Meta's message id (mid):
                 # Meta retries webhook deliveries, and without this the same

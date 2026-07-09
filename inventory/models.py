@@ -1336,6 +1336,8 @@ class MessengerConversation(models.Model):
     source_ad_id        = models.CharField(max_length=120, blank=True, default="")
     source_ad_ref       = models.CharField(max_length=200, blank=True, default="")
     source_campaign     = models.CharField(max_length=200, blank=True, default="")
+    source_campaign_name = models.CharField(max_length=200, blank=True, default="",
+        help_text="Vrai nom de la campagne Meta, résolu depuis l'ad_id du referral.")
     ctwa_clid           = models.CharField(max_length=200, blank=True, default="")
     matched_ad      = models.ForeignKey("Ad", on_delete=models.SET_NULL,
         null=True, blank=True, related_name="conversations")
