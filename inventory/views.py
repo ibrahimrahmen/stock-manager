@@ -146,10 +146,64 @@ def _messenger_send_text(page_id, recipient_id, text, platform="messenger"):
         return False
 
 
+def _claude_generate(prompt, max_tokens=1024, temperature=0.0):
+    """Call the Anthropic Claude API. Returns response text or None on failure.
+    Replaces Gemini for DM order extraction and transliteration. Uses
+    ANTHROPIC_API_KEY. On rate limit (429) it bails out immediately so a worker
+    is never pinned. Model is configurable via ANTHROPIC_MODEL."""
+    import urllib.request as _ureq
+    import json as _json
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key or not prompt:
+        return None
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001").strip()
+    body = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    data = _json.dumps(body).encode("utf-8")
+    url = "https://api.anthropic.com/v1/messages"
+    for retry in range(3):
+        try:
+            req = _ureq.Request(url, data=data, method="POST")
+            req.add_header("Content-Type", "application/json")
+            req.add_header("x-api-key", api_key)
+            req.add_header("anthropic-version", "2023-06-01")
+            with _ureq.urlopen(req, timeout=15) as resp:
+                rd = _json.loads(resp.read().decode("utf-8"))
+            blocks = rd.get("content") or []
+            txt = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+            return txt or None
+        except Exception as e:
+            es = str(e)
+            # 429 = rate limit: don't retry (pins the worker); bail out.
+            if "429" in es:
+                return None
+            # Retry only transient server errors, briefly.
+            if ("529" in es or "503" in es or "500" in es
+                    or "timed out" in es.lower() or "502" in es) and retry < 2:
+                import time as _t; _t.sleep(1 + retry)
+                continue
+            return None
+    return None
+
+
 def _gemini_generate(prompt, max_tokens=1024, temperature=0.0, model="gemini-2.5-flash-lite"):
+    """Backwards-compatible wrapper: now routes to Claude (Anthropic). Kept under
+    the old name so existing callers work unchanged. The `model` arg is ignored
+    (Claude model is chosen via ANTHROPIC_MODEL). Falls back to Gemini only if
+    ANTHROPIC_API_KEY is absent but GEMINI_API_KEY is present."""
+    if os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        return _claude_generate(prompt, max_tokens=max_tokens, temperature=temperature)
+    return _gemini_generate_legacy(prompt, max_tokens=max_tokens, temperature=temperature, model=model)
+
+
+def _gemini_generate_legacy(prompt, max_tokens=1024, temperature=0.0, model="gemini-2.5-flash-lite"):
     """Module-level Gemini call (gemini-2.5-flash-lite). Returns the response
     text or None on failure. Supports classic (AIza...) and OAuth-style keys.
-    Reused by the Messenger DM order extractor and other callers."""
+    Kept as a fallback if no Anthropic key is configured."""
     import urllib.request as _ureq
     import json as _json
     import time as _time
@@ -179,7 +233,7 @@ def _gemini_generate(prompt, max_tokens=1024, temperature=0.0, model="gemini-2.5
                 req.add_header("Content-Type", "application/json")
                 for h, v in (headers or {}).items():
                     req.add_header(h, v)
-                with _ureq.urlopen(req, timeout=12) as resp:
+                with _ureq.urlopen(req, timeout=8) as resp:
                     rd = _json.loads(resp.read().decode("utf-8"))
                 cands = rd.get("candidates") or []
                 if not cands:
@@ -193,12 +247,18 @@ def _gemini_generate(prompt, max_tokens=1024, temperature=0.0, model="gemini-2.5
                 break
             except Exception as e:
                 es = str(e)
-                # Retry transient failures: 503 (overloaded), 429 (rate limit),
-                # 500, and timeouts. Exponential-ish backoff: 1s, 2s, 4s.
-                transient = ("503" in es or "429" in es or "500" in es
+                # 429 = quota/rate limit exhausted. Retrying within a request is
+                # pointless (the quota won't free up in a few seconds) and it
+                # pins the worker, which can take the whole site down when many
+                # DMs arrive at once. So on 429 we bail out immediately and let
+                # the caller proceed without Gemini. Only retry truly transient
+                # server errors (503/500/502) and timeouts, briefly.
+                if "429" in es:
+                    return None
+                transient = ("503" in es or "500" in es
                              or "timed out" in es.lower() or "502" in es)
-                if transient and retry < 3:
-                    _time.sleep(2 ** retry)
+                if transient and retry < 2:
+                    _time.sleep(1 + retry)
                     continue
                 break
     return None
@@ -5908,6 +5968,23 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
         return "".join(out)
 
     def _gemini_transliterate(text):
+        """Transliterate Arabic → Latin (Tunisian style). Now routes to Claude
+        (Anthropic); falls back to Gemini if no Anthropic key. Returns the
+        transliterated text, or None on failure (caller falls back)."""
+        if not text:
+            return None
+        prompt = (
+            "Translitère ce texte arabe (tunisien) en lettres latines lisibles "
+            "(style phonétique français). N'ajoute aucun commentaire, aucune ponctuation "
+            "supplémentaire, aucune explication. Réponds UNIQUEMENT avec le texte translittéré. "
+            "Si une partie est déjà en latin, garde-la telle quelle.\n\n"
+            f"Texte : {text}"
+        )
+        if os.environ.get("ANTHROPIC_API_KEY", "").strip():
+            return _claude_generate(prompt, max_tokens=256, temperature=0.0)
+        return _gemini_transliterate_legacy(text)
+
+    def _gemini_transliterate_legacy(text):
         """Call Google Gemini API to transliterate Arabic → Latin (Tunisian style).
         Returns the transliterated text, or None on failure (caller falls back).
         Supports both classic API keys (AIza...) and new-format ones (AQ...).
