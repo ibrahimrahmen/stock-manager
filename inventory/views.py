@@ -9461,8 +9461,19 @@ def api_messenger_webhook(request):
         for entry in payload.get("entry", []):
             page_id = str(entry.get("id") or "")
             for ev in entry.get("messaging", []):
-                sender_id = str((ev.get("sender") or {}).get("id") or "")
-                if not sender_id:
+                _msg = ev.get("message") or {}
+                is_echo = bool(_msg.get("is_echo"))
+                # For a normal inbound message, the customer is the sender.
+                # For an ECHO (a message the PAGE sent — including our own
+                # auto-replies and staff replies), Meta reports sender=page and
+                # recipient=customer. We flip so the conversation is keyed on the
+                # customer and the message is stored as coming from the page.
+                if is_echo:
+                    customer_id = str((ev.get("recipient") or {}).get("id") or "")
+                    sender_id = customer_id
+                else:
+                    sender_id = str((ev.get("sender") or {}).get("id") or "")
+                if not sender_id or sender_id == page_id:
                     continue
                 # Reuse the most recent conversation from THIS sender on THIS
                 # page if it's less than 48h old — regardless of status — so a
@@ -9477,21 +9488,25 @@ def api_messenger_webhook(request):
                                 updated_at__gte=cutoff)
                         .order_by("-id").first())
                 if conv is None:
+                    if is_echo:
+                        # An outgoing message with no existing conversation to
+                        # attach to — nothing to record against, skip it.
+                        continue
                     conv = MessengerConversation.objects.create(
                         sender_id=sender_id, page_id=page_id,
                         platform=platform,
                     )
                 # Fetch the customer's profile name from Meta once, if we don't
                 # have it yet — so orders get filled with the client's real name
-                # even when they only sent a phone number.
-                if not conv.sender_name:
+                # even when they only sent a phone number. (Not for echoes.)
+                if not is_echo and not conv.sender_name:
                     nm = _fetch_dm_sender_name(page_id, sender_id, platform)
                     if nm:
                         conv.sender_name = nm
 
                 # Capture ad referral (attribution). Present on the first message
-                # from an ad, or as a standalone 'referral' event.
-                referral = ev.get("referral") or (ev.get("message") or {}).get("referral")
+                # from an ad, or as a standalone 'referral' event. (Not echoes.)
+                referral = None if is_echo else (ev.get("referral") or (ev.get("message") or {}).get("referral"))
                 if referral:
                     conv.source_ad_id = str(referral.get("ad_id") or conv.source_ad_id or "")
                     conv.source_ad_ref = str(referral.get("ref") or conv.source_ad_ref or "")
@@ -9527,7 +9542,7 @@ def api_messenger_webhook(request):
                     already = mid and any(m.get("mid") == mid for m in msgs)
                     if not already:
                         msgs.append({
-                            "from": "user",
+                            "from": "page" if is_echo else "user",
                             "text": text or "",
                             "images": images,
                             "ts": str(ev.get("timestamp") or ""),
@@ -9535,6 +9550,12 @@ def api_messenger_webhook(request):
                         })
                         conv.messages = msgs
                 conv.save()
+
+                # Everything below (profile name, ad referral, auto-reply,
+                # extraction) is about the CUSTOMER's inbound messages. Skip it
+                # entirely for echoes (our own outgoing messages).
+                if is_echo:
+                    continue
 
                 # Send the one-time Arabic auto-reply ONLY once the customer has
                 # sent a phone number — i.e. there's real order intent. Greeting
