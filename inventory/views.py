@@ -5368,16 +5368,19 @@ def api_order_refresh_conversation(request, pk):
     # If a MessengerConversation is linked to this order, return its structured
     # messages (with image attachments) so the chat view can show photos.
     structured = []
+    platform = ""
     try:
         from .models import MessengerConversation
         conv = MessengerConversation.objects.filter(pending_order_id=order.id).order_by("-id").first()
-        if conv and conv.messages:
-            for m in conv.messages:
-                structured.append({
-                    "from": m.get("from", "user"),
-                    "text": m.get("text", ""),
-                    "images": m.get("images", []),
-                })
+        if conv:
+            platform = conv.platform or ""
+            if conv.messages:
+                for m in conv.messages:
+                    structured.append({
+                        "from": m.get("from", "user"),
+                        "text": m.get("text", ""),
+                        "images": m.get("images", []),
+                    })
     except Exception:
         structured = []
 
@@ -5386,6 +5389,7 @@ def api_order_refresh_conversation(request, pk):
             "status": "ok",
             "conversation_text": order.conversation_text,
             "messages": structured,
+            "platform": platform,
             "updated_at": order.conversation_updated_at.strftime("%d/%m/%Y %H:%M") if order.conversation_updated_at else "",
         })
     if psid:

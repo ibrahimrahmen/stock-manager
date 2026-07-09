@@ -350,7 +350,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
             {% endif %}
             {% if o.is_shipping_closed %}<span title="Scan expédition terminé" style="color:#1a9e6e;font-size:14px;font-weight:600;margin-left:4px;">✓</span>{% endif %}
             <button class="conv-btn" onclick="openConversation(event, {{ o.id }})" title="Voir la conversation"
-                    style="margin-left:6px;border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;opacity:0.7;">💬</button>
+                    style="margin-left:6px;border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;opacity:0.85;">{% if o.dm_platform == 'instagram' %}<svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:middle;"><defs><linearGradient id="ig{{ o.id }}" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stop-color="#feda75"/><stop offset="50%" stop-color="#d62976"/><stop offset="100%" stop-color="#4f5bd5"/></linearGradient></defs><path fill="url(#ig{{ o.id }})" d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41-.56-.22-.96-.48-1.38-.9-.42-.42-.68-.82-.9-1.38-.16-.42-.36-1.06-.41-2.23C5.01 15.58 5 15.2 5 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16zm0 3.68a6.16 6.16 0 100 12.32 6.16 6.16 0 000-12.32zm0 10.16a4 4 0 110-8 4 4 0 010 8zm7.85-10.4a1.44 1.44 0 11-2.88 0 1.44 1.44 0 012.88 0z"/></svg>{% elif o.dm_platform == 'messenger' %}<svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:middle;"><path fill="#0084ff" d="M12 2C6.5 2 2 6.14 2 11.25c0 2.88 1.43 5.45 3.67 7.15V22l3.36-1.84c.9.25 1.85.38 2.97.38 5.5 0 10-4.14 10-9.25S17.5 2 12 2zm1.03 12.42l-2.55-2.72-4.98 2.72 5.48-5.82 2.61 2.72 4.92-2.72-5.48 5.82z"/></svg>{% else %}💬{% endif %}</button>
           </td>
           <td>
             <span class="date-cell" data-order-id="{{ o.id }}" data-scheduled="{% if o.scheduled_for %}{{ o.scheduled_for|date:'Y-m-d' }}{% endif %}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">
@@ -363,7 +363,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
             </div>
           </td>
           <td>
-            <div>{{ o.display_name|default:o.customer.phone }}{% if o.is_vip %} <span title="Client VIP — {{ o.combined_delivered }} commandes livrées" style="display:inline-block;background:linear-gradient(135deg,#f5c518,#e0a800);color:#1a1500;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;margin-left:5px;letter-spacing:0.5px;vertical-align:middle;">⭐ VIP</span>{% endif %}{% if o.is_risky %} <span title="Client à risque — {{ o.combined_returned }} retours vs {{ o.combined_delivered }} livrées" style="margin-left:5px;vertical-align:middle;">👎</span>{% endif %}</div>
+            <div>{{ o.display_name|default:o.customer.phone }}</div>
             <div class="muted" style="font-size:11px;">{{ o.customer.phone }}{% if o.phone_order_count > 1 %} <span onclick="searchPhone('{{ o.customer.phone }}', event)" title="Voir les commandes en système de ce numéro ({{ o.combined_delivered }} livré / {{ o.combined_returned }} retour au total){% if o.has_history %} — inclut l'historique{% endif %}" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;cursor:pointer;">{{ o.phone_order_count }} cmd</span>{% if o.combined_delivered or o.combined_returned %} <span title="Livré / Retour (historique inclus, annulé exclu)" style="display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;margin-left:2px;{% if o.combined_returned > o.combined_delivered %}background:rgba(220,80,80,0.15);color:#dc5050;{% else %}background:rgba(26,158,110,0.15);color:#1a9e6e;{% endif %}">✓{{ o.combined_delivered }} / ↩{{ o.combined_returned }}</span>{% endif %}{% endif %}</div>
           </td>
           <td>
@@ -448,7 +448,8 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
       <button class="modal-close" onclick="closeConversationModal()">×</button>
     </div>
     <div class="modal-body">
-      <div id="conv-modal-body" style="white-space:pre-wrap;font-size:13px;line-height:1.55;max-height:55vh;overflow-y:auto;padding:12px;background:var(--bg,#0a0a08);border:0.5px solid var(--border);border-radius:10px;min-height:80px;">
+      <div id="conv-chat-header" style="display:none;align-items:center;gap:8px;padding:8px 12px;border-radius:10px 10px 0 0;font-weight:600;font-size:13px;color:#fff;"></div>
+      <div id="conv-modal-body" style="font-size:13px;line-height:1.5;max-height:55vh;overflow-y:auto;padding:14px;background:var(--bg,#0a0a08);border:0.5px solid var(--border);border-radius:0 0 10px 10px;min-height:80px;">
         Chargement…
       </div>
       <div id="conv-modal-meta" class="muted" style="font-size:11px;margin-top:8px;"></div>
@@ -1084,7 +1085,7 @@ function buildOrderRowHtml(o) {
       </div>
     </td>
     <td>
-      <div>${name}${o.is_vip ? ` <span title="Client VIP — ${o.combined_delivered} commandes livrées" style="display:inline-block;background:linear-gradient(135deg,#f5c518,#e0a800);color:#1a1500;font-size:9px;font-weight:800;padding:1px 7px;border-radius:20px;margin-left:5px;letter-spacing:0.5px;vertical-align:middle;">⭐ VIP</span>` : ''}${o.is_risky ? ` <span title="Client à risque — ${o.combined_returned} retours vs ${o.combined_delivered} livrées" style="margin-left:5px;vertical-align:middle;">👎</span>` : ''}</div>
+      <div>${name}</div>
       <div class="muted" style="font-size:11px;">${phone}${(o.phone_order_count && o.phone_order_count > 1) ? ` <span onclick="searchPhone('${phone}', event)" title="Voir les commandes en système de ce numéro" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;cursor:pointer;">${o.phone_order_count} cmd</span>${(o.combined_delivered || o.combined_returned) ? ` <span title="Livré / Retour (historique inclus, annulé exclu)" style="display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;margin-left:2px;${o.combined_returned > o.combined_delivered ? 'background:rgba(220,80,80,0.15);color:#dc5050;' : 'background:rgba(26,158,110,0.15);color:#1a9e6e;'}">✓${o.combined_delivered} / ↩${o.combined_returned}</span>` : ''}` : ''}</div>
       ${phone2Block}
     </td>
@@ -1422,14 +1423,71 @@ function openArticlesModal() {
 }
 function closeArticlesModal() { document.getElementById('articles-modal').classList.remove('show'); }
 
+// Icons + theming per platform.
+const CHAT_THEMES = {
+  messenger: {
+    name: 'Messenger',
+    grad: 'linear-gradient(135deg,#0084ff,#a033ff)',
+    bubbleMe: 'linear-gradient(135deg,#0099ff,#0084ff)',
+    logo: '<svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><path d="M12 2C6.5 2 2 6.14 2 11.25c0 2.88 1.43 5.45 3.67 7.15V22l3.36-1.84c.9.25 1.85.38 2.97.38 5.5 0 10-4.14 10-9.25S17.5 2 12 2zm1.03 12.42l-2.55-2.72-4.98 2.72 5.48-5.82 2.61 2.72 4.92-2.72-5.48 5.82z"/></svg>',
+  },
+  instagram: {
+    name: 'Instagram',
+    grad: 'linear-gradient(135deg,#feda75,#d62976,#962fbf,#4f5bd5)',
+    bubbleMe: 'linear-gradient(135deg,#d62976,#962fbf)',
+    logo: '<svg viewBox="0 0 24 24" width="18" height="18" fill="#fff"><path d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41-.56-.22-.96-.48-1.38-.9-.42-.42-.68-.82-.9-1.38-.16-.42-.36-1.06-.41-2.23-.06-1.27-.07-1.65-.07-4.85s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41 1.27-.06 1.65-.07 4.85-.07M12 0C8.74 0 8.33.01 7.05.07 5.78.13 4.9.33 4.14.63c-.79.3-1.46.72-2.12 1.38C1.36 2.67.94 3.34.63 4.14.33 4.9.13 5.78.07 7.05.01 8.33 0 8.74 0 12s.01 3.67.07 4.95c.06 1.27.26 2.15.56 2.91.3.79.72 1.46 1.38 2.12.66.66 1.33 1.08 2.12 1.38.76.3 1.64.5 2.91.56C8.33 23.99 8.74 24 12 24s3.67-.01 4.95-.07c1.27-.06 2.15-.26 2.91-.56.79-.3 1.46-.72 2.12-1.38.66-.66 1.08-1.33 1.38-2.12.3-.76.5-1.64.56-2.91.06-1.28.07-1.69.07-4.95s-.01-3.67-.07-4.95c-.06-1.27-.26-2.15-.56-2.91-.3-.79-.72-1.46-1.38-2.12C21.33 1.36 20.66.94 19.86.63 19.1.33 18.22.13 16.95.07 15.67.01 15.26 0 12 0zm0 5.84a6.16 6.16 0 100 12.32 6.16 6.16 0 000-12.32zm0 10.16a4 4 0 110-8 4 4 0 010 8zm7.85-10.4a1.44 1.44 0 11-2.88 0 1.44 1.44 0 012.88 0z"/></svg>',
+  },
+};
+
+function escapeHtml(s) {
+  const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML;
+}
+
+// Build chat bubbles from structured messages, or fall back to parsing the
+// "Client: ... Page: ..." text blob.
+function renderConversationBubbles(messages, text, platform) {
+  let items = [];
+  if (Array.isArray(messages) && messages.length) {
+    items = messages.map(m => ({
+      me: (m.from !== 'user'),
+      text: m.text || '',
+      images: m.images || [],
+    }));
+  } else if (text) {
+    // Split on "Client:" / "Page:" labels, keeping the side.
+    const re = /(Client|Page)\s*:\s*/g;
+    let parts = [], match, last = 0, lastSide = null;
+    while ((match = re.exec(text)) !== null) {
+      if (lastSide !== null) parts.push({ side: lastSide, text: text.slice(last, match.index).trim() });
+      lastSide = match[1]; last = re.lastIndex;
+    }
+    if (lastSide !== null) parts.push({ side: lastSide, text: text.slice(last).trim() });
+    items = parts.filter(p => p.text).map(p => ({ me: p.side === 'Page', text: p.text, images: [] }));
+  }
+  if (!items.length) return '<div style="color:var(--muted);text-align:center;padding:20px;">Aucun message.</div>';
+
+  return items.map(it => {
+    const imgs = (it.images || []).map(u =>
+      `<img src="${escapeHtml(u)}" style="max-width:180px;border-radius:12px;display:block;margin-top:4px;">`).join('');
+    const bubbleStyle = it.me
+      ? `background:${CHAT_THEMES[platform] ? CHAT_THEMES[platform].bubbleMe : '#0084ff'};color:#fff;border-radius:16px 16px 4px 16px;`
+      : `background:#2a2a2a;color:#eee;border-radius:16px 16px 16px 4px;`;
+    return `<div style="display:flex;justify-content:${it.me ? 'flex-end' : 'flex-start'};margin:6px 0;">
+      <div style="max-width:74%;padding:8px 12px;font-size:13px;line-height:1.4;${bubbleStyle}word-wrap:break-word;">
+        ${escapeHtml(it.text).replace(/\n/g,'<br>')}${imgs}
+      </div></div>`;
+  }).join('');
+}
+
 async function openConversation(ev, orderId) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   const modal = document.getElementById('conversation-modal');
   const body = document.getElementById('conv-modal-body');
+  const header = document.getElementById('conv-chat-header');
   const meta = document.getElementById('conv-modal-meta');
   document.getElementById('conv-order-id').textContent = '#' + orderId;
-  body.textContent = 'Chargement…';
-  body.style.color = 'var(--muted)';
+  body.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Chargement…</div>';
+  header.style.display = 'none';
   meta.textContent = '';
   modal.classList.add('show');
   try {
@@ -1438,17 +1496,20 @@ async function openConversation(ev, orderId) {
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
     });
     const data = await res.json();
-    if (data.status === 'ok' && data.conversation_text) {
-      body.style.color = '';
-      body.textContent = data.conversation_text;
+    if (data.status === 'ok' && (data.conversation_text || (data.messages && data.messages.length))) {
+      const platform = data.platform || 'messenger';
+      const theme = CHAT_THEMES[platform] || CHAT_THEMES.messenger;
+      header.style.display = 'flex';
+      header.style.background = theme.grad;
+      header.innerHTML = theme.logo + '<span>' + theme.name + '</span>';
+      body.innerHTML = renderConversationBubbles(data.messages, data.conversation_text, platform);
       meta.textContent = data.updated_at ? ('Capturée le ' + data.updated_at + ' — peut ne pas inclure les messages plus récents.') : '';
     } else {
-      body.style.color = 'var(--muted)';
-      body.textContent = data.message || "Aucune conversation enregistrée pour cette commande.";
+      body.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">' +
+        (data.message || "Aucune conversation enregistrée pour cette commande.") + '</div>';
     }
   } catch (e) {
-    body.style.color = 'var(--muted)';
-    body.textContent = "Erreur réseau lors du chargement de la conversation.";
+    body.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Erreur réseau lors du chargement de la conversation.</div>';
   }
 }
 function closeConversationModal() { document.getElementById('conversation-modal').classList.remove('show'); }

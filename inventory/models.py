@@ -798,6 +798,26 @@ class Order(models.Model):
         self.save(update_fields=["total", "updated_at"])
 
     @property
+    def dm_platform(self):
+        """Return 'instagram' or 'messenger' if this order came from a DM
+        conversation, else ''. Used to show the right logo on the 💬 button.
+        Cached per instance to avoid repeat queries."""
+        if hasattr(self, "_dm_platform_cache"):
+            return self._dm_platform_cache
+        val = ""
+        try:
+            from .models import MessengerConversation
+            conv = (MessengerConversation.objects
+                    .filter(pending_order_id=self.id)
+                    .order_by("-id").only("platform").first())
+            if conv:
+                val = conv.platform or "messenger"
+        except Exception:
+            val = ""
+        self._dm_platform_cache = val
+        return val
+
+    @property
     def is_navex_delivered(self):
         """True if Navex shows this order as delivered (paid or otherwise).
         Used to gate the "Create Exchange" feature.
