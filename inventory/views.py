@@ -9469,12 +9469,14 @@ def api_messenger_webhook(request):
                         conv.messages = msgs
                 conv.save()
 
-                # Send the one-time Arabic auto-reply (reassures the customer
-                # and gives App Review reviewers a visible response). Suppress it
-                # if THIS sender already received an auto-reply recently (within
-                # 6h) on any conversation — avoids re-greeting someone who keeps
-                # chatting or places a quick follow-up after a confirmed order.
-                if not conv.auto_replied and (text or images):
+                # Send the one-time Arabic auto-reply ONLY once the customer has
+                # sent a phone number — i.e. there's real order intent. Greeting
+                # someone who only said "bonjour" or asked a price is premature.
+                # We scan all accumulated message text for a Tunisian phone.
+                conv_text_all = " ".join(
+                    (m.get("text") or "") for m in (conv.messages or []))
+                has_phone_now = bool(_extract_tn_phone(conv_text_all))
+                if not conv.auto_replied and has_phone_now:
                     from django.utils import timezone as _tz2
                     from datetime import timedelta as _td2
                     recently_greeted = (MessengerConversation.objects
