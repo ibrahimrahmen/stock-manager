@@ -9360,13 +9360,24 @@ def api_messenger_webhook(request):
                 msg = ev.get("message") or {}
                 text = msg.get("text")
                 mid = msg.get("mid") or ""
-                if text:
+                # Collect image attachment URLs. Meta sends them the same way for
+                # Messenger and Instagram: message.attachments[] with
+                # type == "image" and payload.url. Instagram customers often
+                # send photos, so without this those messages looked empty.
+                images = []
+                for att in (msg.get("attachments") or []):
+                    if (att.get("type") == "image"):
+                        u = (att.get("payload") or {}).get("url")
+                        if u:
+                            images.append(u)
+                if text or images:
                     msgs = conv.messages or []
                     already = mid and any(m.get("mid") == mid for m in msgs)
                     if not already:
                         msgs.append({
                             "from": "user",
-                            "text": text,
+                            "text": text or "",
+                            "images": images,
                             "ts": str(ev.get("timestamp") or ""),
                             "mid": mid,
                         })
@@ -9378,7 +9389,7 @@ def api_messenger_webhook(request):
                 # if THIS sender already received an auto-reply recently (within
                 # 6h) on any conversation — avoids re-greeting someone who keeps
                 # chatting or places a quick follow-up after a confirmed order.
-                if not conv.auto_replied and text:
+                if not conv.auto_replied and (text or images):
                     from django.utils import timezone as _tz2
                     from datetime import timedelta as _td2
                     recently_greeted = (MessengerConversation.objects
