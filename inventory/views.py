@@ -114,15 +114,23 @@ MESSENGER_AUTOREPLY_AR = (
 )
 
 
-def _messenger_send_text(page_id, recipient_id, text):
+def _messenger_send_text(page_id, recipient_id, text, platform="messenger"):
     """Send a text message back to a user via the Meta Send API. Best-effort:
-    returns True on success, False otherwise (never raises)."""
+    returns True on success, False otherwise (never raises).
+
+    For Facebook Messenger, uses graph.facebook.com with the page token.
+    For Instagram (Instagram Login), the identifier is the IG account id and
+    the send endpoint lives on graph.instagram.com; the token for that IG id is
+    stored in MESSENGER_PAGE_TOKENS keyed by the IG account id (same as pages).
+    """
     import urllib.request as _ureq
     import json as _json
     token = _messenger_page_token(page_id)
     if not token or not recipient_id or not text:
         return False
-    url = ("https://graph.facebook.com/v25.0/me/messages?access_token="
+    host = ("graph.instagram.com" if platform == "instagram"
+            else "graph.facebook.com")
+    url = (f"https://{host}/v21.0/me/messages?access_token="
            + _ureq.quote(token, safe=""))
     body = _json.dumps({
         "recipient": {"id": str(recipient_id)},
@@ -9370,7 +9378,7 @@ def api_messenger_webhook(request):
                     if recently_greeted:
                         conv.auto_replied = True
                         conv.save(update_fields=["auto_replied", "updated_at"])
-                    elif _messenger_send_text(page_id, sender_id, MESSENGER_AUTOREPLY_AR):
+                    elif _messenger_send_text(page_id, sender_id, MESSENGER_AUTOREPLY_AR, platform):
                         conv.auto_replied = True
                         conv.save(update_fields=["auto_replied", "updated_at"])
 
