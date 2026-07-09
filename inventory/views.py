@@ -9322,10 +9322,17 @@ def api_messenger_webhook(request):
                 sender_id = str((ev.get("sender") or {}).get("id") or "")
                 if not sender_id:
                     continue
+                # Reuse the most recent conversation from THIS sender on THIS
+                # page if it's less than 48h old — regardless of status — so a
+                # customer who messages again (or re-sends their number) updates
+                # the same order instead of spawning a duplicate. A different
+                # page is treated as a separate conversation (different brand).
+                from django.utils import timezone as _tzc
+                from datetime import timedelta as _tdc
+                cutoff = _tzc.now() - _tdc(hours=48)
                 conv = (MessengerConversation.objects
                         .filter(sender_id=sender_id, page_id=page_id,
-                                status__in=[MessengerConversation.NEW,
-                                            MessengerConversation.EXTRACTED])
+                                updated_at__gte=cutoff)
                         .order_by("-id").first())
                 if conv is None:
                     conv = MessengerConversation.objects.create(
