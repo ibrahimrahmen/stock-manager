@@ -1502,7 +1502,12 @@ async function openConversation(ev, orderId) {
       header.style.display = 'flex';
       header.style.background = theme.grad;
       header.innerHTML = theme.logo + '<span>' + theme.name + '</span>';
-      body.innerHTML = renderConversationBubbles(data.messages, data.conversation_text, platform);
+      let adBanner = '';
+      if (data.ad_source && (data.ad_source.campaign || data.ad_source.ad_id)) {
+        const label = data.ad_source.campaign || ('Pub ' + data.ad_source.ad_id);
+        adBanner = '<div style="background:linear-gradient(135deg,#1877f2,#0a5dc2);color:#fff;padding:7px 12px;font-size:12px;border-radius:8px;margin-bottom:8px;display:flex;align-items:center;gap:6px;">📢 <span style="opacity:0.85;">Vient de la pub :</span> <b>' + escapeHtml(label) + '</b></div>';
+      }
+      body.innerHTML = adBanner + renderConversationBubbles(data.messages, data.conversation_text, platform);
       meta.textContent = data.updated_at ? ('Capturée le ' + data.updated_at + ' — peut ne pas inclure les messages plus récents.') : '';
     } else {
       body.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">' +

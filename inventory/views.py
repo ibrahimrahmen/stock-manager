@@ -5429,11 +5429,18 @@ def api_order_refresh_conversation(request, pk):
     # messages (with image attachments) so the chat view can show photos.
     structured = []
     platform = ""
+    ad_source = {}
     try:
         from .models import MessengerConversation
         conv = MessengerConversation.objects.filter(pending_order_id=order.id).order_by("-id").first()
         if conv:
             platform = conv.platform or ""
+            if conv.source_ad_id or conv.source_campaign:
+                ad_source = {
+                    "ad_id": conv.source_ad_id or "",
+                    "campaign": conv.source_campaign or "",
+                    "ref": conv.source_ad_ref or "",
+                }
             if conv.messages:
                 for m in conv.messages:
                     structured.append({
@@ -5450,6 +5457,7 @@ def api_order_refresh_conversation(request, pk):
             "conversation_text": order.conversation_text,
             "messages": structured,
             "platform": platform,
+            "ad_source": ad_source,
             "updated_at": order.conversation_updated_at.strftime("%d/%m/%Y %H:%M") if order.conversation_updated_at else "",
         })
     if psid:
