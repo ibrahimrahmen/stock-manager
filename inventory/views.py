@@ -9806,7 +9806,7 @@ def _resolve_region_for_order(order, conv=None):
     if not addr and not ville:
         return
     all_regions = list(Region.objects.filter(is_active=True))
-    all_delegations = list(Delegation.objects.filter(is_active=True))
+    all_delegations = list(Delegation.objects.filter(is_active=True).select_related("region"))
     if not all_regions:
         return
 
@@ -9816,46 +9816,50 @@ def _resolve_region_for_order(order, conv=None):
         # Strip accents (Gabés -> gabes) for robust matching.
         s = "".join(c for c in _ud.normalize("NFD", s)
                     if _ud.category(c) != "Mn")
-        return _re.sub(r"[^a-z0-9\u0600-\u06FF]+", "", s)
+        # Fold common Tunisian transliteration variants so phonetic spellings
+        # (English-style) match our French-style DB names:
+        #   sh <-> ch   (sharada = cherarda),  ou -> u,  y -> i,
+        #   double letters -> single,  q/k unified,  '3'->'a'(ع),  drop apostrophes
+        s = s.replace("sh", "ch")
+        s = s.replace("ou", "u").replace("aa", "a")
+        s = _re.sub(r"[qk]+", "k", s)
+        s = _re.sub(r"[^a-z0-9\u0600-\u06FF]+", "", s)
+        s = _re.sub(r"(.)\1+", r"\1", s)  # collapse repeated letters
+        return s
 
-    # DIRECT DELEGATION HIT (priority over fuzzy list matching): the customer
-    # often writes the exact delegation name in Arabic (e.g. 'الشراردة' =
-    # Cherarda). Transliterate the text to Latin once, then look for a full
-    # delegation-name occurrence. A clean full-name hit is far more reliable
-    # than the LLM's fuzzy pick, which tends to default to 'Sfax/Bir...' on a
-    # bare 'بئر' prefix. If found, use it and skip the rest.
+    # DIRECT DELEGATION HIT via a single LLM call: the customer often writes the
+    # exact delegation name in Arabic (e.g. 'الشراردة' = Cherarda). Rather than
+    # fight phonetic spelling variants (sharada vs cherarda) with fuzzy string
+    # matching, we ask the model to read the address and pick the matching
+    # delegation NAME straight from our list. This is reliable across scripts.
     src_for_hit = (addr or "") + " " + (ville or "") + " " + (convo_text or "")
     has_arabic_src = any("\u0600" <= ch <= "\u06FF" for ch in src_for_hit)
-    translit = ""
-    if has_arabic_src:
-        # The address (with the delegation name) usually appears near the END of
-        # a long chat, after the phone number. Transliterating only the first N
-        # chars can miss it. Transliterate the LAST ~800 chars (where the address
-        # lives) plus any explicit address field, and allow enough output tokens.
-        tail = src_for_hit[-800:] if len(src_for_hit) > 800 else src_for_hit
-        tprompt = (
-            "Translitère ce texte arabe tunisien en lettres latines. Réponds "
-            "UNIQUEMENT avec le texte translittéré, rien d'autre.\n\n"
-            + (addr or "")[:200] + " " + tail)
-        translit = _claude_generate(tprompt, max_tokens=600, temperature=0.0) or ""
-    hit_haystack = _norm(src_for_hit + " " + translit)
-    if hit_haystack:
-        # Prefer the LONGEST delegation name that appears in full — avoids a
-        # short name matching inside an unrelated word.
-        best = None
-        for d in all_delegations:
-            dn = _norm(d.name)
-            if len(dn) >= 5 and dn in hit_haystack:
-                if best is None or len(dn) > len(_norm(best.name)):
-                    best = d
-        if best is not None:
-            order.region = best.region
-            order.ville = best.name
-            try:
-                order.save(update_fields=["region", "ville", "updated_at"])
-            except Exception:
-                pass
-            return
+    if has_arabic_src or True:
+        # Use the tail (address usually near the end, after the phone).
+        tail = src_for_hit[-900:] if len(src_for_hit) > 900 else src_for_hit
+        all_dele_names = sorted({d.name for d in all_delegations})
+        hit_prompt = (
+            "Voici la fin d'une conversation client (arabe/arabizi) contenant une "
+            "adresse de livraison tunisienne :\n\n\"" + ((addr or "")[:200] + " " + tail) + "\"\n\n"
+            "Parmi cette liste EXACTE de délégations tunisiennes, laquelle "
+            "correspond à la localité de livraison ? Translitère mentalement "
+            "l'arabe (ex: الشراردة = Cherarda). Réponds UNIQUEMENT avec le nom "
+            "EXACT de la délégation tel qu'il figure dans la liste, ou 'NONE'.\n\n"
+            "Liste : " + ", ".join(all_dele_names)
+        )
+        pick = (_claude_generate(hit_prompt, max_tokens=40, temperature=0.0) or "").strip()
+        pick_clean = pick.strip(" .:-|\"'").split("\n")[0].strip()
+        if pick_clean and pick_clean.upper() != "NONE":
+            pn = _norm(pick_clean)
+            for d in all_delegations:
+                if _norm(d.name) == pn:
+                    order.region = d.region
+                    order.ville = d.name
+                    try:
+                        order.save(update_fields=["region", "ville", "updated_at"])
+                    except Exception:
+                        pass
+                    return
 
     options_lines = []
     for r in all_regions:
