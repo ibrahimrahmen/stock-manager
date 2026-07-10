@@ -232,22 +232,34 @@ def _claude_web_search(prompt, max_tokens=1024):
         return None
 
 
-def _claude_generate(prompt, max_tokens=1024, temperature=0.0):
+def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None):
     """Call the Anthropic Claude API. Returns response text or None on failure.
     Replaces Gemini for DM order extraction and transliteration. Uses
     ANTHROPIC_API_KEY. On rate limit (429) it bails out immediately so a worker
-    is never pinned. Model is configurable via ANTHROPIC_MODEL."""
+    is never pinned. Model is configurable via ANTHROPIC_MODEL.
+
+    If cached_prefix is given, it is sent as a separate content block marked
+    with cache_control so Anthropic caches it (much cheaper on repeat). Use it
+    for large unchanging context like the full delegation list."""
     import urllib.request as _ureq
     import json as _json
     api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not api_key or not prompt:
         return None
     model = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001").strip()
+    if cached_prefix:
+        msg_content = [
+            {"type": "text", "text": cached_prefix,
+             "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": prompt},
+        ]
+    else:
+        msg_content = prompt
     body = {
         "model": model,
         "max_tokens": max_tokens,
         "temperature": temperature,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{"role": "user", "content": msg_content}],
     }
     data = _json.dumps(body).encode("utf-8")
     url = "https://api.anthropic.com/v1/messages"
@@ -9838,16 +9850,20 @@ def _resolve_region_for_order(order, conv=None):
         # Use the tail (address usually near the end, after the phone).
         tail = src_for_hit[-900:] if len(src_for_hit) > 900 else src_for_hit
         all_dele_names = sorted({d.name for d in all_delegations})
+        # The delegation list is identical on every call → send it as a cached
+        # prefix (Anthropic prompt caching) so we don't pay full price each time.
+        cached_list = ("Liste EXACTE des délégations tunisiennes :\n"
+                       + ", ".join(all_dele_names))
         hit_prompt = (
             "Voici la fin d'une conversation client (arabe/arabizi) contenant une "
             "adresse de livraison tunisienne :\n\n\"" + ((addr or "")[:200] + " " + tail) + "\"\n\n"
-            "Parmi cette liste EXACTE de délégations tunisiennes, laquelle "
-            "correspond à la localité de livraison ? Translitère mentalement "
-            "l'arabe (ex: الشراردة = Cherarda). Réponds UNIQUEMENT avec le nom "
-            "EXACT de la délégation tel qu'il figure dans la liste, ou 'NONE'.\n\n"
-            "Liste : " + ", ".join(all_dele_names)
+            "Parmi la liste EXACTE de délégations ci-dessus, laquelle correspond "
+            "à la localité de livraison ? Translitère mentalement l'arabe "
+            "(ex: الشراردة = Cherarda). Réponds UNIQUEMENT avec le nom EXACT de "
+            "la délégation tel qu'il figure dans la liste, ou 'NONE'."
         )
-        pick = (_claude_generate(hit_prompt, max_tokens=40, temperature=0.0) or "").strip()
+        pick = (_claude_generate(hit_prompt, max_tokens=40, temperature=0.0,
+                                 cached_prefix=cached_list) or "").strip()
         pick_clean = pick.strip(" .:-|\"'").split("\n")[0].strip()
         if pick_clean and pick_clean.upper() != "NONE":
             pn = _norm(pick_clean)
