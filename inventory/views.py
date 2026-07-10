@@ -9818,6 +9818,39 @@ def _resolve_region_for_order(order, conv=None):
                     if _ud.category(c) != "Mn")
         return _re.sub(r"[^a-z0-9\u0600-\u06FF]+", "", s)
 
+    # DIRECT DELEGATION HIT (priority over fuzzy list matching): the customer
+    # often writes the exact delegation name in Arabic (e.g. 'الشراردة' =
+    # Cherarda). Transliterate the text to Latin once, then look for a full
+    # delegation-name occurrence. A clean full-name hit is far more reliable
+    # than the LLM's fuzzy pick, which tends to default to 'Sfax/Bir...' on a
+    # bare 'بئر' prefix. If found, use it and skip the rest.
+    src_for_hit = (addr or "") + " " + (ville or "") + " " + (convo_text or "")
+    has_arabic_src = any("\u0600" <= ch <= "\u06FF" for ch in src_for_hit)
+    translit = ""
+    if has_arabic_src:
+        tprompt = (
+            "Translitère ce texte arabe tunisien en lettres latines. Réponds "
+            "UNIQUEMENT avec le texte translittéré, rien d'autre.\n\n" + src_for_hit[:500])
+        translit = _claude_generate(tprompt, max_tokens=300, temperature=0.0) or ""
+    hit_haystack = _norm(src_for_hit + " " + translit)
+    if hit_haystack:
+        # Prefer the LONGEST delegation name that appears in full — avoids a
+        # short name matching inside an unrelated word.
+        best = None
+        for d in all_delegations:
+            dn = _norm(d.name)
+            if len(dn) >= 5 and dn in hit_haystack:
+                if best is None or len(dn) > len(_norm(best.name)):
+                    best = d
+        if best is not None:
+            order.region = best.region
+            order.ville = best.name
+            try:
+                order.save(update_fields=["region", "ville", "updated_at"])
+            except Exception:
+                pass
+            return
+
     options_lines = []
     for r in all_regions:
         r_dlgs = [d for d in all_delegations if d.region_id == r.id]
