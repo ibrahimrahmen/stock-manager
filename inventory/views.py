@@ -9828,10 +9828,16 @@ def _resolve_region_for_order(order, conv=None):
     has_arabic_src = any("\u0600" <= ch <= "\u06FF" for ch in src_for_hit)
     translit = ""
     if has_arabic_src:
+        # The address (with the delegation name) usually appears near the END of
+        # a long chat, after the phone number. Transliterating only the first N
+        # chars can miss it. Transliterate the LAST ~800 chars (where the address
+        # lives) plus any explicit address field, and allow enough output tokens.
+        tail = src_for_hit[-800:] if len(src_for_hit) > 800 else src_for_hit
         tprompt = (
             "Translitère ce texte arabe tunisien en lettres latines. Réponds "
-            "UNIQUEMENT avec le texte translittéré, rien d'autre.\n\n" + src_for_hit[:500])
-        translit = _claude_generate(tprompt, max_tokens=300, temperature=0.0) or ""
+            "UNIQUEMENT avec le texte translittéré, rien d'autre.\n\n"
+            + (addr or "")[:200] + " " + tail)
+        translit = _claude_generate(tprompt, max_tokens=600, temperature=0.0) or ""
     hit_haystack = _norm(src_for_hit + " " + translit)
     if hit_haystack:
         # Prefer the LONGEST delegation name that appears in full — avoids a
