@@ -9865,8 +9865,15 @@ def _resolve_region_for_order(order, conv=None, force=False):
             "adresse de livraison tunisienne :\n\n\"" + ((addr or "")[:200] + " " + tail) + "\"\n\n"
             "Parmi la liste EXACTE de délégations ci-dessus, laquelle correspond "
             "à la localité de livraison ? Translitère mentalement l'arabe "
-            "(ex: الشراردة = Cherarda). Réponds UNIQUEMENT avec le nom EXACT de "
-            "la délégation tel qu'il figure dans la liste, ou 'NONE'."
+            "(ex: الشراردة = Cherarda, القيروان = Kairouan).\n"
+            "RÈGLE : cherche dans TOUT le texte un mot qui EST une délégation de "
+            "la liste. Un nom de délégation présent dans la liste prime sur une "
+            "petite localité inconnue. Ne te laisse PAS piéger par un mot comme "
+            "'بئر' (Bir) au début : par exemple 'بئر الوصفان الشراردة' → la "
+            "délégation est 'الشراردة' = Cherarda (Kairouan), PAS un 'Bir...' "
+            "d'un autre gouvernorat.\n"
+            "Réponds UNIQUEMENT avec le nom EXACT de la délégation tel qu'il "
+            "figure dans la liste, ou 'NONE'."
         )
         pick = (_claude_generate(hit_prompt, max_tokens=120, temperature=0.0,
                                  cached_prefix=cached_list) or "").strip()
