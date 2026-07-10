@@ -9742,6 +9742,9 @@ def _resolve_region_for_order(order, conv=None):
         return
 
     prompt = (
+        "IMPORTANT : ta réponse doit être UNE SEULE LIGNE au format exact "
+        "'REGION: nom | VILLE: nom' (ou 'NONE'). AUCUNE analyse, AUCUN titre, "
+        "AUCUNE explication, AUCun markdown. Juste la ligne finale.\n\n"
         "Tu matches une adresse tunisienne à notre liste de gouvernorats "
         "(régions) et délégations (villes). La liste est en LETTRES LATINES mais "
         "le client écrit souvent en ARABE. Tu DOIS translittérer mentalement "
@@ -9777,6 +9780,22 @@ def _resolve_region_for_order(order, conv=None):
     rm = _re.search(r"REGION\s*[:\-]?\s*([^\|\n]+)", resp, _re.IGNORECASE)
     vm = _re.search(r"VILLE\s*[:\-]?\s*([^\|\n]+)", resp, _re.IGNORECASE)
     if not rm:
+        # Verbose reply without the strict format: try to recover by finding a
+        # delegation name that appears BOTH in the model's response and in the
+        # customer's text (after normalization). This catches cases where the
+        # model transliterated correctly but wrapped it in analysis prose.
+        resp_norm = _norm(resp)
+        cust_norm = _norm((addr or "") + " " + (ville or "") + " " + (convo_text or ""))
+        for d in all_delegations:
+            dn = _norm(d.name)
+            if dn and len(dn) >= 4 and dn in resp_norm and dn in cust_norm:
+                order.region = d.region
+                order.ville = d.name
+                try:
+                    order.save(update_fields=["region", "ville", "updated_at"])
+                except Exception:
+                    pass
+                return
         return
     region_name = rm.group(1).strip(" :-|")
     ville_name = vm.group(1).strip(" :-|") if vm else ""
