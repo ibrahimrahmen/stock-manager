@@ -9862,20 +9862,27 @@ def _resolve_region_for_order(order, conv=None):
             "(ex: الشراردة = Cherarda). Réponds UNIQUEMENT avec le nom EXACT de "
             "la délégation tel qu'il figure dans la liste, ou 'NONE'."
         )
-        pick = (_claude_generate(hit_prompt, max_tokens=40, temperature=0.0,
+        pick = (_claude_generate(hit_prompt, max_tokens=120, temperature=0.0,
                                  cached_prefix=cached_list) or "").strip()
-        pick_clean = pick.strip(" .:-|\"'").split("\n")[0].strip()
-        if pick_clean and pick_clean.upper() != "NONE":
-            pn = _norm(pick_clean)
+        # Claude sometimes replies verbosely ("En analysant... **Cherarda**")
+        # despite instructions. Don't just take the first line — scan the whole
+        # reply for any delegation name from our list (longest match wins).
+        pick_norm = _norm(pick)
+        chosen = None
+        if pick_norm and pick_norm != _norm("NONE"):
             for d in all_delegations:
-                if _norm(d.name) == pn:
-                    order.region = d.region
-                    order.ville = d.name
-                    try:
-                        order.save(update_fields=["region", "ville", "updated_at"])
-                    except Exception:
-                        pass
-                    return
+                dn = _norm(d.name)
+                if len(dn) >= 4 and dn in pick_norm:
+                    if chosen is None or len(dn) > len(_norm(chosen.name)):
+                        chosen = d
+        if chosen is not None:
+            order.region = chosen.region
+            order.ville = chosen.name
+            try:
+                order.save(update_fields=["region", "ville", "updated_at"])
+            except Exception:
+                pass
+            return
 
     options_lines = []
     for r in all_regions:
