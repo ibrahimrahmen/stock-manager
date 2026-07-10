@@ -9771,18 +9771,24 @@ def _web_resolve_tn_locality(text, all_regions, all_delegations, norm_fn):
     return region_match, ville_match
 
 
-def _resolve_region_for_order(order, conv=None):
+def _resolve_region_for_order(order, conv=None, force=False):
     """Match an order's free-text address/city to a Region (gouvernorat) and
     Delegation (ville) from our list, using Gemini. Fills order.region and
     order.ville if a confident match is found. Best-effort; no-op on failure.
 
     Used for Messenger orders whose address arrives as free Tunisian text
     (e.g. 'korba (sidi Ali)') rather than structured Shopify fields. If the
-    order's address field is empty, falls back to scanning the conversation."""
+    order's address field is empty, falls back to scanning the conversation.
+
+    `force=True` re-resolves even if a region is already set — used on the DM
+    path, where the order-creation step assigns a weak/wrong region guess that
+    this (stronger, conversation-aware) resolver should override."""
     import re as _re
     from .models import Region, Delegation
-    if not order or order.region_id:
-        return  # already has a region
+    if not order:
+        return
+    if order.region_id and not force:
+        return  # already has a region and we're not forcing an override
     addr = (order.address or "").strip()
     ville = (order.ville or "").strip()
     # Fallback: if no address on the order, scan the conversation for an
@@ -10582,7 +10588,7 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
             # We do NOT blindly trust Gemini's raw 'city' — the resolver checks
             # the matched name actually appears in what the customer wrote.
             try:
-                _resolve_region_for_order(order, conv=conv)
+                _resolve_region_for_order(order, conv=conv, force=True)
             except Exception:
                 pass
             # Add newly-extracted offers/products not already present.
