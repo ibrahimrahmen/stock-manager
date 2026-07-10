@@ -198,6 +198,40 @@ def _messenger_send_text(page_id, recipient_id, text, platform="messenger"):
         return False
 
 
+def _claude_web_search(prompt, max_tokens=1024):
+    """Call Claude WITH the web_search tool enabled. Returns the final text or
+    None. Used to resolve which governorate a Tunisian locality belongs to when
+    the name isn't obvious from our list. Slower/costlier than a plain call, so
+    reserve it for the fallback path. Never raises; bails on 429."""
+    import urllib.request as _ureq
+    import json as _json
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key or not prompt:
+        return None
+    # Web search needs a capable model; Haiku may not support the tool well.
+    model = os.environ.get("ANTHROPIC_SEARCH_MODEL", "claude-sonnet-4-5-20250929").strip()
+    body = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+        "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 3}],
+    }
+    data = _json.dumps(body).encode("utf-8")
+    url = "https://api.anthropic.com/v1/messages"
+    try:
+        req = _ureq.Request(url, data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("x-api-key", api_key)
+        req.add_header("anthropic-version", "2023-06-01")
+        with _ureq.urlopen(req, timeout=40) as resp:
+            rd = _json.loads(resp.read().decode("utf-8"))
+        blocks = rd.get("content") or []
+        txt = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+        return txt or None
+    except Exception:
+        return None
+
+
 def _claude_generate(prompt, max_tokens=1024, temperature=0.0):
     """Call the Anthropic Claude API. Returns response text or None on failure.
     Replaces Gemini for DM order extraction and transliteration. Uses
@@ -9672,6 +9706,59 @@ def _extract_order_from_conversation(conv):
     return data
 
 
+def _web_resolve_tn_locality(text, all_regions, all_delegations, norm_fn):
+    """Use Claude+web search to find which Tunisian governorate (and delegation)
+    a locality belongs to, then match it back to our Region/Delegation objects.
+    Returns (Region|None, Delegation|None). Best-effort, never raises."""
+    import re as _re
+    if not text:
+        return None, None
+    region_names = ", ".join(r.name for r in all_regions)
+    prompt = (
+        "Tu es un expert de la géographie tunisienne. Voici une adresse écrite "
+        "par un client (souvent en arabe ou arabizi) :\n\n"
+        f"\"{text[:300]}\"\n\n"
+        "Cherche sur le web à quel GOUVERNORAT (région) tunisien appartient la "
+        "localité principale de cette adresse. Puis réponds UNIQUEMENT avec une "
+        "seule ligne au format exact :\n"
+        "GOUVERNORAT: <nom en français> | DELEGATION: <nom en français ou NONE>\n\n"
+        "Le gouvernorat DOIT être l'un de ceux-ci : " + region_names + "\n"
+        "Aucune explication, aucune analyse, juste la ligne."
+    )
+    resp = _claude_web_search(prompt, max_tokens=1500)
+    if not resp:
+        return None, None
+    gm = _re.search(r"GOUVERNORAT\s*[:\-]?\s*([^\|\n]+)", resp, _re.IGNORECASE)
+    dm = _re.search(r"DELEGATION\s*[:\-]?\s*([^\|\n]+)", resp, _re.IGNORECASE)
+    if not gm:
+        return None, None
+    gov = gm.group(1).strip(" :-|")
+    dele = dm.group(1).strip(" :-|") if dm else ""
+    if dele.upper() == "NONE":
+        dele = ""
+    # Match governorate to a Region.
+    region_match = None
+    gn = norm_fn(gov)
+    for r in all_regions:
+        rn = norm_fn(r.name)
+        if rn == gn or (gn and (gn in rn or rn in gn)):
+            region_match = r
+            break
+    if not region_match:
+        return None, None
+    # Match delegation within that region.
+    ville_match = None
+    if dele:
+        dn = norm_fn(dele)
+        for d in all_delegations:
+            if d.region_id == region_match.id:
+                ddn = norm_fn(d.name)
+                if ddn == dn or (dn and (dn in ddn or ddn in dn)):
+                    ville_match = d
+                    break
+    return region_match, ville_match
+
+
 def _resolve_region_for_order(order, conv=None):
     """Match an order's free-text address/city to a Region (gouvernorat) and
     Delegation (ville) from our list, using Gemini. Fills order.region and
@@ -9880,9 +9967,21 @@ def _resolve_region_for_order(order, conv=None):
     names_latin = all(ord(ch) < 128 for ch in (region_match.name + (ville_match.name if ville_match else "")))
     script_mismatch = has_arabic and names_latin
     if not region_ok and not ville_ok and not script_mismatch:
-        # Neither the governorate nor the delegation is mentioned anywhere in the
-        # customer's text → almost certainly a hallucinated default. Skip it and
-        # leave the region blank for staff to fill manually.
+        # The list-based match looks hallucinated. Before giving up, try a web
+        # search to identify the real governorate of the locality the customer
+        # wrote — Tunisian small localities (e.g. 'بئر الوصفان الشراردة') are
+        # often mis-mapped by name matching alone.
+        web_region, web_ville = _web_resolve_tn_locality(
+            addr or convo_text, all_regions, all_delegations, _norm)
+        if web_region:
+            order.region = web_region
+            if web_ville:
+                order.ville = web_ville.name
+            fields = ["region", "updated_at"] + (["ville"] if web_ville else [])
+            try:
+                order.save(update_fields=fields)
+            except Exception:
+                pass
         return
 
     order.region = region_match
