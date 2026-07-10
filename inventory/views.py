@@ -8215,11 +8215,29 @@ def _push_order_to_navex_internal(request, order):
         "après réception du colis (échange uniquement, pas de remboursement). "
         "Pour toute demande d'échange, veuillez nous contacter immédiatement au 26200219."
     )
-    user_notes = (order.notes or "").strip()
+    # order.notes mixes INTERNAL metadata (shopify id, ad source, campaign name
+    # with emoji, "créée depuis Messenger") with any real delivery note. Navex
+    # must NOT receive the internal lines — they're for us only, and emoji in
+    # the campaign name makes Navex's PHP endpoint return HTTP 500. Keep only
+    # genuine client notes, then sanitize.
+    _internal_prefixes = (
+        "shopify_order_id", "shopify_order_number", "ad source", "campagne",
+        "[commande créée", "source_campaign", "ctwa", "ref:",
+    )
+    _kept_lines = []
+    for _line in (order.notes or "").replace("|", "\n").split("\n"):
+        _l = _line.strip()
+        if not _l:
+            continue
+        if any(_l.lower().startswith(p) for p in _internal_prefixes):
+            continue
+        _kept_lines.append(_l)
+    user_notes = _navex_clean_text(" ".join(_kept_lines)).strip()
     if user_notes:
         msg_str = f"{user_notes} | {POLICY_MSG}"
     else:
         msg_str = POLICY_MSG
+    msg_str = _navex_clean_text(msg_str)
 
     payload = {
         "prix":           prix_str,
@@ -8229,7 +8247,7 @@ def _push_order_to_navex_internal(request, order):
         "adresse":        _navex_clean_text((order.address or order.localite or "").strip() or order.ville or ""),
         "tel":            order.customer.phone,
         "tel2":           order.customer.phone2 or "",
-        "designation":    designation[:500],
+        "designation":    _navex_clean_text(designation)[:500],
         "nb_article":     str(nb_article),
         "msg":            msg_str[:500],
         "echange":        exchange_str,
