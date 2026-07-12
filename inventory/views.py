@@ -9965,6 +9965,37 @@ def _resolve_region_for_order(order, conv=None, force=False):
         s = _re.sub(r"(.)\1+", r"\1", s)  # collapse repeated letters
         return s
 
+    # FAST PATH (no AI call): if the extracted city/address already contains a
+    # delegation name that matches ours exactly (after normalization), use it
+    # directly. This skips the transliteration + pick LLM calls on the common
+    # case where extraction already gave a clean city (e.g. 'Gabes', 'Sousse'),
+    # which is the bulk of orders — big cost saving.
+    def _norm_fast(s):
+        import unicodedata as _ud
+        s = (s or "").lower().strip()
+        s = "".join(c for c in _ud.normalize("NFD", s) if _ud.category(c) != "Mn")
+        s = s.replace("sh", "ch").replace("ou", "u").replace("aa", "a")
+        s = _re.sub(r"[qk]+", "k", s)
+        s = _re.sub(r"[^a-z0-9]+", "", s)
+        s = _re.sub(r"(.)\1+", r"\1", s)
+        return s
+    _ville_norm = _norm_fast(ville)
+    _addr_words = set(_re.split(r"\s+", (addr or "")))
+    if _ville_norm or _addr_words:
+        for d in all_delegations:
+            dn = _norm_fast(d.name)
+            if not dn or len(dn) < 4:
+                continue
+            hit = (dn == _ville_norm) or any(_norm_fast(w) == dn for w in _addr_words if len(w) >= 4)
+            if hit:
+                order.region = d.region
+                order.ville = d.name
+                try:
+                    order.save(update_fields=["region", "ville", "updated_at"])
+                except Exception:
+                    pass
+                return
+
     # DIRECT DELEGATION HIT via a single LLM call: the customer often writes the
     # exact delegation name in Arabic (e.g. 'الشراردة' = Cherarda). Rather than
     # fight phonetic spelling variants (sharada vs cherarda) with fuzzy string
@@ -10166,21 +10197,22 @@ def _resolve_region_for_order(order, conv=None, force=False):
     names_latin = all(ord(ch) < 128 for ch in (region_match.name + (ville_match.name if ville_match else "")))
     script_mismatch = has_arabic and names_latin
     if not region_ok and not ville_ok and not script_mismatch:
-        # The list-based match looks hallucinated. Before giving up, try a web
-        # search to identify the real governorate of the locality the customer
-        # wrote — Tunisian small localities (e.g. 'بئر الوصفان الشراردة') are
-        # often mis-mapped by name matching alone.
-        web_region, web_ville = _web_resolve_tn_locality(
-            addr or convo_text, all_regions, all_delegations, _norm)
-        if web_region:
-            order.region = web_region
-            if web_ville:
-                order.ville = web_ville.name
-            fields = ["region", "updated_at"] + (["ville"] if web_ville else [])
-            try:
-                order.save(update_fields=fields)
-            except Exception:
-                pass
+        # The list-based match looks hallucinated. A web search can identify the
+        # locality's real governorate, but it uses Sonnet + web search which is
+        # ~10-20x the cost of a Haiku call. Off by default — enable only if you
+        # want to spend for edge cases: set ANTHROPIC_ENABLE_WEB_SEARCH=1.
+        if os.environ.get("ANTHROPIC_ENABLE_WEB_SEARCH", "").strip() in ("1", "true", "True"):
+            web_region, web_ville = _web_resolve_tn_locality(
+                addr or convo_text, all_regions, all_delegations, _norm)
+            if web_region:
+                order.region = web_region
+                if web_ville:
+                    order.ville = web_ville.name
+                fields = ["region", "updated_at"] + (["ville"] if web_ville else [])
+                try:
+                    order.save(update_fields=fields)
+                except Exception:
+                    pass
         return
 
     order.region = region_match
