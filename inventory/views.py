@@ -10620,7 +10620,36 @@ def api_messenger_poll_cron(request):
         _messenger_enrich_settled()
     except Exception:
         pass
-    return JsonResponse({"status": "ok", "total_new_messages": total_msgs})
+
+    # Catch-up: some conversations end up complete (customer sent a phone) but
+    # were never turned into an order — e.g. the AI call failed transiently at
+    # the moment the number arrived, leaving status=NEW with no pending order.
+    # Nothing retries them otherwise, so the order is silently lost. Re-run
+    # extraction here for recent, complete, order-less conversations.
+    retried = 0
+    try:
+        from django.utils import timezone as _tzc
+        from datetime import timedelta as _tdc
+        cutoff = _tzc.now() - _tdc(hours=72)
+        stuck = (MessengerConversation.objects
+                 .filter(status=MessengerConversation.NEW,
+                         pending_order_id__isnull=True,
+                         updated_at__gte=cutoff)
+                 .order_by("-id")[:40])
+        for conv in stuck:
+            try:
+                if _conversation_looks_complete(conv):
+                    _try_extract_and_create_pending(conv)
+                    conv.refresh_from_db()
+                    if conv.pending_order_id:
+                        retried += 1
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return JsonResponse({"status": "ok", "total_new_messages": total_msgs,
+                         "recovered_orders": retried})
 
 
 def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
