@@ -2540,9 +2540,17 @@ def api_recheck_session(request):
     today = get_scan_session_date()  # rolls Saturday session over Sunday
 
     # All orders closed today (any status that comes after CLOSED counts)
+    # The session groups Saturday + Sunday together under the Saturday date
+    # (see get_scan_session_date). So when today (the session date) is a
+    # Saturday, also include the following Sunday's closed orders — otherwise
+    # Sunday scans (which belong to this session) are missed by the recheck.
+    from datetime import timedelta as _tdlt
+    _session_dates = [today]
+    if today.weekday() == 5:  # Saturday
+        _session_dates.append(today + _tdlt(days=1))  # Sunday
     todays_orders = list(
         ShippingOrder.objects
-        .filter(closed_at__date=today, status__in=ShippingOrder.CLOSED_STATUSES)
+        .filter(closed_at__date__in=_session_dates, status__in=ShippingOrder.CLOSED_STATUSES)
         .prefetch_related("items__unit__variant__product")
     )
 
