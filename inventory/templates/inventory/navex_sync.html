@@ -249,8 +249,8 @@
       allPayerOrders = payer;
     payer.forEach(function(r) {
         var match = r.price_match;
-        var ourTotal = r.our_total ? parseFloat(r.our_total).toFixed(3) + ' TND' : '—';
-        var navexPrix = r.navex_prix ? parseFloat(r.navex_prix).toFixed(3) + ' TND' : '—';
+        var ourTotal = (r.our_total !== null && r.our_total !== undefined && r.our_total !== '') ? parseFloat(r.our_total).toFixed(3) + ' TND' : '—';
+        var navexPrix = (r.navex_prix !== null && r.navex_prix !== undefined && r.navex_prix !== '') ? parseFloat(r.navex_prix).toFixed(3) + ' TND' : '—';
         var priceHtml = match === true
           ? '<span class="price-match">✓ ' + navexPrix + '</span>'
           : match === false

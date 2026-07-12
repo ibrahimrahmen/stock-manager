@@ -3301,13 +3301,28 @@ def api_navex_sync(request):
                 order_obj = ShippingOrder.objects.get(pk=order["id"])
                 order_items = list(order_obj.items.select_related("unit__variant__product"))
                 unit_count = len(order_items)
-                our_total = order_obj.amount_collected  # may be None if not saved
+                # 'Notre total' should reflect OUR price (from our offers on the
+                # linked v2 Order), not the Navex price. Prefer the v2 Order
+                # total; fall back to the saved amount_collected only if there's
+                # no v2 order. 0 is a valid total (e.g. exchanges) — keep it.
+                our_total = None
+                _v2o = None
+                if order_obj.order_id:
+                    from .models import Order as _OV2
+                    _v2o = _OV2.objects.filter(pk=order_obj.order_id).only("total").first()
+                if _v2o is None and bc:
+                    from .models import Order as _OV2
+                    _v2o = _OV2.objects.filter(bordereau_barcode=bc).only("total").first()
+                if _v2o is not None:
+                    our_total = _v2o.total
+                else:
+                    our_total = order_obj.amount_collected
             except Exception:
                 our_total = None
                 unit_count = 0
 
             price_match = None
-            if navex_prix and our_total:
+            if navex_prix is not None and our_total is not None:
                 try:
                     price_match = abs(Decimal(str(navex_prix)) - Decimal(str(our_total))) < Decimal("0.1")
                 except Exception:
@@ -3346,7 +3361,7 @@ def api_navex_sync(request):
                 "navex_motif": navex.get("motif", "") if navex else "",
                 "navex_livreur": navex.get("livreur", "") if navex else "",
                 "navex_prix": str(navex_prix) if navex_prix else None,
-                "our_total": str(our_total) if our_total else None,
+                "our_total": (str(our_total) if our_total is not None else None),
                 "unit_count": unit_count,
                 "price_match": price_match,
                 "needs_attention": needs_attention,
