@@ -114,6 +114,57 @@ MESSENGER_AUTOREPLY_AR = (
 )
 
 
+# --- Auto-reply bot (Étape 1) -------------------------------------------------
+# Toggle with env AUTOREPLY_BOT_ENABLED=1. Answers customer questions (price,
+# availability, delivery) in Tunisian Arabic using Claude, BEFORE the customer
+# sends a phone number. Once a phone arrives, the bot steps aside and the normal
+# order flow / staff take over. Kept deliberately simple and safe.
+BOT_SYSTEM_PROMPT_AR = (
+    "أنت مساعد أونلاين لمتجر ملابس تونسي إسمو Barats. تجاوب الحرفاء بالدارجة "
+    "التونسية بطريقة ودودة ومحترمة ومختصرة (جملة و لا زوز). "
+    "معلومات ثابتة: التوصيل 7 دينار لكامل تونس، الدفع عند الاستلام. "
+    "قواعد مهمّة:\n"
+    "- ماتخترعش أثمنة و لا تفاصيل ماتعرفهاش. كان الحريف يسأل على ثمن منتج "
+    "معيّن وما عندكش المعلومة، قلّو باش يبعثلك اسم المنتج أو الصورة والفريق "
+    "يأكدلو.\n"
+    "- كان الحريف يحب يشري، اطلب منو: الاسم، رقم الهاتف، العنوان، المقاس واللون.\n"
+    "- ماتبعثش روابط. ماتحكيش على مواضيع برّا الشراء.\n"
+    "- جاوب بالدارجة التونسية فقط، بدون ترجمة و بدون شرح إضافي."
+)
+
+
+def _bot_reply(conv):
+    """Generate a short Tunisian-Arabic bot reply to the latest customer
+    message, using the conversation so far. Returns the reply text or None.
+    Best-effort; never raises. Simple Étape-1 version: Q&A only."""
+    try:
+        msgs = conv.messages or []
+        # Build a compact transcript (last ~12 messages) for context.
+        lines = []
+        for m in msgs[-12:]:
+            who = "Client" if m.get("from") == "user" else "Vendeur"
+            t = (m.get("text") or "").strip()
+            if t:
+                lines.append(f"{who}: {t}")
+        if not lines:
+            return None
+        transcript = "\n".join(lines)
+        prompt = (
+            BOT_SYSTEM_PROMPT_AR
+            + "\n\nالمحادثة إلى حد الآن:\n" + transcript
+            + "\n\nاكتب ردّ البائع الجاي فقط بالدارجة التونسية (بدون 'Vendeur:'): "
+        )
+        reply = _claude_generate(prompt, max_tokens=200, temperature=0.5)
+        if not reply:
+            return None
+        reply = reply.strip().strip('"').strip()
+        # Guard against the model echoing the label or going long.
+        reply = reply.replace("Vendeur:", "").strip()
+        return reply[:600] or None
+    except Exception:
+        return None
+
+
 def _fetch_dm_sender_name(page_id, sender_id, platform="messenger"):
     """Fetch the display name of a Messenger/Instagram user who messaged a page.
     Meta blocks the direct /{user_id}?fields=first_name endpoint for privacy, so
@@ -9730,6 +9781,40 @@ def api_messenger_webhook(request):
                 conv_text_all = " ".join(
                     (m.get("text") or "") for m in (conv.messages or []))
                 has_phone_now = bool(_extract_tn_phone(conv_text_all))
+
+                # --- Auto-reply bot (Étape 1): answer questions in Tunisian
+                # Arabic BEFORE a phone number arrives. Gated by env flag. The
+                # bot steps aside once there's a phone (order intent) so staff /
+                # the confirmation auto-reply take over. A per-conversation cap
+                # prevents runaway loops.
+                _bot_on = os.environ.get("AUTOREPLY_BOT_ENABLED", "").strip() in ("1", "true", "True")
+                # Test mode: if AUTOREPLY_BOT_TEST_SENDER is set, the bot ONLY
+                # replies to that one sender_id (your own account), so you can
+                # safely try it live without answering real customers.
+                _bot_test_sender = os.environ.get("AUTOREPLY_BOT_TEST_SENDER", "").strip()
+                if _bot_test_sender:
+                    _bot_on = _bot_on and (str(sender_id) == _bot_test_sender)
+                if (_bot_on and not has_phone_now and not conv.auto_replied
+                        and (text or "").strip()
+                        and conv.status == MessengerConversation.NEW):
+                    _bot_count = 0
+                    try:
+                        _bot_count = sum(1 for m in (conv.messages or [])
+                                         if m.get("from") == "page" and m.get("bot"))
+                    except Exception:
+                        _bot_count = 0
+                    if _bot_count < 5:  # cap bot turns per conversation
+                        _reply = _bot_reply(conv)
+                        if _reply and _messenger_send_text(page_id, sender_id, _reply, platform):
+                            try:
+                                mm = conv.messages or []
+                                mm.append({"from": "page", "text": _reply,
+                                           "ts": "", "mid": "", "bot": True})
+                                conv.messages = mm
+                                conv.save(update_fields=["messages", "updated_at"])
+                            except Exception:
+                                pass
+
                 if not conv.auto_replied and has_phone_now:
                     from django.utils import timezone as _tz2
                     from datetime import timedelta as _td2
