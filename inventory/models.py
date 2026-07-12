@@ -620,11 +620,15 @@ class Order(models.Model):
     SOURCE_WEBFORM = "web_form"
     SOURCE_SHOPIFY = "shopify"
     SOURCE_CONVERTY = "converty"
+    SOURCE_MESSENGER = "messenger"
+    SOURCE_INSTAGRAM = "instagram"
 
     SOURCE_CHOICES = [
         (SOURCE_WEBFORM, "Saisie manuelle"),
         (SOURCE_SHOPIFY, "Shopify"),
         (SOURCE_CONVERTY, "Converty"),
+        (SOURCE_MESSENGER, "Messenger"),
+        (SOURCE_INSTAGRAM, "Instagram"),
     ]
 
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="orders")

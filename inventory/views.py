@@ -6666,7 +6666,12 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
             status=Order.NON_CONFIRMEE,
             customer_name=name,
             created_by=None,  # No user — webhook is unauthenticated
-            source=(Order.SOURCE_CONVERTY if source == "converty" else Order.SOURCE_SHOPIFY),
+            source=({
+                "converty": Order.SOURCE_CONVERTY,
+                "messenger": Order.SOURCE_MESSENGER,
+                "instagram": Order.SOURCE_INSTAGRAM,
+                "shopify": Order.SOURCE_SHOPIFY,
+            }.get(source, Order.SOURCE_SHOPIFY)),
             converty_order_id=(external_id if source == "converty" else ""),
         )
 
@@ -10656,8 +10661,9 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
             return
 
     try:
+        _dm_source = "instagram" if (conv.platform == "instagram") else "messenger"
         _create_order_from_shopify_shaped_payload(
-            shaped, source="messenger", external_id=f"dm_{conv.id}",
+            shaped, source=_dm_source, external_id=f"dm_{conv.id}",
             sales_page_id=sp_id,
         )
         # Find the order we just created (external id stored in notes).
