@@ -10660,6 +10660,40 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
             conv.save(update_fields=["extracted", "matched_ad", "updated_at"])
             return
 
+    # BUSINESS RULE: a customer may only have ONE active order at a time. A new
+    # order is allowed only once every previous order is finished (delivered,
+    # paid, returned, or cancelled). If this customer (matched by phone) still
+    # has an in-flight order, do NOT create a duplicate — attach the new message
+    # to that existing order's conversation instead and stop.
+    _phone = shaped.get("phone") or ""
+    if _phone:
+        from .models import Customer
+        _FINISHED = (Order.LIVREE, Order.PAYEE, Order.RETURNED,
+                     Order.RETURNING, Order.ANNULEE, Order.SUPPRIME_NAVEX)
+        _cust = Customer.objects.filter(phone=_phone).first()
+        if _cust:
+            _active = (Order.objects.filter(customer=_cust)
+                       .exclude(status__in=_FINISHED)
+                       .order_by("-id").first())
+            if _active and _active.id != conv.pending_order_id:
+                # Link this conversation to the existing active order so staff
+                # see the new messages there, but don't create a second order.
+                try:
+                    conv.pending_order = _active
+                    if _active.status == Order.NON_CONFIRMEE:
+                        from django.utils import timezone as _tz
+                        convo_text = "\n".join(
+                            f"{'Client' if m.get('from') == 'user' else 'Page'}: {m.get('text','')}"
+                            for m in (conv.messages or []) if m.get("text"))
+                        _active.conversation_text = convo_text
+                        _active.conversation_updated_at = _tz.now()
+                        _active.save(update_fields=["conversation_text",
+                                                    "conversation_updated_at", "updated_at"])
+                    conv.save(update_fields=["pending_order", "extracted", "updated_at"])
+                except Exception:
+                    pass
+                return
+
     try:
         _dm_source = "instagram" if (conv.platform == "instagram") else "messenger"
         _create_order_from_shopify_shaped_payload(
