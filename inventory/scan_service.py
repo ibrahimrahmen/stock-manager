@@ -76,11 +76,43 @@ def _matched_products_from_order(order) -> list:
             "exact": "green", "plus1": "green", "minus1": "yellow",
             "plus2": "orange", "minus2": "red", "none": "red",
         }
+
+        # Build the list of (product, variant, size, qty) the order expects.
+        # Prefer explicit lines; but an offer/ensemble often has NO standalone
+        # lines — its pieces live in OfferProduct. Expand those so every piece
+        # of the bundle is predicted (e.g. Ensemble ICY MAZE -> Pants + Shirt),
+        # which lets the scan flag an incomplete bundle.
+        expected = []  # list of dicts: product, variant, size, qty
         for line in order.lines.all():
-            product = line.product
-            variant = line.variant
-            size = (line.size or "").strip()
-            qty = line.quantity or 1
+            if line.product:
+                expected.append({
+                    "product": line.product, "variant": line.variant,
+                    "size": (line.size or "").strip(), "qty": line.quantity or 1,
+                })
+        if not expected:
+            # No standalone lines — expand the offers into component products.
+            try:
+                from .models import OfferProduct
+                for oo in order.order_offers.all():
+                    off = oo.offer
+                    oq = oo.quantity or 1
+                    if not off:
+                        continue
+                    for op in OfferProduct.objects.filter(offer=off).select_related("product"):
+                        if not op.product:
+                            continue
+                        expected.append({
+                            "product": op.product, "variant": None,
+                            "size": "", "qty": (getattr(op, "quantity", 1) or 1) * oq,
+                        })
+            except Exception:
+                pass
+
+        for exp in expected:
+            product = exp["product"]
+            variant = exp["variant"]
+            size = exp["size"]
+            qty = exp["qty"]
             # Count in-stock units for this product/variant/size.
             in_stock_count = 0
             try:
@@ -365,6 +397,7 @@ def _get_matched_products(designation: str) -> list:
 
 def _handle_bordereau(barcode: str, user=None) -> dict:
     closed_order = None
+    incomplete_warning = None
 
     with transaction.atomic():
         # Close any open order first
@@ -375,6 +408,36 @@ def _handle_bordereau(barcode: str, user=None) -> dict:
                     "message": f"Impossible de fermer l'ordre {order.bordereau_barcode} — aucune unité scannée !",
                     "code": "EMPTY_ORDER",
                 }
+            # Bundle-completeness check: compare the number of scanned units to
+            # the number of pieces the order's offers expect. If they differ
+            # (e.g. an Ensemble with 2 pieces but only 1 scanned), warn — the
+            # colis is likely incomplete. We warn rather than block so staff can
+            # still close intentional partials.
+            try:
+                v2 = order.order
+                if v2 is not None:
+                    from .scan_service import _matched_products_from_order as _mpfo
+                    expected_cards = _mpfo(v2)
+                    expected_n = len(expected_cards)
+                    scanned_n = order.items.count()
+                    if expected_n and scanned_n != expected_n:
+                        incomplete_warning = (
+                            f"⚠ Colis {order.bordereau_barcode} : {scanned_n} unité(s) "
+                            f"scannée(s) mais {expected_n} attendue(s) selon la commande "
+                            f"— vérifiez que l'ensemble est complet."
+                        )
+                        try:
+                            from .models import log_action, AuditLog
+                            log_action(
+                                user, AuditLog.SCAN_SHIPPING,
+                                description=(f"ALERTE ensemble incomplet : {order.bordereau_barcode} "
+                                             f"— {scanned_n}/{expected_n} pièces"),
+                                target_order_barcode=order.bordereau_barcode,
+                            )
+                        except Exception:
+                            pass
+            except Exception:
+                pass
             order.status = ShippingOrder.CLOSED
             order.closed_at = timezone.now()
             order.save()
@@ -445,6 +508,7 @@ def _handle_bordereau(barcode: str, user=None) -> dict:
     return {
         "status": "ok", "type": "bordereau",
         "message": f"Ordre {new_order.bordereau_barcode} ouvert.",
+        "incomplete_warning": incomplete_warning,
         "new_order": {
             "id": new_order.id,
             "bordereau_barcode": new_order.bordereau_barcode,

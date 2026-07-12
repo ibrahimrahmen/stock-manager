@@ -1436,6 +1436,19 @@
         addToSession(data.closed_order, closedColis, _scannedUnitsInOrder);
         _scannedUnitsInOrder = [];
       }
+      if (data.incomplete_warning) {
+        // Loud, persistent alert so staff notice an incomplete ensemble.
+        try { alert(data.incomplete_warning); } catch(e) {}
+        var warnBar = document.getElementById('incomplete-warn-bar');
+        if (!warnBar) {
+          warnBar = document.createElement('div');
+          warnBar.id = 'incomplete-warn-bar';
+          warnBar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#c0392b;color:#fff;padding:12px 16px;font-size:14px;font-weight:600;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.3);cursor:pointer;';
+          warnBar.onclick = function(){ this.remove(); };
+          document.body.appendChild(warnBar);
+        }
+        warnBar.textContent = data.incomplete_warning + '  (cliquer pour fermer)';
+      }
     }
     if (data.type === 'unit' && data.unit) {
       animateUnitCard(data.unit.barcode);
