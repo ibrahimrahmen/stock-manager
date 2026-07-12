@@ -1210,12 +1210,20 @@
   }
 
   // SESSION LOG — stored in DB, shared across devices
-  async function addToSession(order, navexColis, scannedUnits) {
+  async function addToSession(order, navexColis, scannedUnits, incompleteWarning) {
     var bc = order.bordereau_barcode;
     var isCorrect = true;
     var reason = '';
 
-    if (navexColis && navexColis.matched_products && navexColis.matched_products.length > 0) {
+    // Server-side bundle check wins: if the closed order had fewer/more units
+    // than the offer expects (e.g. an Ensemble with 2 pieces but 1 scanned),
+    // mark it to verify with the server's message.
+    if (incompleteWarning) {
+      isCorrect = false;
+      reason = incompleteWarning.replace(/^⚠\s*/, '');
+    }
+
+    if (isCorrect && navexColis && navexColis.matched_products && navexColis.matched_products.length > 0) {
       var expectedNames = navexColis.matched_products.map(function(p){ return p.name.toLowerCase(); });
       var scannedNames = scannedUnits.map(function(u){ return (u.product_name || '').toLowerCase(); });
       var missing = expectedNames.filter(function(n){
@@ -1433,7 +1441,7 @@
         hideNavexOrderInfo();
         var closedBC = data.closed_order.bordereau_barcode;
         var closedColis = navexMap[closedBC] || null;
-        addToSession(data.closed_order, closedColis, _scannedUnitsInOrder);
+        addToSession(data.closed_order, closedColis, _scannedUnitsInOrder, data.incomplete_warning);
         _scannedUnitsInOrder = [];
       }
       if (data.incomplete_warning) {

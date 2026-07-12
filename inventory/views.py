@@ -2672,6 +2672,26 @@ def api_recheck_session(request):
             if excess_parts:
                 reasons.append(f"Produits en trop: {', '.join(excess_parts)}")
 
+        # Offer-based bundle completeness: if this v1 order is linked to a v2
+        # Order, expand its offers into component pieces (Ensemble -> Pants +
+        # Shirt) and compare the piece count to the scanned unit count. Catches
+        # incomplete bundles even when the Navex designation didn't list every
+        # piece (the common case for offers).
+        try:
+            if order.order_id:
+                from .scan_service import _matched_products_from_order as _mpfo
+                _v2 = order.order
+                if _v2 is not None:
+                    _expected_pieces = len(_mpfo(_v2))
+                    _scanned_units = order.items.count()
+                    if _expected_pieces and _scanned_units != _expected_pieces:
+                        _msg = (f"Ensemble incomplet : {_scanned_units} scannée(s) / "
+                                f"{_expected_pieces} attendue(s)")
+                        if _msg not in reasons:
+                            reasons.append(_msg)
+        except Exception:
+            pass
+
         is_correct = not reasons
         reason_text = " | ".join(reasons)
 
