@@ -2113,10 +2113,43 @@ def a_verifier(request):
     treated_count = sum(1 for o in orders_to_verify if o["verification"].treated)
     untreated_count = len(orders_to_verify) - treated_count
 
+    # Incomplete-bundle detection (retroactive): scan recently-closed orders and
+    # flag any where the number of scanned units differs from the number of
+    # pieces the order's offers expect (e.g. an Ensemble with 2 pieces but only
+    # 1 scanned). Independent of the 34h/58h delay — these need attention now.
+    incomplete_bundles = []
+    try:
+        from .scan_service import _matched_products_from_order as _mpfo
+        recent_closed = (ShippingOrder.objects
+                         .filter(status__in=(ShippingOrder.CLOSED,
+                                             ShippingOrder.PARTIAL_RETURNED))
+                         .exclude(order__isnull=True)
+                         .select_related("order")
+                         .order_by("-closed_at")[:400])
+        for so in recent_closed:
+            v2 = so.order
+            if v2 is None:
+                continue
+            expected = len(_mpfo(v2))
+            scanned = so.items.count()
+            if expected and scanned != expected:
+                incomplete_bundles.append({
+                    "bordereau": so.bordereau_barcode,
+                    "order_id": v2.id,
+                    "scanned": scanned,
+                    "expected": expected,
+                    "client": v2.display_name,
+                    "closed_at": so.closed_at,
+                    "status": v2.status,
+                })
+    except Exception:
+        incomplete_bundles = []
+
     return render(request, "inventory/a_verifier.html", {
         "orders": orders_to_verify,
         "treated_count": treated_count,
         "untreated_count": untreated_count,
+        "incomplete_bundles": incomplete_bundles,
     })
 
 

@@ -57,6 +57,37 @@
 </nav>
 
 <div class="page">
+  {% if incomplete_bundles %}
+  <div style="background:rgba(192,57,43,0.08);border:1px solid rgba(192,57,43,0.35);border-radius:12px;padding:16px;margin-bottom:20px;">
+    <div style="font-size:15px;font-weight:700;color:#c0392b;margin-bottom:10px;">⚠ Ensembles incomplets ({{ incomplete_bundles|length }})</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Colis fermés où le nombre d'unités scannées ne correspond pas aux pièces attendues de la commande — vérifiez que rien ne manque.</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="text-align:left;color:var(--muted);font-size:11px;">
+          <th style="padding:6px 8px;">Bordereau</th>
+          <th style="padding:6px 8px;">Client</th>
+          <th style="padding:6px 8px;text-align:center;">Scannées</th>
+          <th style="padding:6px 8px;text-align:center;">Attendues</th>
+          <th style="padding:6px 8px;">Statut</th>
+          <th style="padding:6px 8px;">Fermé le</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in incomplete_bundles %}
+        <tr style="border-top:0.5px solid rgba(0,0,0,0.08);">
+          <td style="padding:6px 8px;font-family:monospace;">{{ b.bordereau }}</td>
+          <td style="padding:6px 8px;">{{ b.client }}</td>
+          <td style="padding:6px 8px;text-align:center;font-weight:600;color:#c0392b;">{{ b.scanned }}</td>
+          <td style="padding:6px 8px;text-align:center;font-weight:600;">{{ b.expected }}</td>
+          <td style="padding:6px 8px;">{{ b.status }}</td>
+          <td style="padding:6px 8px;color:var(--muted);font-size:12px;">{{ b.closed_at|date:"d/m/Y H:i" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   <div class="stats">
     <div class="stat">
       <div class="stat-label">Total</div>
