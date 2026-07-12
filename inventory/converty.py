@@ -351,8 +351,20 @@ def _converty_to_shopify_shape(co):
 
     line_items = []
     for item in (co.get("cart") or []):
-        prod = item.get("product") or {}
-        name = prod.get("name") or ""
+        prod = item.get("product")
+        # Converty sends `product` either as an object {"name": ...} or, in newer
+        # payloads, as a plain string (e.g. "pull ami"). Handle both, and fall
+        # back to the top-level SKU as the name if needed.
+        if isinstance(prod, dict):
+            name = prod.get("name") or ""
+        elif isinstance(prod, str):
+            name = prod
+            prod = {}
+        else:
+            name = ""
+            prod = {}
+        if not name:
+            name = (item.get("sku") or "").strip()
         # Build a Shopify-style variant_title from selectedVariants values
         # (e.g. [{"name":"Size","value":"M"}] -> "M"; size+color -> "M / Bleu").
         sv_values = []

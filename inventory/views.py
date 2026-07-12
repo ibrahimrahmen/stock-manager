@@ -7131,7 +7131,21 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
             title_is_bundle = title_first in bundle_keywords
             picked_is_single = picked_first in single_keywords
             picked_is_bundle = picked_first in bundle_keywords
-            if (title_is_single and picked_is_bundle) or (title_is_bundle and picked_is_single):
+            # Does the picked name share any MEANINGFUL word with the title
+            # (beyond the generic type keyword like 'pull'/'ensemble')? If not,
+            # a same-type pick (e.g. 'pull ami' → 'Pull Vintage') is a bad guess.
+            _generic = single_keywords | bundle_keywords
+            _tw = set(title.lower().split())
+            _pw = set(picked_name.lower().split())
+            _shared_meaningful = (_tw & _pw) - _generic
+            _same_type_bad = (
+                picked_obj is not None
+                and ((title_is_single and picked_is_single) or (title_is_bundle and picked_is_bundle))
+                and not _shared_meaningful
+                # only when the title itself has a distinctive word to match on
+                and bool(_tw - _generic)
+            )
+            if (title_is_single and picked_is_bundle) or (title_is_bundle and picked_is_single) or _same_type_bad:
                 # Reject Gemini pick — it crossed the boundary
                 try:
                     import logging
@@ -7145,7 +7159,12 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
                 title_words = set(title.lower().split())
                 alt_found = False
                 if title_is_single:
-                    # Score each candidate by how many words from the title overlap
+                    # Score each candidate by how many words from the title
+                    # overlap — but the shared word must be MORE than the generic
+                    # type keyword (pull/ensemble/claquette...). Sharing only
+                    # 'pull' is not a real match (e.g. 'pull ami' vs 'Pull
+                    # Vintage'): leave the line unmatched rather than guess wrong.
+                    generic_kw = single_keywords | bundle_keywords
                     best_score = 0
                     best_offer = None
                     best_product = None
@@ -7155,9 +7174,9 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
                         o_first = o.name.strip().lower().split()[0]
                         if o_first not in single_keywords:
                             continue
-                        # Word overlap (excluding common words)
                         o_words = set(o.name.lower().split())
-                        score = len(o_words & title_words)
+                        common = (o_words & title_words) - generic_kw
+                        score = len(common)  # only NON-generic shared words
                         if score > best_score:
                             best_score = score
                             best_offer = o
@@ -7169,17 +7188,19 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
                         if p_first not in single_keywords:
                             continue
                         p_words = set(p.name.lower().split())
-                        score = len(p_words & title_words)
+                        common = (p_words & title_words) - generic_kw
+                        score = len(common)
                         if score > best_score:
                             best_score = score
                             best_product = p
                             best_offer = None
-                    if best_offer:
+                    # Require at least one meaningful (non-generic) shared word.
+                    if best_score >= 1 and best_offer:
                         offer = best_offer
                         product = None
                         gemini_pick = "guard_fix_offer"
                         alt_found = True
-                    elif best_product:
+                    elif best_score >= 1 and best_product:
                         product = best_product
                         offer = None
                         gemini_pick = "guard_fix_product"
