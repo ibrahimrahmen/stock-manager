@@ -538,6 +538,29 @@ def api_converty_webhook(request):
     except Exception:
         pass
 
+    # Block orders flagged NOFILL: if any cart item's SKU is "NOFILL" (case-
+    # insensitive), do not import the order at all. Used to keep placeholder /
+    # non-fulfillable products out of the system.
+    def _has_nofill(obj):
+        for it in (obj.get("cart") or []):
+            skus = []
+            prod = it.get("product")
+            if isinstance(prod, dict):
+                skus.append(prod.get("sku") or "")
+            skus.append(it.get("sku") or "")
+            for v in (it.get("selectedVariants") or []):
+                skus.append(v.get("sku") or "")
+            if any(str(s).strip().upper() == "NOFILL" for s in skus):
+                return True
+        return False
+
+    if _has_nofill(full_obj) or _has_nofill(order_obj):
+        log_action(
+            None, AuditLog.OTHER,
+            description=f"Converty _id={converty_id} IGNORÉ : SKU NOFILL (non importé)",
+        )
+        return JsonResponse({"success": True, "message": "NOFILL — ignored"})
+
     # Only create from confirmed-and-earlier states; ignore terminal Converty
     # states we don't want to import as fresh orders.
     shaped = _converty_to_shopify_shape(full_obj)
