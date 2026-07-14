@@ -9792,18 +9792,24 @@ def api_messenger_webhook(request):
                 # replies to that one sender_id (your own account), so you can
                 # safely try it live without answering real customers.
                 _bot_test_sender = os.environ.get("AUTOREPLY_BOT_TEST_SENDER", "").strip()
+                _is_test = bool(_bot_test_sender) and (str(sender_id) == _bot_test_sender)
                 if _bot_test_sender:
-                    _bot_on = _bot_on and (str(sender_id) == _bot_test_sender)
-                if (_bot_on and not has_phone_now and not conv.auto_replied
-                        and (text or "").strip()
-                        and conv.status == MessengerConversation.NEW):
+                    _bot_on = _bot_on and _is_test
+                # In test mode we relax the gates (reply even if a phone is
+                # present or the conversation isn't NEW) so you can iterate. For
+                # real customers, keep the safe gates: no phone yet, not already
+                # greeted, and conversation still NEW.
+                _gates_ok = (_is_test) or (
+                    not has_phone_now and not conv.auto_replied
+                    and conv.status == MessengerConversation.NEW)
+                if _bot_on and _gates_ok and (text or "").strip():
                     _bot_count = 0
                     try:
                         _bot_count = sum(1 for m in (conv.messages or [])
                                          if m.get("from") == "page" and m.get("bot"))
                     except Exception:
                         _bot_count = 0
-                    if _bot_count < 5:  # cap bot turns per conversation
+                    if _bot_count < (100 if _is_test else 5):  # cap bot turns
                         _reply = _bot_reply(conv)
                         if _reply and _messenger_send_text(page_id, sender_id, _reply, platform):
                             try:
