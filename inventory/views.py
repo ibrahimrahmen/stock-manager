@@ -511,13 +511,30 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
     model = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001").strip()
     # Build the message content. If images are supplied (Claude Vision), send
     # them as image blocks BEFORE the text so the model sees them in context.
+    # Meta CDN URLs (fbcdn.net) are blocked for Claude by robots.txt, so we
+    # download each image ourselves and send it as base64 instead of a URL.
     _img_blocks = []
     for _u in (image_urls or [])[:3]:  # cap at 3 images to control cost
-        if _u:
+        if not _u:
+            continue
+        try:
+            import base64 as _b64
+            _ireq = _ureq.Request(_u, headers={"User-Agent": "Mozilla/5.0"})
+            with _ureq.urlopen(_ireq, timeout=10) as _ir:
+                _raw = _ir.read()
+                _ct = _ir.headers.get("Content-Type", "image/jpeg")
+            # Normalize media type to one Claude accepts.
+            _mt = _ct.split(";")[0].strip().lower()
+            if _mt not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+                _mt = "image/jpeg"
+            _b64data = _b64.b64encode(_raw).decode("ascii")
             _img_blocks.append({
                 "type": "image",
-                "source": {"type": "url", "url": _u},
+                "source": {"type": "base64", "media_type": _mt, "data": _b64data},
             })
+        except Exception:
+            # If a single image can't be fetched, skip it (bot still replies).
+            continue
     if cached_prefix:
         msg_content = [
             {"type": "text", "text": cached_prefix,
