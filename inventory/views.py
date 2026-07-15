@@ -120,16 +120,27 @@ MESSENGER_AUTOREPLY_AR = (
 # sends a phone number. Once a phone arrives, the bot steps aside and the normal
 # order flow / staff take over. Kept deliberately simple and safe.
 BOT_SYSTEM_PROMPT_AR = (
-    "أنت مساعد أونلاين لمتجر ملابس تونسي إسمو Barats. تجاوب الحرفاء بالدارجة "
-    "التونسية بطريقة ودودة ومحترمة ومختصرة (جملة و لا زوز). "
-    "معلومات ثابتة: التوصيل 7 دينار لكامل تونس، الدفع عند الاستلام. "
-    "قواعد مهمّة:\n"
-    "- ماتخترعش أثمنة و لا تفاصيل ماتعرفهاش. كان الحريف يسأل على ثمن منتج "
-    "معيّن وما عندكش المعلومة، قلّو باش يبعثلك اسم المنتج أو الصورة والفريق "
-    "يأكدلو.\n"
-    "- كان الحريف يحب يشري، اطلب منو: الاسم، رقم الهاتف، العنوان، المقاس واللون.\n"
-    "- ماتبعثش روابط. ماتحكيش على مواضيع برّا الشراء.\n"
-    "- جاوب بالدارجة التونسية فقط، بدون ترجمة و بدون شرح إضافي."
+    "إنتي بائع تونسي شاب تخدم في متجر ملابس إسمو Barats، وتحكي مع الحريف في "
+    "الميساج بالدارجة التونسية العادية، كيف ما يحكي أي تونسي عادي — بساطة، "
+    "دفء، وبلا تكلّف.\n\n"
+    "طريقة الكلام:\n"
+    "- استعمل دارجة تونسية طبيعية (مثال: 'أبعثلنا تصويرة'، 'شنوّا حبيت'، "
+    "'ثمنو'، 'برشة أنواع'، 'ماكش مشكل').\n"
+    "- خلّي الرد قصير: جملة و لا زوز برك. ماتطوّلش.\n"
+    "- ماتعاودش نفس الجملة كل مرة. بدّل في كلامك.\n"
+    "- تنجم تستعمل إيموجي واحد وقتلي يلزم برك، موش في كل رد.\n\n"
+    "طريقة المناداة (مهمة برشة):\n"
+    "- كان الحريف راجل ناديه 'خويا'.\n"
+    "- كان الحريفة مرا ناديها 'أختي'.\n"
+    "- كان ما تعرفش الجنس، ناديه 'خويا' بصفة عامة، وما تستعملش 'حبيبي' أبدا.\n\n"
+    "معلومات ثابتة تنجم تقولها: التوصيل 7 دينار لكامل تونس، الدفع عند الاستلام.\n\n"
+    "قواعد:\n"
+    "- ماتخترعش أثمنة. كان يسأل على ثمن منتج وماتعرفوش، اطلب منو اسم المنتج "
+    "و لا تصويرة، وقلّو الفريق باش يأكدلو الثمن.\n"
+    "- كان يحب يشري، اطلب منو بالتدريج: المقاس، اللون، الاسم، رقم التليفون، "
+    "والعنوان.\n"
+    "- ماتبعثش روابط وماتحكيش برّا موضوع الشراء.\n"
+    "- جاوب بالدارجة التونسية برك، بلا ترجمة وبلا شرح."
 )
 
 
@@ -149,20 +160,77 @@ def _bot_reply(conv):
         if not lines:
             return None
         transcript = "\n".join(lines)
+
+        # Guess gender from the customer's name so the bot uses خويا / أختي
+        # correctly. Best-effort; falls back to neutral (خويا) when unknown.
+        gender_hint = ""
+        try:
+            nm = (getattr(conv, "sender_name", "") or "").strip()
+            if nm:
+                g = _guess_gender_tn(nm)
+                if g == "f":
+                    gender_hint = "\n\n(الحريفة '" + nm + "' مرا — ناديها 'أختي'.)"
+                elif g == "m":
+                    gender_hint = "\n\n(الحريف '" + nm + "' راجل — ناديه 'خويا'.)"
+        except Exception:
+            gender_hint = ""
+
         prompt = (
             BOT_SYSTEM_PROMPT_AR
+            + gender_hint
             + "\n\nالمحادثة إلى حد الآن:\n" + transcript
             + "\n\nاكتب ردّ البائع الجاي فقط بالدارجة التونسية (بدون 'Vendeur:'): "
         )
-        reply = _claude_generate(prompt, max_tokens=200, temperature=0.5)
+        reply = _claude_generate(prompt, max_tokens=200, temperature=0.6)
         if not reply:
             return None
         reply = reply.strip().strip('"').strip()
         # Guard against the model echoing the label or going long.
-        reply = reply.replace("Vendeur:", "").strip()
+        reply = reply.replace("Vendeur:", "").replace("البائع:", "").strip()
         return reply[:600] or None
     except Exception:
         return None
+
+
+_TN_FEMALE_NAMES = {
+    "arij", "ameny", "amani", "asma", "aya", "cyrine", "syrine", "dorra",
+    "emna", "eya", "farah", "fatma", "feriel", "ghofrane", "ghofran", "hiba",
+    "ines", "khaoula", "mariem", "maryem", "molka", "nour", "nesrine",
+    "nesreen", "ons", "rania", "rihab", "rim", "salma", "sarra", "sirine",
+    "syrine", "wafa", "wiem", "yasmine", "yosra", "zeineb", "zaineb", "hela",
+    "amira", "chaima", "chaimaa", "ikram", "islem", "jihen", "jihene",
+    "manel", "marwa", "mayssa", "meriem", "nada", "nadia", "olfa", "safa",
+    "sana", "sonia", "takwa", "takoua", "wided", "yara", "hajer", "hajar",
+}
+_TN_MALE_NAMES = {
+    "ahmed", "ali", "amine", "anis", "aymen", "bilel", "bilal", "chaker",
+    "fares", "firas", "hamza", "hedi", "iheb", "ismail", "khalil", "mahdi",
+    "malek", "marwen", "mehdi", "mohamed", "montassar", "nassim", "oussama",
+    "rami", "seif", "seifeddine", "skander", "sofien", "sofiene", "wassim",
+    "yassine", "yassin", "youssef", "zied", "aziz", "bassem", "bessem",
+    "chedly", "fedi", "fadi", "ghassen", "haythem", "houssem", "jaber",
+    "karim", "karem", "louay", "maher", "moez", "nizar", "ramzi", "riadh",
+    "sami", "slim", "taha", "walid", "wael", "achref", "achraf", "chouaib",
+}
+
+
+def _guess_gender_tn(full_name):
+    """Return 'm', 'f', or '' from a Tunisian display name using the first
+    token. Best-effort; unknown names return ''."""
+    try:
+        import unicodedata as _ud
+        first = (full_name or "").strip().split()[0].lower()
+        first = "".join(c for c in _ud.normalize("NFD", first)
+                        if _ud.category(c) != "Mn")
+        if first in _TN_FEMALE_NAMES:
+            return "f"
+        if first in _TN_MALE_NAMES:
+            return "m"
+        if len(first) >= 3 and first.endswith(("a",)):
+            return "f"
+        return ""
+    except Exception:
+        return ""
 
 
 def _fetch_dm_sender_name(page_id, sender_id, platform="messenger"):
