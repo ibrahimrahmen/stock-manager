@@ -74,7 +74,7 @@
 </div>
 
 <script>
-var history = [];   // {from:'user'|'page', text, images?}
+var chatHistory = [];   // {from:'user'|'page', text, images?}
 var pendingImage = null;  // data URL
 
 function pickImage(input){
@@ -109,7 +109,7 @@ function addMsg(who, text, imgSrc){
   return d;
 }
 function resetChat(){
-  history = [];
+  chatHistory = [];
   clearImage();
   var chat = document.getElementById('chat');
   chat.innerHTML = '<div class="msg bot">Conversation réinitialisée. Ekteb kima el client…</div>';
@@ -124,7 +124,7 @@ async function send(){
   addMsg('user', txt || null, img || null);
   var userMsg = {from:'user', text: txt || ''};
   if(img) userMsg.images = ['local'];
-  history.push(userMsg);
+  chatHistory.push(userMsg);
 
   var loading = addMsg('bot', 'Le bot écrit…');
   loading.classList.add('loading');
@@ -134,7 +134,7 @@ async function send(){
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
-        messages: history,
+        messages: chatHistory,
         page_id: document.getElementById('page').value,
         sender_name: document.getElementById('sender_name').value,
         image_b64: img || ''
@@ -144,7 +144,7 @@ async function send(){
     loading.remove();
     if(data.status === 'ok' && data.reply){
       addMsg('bot', data.reply);
-      history.push({from:'page', text: data.reply, bot:true});
+      chatHistory.push({from:'page', text: data.reply, bot:true});
     } else {
       addMsg('bot', '⚠ Pas de réponse (' + (data.message || 'vide') + ')');
     }
