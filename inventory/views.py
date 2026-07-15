@@ -267,13 +267,21 @@ def _bot_reply(conv):
         # recent batch (not the whole history) to avoid re-billing old images
         # on every turn.
         img_urls = []
+        local_imgs = []
         try:
-            for m in reversed(msgs):
-                if m.get("from") == "user" and m.get("images"):
-                    img_urls = [u for u in (m.get("images") or []) if u][:3]
-                    break
+            # Test-page path: a local file injected on the conversation object.
+            _lp = getattr(conv, "_test_local_image", "")
+            if _lp:
+                local_imgs = [_lp]
+            else:
+                for m in reversed(msgs):
+                    if m.get("from") == "user" and m.get("images"):
+                        img_urls = [u for u in (m.get("images") or [])
+                                    if u and u != "local"][:3]
+                        break
         except Exception:
             img_urls = []
+            local_imgs = []
 
         # Guess gender from the customer's name so the bot uses خويا / أختي
         # correctly. Best-effort; falls back to neutral (خويا) when unknown.
@@ -349,7 +357,7 @@ def _bot_reply(conv):
             + "\n\nEl conversation lel7d ltew:\n" + transcript
             + "\n\nOkteb reply el bayaa ejjay barka bel tounsi latin (bla 'Vendeur:'): "
         )
-        reply = _claude_generate(prompt, max_tokens=200, temperature=0.6, image_urls=img_urls)
+        reply = _claude_generate(prompt, max_tokens=200, temperature=0.6, image_urls=img_urls, local_images=local_imgs)
         if not reply:
             return None
         reply = reply.strip().strip('"').strip()
@@ -2071,27 +2079,18 @@ def api_bot_test_reply(request):
             except Exception:
                 tmp_path = ""
 
-        # Generate the reply. If a local image was provided, temporarily wrap
-        # _claude_generate so the bot call includes it.
-        reply = None
+        # Generate the reply. If a local image was provided, hand it to the bot
+        # via a conversation attribute that _bot_reply reads directly.
         if tmp_path:
-            _orig = globals()["_claude_generate"]
-            def _wrapped(prompt, max_tokens=1024, temperature=0.0,
-                         cached_prefix=None, image_urls=None, local_images=None):
-                return _orig(prompt, max_tokens=max_tokens,
-                             temperature=temperature, cached_prefix=cached_prefix,
-                             image_urls=None, local_images=[tmp_path])
-            globals()["_claude_generate"] = _wrapped
-            try:
-                reply = _bot_reply(conv)
-            finally:
-                globals()["_claude_generate"] = _orig
+            conv._test_local_image = tmp_path
+        try:
+            reply = _bot_reply(conv)
+        finally:
+            if tmp_path:
                 try:
                     os.unlink(tmp_path)
                 except Exception:
                     pass
-        else:
-            reply = _bot_reply(conv)
 
         return JsonResponse({"status": "ok", "reply": reply or ""})
     except Exception as e:
