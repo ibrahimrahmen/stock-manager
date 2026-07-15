@@ -160,6 +160,46 @@ BOT_SYSTEM_PROMPT_AR = (
 )
 
 
+def _build_catalog_for_conv(conv, limit=60):
+    """Build a compact catalogue string of active offers (name + price +
+    included pieces) for the sales page this conversation maps to, so the bot
+    can look up a product's price. Best-effort; returns '' on failure."""
+    try:
+        from .models import Offer, SalesPage
+        sp_id = MESSENGER_PAGE_TO_SALESPAGE.get(
+            str(getattr(conv, "page_id", "") or ""), MESSENGER_DEFAULT_SALESPAGE)
+        page = SalesPage.objects.filter(pk=sp_id).first()
+        # Offers active on this page; fall back to all active offers.
+        qs = Offer.objects.filter(is_active=True)
+        if page:
+            page_qs = qs.filter(sales_pages=page).distinct()
+            offers = list(page_qs) or list(qs.distinct())
+        else:
+            offers = list(qs.distinct())
+        offers = offers[:limit]
+        lines = []
+        for o in offers:
+            try:
+                price = o.price_for_page(page) if page else o.bundle_price
+            except Exception:
+                price = o.bundle_price
+            # Included pieces (helps match a photo to a bundle).
+            pieces = []
+            try:
+                for op in o.products.all():
+                    prod = getattr(op, "product", None)
+                    nm = (prod.name if prod else "") or ""
+                    if nm:
+                        pieces.append(nm)
+            except Exception:
+                pass
+            piece_str = (" (" + ", ".join(pieces) + ")") if pieces else ""
+            lines.append(f"- {o.name}{piece_str} : {price} DT")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
+
 def _bot_reply(conv):
     """Generate a short Tunisian-Arabic bot reply to the latest customer
     message, using the conversation so far. Returns the reply text or None.
@@ -250,11 +290,28 @@ def _bot_reply(conv):
         except Exception:
             greet_hint = ""
 
+        # Catalogue of this page's offers with prices, so the bot can look up a
+        # product (named or seen in a photo) and quote the real price.
+        catalog_context = ""
+        try:
+            _cat = _build_catalog_for_conv(conv)
+            if _cat:
+                catalog_context = (
+                    "\n\nHedha el catalogue mte3 el produits (esm + thaman). "
+                    "Esta3mlou bech tal9a el mntej (eli el 7arif semmeh wa la "
+                    "eli chefto fel taswira) w a3ti el thaman mel catalogue. Ki "
+                    "el mntej mech fel catalogue, 9ollou el equipe bech "
+                    "t2akedlou:\n" + _cat
+                )
+        except Exception:
+            catalog_context = ""
+
         prompt = (
             BOT_SYSTEM_PROMPT_AR
             + gender_hint
             + greet_hint
             + ad_context
+            + catalog_context
             + "\n\nEl conversation lel7d ltew:\n" + transcript
             + "\n\nOkteb reply el bayaa ejjay barka bel tounsi latin (bla 'Vendeur:'): "
         )
