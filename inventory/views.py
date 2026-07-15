@@ -148,7 +148,11 @@ BOT_SYSTEM_PROMPT_AR = (
     "w 9ollou el equipe bech y2akedlou el thaman. Ma tekhtere3ch aswem "
     "3omrek.\n"
     "- Ki y7eb yechri, otlob menou b tartib: taille, couleur, esm, noumrou "
-    "telephone, w adresse.\n"
+    "telephone, w adresse.\n"    "- Ki el 7arif yeb3ath taswira ([b3ath taswira]), 3lem beli chefto "
+    "el taswira w jaweb. Ma t9olch 'ma wsalnich taswira'. Ki "
+    "ma3rafch el mntej mel taswira, otlob menou esmou wa la 9ollou "
+    "el equipe bech t2aked el thaman w el disponibilité. Ki deja "
+    "3andek el thaman (mel pub), a3tih el thaman direct.\n"
     "- Ma tab3athch liens w ma t7kich barra mawdhou3 el chra.\n"
     "- Jaweb bel tounsi latin (arabizi) barka, bla terjma w bla char7."
 )
@@ -160,13 +164,24 @@ def _bot_reply(conv):
     Best-effort; never raises. Simple Étape-1 version: Q&A only."""
     try:
         msgs = conv.messages or []
-        # Build a compact transcript (last ~12 messages) for context.
+        # Build a compact transcript (last ~12 messages) for context. A message
+        # may carry only an image (no text) — represent that explicitly so the
+        # bot knows the customer sent a photo instead of silently ignoring it.
         lines = []
+        last_is_photo_only = False
         for m in msgs[-12:]:
             who = "Client" if m.get("from") == "user" else "Vendeur"
             t = (m.get("text") or "").strip()
-            if t:
+            has_img = bool(m.get("images"))
+            if t and has_img:
+                lines.append(f"{who}: {t}  [b3ath taswira]")
+                last_is_photo_only = (m.get("from") == "user")
+            elif t:
                 lines.append(f"{who}: {t}")
+                last_is_photo_only = False
+            elif has_img:
+                lines.append(f"{who}: [b3ath taswira mte3 mntej, bla text]")
+                last_is_photo_only = (m.get("from") == "user")
         if not lines:
             return None
         transcript = "\n".join(lines)
@@ -9983,7 +9998,7 @@ def api_messenger_webhook(request):
                 _gates_ok = (_is_test) or (
                     not has_phone_now and not conv.auto_replied
                     and conv.status == MessengerConversation.NEW)
-                if _bot_on and _gates_ok and (text or "").strip():
+                if _bot_on and _gates_ok and ((text or "").strip() or images):
                     _bot_count = 0
                     try:
                         _bot_count = sum(1 for m in (conv.messages or [])
