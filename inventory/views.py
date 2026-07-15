@@ -132,10 +132,9 @@ BOT_SYSTEM_PROMPT_AR = (
     "- Khalli el reply court barcha: jomla wa la jomeltin barka.\n"
     "- Ma t3awedch nafs el jomla. Baddel fi kalemek.\n\n"
     "L OUVERTURE (kifeh tbda):\n"
-    "- Ki el 7arif ybda (mathal 'slm', 'aslema', 'bonjour', wa la yes2el "
-    "aala mntej), jaweb b haka: "
-    "'Aslema khouya, bech t3adi commande ab3athelna taille, adresse w noumrou'. "
-    "(ki mra: 'Aslema okhti, bech t3adi commande ab3athelna taille, adresse w noumrou').\n\n"
+    "- Salli 'Aslema' MARRA WA7DA barka, fi awel reply mte3ek. Ba3d ما تسلّم، ماعادش تعاود 'Aslema' fi kol message — kammel el hadra normal.\n"
+    "- Ki el 7arif ybda w enti mazelt ma sallamtech (awel marra), jaweb b haka: 'Aslema khouya, bech t3adi commande ab3athelna taille, adresse w noumrou' (ki mra: 'Aslema okhti, ...').\n"
+    "- Ki deja sallamt fel conversation, ma t3awedch 'Aslema' — jaweb direct 3ala eli sa2el 3lih (mathal 'ab3athelna esm el piece bech n9ollek el thaman').\n\n"
     "TASMIYA (mohim):\n"
     "- Ki el 7arif rajel, naadih 'khouya'.\n"
     "- Ki el 7arifa mra, naadiha 'okhti'.\n"
@@ -204,9 +203,27 @@ def _bot_reply(conv):
         except Exception:
             ad_context = ""
 
+        # Deterministic hint: has the bot already greeted in this conversation?
+        # If so, tell it explicitly NOT to say "Aslema" again.
+        greet_hint = ""
+        try:
+            already_greeted = any(
+                m.get("from") == "page"
+                and ("aslema" in (m.get("text") or "").lower()
+                     or "aslama" in (m.get("text") or "").lower())
+                for m in (conv.messages or [])
+            )
+            if already_greeted:
+                greet_hint = ("\n\n(MOHIM: deja sallamt 'Aslema' fel "
+                              "conversation — ma t3awedhech. Jaweb direct bla "
+                              "salutation.)")
+        except Exception:
+            greet_hint = ""
+
         prompt = (
             BOT_SYSTEM_PROMPT_AR
             + gender_hint
+            + greet_hint
             + ad_context
             + "\n\nEl conversation lel7d ltew:\n" + transcript
             + "\n\nOkteb reply el bayaa ejjay barka bel tounsi latin (bla 'Vendeur:'): "
