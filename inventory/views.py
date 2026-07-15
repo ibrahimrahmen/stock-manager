@@ -201,11 +201,22 @@ def _describe_product_image(product):
             "TOUTES les couleurs des variantes montrées, logo/marque/écusson "
             "visible (ex: Nike, FC Barcelone), motifs précis (rayures et leur "
             "direction, camouflage, texture), et tout élément distinctif "
-            "(bandes latérales, col, poches). Pas de phrases de vente."
+            "(bandes latérales, col, poches). "
+            "RÉPONDS UNIQUEMENT avec la description brute: pas de titre, pas de "
+            "markdown (aucun #), pas de préambule, pas de liste. Commence "
+            "directement par le type de vêtement."
         )
+        # Strip any markdown/preamble the model may still add.
+        def _clean_desc(t):
+            t = (t or "").strip()
+            for junk in ("# Description du produit", "Description du produit",
+                         "# Description", "Description:"):
+                if t.lower().startswith(junk.lower()):
+                    t = t[len(junk):]
+            return t.strip().lstrip("#:").strip()
         desc = _claude_generate(prompt, max_tokens=250, temperature=0.2,
                                 local_images=paths)
-        desc = (desc or "").strip()
+        desc = _clean_desc(desc)
         if desc:
             product.description = desc[:500]
             product.save(update_fields=["description"])
