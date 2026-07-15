@@ -156,35 +156,55 @@ BOT_SYSTEM_PROMPT_AR = (
     "- Ki y7eb yechri, otlob el ma3loumet BECHWAYA bechwaya, moch el kol "
     "fi nafs el message. El awel: taille w couleur. Ba3d ki yjawbek: "
     "esm, noumrou w adresse. Ma tas2elch aala 5 7ajet fi jomla wa7da.\n"    "- Ki el 7arif yeb3ath taswira, enti TCHOUF el taswira b3aynek. "
-    "Chouf ch3andou fel taswira (nou3 el melbes: pull, ensemble, "
-    "serwal, chemise... w el loun) w jaweb 3lih. Ma t9olch 3omrek "
-    "'ma wsalnich taswira'. Ki t3aref el mntej mel pub wa la mel "
-    "catalogue, a3tih el thaman. Ki ma3andekch el thaman, 9ollou "
-    "el equipe bech t2akedlou el thaman w el disponibilité. "
-    "Ma tekhtere3ch thaman.\n"
+    "Methode: (1) chouf b da9a ch fama fel taswira: nou3 el melbes, "
+    "el alwen, ay logo wa la ecusson (Nike, Adidas, FC Barcelone, "
+    "Jordan...), ay motif (rayures, camouflage...). (2) 9aren m3a "
+    "les descriptions fel catalogue w ekhtar el mntej eli el "
+    "description mte3ou tetlem b DA9A m3a eli cheftou (logo + motif + "
+    "type). (3) Kan famech match wadhe7 100%, MA TEKHTARCH mntej "
+    "bel 3chwe2i — 9ollou el equipe bech t2akedlou el thaman. "
+    "Ma t9olch 3omrek 'ma wsalnich taswira'. Ma tekhtere3ch thaman.\n"
     "- Ma tab3athch liens w ma t7kich barra mawdhou3 el chra.\n"
     "- Jaweb bel tounsi latin (arabizi) barka, bla terjma w bla char7."
 )
 
 
 def _describe_product_image(product):
-    """Use Claude Vision on a product's variant image to produce a short French
-    visual description (type, color, style, logo/pattern) and save it to
-    product.description. Returns the description or '' on failure."""
+    """Use Claude Vision on the product's variant images (up to 3 — one per
+    colorway) to produce a detailed French visual description covering ALL the
+    color variants, and save it to product.description. Returns the
+    description or '' on failure."""
     try:
-        v = product.variants.filter(image__isnull=False).exclude(image="").first()
-        if not v or not v.image:
+        vs = list(product.variants.filter(image__isnull=False)
+                  .exclude(image="")[:3])
+        paths = []
+        labels = []
+        for v in vs:
+            try:
+                paths.append(v.image.path)
+                labels.append(getattr(v, "color_label", "") or "")
+            except Exception:
+                continue
+        if not paths:
             return ""
-        path = v.image.path
+        color_hint = ""
+        if any(labels):
+            color_hint = ("Couleurs référencées: "
+                          + ", ".join(l for l in labels if l) + ". ")
         prompt = (
-            "Décris ce vêtement en une phrase courte et factuelle en français, "
-            "pour le retrouver plus tard à partir d'une photo. Mentionne: type "
-            "(ensemble/pull/pantalon/veste/short...), couleur(s) principale(s), "
-            "logo ou marque visible, motif, et éléments distinctifs. Pas de "
-            "phrases de vente, juste la description visuelle."
+            "Voici " + ("les photos des variantes de couleur d'" if len(paths) > 1
+                        else "la photo d'") + "un même vêtement. "
+            + color_hint +
+            "Écris une description visuelle DÉTAILLÉE en français (2-3 phrases "
+            "max) pour identifier ce produit à partir d'une photo client. "
+            "Obligatoire: type exact (ensemble/pull/pantalon/short/tenue...), "
+            "TOUTES les couleurs des variantes montrées, logo/marque/écusson "
+            "visible (ex: Nike, FC Barcelone), motifs précis (rayures et leur "
+            "direction, camouflage, texture), et tout élément distinctif "
+            "(bandes latérales, col, poches). Pas de phrases de vente."
         )
-        desc = _claude_generate(prompt, max_tokens=150, temperature=0.2,
-                                local_images=[path])
+        desc = _claude_generate(prompt, max_tokens=250, temperature=0.2,
+                                local_images=paths)
         desc = (desc or "").strip()
         if desc:
             product.description = desc[:500]
