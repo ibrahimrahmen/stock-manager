@@ -160,6 +160,33 @@ BOT_SYSTEM_PROMPT_AR = (
 )
 
 
+def _describe_product_image(product):
+    """Use Claude Vision on a product's variant image to produce a short French
+    visual description (type, color, style, logo/pattern) and save it to
+    product.description. Returns the description or '' on failure."""
+    try:
+        v = product.variants.filter(image__isnull=False).exclude(image="").first()
+        if not v or not v.image:
+            return ""
+        path = v.image.path
+        prompt = (
+            "Décris ce vêtement en une phrase courte et factuelle en français, "
+            "pour le retrouver plus tard à partir d'une photo. Mentionne: type "
+            "(ensemble/pull/pantalon/veste/short...), couleur(s) principale(s), "
+            "logo ou marque visible, motif, et éléments distinctifs. Pas de "
+            "phrases de vente, juste la description visuelle."
+        )
+        desc = _claude_generate(prompt, max_tokens=150, temperature=0.2,
+                                local_images=[path])
+        desc = (desc or "").strip()
+        if desc:
+            product.description = desc[:500]
+            product.save(update_fields=["description"])
+        return desc
+    except Exception:
+        return ""
+
+
 def _build_catalog_for_conv(conv, limit=60):
     """Build a compact catalogue string of active offers (name + price +
     included pieces) for the sales page this conversation maps to, so the bot
@@ -183,18 +210,25 @@ def _build_catalog_for_conv(conv, limit=60):
                 price = o.price_for_page(page) if page else o.bundle_price
             except Exception:
                 price = o.bundle_price
-            # Included pieces (helps match a photo to a bundle).
+            # Included pieces + their visual descriptions (so the bot can
+            # match a customer photo to a bundle by appearance, not just name).
             pieces = []
+            descs = []
             try:
                 for op in o.products.all():
                     prod = getattr(op, "product", None)
-                    nm = (prod.name if prod else "") or ""
-                    if nm:
-                        pieces.append(nm)
+                    if not prod:
+                        continue
+                    if prod.name:
+                        pieces.append(prod.name)
+                    d = (getattr(prod, "description", "") or "").strip()
+                    if d:
+                        descs.append(d)
             except Exception:
                 pass
             piece_str = (" (" + ", ".join(pieces) + ")") if pieces else ""
-            lines.append(f"- {o.name}{piece_str} : {price} DT")
+            desc_str = (" [" + " ; ".join(descs) + "]") if descs else ""
+            lines.append(f"- {o.name}{piece_str} : {price} DT{desc_str}")
         return "\n".join(lines)
     except Exception:
         return ""
@@ -551,7 +585,7 @@ def _claude_web_search(prompt, max_tokens=1024):
         return None
 
 
-def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None, image_urls=None):
+def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None, image_urls=None, local_images=None):
     """Call the Anthropic Claude API. Returns response text or None on failure.
     Replaces Gemini for DM order extraction and transliteration. Uses
     ANTHROPIC_API_KEY. On rate limit (429) it bails out immediately so a worker
@@ -591,6 +625,23 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
             })
         except Exception:
             # If a single image can't be fetched, skip it (bot still replies).
+            continue
+    for _lp in (local_images or [])[:3]:
+        if not _lp:
+            continue
+        try:
+            import base64 as _b64
+            with open(_lp, "rb") as _lf:
+                _raw = _lf.read()
+            _ext = (_lp.rsplit(".", 1)[-1] or "jpeg").lower()
+            _mt = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                   "gif": "image/gif", "webp": "image/webp"}.get(_ext, "image/jpeg")
+            _img_blocks.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": _mt,
+                           "data": _b64.b64encode(_raw).decode("ascii")},
+            })
+        except Exception:
             continue
     if cached_prefix:
         msg_content = [
