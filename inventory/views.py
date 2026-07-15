@@ -143,9 +143,11 @@ BOT_SYSTEM_PROMPT_AR = (
     "Ma3loumet thabta tnajem t9oulha: el livraison 7 dinar l kol tounes, "
     "el khlas aand el istilem (cash a la livraison).\n\n"
     "9awa3ed:\n"
-    "- Ma tekhtere3ch aswem. Ki yes2el aala thaman mntej w ma ta3rfouch, "
-    "ot lob menou esm el mntej wa la taswira, w 9ollou el equipe bech "
-    "y2akedlou el thaman.\n"
+    "- Ki el thaman mawjoud fi nass el pub (eli jé menou el 7arif), "
+    "a3tih el thaman b da9a. Ki ma3andekch el thaman (ma famech pub wa "
+    "la ma fihech el thaman), ot lob menou esm el mntej wa la taswira "
+    "w 9ollou el equipe bech y2akedlou el thaman. Ma tekhtere3ch aswem "
+    "3omrek.\n"
     "- Ki y7eb yechri, otlob menou b tartib: taille, couleur, esm, noumrou "
     "telephone, w adresse.\n"
     "- Ma tab3athch liens w ma t7kich barra mawdhou3 el chra.\n"
@@ -184,9 +186,28 @@ def _bot_reply(conv):
         except Exception:
             gender_hint = ""
 
+        # If the conversation came from a specific ad, fetch that ad's text —
+        # it usually contains the product name and price, so the bot can answer
+        # price questions accurately instead of asking for a photo.
+        ad_context = ""
+        try:
+            _ad_id = (getattr(conv, "source_ad_id", "") or "").strip()
+            if _ad_id:
+                _ad_txt = _fetch_ad_text(_ad_id)
+                if _ad_txt:
+                    ad_context = (
+                        "\n\nEl 7arif jé mel pub hedhi. Hedha nass el pub "
+                        "(fih esm el mntej w el thaman — esta3mlou bech tjaweb "
+                        "aala el thaman b da9a, ama ma t9rahch kifeh mektoub, "
+                        "lkhesslou el ma3na):\n\"\"\"\n" + _ad_txt + "\n\"\"\""
+                    )
+        except Exception:
+            ad_context = ""
+
         prompt = (
             BOT_SYSTEM_PROMPT_AR
             + gender_hint
+            + ad_context
             + "\n\nEl conversation lel7d ltew:\n" + transcript
             + "\n\nOkteb reply el bayaa ejjay barka bel tounsi latin (bla 'Vendeur:'): "
         )
@@ -292,6 +313,72 @@ def _resolve_ad_campaign_name(ad_id):
         return (d.get("campaign", {}) or {}).get("name", "") or ""
     except Exception:
         return ""
+
+
+def _fetch_ad_text(ad_id):
+    """Fetch the ad's creative text (the post/ad body the customer saw). This
+    usually contains the product name and price, so the bot can answer price
+    questions accurately when the customer came from a Click-to-Messenger ad.
+    Returns the text or "" on failure. Best-effort, short timeout, cached."""
+    import urllib.request as _ureq
+    import json as _json
+    if not ad_id:
+        return ""
+    token = os.environ.get("META_ACCESS_TOKEN", "").strip()
+    if not token:
+        return ""
+    # Simple in-process cache so we don't refetch the same ad every message.
+    global _AD_TEXT_CACHE
+    try:
+        _AD_TEXT_CACHE
+    except NameError:
+        _AD_TEXT_CACHE = {}
+    if ad_id in _AD_TEXT_CACHE:
+        return _AD_TEXT_CACHE[ad_id]
+    # The ad's creative holds the text. Pull common text-bearing fields.
+    url = (f"https://graph.facebook.com/v21.0/{ad_id}"
+           f"?fields=creative{{body,title,object_story_spec,"
+           f"asset_feed_spec,effective_object_story_id}}"
+           f"&access_token={token}")
+    text = ""
+    try:
+        with _ureq.urlopen(url, timeout=6) as resp:
+            d = _json.loads(resp.read().decode("utf-8"))
+        cr = d.get("creative", {}) or {}
+        parts = []
+        if cr.get("body"):
+            parts.append(cr["body"])
+        if cr.get("title"):
+            parts.append(cr["title"])
+        # object_story_spec.link_data.message / description
+        oss = cr.get("object_story_spec", {}) or {}
+        ld = oss.get("link_data", {}) or {}
+        for k in ("message", "description", "name", "caption"):
+            if ld.get(k):
+                parts.append(ld[k])
+        vd = oss.get("video_data", {}) or {}
+        for k in ("message", "title"):
+            if vd.get(k):
+                parts.append(vd[k])
+        # asset_feed_spec.bodies[].text / titles[].text (dynamic creatives)
+        afs = cr.get("asset_feed_spec", {}) or {}
+        for arr_key in ("bodies", "titles", "descriptions"):
+            for item in (afs.get(arr_key, []) or []):
+                if item.get("text"):
+                    parts.append(item["text"])
+        # Dedup preserving order, cap length.
+        seen = set()
+        uniq = []
+        for pt in parts:
+            pt = (pt or "").strip()
+            if pt and pt not in seen:
+                seen.add(pt)
+                uniq.append(pt)
+        text = "\n".join(uniq)[:1500]
+    except Exception:
+        text = ""
+    _AD_TEXT_CACHE[ad_id] = text
+    return text
 
 
 def _messenger_send_text(page_id, recipient_id, text, platform="messenger"):
