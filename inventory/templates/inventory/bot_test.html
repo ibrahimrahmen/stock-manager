@@ -80,14 +80,27 @@ var pendingImage = null;  // data URL
 function pickImage(input){
   var f = input.files && input.files[0];
   if(!f) return;
-  var r = new FileReader();
-  r.onload = function(e){
-    pendingImage = e.target.result;
+  // Resize client-side to max 1200px JPEG so the request stays small
+  // (big phone photos exceed Django's 2.5MB JSON limit) and vision is cheaper.
+  var img = new Image();
+  var url = URL.createObjectURL(f);
+  img.onload = function(){
+    var maxDim = 1200;
+    var w = img.width, h = img.height;
+    if (w > maxDim || h > maxDim) {
+      if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+      else { w = Math.round(w * maxDim / h); h = maxDim; }
+    }
+    var canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    pendingImage = canvas.toDataURL('image/jpeg', 0.8);
+    URL.revokeObjectURL(url);
     document.getElementById('imgthumb').src = pendingImage;
-    document.getElementById('imgname').textContent = f.name;
+    document.getElementById('imgname').textContent = f.name + ' (' + w + 'x' + h + ')';
     document.getElementById('imgpreview').style.display = 'flex';
   };
-  r.readAsDataURL(f);
+  img.src = url;
   input.value = '';
 }
 function clearImage(){
@@ -140,6 +153,11 @@ async function send(){
         image_b64: img || ''
       })
     });
+    if(!resp.ok){
+      loading.remove();
+      addMsg('bot', '⚠ HTTP ' + resp.status + ' — ' + (await resp.text()).slice(0,120));
+      return;
+    }
     var data = await resp.json();
     loading.remove();
     if(data.status === 'ok' && data.reply){
