@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Bot — Barats</title>
+<style>
+  :root { --bg:#f4f4f6; --card:#fff; --muted:#8a8a90; --blue:#0084ff; --green:#22c55e; }
+  * { box-sizing:border-box; margin:0; padding:0; font-family:-apple-system,Segoe UI,Roboto,sans-serif; }
+  body { background:var(--bg); min-height:100vh; }
+  nav { background:var(--card); padding:12px 20px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 3px rgba(0,0,0,0.08); }
+  nav a { color:var(--blue); text-decoration:none; font-size:14px; }
+  .nav-title { font-weight:700; font-size:16px; }
+  .wrap { max-width:640px; margin:20px auto; padding:0 12px; }
+  .config { background:var(--card); border-radius:12px; padding:12px 16px; margin-bottom:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; font-size:13px; }
+  .config label { color:var(--muted); }
+  .config select, .config input { padding:6px 10px; border:1px solid #ddd; border-radius:8px; font-size:13px; }
+  .chat { background:var(--card); border-radius:16px; padding:16px; min-height:420px; max-height:60vh; overflow-y:auto; display:flex; flex-direction:column; gap:8px; }
+  .msg { max-width:75%; padding:9px 13px; border-radius:18px; font-size:14px; line-height:1.4; word-wrap:break-word; }
+  .msg.user { align-self:flex-end; background:var(--blue); color:#fff; border-bottom-right-radius:4px; }
+  .msg.bot { align-self:flex-start; background:#e9e9eb; color:#111; border-bottom-left-radius:4px; }
+  .msg.bot.loading { color:var(--muted); font-style:italic; }
+  .msg img { max-width:180px; border-radius:10px; display:block; margin-top:4px; }
+  .inputbar { display:flex; gap:8px; margin-top:12px; }
+  .inputbar input[type=text] { flex:1; padding:12px 14px; border:1px solid #ddd; border-radius:24px; font-size:14px; outline:none; }
+  .inputbar button { padding:12px 20px; border:none; border-radius:24px; background:var(--blue); color:#fff; font-weight:600; cursor:pointer; font-size:14px; }
+  .inputbar .imgbtn { background:#e9e9eb; color:#333; padding:12px 14px; }
+  .hint { font-size:12px; color:var(--muted); margin-top:8px; text-align:center; }
+  #imgpreview { display:none; margin-top:8px; align-items:center; gap:8px; font-size:12px; color:var(--muted); }
+  #imgpreview img { max-height:48px; border-radius:8px; }
+  #imgpreview button { border:none; background:transparent; color:#e11; cursor:pointer; font-size:13px; }
+</style>
+</head>
+<body>
+<nav>
+  <a href="/">← Dashboard</a>
+  <span class="nav-title">🤖 Test du Bot</span>
+  <span style="font-size:12px;color:var(--muted);">Simule une conversation client — sans Meta</span>
+</nav>
+
+<div class="wrap">
+  <div class="config">
+    <label>Page :</label>
+    <select id="page">
+      <option value="580021675198711">Barats</option>
+      <option value="179384998586489">Arrow Sportswear</option>
+      <option value="296257303579418">Next Generation</option>
+      <option value="212577788599999">Handsome Collection</option>
+      <option value="859568317250953">Primefit</option>
+      <option value="494370360430121">Traffic</option>
+    </select>
+    <label>Nom client :</label>
+    <input type="text" id="sender_name" value="Mohamed Ali" style="width:130px;">
+    <button onclick="resetChat()" style="margin-left:auto;padding:6px 14px;border:none;border-radius:8px;background:#eee;cursor:pointer;font-size:12px;">↺ Réinitialiser</button>
+  </div>
+
+  <div class="chat" id="chat">
+    <div class="msg bot">Ekteb kima el client… (mathal: "slm", "9adech el pull camo?", wala ab3ath taswira)</div>
+  </div>
+
+  <div id="imgpreview">
+    <img id="imgthumb" src="">
+    <span id="imgname"></span>
+    <button onclick="clearImage()">✕ retirer</button>
+  </div>
+
+  <div class="inputbar">
+    <button class="imgbtn" onclick="document.getElementById('imgfile').click()" title="Joindre une photo">📷</button>
+    <input type="file" id="imgfile" accept="image/*" style="display:none" onchange="pickImage(this)">
+    <input type="text" id="text" placeholder="Message du client…" onkeydown="if(event.key==='Enter')send()">
+    <button onclick="send()">Envoyer</button>
+  </div>
+  <div class="hint">Le bot utilise le vrai catalogue + Claude Vision. Aucune donnée n'est enregistrée.</div>
+</div>
+
+<script>
+var history = [];   // {from:'user'|'page', text, images?}
+var pendingImage = null;  // data URL
+
+function pickImage(input){
+  var f = input.files && input.files[0];
+  if(!f) return;
+  var r = new FileReader();
+  r.onload = function(e){
+    pendingImage = e.target.result;
+    document.getElementById('imgthumb').src = pendingImage;
+    document.getElementById('imgname').textContent = f.name;
+    document.getElementById('imgpreview').style.display = 'flex';
+  };
+  r.readAsDataURL(f);
+  input.value = '';
+}
+function clearImage(){
+  pendingImage = null;
+  document.getElementById('imgpreview').style.display = 'none';
+}
+function addMsg(who, text, imgSrc){
+  var chat = document.getElementById('chat');
+  var d = document.createElement('div');
+  d.className = 'msg ' + who;
+  if(text) d.textContent = text;
+  if(imgSrc){
+    var im = document.createElement('img');
+    im.src = imgSrc;
+    d.appendChild(im);
+  }
+  chat.appendChild(d);
+  chat.scrollTop = chat.scrollHeight;
+  return d;
+}
+function resetChat(){
+  history = [];
+  clearImage();
+  var chat = document.getElementById('chat');
+  chat.innerHTML = '<div class="msg bot">Conversation réinitialisée. Ekteb kima el client…</div>';
+}
+async function send(){
+  var txt = document.getElementById('text').value.trim();
+  var img = pendingImage;
+  if(!txt && !img) return;
+  document.getElementById('text').value = '';
+  clearImage();
+
+  addMsg('user', txt || null, img || null);
+  var userMsg = {from:'user', text: txt || ''};
+  if(img) userMsg.images = ['local'];
+  history.push(userMsg);
+
+  var loading = addMsg('bot', 'Le bot écrit…');
+  loading.classList.add('loading');
+
+  try {
+    var resp = await fetch('/api/bot-test/reply/', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        messages: history,
+        page_id: document.getElementById('page').value,
+        sender_name: document.getElementById('sender_name').value,
+        image_b64: img || ''
+      })
+    });
+    var data = await resp.json();
+    loading.remove();
+    if(data.status === 'ok' && data.reply){
+      addMsg('bot', data.reply);
+      history.push({from:'page', text: data.reply, bot:true});
+    } else {
+      addMsg('bot', '⚠ Pas de réponse (' + (data.message || 'vide') + ')');
+    }
+  } catch(e) {
+    loading.remove();
+    addMsg('bot', '⚠ Erreur: ' + e);
+  }
+}
+</script>
+</body>
+</html>

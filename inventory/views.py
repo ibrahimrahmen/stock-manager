@@ -2019,6 +2019,85 @@ def home_dispatcher(request):
 
 
 @login_required(login_url="/login/")
+@login_required(login_url="/login/")
+def bot_test_page(request):
+    """Simple chat UI to test the auto-reply bot without Meta: you type as the
+    customer, the bot answers using the real logic (catalogue, gender, vision)."""
+    return render(request, "inventory/bot_test.html", {})
+
+
+@csrf_exempt
+@require_POST
+def api_bot_test_reply(request):
+    """Simulate a customer message and return the bot's reply. The simulated
+    conversation lives in the request payload (no DB writes). Accepts optional
+    base64 image (data URL) as the customer photo."""
+    try:
+        import json as _json
+        data = _json.loads(request.body.decode("utf-8"))
+        history = data.get("messages") or []   # [{from,text,images?}]
+        page_id = str(data.get("page_id") or "580021675198711")
+        sender_name = (data.get("sender_name") or "").strip()
+        img_b64 = (data.get("image_b64") or "").strip()  # data URL or raw b64
+
+        # Build a fake conversation object compatible with _bot_reply.
+        class _FakeConv:
+            pass
+        conv = _FakeConv()
+        conv.messages = history
+        conv.page_id = page_id
+        conv.sender_name = sender_name
+        conv.source_ad_id = str(data.get("ad_id") or "")
+
+        # If the tester attached an image, save it to a temp file and monkey-
+        # patch the last user message so the bot sees a photo (vision reads
+        # local files via local_images; we reuse the URL path by writing a
+        # temp file and passing it through a fake URL list is not possible, so
+        # instead we inject it via a special marker consumed below).
+        tmp_path = ""
+        if img_b64:
+            try:
+                import base64 as _b64, tempfile as _tmp
+                raw = img_b64.split(",", 1)[1] if "," in img_b64 else img_b64
+                blob = _b64.b64decode(raw)
+                tf = _tmp.NamedTemporaryFile(delete=False, suffix=".jpg")
+                tf.write(blob)
+                tf.close()
+                tmp_path = tf.name
+                # Mark the last user message as carrying an image so the
+                # transcript reflects it.
+                if history and history[-1].get("from") == "user":
+                    history[-1]["images"] = ["local"]
+            except Exception:
+                tmp_path = ""
+
+        # Generate the reply. If a local image was provided, temporarily wrap
+        # _claude_generate so the bot call includes it.
+        reply = None
+        if tmp_path:
+            _orig = globals()["_claude_generate"]
+            def _wrapped(prompt, max_tokens=1024, temperature=0.0,
+                         cached_prefix=None, image_urls=None, local_images=None):
+                return _orig(prompt, max_tokens=max_tokens,
+                             temperature=temperature, cached_prefix=cached_prefix,
+                             image_urls=None, local_images=[tmp_path])
+            globals()["_claude_generate"] = _wrapped
+            try:
+                reply = _bot_reply(conv)
+            finally:
+                globals()["_claude_generate"] = _orig
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+        else:
+            reply = _bot_reply(conv)
+
+        return JsonResponse({"status": "ok", "reply": reply or ""})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
+
+
 def dashboard(request):
     # Determine viewing mode (which bubble was clicked).
     # Admins/superusers always see the full dashboard ("all").
