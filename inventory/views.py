@@ -148,11 +148,13 @@ BOT_SYSTEM_PROMPT_AR = (
     "w 9ollou el equipe bech y2akedlou el thaman. Ma tekhtere3ch aswem "
     "3omrek.\n"
     "- Ki y7eb yechri, otlob menou b tartib: taille, couleur, esm, noumrou "
-    "telephone, w adresse.\n"    "- Ki el 7arif yeb3ath taswira ([b3ath taswira]), 3lem beli chefto "
-    "el taswira w jaweb. Ma t9olch 'ma wsalnich taswira'. Ki "
-    "ma3rafch el mntej mel taswira, otlob menou esmou wa la 9ollou "
-    "el equipe bech t2aked el thaman w el disponibilité. Ki deja "
-    "3andek el thaman (mel pub), a3tih el thaman direct.\n"
+    "telephone, w adresse.\n"    "- Ki el 7arif yeb3ath taswira, enti TCHOUF el taswira b3aynek. "
+    "Chouf ch3andou fel taswira (nou3 el melbes: pull, ensemble, "
+    "serwal, chemise... w el loun) w jaweb 3lih. Ma t9olch 3omrek "
+    "'ma wsalnich taswira'. Ki t3aref el mntej mel pub wa la mel "
+    "catalogue, a3tih el thaman. Ki ma3andekch el thaman, 9ollou "
+    "el equipe bech t2akedlou el thaman w el disponibilité. "
+    "Ma tekhtere3ch thaman.\n"
     "- Ma tab3athch liens w ma t7kich barra mawdhou3 el chra.\n"
     "- Jaweb bel tounsi latin (arabizi) barka, bla terjma w bla char7."
 )
@@ -185,6 +187,19 @@ def _bot_reply(conv):
         if not lines:
             return None
         transcript = "\n".join(lines)
+
+        # Collect image URLs from the LAST customer message that carried photos,
+        # so Claude Vision can actually see the product. We only send the most
+        # recent batch (not the whole history) to avoid re-billing old images
+        # on every turn.
+        img_urls = []
+        try:
+            for m in reversed(msgs):
+                if m.get("from") == "user" and m.get("images"):
+                    img_urls = [u for u in (m.get("images") or []) if u][:3]
+                    break
+        except Exception:
+            img_urls = []
 
         # Guess gender from the customer's name so the bot uses خويا / أختي
         # correctly. Best-effort; falls back to neutral (خويا) when unknown.
@@ -243,7 +258,7 @@ def _bot_reply(conv):
             + "\n\nEl conversation lel7d ltew:\n" + transcript
             + "\n\nOkteb reply el bayaa ejjay barka bel tounsi latin (bla 'Vendeur:'): "
         )
-        reply = _claude_generate(prompt, max_tokens=200, temperature=0.6)
+        reply = _claude_generate(prompt, max_tokens=200, temperature=0.6, image_urls=img_urls)
         if not reply:
             return None
         reply = reply.strip().strip('"').strip()
@@ -479,7 +494,7 @@ def _claude_web_search(prompt, max_tokens=1024):
         return None
 
 
-def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None):
+def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None, image_urls=None):
     """Call the Anthropic Claude API. Returns response text or None on failure.
     Replaces Gemini for DM order extraction and transliteration. Uses
     ANTHROPIC_API_KEY. On rate limit (429) it bails out immediately so a worker
@@ -494,12 +509,24 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
     if not api_key or not prompt:
         return None
     model = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001").strip()
+    # Build the message content. If images are supplied (Claude Vision), send
+    # them as image blocks BEFORE the text so the model sees them in context.
+    _img_blocks = []
+    for _u in (image_urls or [])[:3]:  # cap at 3 images to control cost
+        if _u:
+            _img_blocks.append({
+                "type": "image",
+                "source": {"type": "url", "url": _u},
+            })
     if cached_prefix:
         msg_content = [
             {"type": "text", "text": cached_prefix,
              "cache_control": {"type": "ephemeral"}},
+        ] + _img_blocks + [
             {"type": "text", "text": prompt},
         ]
+    elif _img_blocks:
+        msg_content = _img_blocks + [{"type": "text", "text": prompt}]
     else:
         msg_content = prompt
     body = {
