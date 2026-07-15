@@ -237,14 +237,10 @@ def _build_catalog_for_conv(conv, limit=60):
         sp_id = MESSENGER_PAGE_TO_SALESPAGE.get(
             str(getattr(conv, "page_id", "") or ""), MESSENGER_DEFAULT_SALESPAGE)
         page = SalesPage.objects.filter(pk=sp_id).first()
-        # Offers active on this page; fall back to all active offers.
-        qs = Offer.objects.filter(is_active=True)
-        if page:
-            page_qs = qs.filter(sales_pages=page).distinct()
-            offers = list(page_qs) or list(qs.distinct())
-        else:
-            offers = list(qs.distinct())
-        offers = offers[:limit]
+        # ALL active offers (any page): a customer may DM one page about a
+        # product sold on another. Price still resolves for THIS page when an
+        # override exists, else the default bundle price.
+        offers = list(Offer.objects.filter(is_active=True).distinct()[:limit])
         lines = []
         for o in offers:
             try:
