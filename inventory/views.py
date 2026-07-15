@@ -10158,16 +10158,40 @@ def api_messenger_webhook(request):
                     except Exception:
                         _bot_count = 0
                     if _bot_count < (100 if _is_test else 5):  # cap bot turns
-                        _reply = _bot_reply(conv)
-                        if _reply and _messenger_send_text(page_id, sender_id, _reply, platform):
+                        # The bot reply (download photo + build catalogue + Claude
+                        # Vision) is too slow to run inline — Meta times out the
+                        # webhook and the reply never sends. Run it in a background
+                        # thread so we return to Meta immediately.
+                        def _run_bot(conv_id, pg, sn, plat):
                             try:
+                                from .models import MessengerConversation as _MC
+                                _c = _MC.objects.filter(pk=conv_id).first()
+                                if not _c:
+                                    return
+                                _rep = _bot_reply(_c)
+                                if _rep and _messenger_send_text(pg, sn, _rep, plat):
+                                    _c.refresh_from_db()
+                                    _mm = _c.messages or []
+                                    _mm.append({"from": "page", "text": _rep,
+                                                "ts": "", "mid": "", "bot": True})
+                                    _c.messages = _mm
+                                    _c.save(update_fields=["messages", "updated_at"])
+                            except Exception:
+                                pass
+                        try:
+                            import threading as _thr
+                            _thr.Thread(target=_run_bot,
+                                        args=(conv.id, page_id, sender_id, platform),
+                                        daemon=True).start()
+                        except Exception:
+                            # Fallback: run inline if threads aren't available.
+                            _reply = _bot_reply(conv)
+                            if _reply and _messenger_send_text(page_id, sender_id, _reply, platform):
                                 mm = conv.messages or []
                                 mm.append({"from": "page", "text": _reply,
                                            "ts": "", "mid": "", "bot": True})
                                 conv.messages = mm
                                 conv.save(update_fields=["messages", "updated_at"])
-                            except Exception:
-                                pass
 
                 if not conv.auto_replied and has_phone_now:
                     from django.utils import timezone as _tz2
