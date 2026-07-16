@@ -61,8 +61,12 @@ MESSENGER_PAGE_TO_SALESPAGE = {
     "859568317250953": 6,    # Primefit.tn         → PrimeFit
     "494370360430121": 10,   # Traffic.tn          → Traffic
     # Instagram accounts (keyed by IG account id, same as FB pages)
-    "17841474699259489": 3,  # @barats216 (IG)         → Barats
+    "17841474699259489": 3,  # @barats216 (IG)          → Barats
     "17841473682487619": 4,  # @next.generation216 (IG) → Next Generation
+    "17841471034197351": 10, # @traffica.tn (IG)        → Traffic
+    "17841474217754022": 5,  # @handsome.collection216  → Handsome Collection
+    "17841479779102575": 6,  # @primefit_tn (IG)        → PrimeFit
+    "17841466972227220": 2,  # @arrowsportswear.tn (IG) → Arrow SportsWear
 }
 MESSENGER_DEFAULT_SALESPAGE = 3   # Barats (fallback for unmapped pages)
 
