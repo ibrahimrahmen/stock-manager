@@ -258,6 +258,102 @@ def _build_catalog_for_conv(conv, limit=60):
         return ""
 
 
+def _offers_data_for_conv(conv, limit=60):
+    """Return structured offer data [{'name','price','desc'}] for matching."""
+    out = []
+    try:
+        from .models import Offer, SalesPage
+        sp_id = MESSENGER_PAGE_TO_SALESPAGE.get(
+            str(getattr(conv, "page_id", "") or ""), MESSENGER_DEFAULT_SALESPAGE)
+        page = SalesPage.objects.filter(pk=sp_id).first()
+        for o in Offer.objects.filter(is_active=True).distinct()[:limit]:
+            try:
+                price = o.price_for_page(page) if page else o.bundle_price
+            except Exception:
+                price = o.bundle_price
+            descs = []
+            for op in o.products.all():
+                prod = getattr(op, "product", None)
+                if prod:
+                    d = (getattr(prod, "description", "") or "").strip()
+                    if d:
+                        descs.append(d)
+            out.append({"name": o.name, "price": str(price),
+                        "desc": " ; ".join(descs)})
+    except Exception:
+        pass
+    return out
+
+
+def _match_product_by_image(local_images, url_images, offers_data):
+    """Two-step visual match. Step 1: Claude describes the photo (type, colors,
+    logo, pattern). Step 2: we preselect offers whose stored description shares
+    keywords, then ask Claude to pick the best among that short list. Returns a
+    dict {name, price} or None. Much more reliable than showing all 43 offers
+    at once. offers_data = [{'name','price','desc'}]."""
+    try:
+        # --- Step 1: describe what's in the customer's photo ---
+        desc_prompt = (
+            "Décris ce vêtement en français en une phrase: type "
+            "(ensemble/pull/pantalon/short/veste...), couleur(s), logo ou "
+            "écusson visible (Nike, Adidas, FC Barcelone, Jordan...), et motif "
+            "(rayures, camouflage...). Juste la description, rien d'autre."
+        )
+        seen = _claude_generate(desc_prompt, max_tokens=120, temperature=0.1,
+                                image_urls=url_images or None,
+                                local_images=local_images or None)
+        seen = (seen or "").strip()
+        if not seen:
+            return None
+
+        # --- Preselect candidates by keyword overlap with stored descriptions ---
+        import re as _re
+        def _tokens(t):
+            t = (t or "").lower()
+            # keep meaningful words (colors, brands, types), drop tiny/common
+            words = _re.findall(r"[a-zàâçéèêëîïôûùüÿ]+", t)
+            stop = {"de", "un", "une", "des", "le", "la", "les", "avec", "et",
+                    "en", "sur", "du", "au", "aux", "pour", "ce", "cette", "un",
+                    "à", "d", "l", "the", "a", "of", "with"}
+            return set(w for w in words if len(w) >= 3 and w not in stop)
+        seen_tok = _tokens(seen)
+        scored = []
+        for od in offers_data:
+            ot = _tokens(od.get("desc", "")) | _tokens(od.get("name", ""))
+            overlap = len(seen_tok & ot)
+            if overlap:
+                scored.append((overlap, od))
+        scored.sort(key=lambda x: -x[0])
+        candidates = [od for _, od in scored[:8]]
+        if not candidates:
+            # nothing shares keywords — let the bot escalate to the team
+            return {"_seen": seen, "_no_candidate": True}
+
+        # --- Step 2: pick the best among the short candidate list ---
+        clist = "\n".join(
+            f"{i+1}. {c['name']} : {c['price']} DT — {c.get('desc','')[:180]}"
+            for i, c in enumerate(candidates))
+        pick_prompt = (
+            "Un client a envoyé une photo d'un vêtement. Voici ce qu'on y voit:\n"
+            + seen + "\n\nVoici les produits candidats du catalogue:\n" + clist
+            + "\n\nQuel numéro correspond le mieux à la photo ? Réponds "
+            "UNIQUEMENT par le numéro (ex: 3). Si AUCUN ne correspond vraiment "
+            "(logo/type/couleur différents), réponds 0."
+        )
+        pick = _claude_generate(pick_prompt, max_tokens=8, temperature=0.0)
+        pick = (pick or "").strip()
+        m = _re.search(r"\d+", pick)
+        if not m:
+            return {"_seen": seen, "_no_candidate": True}
+        idx = int(m.group())
+        if idx == 0 or idx > len(candidates):
+            return {"_seen": seen, "_no_candidate": True}
+        chosen = candidates[idx - 1]
+        return {"name": chosen["name"], "price": chosen["price"], "_seen": seen}
+    except Exception:
+        return None
+
+
 def _bot_reply(conv):
     """Generate a short Tunisian-Arabic bot reply to the latest customer
     message, using the conversation so far. Returns the reply text or None.
@@ -372,16 +468,47 @@ def _bot_reply(conv):
         except Exception:
             catalog_context = ""
 
+        # If the customer sent a photo, run the robust TWO-STEP visual match
+        # (describe -> preselect candidates -> pick) instead of dumping all 43
+        # offers on the vision call. Inject the result as a strong hint.
+        match_hint = ""
+        _matched = False
+        try:
+            if img_urls or local_imgs:
+                _od = _offers_data_for_conv(conv)
+                _res = _match_product_by_image(local_imgs, img_urls, _od)
+                if _res and _res.get("name"):
+                    match_hint = (
+                        "\n\n(EL MNTEJ ELI FEL TASWIRA t3aref b da9a: '"
+                        + _res["name"] + "' b " + str(_res["price"]) + " DT. "
+                        "A3ti hedha el esm w hedha el thaman direct, w kammel "
+                        "b jomlet el commande.)")
+                    _matched = True
+                elif _res and _res.get("_no_candidate"):
+                    match_hint = (
+                        "\n\n(El mntej eli fel taswira ma tlamch m3a 7atta "
+                        "mntej fel catalogue b da9a. 9oll lel 7arif eli el "
+                        "equipe bech t2akedlou el thaman w el disponibilite, "
+                        "bla ma tekhtere3 esm wala thaman.)")
+                    _matched = True
+        except Exception:
+            match_hint = ""
+            _matched = False
+
         prompt = (
             BOT_SYSTEM_PROMPT_AR
             + gender_hint
             + greet_hint
             + ad_context
             + catalog_context
+            + match_hint
             + "\n\nEl conversation lel7d ltew:\n" + transcript
             + "\n\nOkteb reply el bayaa ejjay barka bel tounsi latin (bla 'Vendeur:'): "
         )
-        reply = _claude_generate(prompt, max_tokens=200, temperature=0.6, image_urls=img_urls, local_images=local_imgs)
+        _fin_urls = [] if _matched else img_urls
+        _fin_local = [] if _matched else local_imgs
+        reply = _claude_generate(prompt, max_tokens=200, temperature=0.6,
+                                 image_urls=_fin_urls, local_images=_fin_local)
         if not reply:
             return None
         reply = reply.strip().strip('"').strip()
