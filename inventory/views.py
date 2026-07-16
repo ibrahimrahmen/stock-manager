@@ -772,10 +772,17 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
             _ireq = _ureq.Request(_u, headers={"User-Agent": "Mozilla/5.0"})
             with _ureq.urlopen(_ireq, timeout=10) as _ir:
                 _raw = _ir.read()
-                _ct = _ir.headers.get("Content-Type", "image/jpeg")
-            # Normalize media type to one Claude accepts.
-            _mt = _ct.split(";")[0].strip().lower()
-            if _mt not in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+            # Detect the real format from magic bytes (Content-Type headers can
+            # be wrong or generic); fall back to the header only if unknown.
+            if _raw[:3] == b"\xff\xd8\xff":
+                _mt = "image/jpeg"
+            elif _raw[:8] == b"\x89PNG\r\n\x1a\n":
+                _mt = "image/png"
+            elif _raw[:6] in (b"GIF87a", b"GIF89a"):
+                _mt = "image/gif"
+            elif _raw[:4] == b"RIFF" and _raw[8:12] == b"WEBP":
+                _mt = "image/webp"
+            else:
                 _mt = "image/jpeg"
             _b64data = _b64.b64encode(_raw).decode("ascii")
             _img_blocks.append({
@@ -792,9 +799,23 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
             import base64 as _b64
             with open(_lp, "rb") as _lf:
                 _raw = _lf.read()
-            _ext = (_lp.rsplit(".", 1)[-1] or "jpeg").lower()
-            _mt = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
-                   "gif": "image/gif", "webp": "image/webp"}.get(_ext, "image/jpeg")
+            # Detect the REAL format from the file's magic bytes — many files
+            # have a wrong extension (e.g. a .png that is actually JPEG), which
+            # Claude rejects if the declared media_type doesn't match.
+            _mt = "image/jpeg"
+            if _raw[:3] == b"\xff\xd8\xff":
+                _mt = "image/jpeg"
+            elif _raw[:8] == b"\x89PNG\r\n\x1a\n":
+                _mt = "image/png"
+            elif _raw[:6] in (b"GIF87a", b"GIF89a"):
+                _mt = "image/gif"
+            elif _raw[:4] == b"RIFF" and _raw[8:12] == b"WEBP":
+                _mt = "image/webp"
+            else:
+                _ext = (_lp.rsplit(".", 1)[-1] or "jpeg").lower()
+                _mt = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
+                       "png": "image/png", "gif": "image/gif",
+                       "webp": "image/webp"}.get(_ext, "image/jpeg")
             _img_blocks.append({
                 "type": "image",
                 "source": {"type": "base64", "media_type": _mt,
