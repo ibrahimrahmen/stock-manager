@@ -147,8 +147,8 @@ BOT_SYSTEM_PROMPT_AR = (
     "2) Ki yeb3ath taswira wa la ysemmi mntej: chouf el catalogue, al9a el "
     "mntej (el ecusson/logo kima FC Barcelone, Jordan, Nike howa a9wa dalil). "
     "Ba3d, jaweb b haka el forme EXACTE:\n"
-    "   'Aslema khouya, hedha [ESM EL MNTEJ] b [THAMAN] DT. Bech t3adi "
-    "commande ab3athelna taille, adresse w noumrouk.'\n"
+    "   'Aslema khouya, hedha [ESM EL MNTEJ] b [THAMAN] DT w livraison 7 DT. "
+    "Bech t3adi commande ab3athelna taille, adresse w noumrouk.'\n"
     "   Ma tal9ach el mntej fel catalogue? 9oll: '9ollek el equipe "
     "y2akdoulek el thaman.'\n"
     "3) Ki el 7arif ye3ti taille/adresse/noumrou, chkorou w 9oll el equipe "
@@ -215,6 +215,20 @@ def _describe_product_image(product):
         return ""
 
 
+def _fmt_price(price):
+    """Format a price without trailing '.000' — 89.000 -> '89', 59.500 -> '59.5'."""
+    try:
+        from decimal import Decimal
+        d = Decimal(str(price)).normalize()
+        # normalize() can give scientific notation for integers; fix that
+        s = format(d, "f")
+        if "." in s:
+            s = s.rstrip("0").rstrip(".")
+        return s or "0"
+    except Exception:
+        return str(price)
+
+
 def _build_catalog_for_conv(conv, limit=60):
     """Build a compact catalogue string of active offers (name + price +
     included pieces) for the sales page this conversation maps to, so the bot
@@ -252,7 +266,7 @@ def _build_catalog_for_conv(conv, limit=60):
                 pass
             piece_str = (" (" + ", ".join(pieces) + ")") if pieces else ""
             desc_str = (" [" + " ; ".join(descs) + "]") if descs else ""
-            lines.append(f"- {o.name}{piece_str} : {price} DT{desc_str}")
+            lines.append(f"- {o.name}{piece_str} : {_fmt_price(price)} DT{desc_str}")
         return "\n".join(lines)
     except Exception:
         return ""
@@ -278,7 +292,7 @@ def _offers_data_for_conv(conv, limit=60):
                     d = (getattr(prod, "description", "") or "").strip()
                     if d:
                         descs.append(d)
-            out.append({"name": o.name, "price": str(price),
+            out.append({"name": o.name, "price": _fmt_price(price),
                         "desc": " ; ".join(descs)})
     except Exception:
         pass
