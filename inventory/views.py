@@ -308,10 +308,16 @@ def _match_product_by_image(local_images, url_images, offers_data):
     try:
         # --- Step 1: describe what's in the customer's photo ---
         desc_prompt = (
-            "Décris ce vêtement en français en une phrase: type "
-            "(ensemble/pull/pantalon/short/veste...), couleur(s), logo ou "
-            "écusson visible (Nike, Adidas, FC Barcelone, Jordan...), et motif "
-            "(rayures, camouflage...). Juste la description, rien d'autre."
+            "Décris ce vêtement précisément en français (2 phrases max). "
+            "OBLIGATOIRE: (1) type exact (ensemble polo+pantalon, pull, "
+            "gilet sans manches, short...), (2) TOUTES les couleurs, "
+            "(3) logo/marque visible (Nike, Zara, FC Barcelone, Jordan...), "
+            "(4) le MOTIF EXACT et sa forme: distingue bien rayures "
+            "HORIZONTALES vs VERTICALES, motif géométrique/jacquard "
+            "(grecques, diamants, carrés), camouflage, uni. (5) type de "
+            "col (polo, rond, montant) et manches (courtes/longues). "
+            "Sois précis sur le motif car c'est ce qui distingue les "
+            "produits similaires. Juste la description."
         )
         seen = _claude_generate(desc_prompt, max_tokens=120, temperature=0.1,
                                 image_urls=url_images or None,
@@ -338,7 +344,7 @@ def _match_product_by_image(local_images, url_images, offers_data):
             if overlap:
                 scored.append((overlap, od))
         scored.sort(key=lambda x: -x[0])
-        candidates = [od for _, od in scored[:8]]
+        candidates = [od for _, od in scored[:10]]
         if not candidates:
             # nothing shares keywords — let the bot escalate to the team
             return {"_seen": seen, "_no_candidate": True}
@@ -350,9 +356,12 @@ def _match_product_by_image(local_images, url_images, offers_data):
         pick_prompt = (
             "Un client a envoyé une photo d'un vêtement. Voici ce qu'on y voit:\n"
             + seen + "\n\nVoici les produits candidats du catalogue:\n" + clist
-            + "\n\nQuel numéro correspond le mieux à la photo ? Réponds "
-            "UNIQUEMENT par le numéro (ex: 3). Si AUCUN ne correspond vraiment "
-            "(logo/type/couleur différents), réponds 0."
+            + "\n\nQuel numéro correspond le mieux ? Compare surtout: le "
+            "TYPE (ensemble/pull/gilet), le MOTIF EXACT (rayures "
+            "horizontales vs verticales, géométrique/grecques/diamants, "
+            "camouflage), et les couleurs. Le motif est le critère "
+            "décisif entre produits similaires. Réponds UNIQUEMENT par le "
+            "numéro (ex: 3). Si aucun ne correspond vraiment, réponds 0."
         )
         pick = _claude_generate(pick_prompt, max_tokens=8, temperature=0.0)
         pick = (pick or "").strip()
