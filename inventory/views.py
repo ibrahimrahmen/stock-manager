@@ -6264,6 +6264,61 @@ def api_n8n_create_order_from_dm(request):
 @csrf_exempt
 @require_POST
 @login_required(login_url="/login/")
+@csrf_exempt
+@require_POST
+def api_conversation_send_message(request, pk):
+    """Send a manual message from staff to the customer of this order's linked
+    Messenger/Instagram conversation. Uses the same send path as the bot and
+    appends the message to the conversation so it shows in the chat view."""
+    from .models import Order, MessengerConversation
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    try:
+        import json as _json
+        data = _json.loads(request.body.decode("utf-8"))
+        text = (data.get("text") or "").strip()
+        if not text:
+            return JsonResponse({"status": "error", "message": "Message vide."}, status=400)
+
+        order = Order.objects.get(pk=pk)
+        conv = (MessengerConversation.objects
+                .filter(pending_order_id=order.id).order_by("-id").first())
+        if not conv:
+            return JsonResponse({"status": "error",
+                                 "message": "Aucune conversation liée à cette commande."},
+                                status=404)
+
+        page_id = str(conv.page_id or "")
+        sender_id = str(conv.sender_id or "")
+        platform = conv.platform or "messenger"
+        if not page_id or not sender_id:
+            return JsonResponse({"status": "error",
+                                 "message": "Conversation sans identifiants d'envoi."},
+                                status=400)
+
+        ok = _messenger_send_text(page_id, sender_id, text, platform)
+        if not ok:
+            return JsonResponse({"status": "error",
+                                 "message": "Meta a refusé l'envoi (fenêtre 24h dépassée ou permission)."},
+                                status=502)
+
+        # Append to the conversation so it appears in the chat view.
+        try:
+            mm = conv.messages or []
+            mm.append({"from": "page", "text": text, "ts": "", "mid": "",
+                       "manual": True})
+            conv.messages = mm
+            conv.save(update_fields=["messages", "updated_at"])
+        except Exception:
+            pass
+
+        return JsonResponse({"status": "ok", "sent": text})
+    except Order.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Commande introuvable."}, status=404)
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
+
+
 def api_order_refresh_conversation(request, pk):
     """Return the latest stored Messenger conversation for this order.
 
