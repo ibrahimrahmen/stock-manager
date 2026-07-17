@@ -363,8 +363,12 @@ def _match_product_by_image(local_images, url_images, offers_data):
             "décisif entre produits similaires. Réponds UNIQUEMENT par le "
             "numéro (ex: 3). Si aucun ne correspond vraiment, réponds 0."
         )
-        pick = _claude_generate(pick_prompt, max_tokens=8, temperature=0.0)
-        pick = (pick or "").strip()
+        pick_prompt2 = (pick_prompt
+            + "\n\nFormat: le numéro, une virgule, puis 'sur' si tu es "
+            "certain (motif+type+couleurs identiques) ou 'pasur' si plusieurs "
+            "candidats se ressemblent et tu hésites. Ex: '3,sur' ou '5,pasur'.")
+        pick = _claude_generate(pick_prompt2, max_tokens=12, temperature=0.0)
+        pick = (pick or "").strip().lower()
         m = _re.search(r"\d+", pick)
         if not m:
             return {"_seen": seen, "_no_candidate": True}
@@ -372,7 +376,9 @@ def _match_product_by_image(local_images, url_images, offers_data):
         if idx == 0 or idx > len(candidates):
             return {"_seen": seen, "_no_candidate": True}
         chosen = candidates[idx - 1]
-        return {"name": chosen["name"], "price": chosen["price"], "_seen": seen}
+        confident = ("pasur" not in pick and "pas sur" not in pick)
+        return {"name": chosen["name"], "price": chosen["price"],
+                "confident": confident, "_seen": seen}
     except Exception:
         return None
 
@@ -501,11 +507,20 @@ def _bot_reply(conv):
                 _od = _offers_data_for_conv(conv)
                 _res = _match_product_by_image(local_imgs, img_urls, _od)
                 if _res and _res.get("name"):
-                    match_hint = (
-                        "\n\n(EL MNTEJ ELI FEL TASWIRA t3aref b da9a: '"
-                        + _res["name"] + "' b " + str(_res["price"]) + " DT. "
-                        "A3ti hedha el esm w hedha el thaman direct, w kammel "
-                        "b jomlet el commande.)")
+                    if _res.get("confident", True):
+                        match_hint = (
+                            "\n\n(EL MNTEJ ELI FEL TASWIRA t3aref b da9a: '"
+                            + _res["name"] + "' b " + str(_res["price"]) + " DT. "
+                            "A3ti hedha el esm w hedha el thaman direct, w kammel "
+                            "b jomlet el commande.)")
+                    else:
+                        match_hint = (
+                            "\n\n(EL MNTEJ ELI FEL TASWIRA ychbeh l '"
+                            + _res["name"] + "' b " + str(_res["price"]) + " DT ama "
+                            "fama mntejat tochbehlou. 9oll lel 7arif eli ychbeh "
+                            "l hedha el mntej b hedha el thaman, w el equipe "
+                            "bech t2akedlou el modele bel dabt. Kammel b jomlet "
+                            "el commande.)")
                     _matched = True
                 elif _res and _res.get("_no_candidate"):
                     match_hint = (
