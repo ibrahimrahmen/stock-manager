@@ -453,6 +453,14 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
         Chargement…
       </div>
       <div id="conv-modal-meta" class="muted" style="font-size:11px;margin-top:8px;"></div>
+      <!-- Manual reply box: staff can send a message to the customer -->
+      <div id="conv-send-row" style="display:none;margin-top:10px;gap:8px;align-items:flex-end;">
+        <textarea id="conv-send-text" rows="1" placeholder="Écris un message au client…"
+          style="flex:1;resize:none;padding:10px 12px;border:0.5px solid var(--border);border-radius:20px;font-size:13px;background:var(--bg,#0a0a08);color:inherit;outline:none;max-height:100px;"></textarea>
+        <button id="conv-send-btn" onclick="sendConversationMessage()"
+          style="padding:10px 18px;border:none;border-radius:20px;background:#0084ff;color:#fff;font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap;">Envoyer</button>
+      </div>
+      <div id="conv-send-status" style="font-size:11px;margin-top:6px;color:var(--muted);"></div>
     </div>
   </div>
 </div>
@@ -1481,14 +1489,19 @@ function renderConversationBubbles(messages, text, platform) {
 
 async function openConversation(ev, orderId) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  window._convOrderId = orderId;
   const modal = document.getElementById('conversation-modal');
   const body = document.getElementById('conv-modal-body');
   const header = document.getElementById('conv-chat-header');
   const meta = document.getElementById('conv-modal-meta');
+  const sendRow = document.getElementById('conv-send-row');
+  const sendStatus = document.getElementById('conv-send-status');
   document.getElementById('conv-order-id').textContent = '#' + orderId;
   body.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Chargement…</div>';
   header.style.display = 'none';
   meta.textContent = '';
+  if (sendRow) sendRow.style.display = 'none';
+  if (sendStatus) sendStatus.textContent = '';
   modal.classList.add('show');
   try {
     const res = await fetch('/api/sales-orders/' + orderId + '/refresh-conversation/', {
@@ -1509,6 +1522,8 @@ async function openConversation(ev, orderId) {
       }
       body.innerHTML = adBanner + renderConversationBubbles(data.messages, data.conversation_text, platform);
       meta.textContent = data.updated_at ? ('Capturée le ' + data.updated_at + ' — peut ne pas inclure les messages plus récents.') : '';
+      // Show the reply box only for DM conversations (has a platform).
+      if (sendRow && platform) sendRow.style.display = 'flex';
     } else {
       body.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">' +
         (data.message || "Aucune conversation enregistrée pour cette commande.") + '</div>';
@@ -1516,6 +1531,40 @@ async function openConversation(ev, orderId) {
   } catch (e) {
     body.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Erreur réseau lors du chargement de la conversation.</div>';
   }
+}
+
+async function sendConversationMessage() {
+  const orderId = window._convOrderId;
+  const ta = document.getElementById('conv-send-text');
+  const btn = document.getElementById('conv-send-btn');
+  const status = document.getElementById('conv-send-status');
+  const body = document.getElementById('conv-modal-body');
+  const text = (ta.value || '').trim();
+  if (!text || !orderId) return;
+  btn.disabled = true; status.style.color = 'var(--muted)'; status.textContent = 'Envoi…';
+  try {
+    const res = await fetch('/api/sales-orders/' + orderId + '/send-message/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+      body: JSON.stringify({ text: text }),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      // Append the sent bubble to the chat immediately.
+      const bubble = document.createElement('div');
+      bubble.style.cssText = 'display:flex;justify-content:flex-end;margin:4px 0;';
+      bubble.innerHTML = '<div style="background:#0084ff;color:#fff;padding:8px 12px;border-radius:16px;border-bottom-right-radius:4px;max-width:75%;font-size:13px;">' + escapeHtml(text) + '</div>';
+      body.appendChild(bubble);
+      body.scrollTop = body.scrollHeight;
+      ta.value = '';
+      status.style.color = '#22c55e'; status.textContent = '✓ Envoyé';
+    } else {
+      status.style.color = '#e11'; status.textContent = '⚠ ' + (data.message || 'Échec de l\\'envoi');
+    }
+  } catch (e) {
+    status.style.color = '#e11'; status.textContent = '⚠ Erreur réseau';
+  }
+  btn.disabled = false;
 }
 function closeConversationModal() { document.getElementById('conversation-modal').classList.remove('show'); }
 document.addEventListener('DOMContentLoaded', function() {
