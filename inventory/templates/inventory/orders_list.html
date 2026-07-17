@@ -1559,7 +1559,7 @@ async function sendConversationMessage() {
       ta.value = '';
       status.style.color = '#22c55e'; status.textContent = '✓ Envoyé';
     } else {
-      status.style.color = '#e11'; status.textContent = '⚠ ' + (data.message || 'Échec de l\\'envoi');
+      status.style.color = '#e11'; status.textContent = '⚠ ' + (data.message || "Échec de l'envoi");
     }
   } catch (e) {
     status.style.color = '#e11'; status.textContent = '⚠ Erreur réseau';
