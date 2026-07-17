@@ -10494,6 +10494,30 @@ def api_messenger_webhook(request):
                     not has_phone_now and not conv.auto_replied
                     and conv.status == MessengerConversation.NEW)
                 if _bot_on and _gates_ok and ((text or "").strip() or images):
+                    # Dedup: Meta sometimes delivers the same webhook event more
+                    # than once (retries / duplicate deliveries). Without a guard
+                    # each delivery spawns a reply → the bot answers twice. Skip
+                    # if we've already handled this incoming message id (mid).
+                    _already_handled = False
+                    try:
+                        global _BOT_HANDLED_MIDS
+                        try:
+                            _BOT_HANDLED_MIDS
+                        except NameError:
+                            _BOT_HANDLED_MIDS = set()
+                        _key = f"{conv.id}:{mid}" if mid else ""
+                        if _key and _key in _BOT_HANDLED_MIDS:
+                            _already_handled = True
+                        elif _key:
+                            _BOT_HANDLED_MIDS.add(_key)
+                            # keep the set from growing unbounded
+                            if len(_BOT_HANDLED_MIDS) > 5000:
+                                _BOT_HANDLED_MIDS = set(
+                                    list(_BOT_HANDLED_MIDS)[-2000:])
+                    except Exception:
+                        _already_handled = False
+                    if _already_handled:
+                        continue
                     _bot_count = 0
                     try:
                         _bot_count = sum(1 for m in (conv.messages or [])
@@ -10508,15 +10532,30 @@ def api_messenger_webhook(request):
                         def _run_bot(conv_id, pg, sn, plat):
                             try:
                                 from .models import MessengerConversation as _MC
+                                import time as _time
                                 _c = _MC.objects.filter(pk=conv_id).first()
                                 if not _c:
                                     return
+                                # Guard: if the bot already replied in the last
+                                # 8 seconds, skip (protects against two near-
+                                # simultaneous webhook events, e.g. text+image).
+                                try:
+                                    _last = 0.0
+                                    for _m in reversed(_c.messages or []):
+                                        if _m.get("from") == "page" and _m.get("bot"):
+                                            _last = float(_m.get("bot_ts") or 0)
+                                            break
+                                    if _last and (_time.time() - _last) < 8:
+                                        return
+                                except Exception:
+                                    pass
                                 _rep = _bot_reply(_c)
                                 if _rep and _messenger_send_text(pg, sn, _rep, plat):
                                     _c.refresh_from_db()
                                     _mm = _c.messages or []
                                     _mm.append({"from": "page", "text": _rep,
-                                                "ts": "", "mid": "", "bot": True})
+                                                "ts": "", "mid": "", "bot": True,
+                                                "bot_ts": _time.time()})
                                     _c.messages = _mm
                                     _c.save(update_fields=["messages", "updated_at"])
                             except Exception:
