@@ -10233,7 +10233,7 @@ def stats_commandes(request):
         # rates should reflect normal (non-exchange) orders only.
         if o["exchange_of_id"]:
             return ["echange"]
-        if st == "returned":
+        if st in ("returned", "returning"):
             rows.append("retour")
         elif st in ("en_cours", "au_magasin"):
             rows.append("encours")
