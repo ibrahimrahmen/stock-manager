@@ -10228,8 +10228,11 @@ def stats_commandes(request):
     def _row_for(o):
         rows = []
         st = o["status"]
+        # Exchange orders are counted ONLY in their own "Echange" row — they
+        # must not pollute Sortie / Retour / En Cours / Livrée / Payée, whose
+        # rates should reflect normal (non-exchange) orders only.
         if o["exchange_of_id"]:
-            rows.append("echange")
+            return ["echange"]
         if st == "returned":
             rows.append("retour")
         elif st in ("en_cours", "au_magasin"):
