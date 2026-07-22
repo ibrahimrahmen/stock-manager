@@ -115,10 +115,55 @@ def _messenger_page_token(page_id):
 
 # Auto-reply sent (once) when a customer messages — in Arabic, reassuring them
 # the order was received and staff will follow up.
+# Sent after the customer's phone number arrives. No "ahla bik" here (the
+# greeting already welcomed them) — just an order-received confirmation.
 MESSENGER_AUTOREPLY_AR = (
-    "أهلا بيك 🤍 وصلنا طلبك، فريقنا باش يتواصل معاك في أقرب وقت لتأكيد الكوموند. "
+    "وصلنا طلبك 🤍 فريقنا باش يتواصل معاك في أقرب وقت لتأكيد الكوموند. "
     "يرجى التثبت من رقم الهاتف، العنوان، المقاس واللون. شكرا لثقتك في Barats 🛍️"
 )
+
+# Seconds to wait before sending the confirmation, so we don't cut the customer
+# off while they are still typing their address / size / colour.
+MESSENGER_AUTOREPLY_DELAY = int(os.environ.get("MESSENGER_AUTOREPLY_DELAY", "10"))
+
+# FAQ quick answers (no bot needed). Each entry: (keywords, reply).
+MESSENGER_FAQ_REPLIES = [
+    (("n7el", "nhel", "the7el", "thel", "n7all", "ouvrir", "7ell", "hell"),
+     "Bettabi3a khouya, tnajem the7el colis mte3ek 9bal ma tkhalles 🤍"),
+]
+
+
+def _delivery_promise_tn(now=None):
+    """Return the Tunisian-Arabic delivery promise based on when the order was
+    placed. Rules:
+      - Order placed 00:00 -> 16:30  : called today, delivered tomorrow / day after
+      - Order placed 16:30 -> 24:00  : called tomorrow
+      - Monday orders                : delivered Wednesday or Thursday
+      - Friday orders after 16:30    : delivered Monday or Tuesday
+    """
+    import datetime as _dt
+    try:
+        import zoneinfo as _zi
+        tz = _zi.ZoneInfo("Africa/Tunis")
+    except Exception:
+        tz = None
+    now = now or (_dt.datetime.now(tz) if tz else _dt.datetime.now())
+    after_cutoff = (now.hour > 16) or (now.hour == 16 and now.minute >= 30)
+    wd = now.weekday()  # Mon=0 ... Sun=6
+
+    # Friday after the cutoff -> next week
+    if wd == 4 and after_cutoff:
+        return ("Okey khouya, ghodwa nkalmouk 3al confirmation "
+                "w nchallah touselek nhar lethnin walla ethleth 🤍")
+    # Monday orders -> mid-week delivery
+    if wd == 0:
+        return ("Okey khouya, chwaya w nkalmouk 3al confirmation "
+                "w nchallah touselek nhar lerbaa walla lekhmis 🤍")
+    if after_cutoff:
+        return ("Okey khouya, ghodwa nkalmouk 3al confirmation "
+                "w nchallah touselek fi a9rab wa9t 🤍")
+    return ("Okey khouya, chwaya w nkalmouk 3al confirmation "
+            "w nchallah ghodwa walla baad ghodwa tkoun 3andek 🤍")
 
 # Sent once when a customer writes but hasn't given a phone number yet — invites
 # them to place an order by sending size, address and phone.
@@ -10633,9 +10678,68 @@ def api_messenger_webhook(request):
                     if recently_greeted:
                         conv.auto_replied = True
                         conv.save(update_fields=["auto_replied", "updated_at"])
-                    elif _messenger_send_text(page_id, sender_id, MESSENGER_AUTOREPLY_AR, platform):
+                    else:
+                        # Mark first so a second webhook can't double-send while
+                        # we wait out the typing delay.
                         conv.auto_replied = True
                         conv.save(update_fields=["auto_replied", "updated_at"])
+
+                        def _send_order_confirmation(cid, pg, sn, plat):
+                            """Wait a few seconds (the customer may still be
+                            typing their address), then send the order-received
+                            message followed by the delivery-timing promise."""
+                            import time as _t
+                            try:
+                                _t.sleep(MESSENGER_AUTOREPLY_DELAY)
+                                from .models import MessengerConversation as _MC
+                                _c = _MC.objects.filter(pk=cid).first()
+                                if not _c:
+                                    return
+                                sent = []
+                                if _messenger_send_text(pg, sn, MESSENGER_AUTOREPLY_AR, plat):
+                                    sent.append(MESSENGER_AUTOREPLY_AR)
+                                    _promise = _delivery_promise_tn()
+                                    if _messenger_send_text(pg, sn, _promise, plat):
+                                        sent.append(_promise)
+                                if sent:
+                                    _c.refresh_from_db()
+                                    _mm = _c.messages or []
+                                    for _txt in sent:
+                                        _mm.append({"from": "page", "text": _txt,
+                                                    "ts": "", "mid": "",
+                                                    "autoreply": True})
+                                    _c.messages = _mm
+                                    _c.save(update_fields=["messages", "updated_at"])
+                            except Exception:
+                                pass
+
+                        try:
+                            import threading as _thr2
+                            _thr2.Thread(target=_send_order_confirmation,
+                                         args=(conv.pk, page_id, sender_id, platform),
+                                         daemon=True).start()
+                        except Exception:
+                            _send_order_confirmation(conv.pk, page_id, sender_id, platform)
+
+                # A2) FAQ quick answers (e.g. "can I open the parcel before
+                # paying?"). Simple keyword match, one reply per question.
+                try:
+                    _low = (text or "").lower()
+                    if _low and not is_echo:
+                        for _kws, _ans in MESSENGER_FAQ_REPLIES:
+                            if any(k in _low for k in _kws):
+                                _already = any(m.get("faq") == _ans
+                                               for m in (conv.messages or []))
+                                if not _already and _messenger_send_text(
+                                        page_id, sender_id, _ans, platform):
+                                    _mm = conv.messages or []
+                                    _mm.append({"from": "page", "text": _ans,
+                                                "ts": "", "mid": "", "faq": _ans})
+                                    conv.messages = _mm
+                                    conv.save(update_fields=["messages", "updated_at"])
+                                break
+                except Exception:
+                    pass
 
                 # B) Auto-extract when the conversation looks complete.
                 try:
