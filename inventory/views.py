@@ -120,6 +120,13 @@ MESSENGER_AUTOREPLY_AR = (
     "يرجى التثبت من رقم الهاتف، العنوان، المقاس واللون. شكرا لثقتك في Barats 🛍️"
 )
 
+# Sent once when a customer writes but hasn't given a phone number yet — invites
+# them to place an order by sending size, address and phone.
+MESSENGER_GREETING_AR = (
+    "Salem 🤍 bech t3adi commande ab3athelna taille, adresse w noumrouk "
+    "w el équipe bech ttwasel m3ak."
+)
+
 
 # --- Auto-reply bot (Étape 1) -------------------------------------------------
 # Toggle with env AUTOREPLY_BOT_ENABLED=1. Answers customer questions (price,
@@ -10577,6 +10584,43 @@ def api_messenger_webhook(request):
                                            "ts": "", "mid": "", "bot": True})
                                 conv.messages = mm
                                 conv.save(update_fields=["messages", "updated_at"])
+
+                # A0) Welcome greeting: customer wrote but hasn't given a phone
+                # yet, and we haven't greeted/replied to this conversation. Sends
+                # once, inviting them to place an order. Skipped if the bot is on
+                # (the bot handles replies) or if a phone is already present (the
+                # confirmation auto-reply below handles that case).
+                greeting_env = os.environ.get("MESSENGER_GREETING_ENABLED", "1")
+                _already_greeted_here = any(
+                    m.get("greeting") for m in (conv.messages or []))
+                if (greeting_env == "1" and not _bot_on
+                        and not is_echo
+                        and (text or "").strip()
+                        and not has_phone_now
+                        and not conv.auto_replied
+                        and not _already_greeted_here):
+                    from django.utils import timezone as _tzg
+                    from datetime import timedelta as _tdg
+                    # Avoid re-greeting the same person across their threads in
+                    # the last 12h (checks the greeting marker in messages).
+                    _recent = (MessengerConversation.objects
+                        .filter(sender_id=sender_id, page_id=page_id,
+                                auto_replied=False,
+                                updated_at__gte=_tzg.now() - _tdg(hours=12))
+                        .exclude(pk=conv.pk))
+                    _greeted_elsewhere = any(
+                        any(mm.get("greeting") for mm in (oc.messages or []))
+                        for oc in _recent)
+                    if not _greeted_elsewhere and _messenger_send_text(
+                            page_id, sender_id, MESSENGER_GREETING_AR, platform):
+                        try:
+                            mm = conv.messages or []
+                            mm.append({"from": "page", "text": MESSENGER_GREETING_AR,
+                                       "ts": "", "mid": "", "greeting": True})
+                            conv.messages = mm
+                            conv.save(update_fields=["messages", "updated_at"])
+                        except Exception:
+                            pass
 
                 if not conv.auto_replied and has_phone_now:
                     from django.utils import timezone as _tz2
