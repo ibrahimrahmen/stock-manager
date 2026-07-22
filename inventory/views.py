@@ -11805,7 +11805,7 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
                      Order.RETURNING, Order.ANNULEE, Order.SUPPRIME_NAVEX)
         _cust = Customer.objects.filter(phone=_phone).first()
         if _cust:
-            _active = (Order.objects.filter(customer=_cust)
+            _active = (Order.objects.filter(customer=_cust, sales_page_id=sp_id)
                        .exclude(status__in=_FINISHED)
                        .order_by("-id").first())
             if _active and _active.id != conv.pending_order_id:
