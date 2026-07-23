@@ -209,8 +209,10 @@ MESSENGER_FAQ_REPLIES = [
      "Bettabi3a khouya, tnajem the7el colis mte3ek 9bal ma tkhalles 🤍"),
     # Delivery timing question -> answered with the dynamic delivery promise.
     (("wa9tech", "wa2tech", "waktech", "w9tech", "wkteh", "quand", "chwaya",
-      "touselni", "toussalni", "tousalni", "yousalni", "wsoul", "livraison",
-      "combien de temps", "9adech men wa9t"),
+      "touselni", "toussalni", "tousalni", "yousalni", "yousel", "yusel",
+      "wsoul", "youssel", "tousel", "livraison", "combien de temps",
+      "9adech men wa9t", "yo93od", "yo9od", "yoq3od", "9adeh yo93od",
+      "chnowa el delai", "delai", "dele7", "ch7al mte3 wa9t"),
      None),
 ]
 
@@ -362,6 +364,10 @@ BOT_SYSTEM_PROMPT_AR = (
     "MOUHIM: 3OMREK ma tab3ath el catalogue kamel (el liste twila mte3 el "
     "mntejat). Howa 3andek fel context bech tal9a el thaman barka, mouch "
     "bech tab3athou lel 7arif.\n\n"
+
+    "DELAI EL LIVRAISON: ki el 7arif yes2el 'wa9tech yousel', '9adeh yo93od', "
+    "'chwaya w yousel', esta3mel EL JOMLA eli t3addelek fel context ta7t "
+    "(DELAI). Ma tekhtere3ch nhar wa la mudda men 3andek.\n\n"
 
     "MA3LOUMET: livraison 7 DT l kol tounes, khlas aand el istilem. "
     "Ma tekhtere3ch aswem wa la kelmet. Ma tab3athch liens."
@@ -802,12 +808,22 @@ def _bot_reply(conv):
             match_hint = ""
             _matched = False
 
+        # Give the bot the SAME delivery promise the auto-reply uses, so it
+        # never invents a delay when the customer asks when it arrives.
+        try:
+            delay_context = ("\n\nDELAI (esta3mel hedhi el jomla ki yes2el "
+                             "3al wa9t mte3 el livraison): "
+                             + _delivery_promise_tn())
+        except Exception:
+            delay_context = ""
+
         prompt = (
             BOT_SYSTEM_PROMPT_AR
             + gender_hint
             + greet_hint
             + ad_context
             + catalog_context
+            + delay_context
             + match_hint
             + "\n\nEl conversation lel7d ltew:\n" + transcript
             + "\n\nOkteb reply el bayaa ejjay barka bel tounsi latin (bla 'Vendeur:'): "
