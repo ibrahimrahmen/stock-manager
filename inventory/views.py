@@ -328,7 +328,13 @@ BOT_SYSTEM_PROMPT_AR = (
     "- El thaman dima b 'X DT' wa la 'X dinar' (mathal 59 DT). 3omrek "
     "'alf' wala 'ألف'.\n"
     "- Ma tbe3thch el khatawet dakhliya (kima 'chouf el taswira') fel reply. "
-    "Jaweb el 7arif direct.\n\n"
+    "Jaweb el 7arif direct.\n"
+    "- MAMNOU3 el 9asam: ma t9olch 'walah', 'wallah', 'w7yet', 'nechhed'. "
+    "Enti bayaa, mouch t7lef.\n"
+    "- Reply court barka: jomla wa la zouz. Ma tzidch jomel zeyda.\n"
+    "- Esta3mel kelmet besset w s7a7 barka. Ma tekhtere3ch tarakib "
+    "gharibe kima 'eli bech t7awwel 3lih'. Ki t7eb tos2el 3al mntej 9oll "
+    "barka: 'ama article khouya svp?' wa la 'ab3athelna taswira mte3ou'.\n\n"
 
     "KIFEH TReponDI:\n"
     "1) Ki el 7arif ybda ('slm', 'aslema') barka bla ma ysemmi mntej: "
@@ -815,6 +821,15 @@ def _bot_reply(conv):
         reply = reply.strip().strip('"').strip()
         # Guard against the model echoing the label or going long.
         reply = reply.replace("Vendeur:", "").replace("البائع:", "").strip()
+        # Strip oaths ("walah", "w7yet"...) — a shop assistant states facts, it
+        # doesn't swear to them, and it reads as pushy to customers.
+        import re as _rr
+        reply = _rr.sub(r"(?i)\b(w+a+l+l*a+h+i?|w7yet|nechhed|ya rabbi)\b[\s,!.]*",
+                        "", reply)
+        reply = _rr.sub(r"\s{2,}", " ", reply).strip().lstrip(",.! ").strip()
+        # Capitalise if the oath removal ate the first word's capital.
+        if reply and reply[0].islower():
+            reply = reply[0].upper() + reply[1:]
         return reply[:600] or None
     except Exception:
         return None
