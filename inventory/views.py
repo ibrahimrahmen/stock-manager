@@ -152,13 +152,23 @@ def _faq_answer(text):
     return ""
 
 
+# Tunisian day names (Mon=0 .. Sun=6) used in the delivery promise.
+_TN_DAYS = ["lethnin", "ethleth", "lerbaa", "lekhmis", "jom3a", "essebt", "le7ed"]
+
+
 def _delivery_promise_tn(now=None):
-    """Return the Tunisian-Arabic delivery promise based on when the order was
-    placed. Rules:
-      - Order placed 00:00 -> 16:30  : called today, delivered tomorrow / day after
-      - Order placed 16:30 -> 24:00  : called tomorrow
-      - Monday orders                : delivered Wednesday or Thursday
-      - Friday orders after 16:30    : delivered Monday or Tuesday
+    """Delivery promise in Tunisian Arabic, based on when the order arrives.
+
+    Workflow it models:
+      - The team works 10:00-16:30 and prepares orders, then hands them to Navex
+        the same day.
+      - Navex delivers the next day or the day after.
+      - No delivery on Sunday (le7ed) -> Sundays are skipped.
+
+    Time rules:
+      - 00:00-10:00 : team calls after 10am today, prepares today
+      - 10:00-16:30 : "chwaya w nkalmouk", prepares today
+      - after 16:30 : team calls tomorrow, prepares tomorrow
     """
     import datetime as _dt
     try:
@@ -167,22 +177,39 @@ def _delivery_promise_tn(now=None):
     except Exception:
         tz = None
     now = now or (_dt.datetime.now(tz) if tz else _dt.datetime.now())
-    after_cutoff = (now.hour > 16) or (now.hour == 16 and now.minute >= 30)
-    wd = now.weekday()  # Mon=0 ... Sun=6
 
-    # Friday after the cutoff -> next week
-    if wd == 4 and after_cutoff:
-        return ("Okey khouya, ghodwa nkalmouk 3al confirmation "
-                "w nchallah touselek nhar lethnin walla ethleth 🤍")
-    # Monday orders -> mid-week delivery
-    if wd == 0:
-        return ("Okey khouya, chwaya w nkalmouk 3al confirmation "
-                "w nchallah touselek nhar lerbaa walla lekhmis 🤍")
-    if after_cutoff:
-        return ("Okey khouya, ghodwa nkalmouk 3al confirmation "
-                "w nchallah touselek fi a9rab wa9t 🤍")
-    return ("Okey khouya, chwaya w nkalmouk 3al confirmation "
-            "w nchallah ghodwa walla baad ghodwa tkoun 3andek 🤍")
+    minutes = now.hour * 60 + now.minute
+    before_open = minutes < 10 * 60          # before 10:00
+    after_cutoff = minutes >= (16 * 60 + 30)  # after 16:30
+
+    # Which day does the team prepare/ship it?
+    prep = now.date() + _dt.timedelta(days=1) if after_cutoff else now.date()
+    # The team doesn't ship on Sunday -> push to Monday.
+    if prep.weekday() == 6:
+        prep += _dt.timedelta(days=1)
+
+    # Navex delivers next day / day after, skipping Sundays.
+    def _next_delivery(d, n):
+        out = []
+        cur = d
+        while len(out) < n:
+            cur += _dt.timedelta(days=1)
+            if cur.weekday() != 6:   # skip Sunday
+                out.append(cur)
+        return out
+
+    d1, d2 = _next_delivery(prep, 2)
+    days = f"nhar {_TN_DAYS[d1.weekday()]} walla {_TN_DAYS[d2.weekday()]}"
+
+    if before_open:
+        call = "nkalmouk 3al confirmation baad el 10 mta3 sbe7 nchallah"
+    elif after_cutoff:
+        call = "ghodwa nkalmouk 3al confirmation"
+    else:
+        call = "chwaya w nkalmouk 3al confirmation"
+
+    return f"Okey khouya, {call} w nchallah touselek {days} 🤍"
+
 
 # Sent once when a customer writes but hasn't given a phone number yet — invites
 # them to place an order by sending size, address and phone.
