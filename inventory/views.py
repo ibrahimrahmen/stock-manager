@@ -597,10 +597,33 @@ def _bot_reply(conv):
         # bot knows the customer sent a photo instead of silently ignoring it.
         lines = []
         last_is_photo_only = False
+
+        def _is_catalogue_dump(txt):
+            """True for our own past replies that pasted the product list.
+
+            The model imitates what it sees in the transcript: once it had sent
+            the full catalogue, it kept offering it again ("hedha el catalogue
+            kamel...") even after the list was removed from its context. We
+            drop those turns so there's no template to copy.
+            """
+            if not txt:
+                return False
+            low = txt.lower()
+            if "catalogue" in low:
+                return True
+            # A price list: several "name - 59 DT" style lines in one message.
+            import re as _r
+            return len(_r.findall(r"\d+\s*dt", low)) >= 3
+
         for m in msgs[-12:]:
             who = "Client" if m.get("from") == "user" else "Vendeur"
             t = (m.get("text") or "").strip()
             has_img = bool(m.get("images"))
+            if who == "Vendeur" and _is_catalogue_dump(t):
+                # Keep the turn (so the flow still reads) but hide the list.
+                lines.append("Vendeur: [reply mte3 el thaman]")
+                last_is_photo_only = False
+                continue
             if t and has_img:
                 lines.append(f"{who}: {t}  [b3ath taswira]")
                 last_is_photo_only = (m.get("from") == "user")
@@ -722,6 +745,17 @@ def _bot_reply(conv):
                     "el mntej mech fel catalogue, 9ollou el equipe bech "
                     "t2akedlou. MOUHIM: ma tab3athch el liste hedhi lel 7arif, "
                     "hiya lik barka:\n" + _cat
+                )
+            else:
+                # No product context at all: force the single allowed answer so
+                # the model can't fall back to talking about the catalogue.
+                catalog_context = (
+                    "\n\nMA3ANDEKCH catalogue fi hedhi el 7ala w el 7arif ma "
+                    "semmech mntej w ma b3athch taswira. Ki yes2el 3al thaman, "
+                    "jaweb b hedhi el jomla BARKA, bla ma tzid chay w bla ma "
+                    "tehki 3al catalogue:\n"
+                    "'Ama article khouya svp? Ab3athelna taswira wala esm el "
+                    "mntej bech njawebek bel thaman 🤍'"
                 )
         except Exception:
             catalog_context = ""
