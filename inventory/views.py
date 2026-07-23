@@ -127,10 +127,29 @@ MESSENGER_AUTOREPLY_AR = (
 MESSENGER_AUTOREPLY_DELAY = int(os.environ.get("MESSENGER_AUTOREPLY_DELAY", "10"))
 
 # FAQ quick answers (no bot needed). Each entry: (keywords, reply).
+# Each entry: (keywords, reply). A reply of None means "compute dynamically"
+# and is handled in _faq_answer below.
 MESSENGER_FAQ_REPLIES = [
-    (("n7el", "nhel", "the7el", "thel", "n7all", "ouvrir", "7ell", "hell"),
+    (("n7el", "nhel", "the7el", "thel", "n7all", "ouvrir", "7ell", "hell",
+      "n7ell", "nfata7", "fata7"),
      "Bettabi3a khouya, tnajem the7el colis mte3ek 9bal ma tkhalles 🤍"),
+    # Delivery timing question -> answered with the dynamic delivery promise.
+    (("wa9tech", "wa2tech", "waktech", "w9tech", "wkteh", "quand", "chwaya",
+      "touselni", "toussalni", "tousalni", "yousalni", "wsoul", "livraison",
+      "combien de temps", "9adech men wa9t"),
+     None),
 ]
+
+
+def _faq_answer(text):
+    """Return a canned answer for a common question, or '' if none matches."""
+    low = (text or "").lower()
+    if not low:
+        return ""
+    for kws, ans in MESSENGER_FAQ_REPLIES:
+        if any(k in low for k in kws):
+            return ans if ans is not None else _delivery_promise_tn()
+    return ""
 
 
 def _delivery_promise_tn(now=None):
@@ -10724,20 +10743,18 @@ def api_messenger_webhook(request):
                 # A2) FAQ quick answers (e.g. "can I open the parcel before
                 # paying?"). Simple keyword match, one reply per question.
                 try:
-                    _low = (text or "").lower()
-                    if _low and not is_echo:
-                        for _kws, _ans in MESSENGER_FAQ_REPLIES:
-                            if any(k in _low for k in _kws):
-                                _already = any(m.get("faq") == _ans
-                                               for m in (conv.messages or []))
-                                if not _already and _messenger_send_text(
-                                        page_id, sender_id, _ans, platform):
-                                    _mm = conv.messages or []
-                                    _mm.append({"from": "page", "text": _ans,
-                                                "ts": "", "mid": "", "faq": _ans})
-                                    conv.messages = _mm
-                                    conv.save(update_fields=["messages", "updated_at"])
-                                break
+                    if not is_echo and not _bot_on and (text or "").strip():
+                        _ans = _faq_answer(text)
+                        if _ans:
+                            _already = any(m.get("faq") == _ans
+                                           for m in (conv.messages or []))
+                            if not _already and _messenger_send_text(
+                                    page_id, sender_id, _ans, platform):
+                                _mm = conv.messages or []
+                                _mm.append({"from": "page", "text": _ans,
+                                            "ts": "", "mid": "", "faq": _ans})
+                                conv.messages = _mm
+                                conv.save(update_fields=["messages", "updated_at"])
                 except Exception:
                     pass
 
