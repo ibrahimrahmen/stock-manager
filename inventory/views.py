@@ -115,6 +115,63 @@ def _extract_tn_phone(text):
     return ""
 
 
+# Lines worth quoting back to a customer from an ad: prices, sizes, delivery.
+_AD_KEEP_PATTERNS = [
+    r"\d\s*(?:dt|d\.t|tnd|dinars?|دينار|دت)\b",   # 49 DT / 89DT / 75 dinars
+    r"(?i)\b(prix|price|thaman|سعر)\b",
+    r"(?i)\b(size|sizes|taille|tailles|مقاس|مقاسات)\b",
+    r"(?i)\b(livraison|delivery|توصيل|tawsil)\b",
+    r"(?i)\b(s\s*m\s*l\s*xl|xl|xxl|xxxl)\b",
+]
+
+
+def _clean_ad_text(text):
+    """Extract only the useful lines from an ad body: prices, sizes, delivery.
+
+    Ad copy mixes marketing hooks, emojis and hashtags with the facts customers
+    actually ask about. We keep just the informative lines so the reply reads
+    like the shop's own price list, e.g.:
+
+        Prix Pull : 49 DT
+        Prix ensemble : 89 DT
+        Sizes : S M L XL XXL
+        Livraison 7 DT toute la Tunisie
+    """
+    import re as _r
+    if not text:
+        return ""
+    t = _r.sub(r"(?i)\b(see (less|more)|voir (moins|plus))\b", " ", str(text))
+    kept = []
+    seen = set()
+    for ln in t.splitlines():
+        ln = ln.strip().strip("·•").strip()
+        if not ln or ln.startswith("#"):
+            continue
+        # Drop pure-hashtag / pure-emoji lines.
+        if not _r.search(r"[A-Za-zÀ-ÿ\u0600-\u06FF0-9]", ln):
+            continue
+        if not any(_r.search(pat, ln) for pat in _AD_KEEP_PATTERNS):
+            continue
+        ln = _r.sub(r"#\S+", "", ln).strip()
+        key = ln.lower()
+        if ln and key not in seen:
+            seen.add(key)
+            kept.append(ln)
+    return "\n".join(kept)[:500].strip()
+
+
+def _ad_info_for_conv(conv):
+    """Cleaned price/size/delivery lines from the ad this conversation came
+    from, or "" when there's no ad or nothing useful in it."""
+    try:
+        ad_id = (getattr(conv, "source_ad_id", "") or "").strip()
+        if not ad_id:
+            return ""
+        return _clean_ad_text(_fetch_ad_text(ad_id))
+    except Exception:
+        return ""
+
+
 def _messenger_page_token(page_id):
     """Page access token for sending replies. Tokens are stored in the env var
     MESSENGER_PAGE_TOKENS as 'page_id:token,page_id:token,...' so they're never
@@ -158,11 +215,28 @@ MESSENGER_FAQ_REPLIES = [
 ]
 
 
-def _faq_answer(text):
-    """Return a canned answer for a common question, or '' if none matches."""
+# Ways customers ask "how much?" in Tunisian latin / French / Arabic.
+_PRICE_QUESTION_KWS = (
+    "b9adeh", "b9adech", "9adeh", "9adech", "kadeh", "kadech", "b kadeh",
+    "bech9adeh", "prix", "price", "thaman", "combien", "chhal", "ch7al",
+    "بقداش", "قداش", "سعر", "الثمن",
+)
+
+
+def _faq_answer(text, conv=None):
+    """Return a canned answer for a common question, or '' if none matches.
+
+    Price questions are answered from the ad the customer clicked on: the ad
+    copy already lists the price per item, the sizes and the delivery fee, so
+    quoting it back is both accurate and complete.
+    """
     low = (text or "").lower()
     if not low:
         return ""
+    if conv is not None and any(k in low for k in _PRICE_QUESTION_KWS):
+        info = _ad_info_for_conv(conv)
+        if info:
+            return info
     for kws, ans in MESSENGER_FAQ_REPLIES:
         if any(k in low for k in kws):
             return ans if ans is not None else _delivery_promise_tn()
@@ -10815,7 +10889,7 @@ def api_messenger_webhook(request):
                 # paying?"). Simple keyword match, one reply per question.
                 try:
                     if not is_echo and not _bot_on and (text or "").strip():
-                        _ans = _faq_answer(text)
+                        _ans = _faq_answer(text, conv)
                         if _ans:
                             _already = any(m.get("faq") == _ans
                                            for m in (conv.messages or []))
