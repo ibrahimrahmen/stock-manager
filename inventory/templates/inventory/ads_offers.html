@@ -176,6 +176,24 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
     {% endif %}
   </div>
 
+  <!-- ====== BARATS.TN — pubs liées à une offre (non carrousel) ====== -->
+  {% if barats_offers %}
+  <div class="section-title">🎯 Barats.tn — Pubs par offre (non carrousel)</div>
+  <div class="barats-card">
+    <div class="muted">{{ barats_offers.ads|length }} pub(s) Barats.tn liée(s) à une ou plusieurs offres</div>
+    <div class="barats-metrics">
+      <div class="bm"><div class="l">Dépense</div><div class="v">{{ barats_offers.spend|floatformat:2 }} DT</div></div>
+      <div class="bm"><div class="l">Unités vendues</div><div class="v">{{ barats_offers.order_count }}</div></div>
+      <div class="bm"><div class="l">Coût / unité</div><div class="v cpo">{% if barats_offers.cpo %}{{ barats_offers.cpo|floatformat:3 }} DT{% else %}—{% endif %}</div></div>
+      <div class="bm"><div class="l">Revenu</div><div class="v">{{ barats_offers.revenue|floatformat:2 }} DT</div></div>
+      <div class="bm"><div class="l">Profit</div><div class="v {% if barats_offers.profit < 0 %}neg{% else %}pos{% endif %}">{{ barats_offers.profit|floatformat:2 }} DT</div></div>
+    </div>
+  </div>
+  {% for r in barats_offers.ads %}
+    {% include "inventory/_ad_card.html" %}
+  {% endfor %}
+  {% endif %}
+
   <!-- ============ PAGES : box résumé par page + pubs détaillées ============ -->
   {% for pb in page_blocks %}
   <div class="section-title">📄 {{ pb.page.name|default:"Page" }}</div>

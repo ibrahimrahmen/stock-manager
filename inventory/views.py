@@ -6136,16 +6136,27 @@ def ads_offers_dashboard(request):
     page_by_id = {p.id: p for p in pages}
     page_groups = {}   # page_id -> {"page", "spend", "ads":[rows], ...}
     unassigned = []
+    # Barats.tn ads that are offer-linked rather than carousel. They used to be
+    # dropped entirely: excluded from the carousel pool (wrong attribution) and
+    # skipped in the per-page grouping below, so they showed up nowhere. They
+    # now get their own block.
+    barats_offer_rows = []
+    barats_page_ids = {p.id for p in pages
+                       if (p.name or "").strip().lower() == "barats.tn"}
     for r in rows:
         pids = r["page_ids"]
         if not pids:
             unassigned.append(r)
             continue
+        if pids and pids <= barats_page_ids:
+            barats_offer_rows.append(r)
+            continue
         for pid in pids:
             g = page_groups.get(pid)
             if g is None:
                 pg = page_by_id.get(pid)
-                # Skip Barats.tn here — it has its own carousel pool box.
+                # Skip Barats.tn here — it has its own carousel pool box and,
+                # for offer-linked ads, the dedicated block above.
                 if pg and pg.name.strip().lower() == "barats.tn":
                     continue
                 g = page_groups[pid] = {
@@ -6154,6 +6165,20 @@ def ads_offers_dashboard(request):
                 }
             g["spend"] += r["spend"]
             g["ads"].append(r)
+
+    barats_offer_block = None
+    if barats_offer_rows:
+        _bspend = sum((r["spend"] for r in barats_offer_rows), Decimal("0"))
+        _bqty = sum(r["order_count"] for r in barats_offer_rows)
+        _brev = sum((r["revenue"] for r in barats_offer_rows), Decimal("0"))
+        barats_offer_block = {
+            "ads": sorted(barats_offer_rows, key=lambda r: r["spend"], reverse=True),
+            "spend": _bspend,
+            "order_count": _bqty,
+            "revenue": _brev,
+            "cpo": (_bspend / _bqty) if _bqty else None,
+            "profit": _brev - _bspend,
+        }
 
     page_blocks = []
     for pid, g in page_groups.items():
@@ -6190,6 +6215,7 @@ def ads_offers_dashboard(request):
         "page_blocks": page_blocks,   # per-page summary + detailed ads
         "unassigned": unassigned,     # ads with no page link
         "barats": barats_block,
+        "barats_offers": barats_offer_block,   # Barats.tn ads linked to offers
         "advice_losing": advice_losing,
         "advice_boost": advice_boost,
         "offers": offers,
