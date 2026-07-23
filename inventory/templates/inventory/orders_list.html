@@ -1040,6 +1040,17 @@ async function refreshOrderRow(orderId) {
 
 // Build HTML for one order row. Must match the Django template structure
 // in orders_list.html (10 cells).
+// Messenger / Instagram bubble shown next to the customer name. Search results
+// need the same bubble as the server-rendered list, so it lives in one helper.
+function convBubbleHtml(o) {
+  const plat = o.dm_platform || '';
+  if (!plat) return '';
+  const icon = plat === 'instagram'
+    ? `<svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:middle;"><defs><linearGradient id="igs${o.id}" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stop-color="#feda75"/><stop offset="50%" stop-color="#d62976"/><stop offset="100%" stop-color="#4f5bd5"/></linearGradient></defs><path fill="url(#igs${o.id})" d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41-.56-.22-.96-.48-1.38-.9-.42-.42-.68-.82-.9-1.38-.16-.42-.36-1.06-.41-2.23C5.01 15.58 5 15.2 5 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16zm0 3.68a6.16 6.16 0 100 12.32 6.16 6.16 0 000-12.32zm0 10.16a4 4 0 110-8 4 4 0 010 8zm7.85-10.4a1.44 1.44 0 11-2.88 0 1.44 1.44 0 012.88 0z"/></svg>`
+    : `<svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:middle;"><path fill="#0084ff" d="M12 2C6.5 2 2 6.14 2 11.25c0 2.88 1.43 5.45 3.67 7.15V22l3.36-1.84c.9.25 1.85.38 2.97.38 5.5 0 10-4.14 10-9.25S17.5 2 12 2zm1.03 12.42l-2.55-2.72-4.98 2.72 5.48-5.82 2.61 2.72 4.92-2.72-5.48 5.82z"/></svg>`;
+  return `<button class="conv-btn" onclick="openConversation(event, ${o.id})" title="Voir la conversation" style="margin-left:6px;border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;opacity:0.85;">${icon}</button>`;
+}
+
 function buildOrderRowHtml(o) {
   const name = (o.name || o.phone || '').replace(/</g,'&lt;');
   const phone = (o.phone || '').replace(/</g,'&lt;');
@@ -1093,7 +1104,7 @@ function buildOrderRowHtml(o) {
       </div>
     </td>
     <td>
-      <div>${name}${o.is_vip ? ' <span title="Client VIP : 3+ commandes livrées" style="font-size:13px;">⭐</span>' : ''}${o.is_risky ? ' <span title="Client à risque : plus de retours que de livraisons" style="font-size:13px;">👎</span>' : ''}</div>
+      <div>${name}${o.is_vip ? ' <span title="Client VIP : 3+ commandes livrées" style="font-size:13px;">⭐</span>' : ''}${o.is_risky ? ' <span title="Client à risque : plus de retours que de livraisons" style="font-size:13px;">👎</span>' : ''}${convBubbleHtml(o)}</div>
       <div class="muted" style="font-size:11px;">${phone}${(o.phone_order_count && o.phone_order_count > 1) ? ` <span onclick="searchPhone('${phone}', event)" title="Voir les commandes en système de ce numéro" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;cursor:pointer;">${o.phone_order_count} cmd</span>${(o.combined_delivered || o.combined_returned) ? ` <span title="Livré / Retour (historique inclus, annulé exclu)" style="display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;margin-left:2px;${o.combined_returned > o.combined_delivered ? 'background:rgba(220,80,80,0.15);color:#dc5050;' : 'background:rgba(26,158,110,0.15);color:#1a9e6e;'}">✓${o.combined_delivered} / ↩${o.combined_returned}</span>` : ''}` : ''}</div>
       ${phone2Block}
     </td>

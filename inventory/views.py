@@ -5543,6 +5543,21 @@ def api_orders_search(request):
                     .values("customer_id").annotate(n=_Count2("id"))):
             retd[row["customer_id"]] = row["n"]
     from .models import Customer as _Cust2, CustomerHistory as _CH2
+    # Which of these orders came from a DM? The list view shows a Messenger /
+    # Instagram bubble for them; search must return the same info or the bubble
+    # disappears when filtering.
+    _dm_map = {}
+    try:
+        from .models import MessengerConversation as _MC2
+        _oids = [o.id for o in qs]
+        if _oids:
+            for _cid, _plat in (_MC2.objects
+                                .filter(pending_order_id__in=_oids)
+                                .values_list("pending_order_id", "platform")):
+                if _cid and _cid not in _dm_map:
+                    _dm_map[_cid] = _plat or "messenger"
+    except Exception:
+        _dm_map = {}
     phones2 = dict(_Cust2.objects.filter(id__in=cust_ids).values_list("id", "phone"))
     hist2 = {}
     try:
@@ -5583,6 +5598,7 @@ def api_orders_search(request):
             "created_at": o.created_at.strftime("%d/%m %H:%M") if o.created_at else "",
             "scheduled_for": o.scheduled_for.strftime("%Y-%m-%d") if o.scheduled_for else "",
             "is_exchange": bool(o.exchange_of_id),
+            "dm_platform": _dm_map.get(o.id, ""),
         })
     return JsonResponse({"status": "ok", "results": results, "count": len(results)})
 
