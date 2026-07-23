@@ -690,16 +690,38 @@ def _bot_reply(conv):
 
         # Catalogue of this page's offers with prices, so the bot can look up a
         # product (named or seen in a photo) and quote the real price.
+        #
+        # It is deliberately WITHHELD when the customer just asks "how much?"
+        # with no ad, no photo and no product name: given the list, the model
+        # kept pasting it back to the customer ("hedha el catalogue kamel..."),
+        # which is a wall of text on mobile. Without it in context, it asks
+        # which article they mean, as intended.
         catalog_context = ""
         try:
             _cat = _build_catalog_for_conv(conv)
-            if _cat:
+            _has_photo = bool(img_urls or local_imgs)
+            _from_ad = bool(ad_context)
+            # Did the customer name any catalogue product / offer word?
+            _user_txt = " ".join(
+                (m.get("text") or "") for m in (conv.messages or [])
+                if m.get("from") == "user").lower()
+            _named_product = False
+            if _cat and _user_txt:
+                for _line in _cat.splitlines():
+                    _nm = _line.lstrip("- ").split(":")[0].strip().lower()
+                    # Only meaningful names, and require the whole name to match
+                    # so a stray "air" inside a word doesn't count.
+                    if len(_nm) >= 5 and _nm in _user_txt:
+                        _named_product = True
+                        break
+            if _cat and (_has_photo or _from_ad or _named_product):
                 catalog_context = (
                     "\n\nHedha el catalogue mte3 el produits (esm + thaman). "
                     "Esta3mlou bech tal9a el mntej (eli el 7arif semmeh wa la "
                     "eli chefto fel taswira) w a3ti el thaman mel catalogue. Ki "
                     "el mntej mech fel catalogue, 9ollou el equipe bech "
-                    "t2akedlou:\n" + _cat
+                    "t2akedlou. MOUHIM: ma tab3athch el liste hedhi lel 7arif, "
+                    "hiya lik barka:\n" + _cat
                 )
         except Exception:
             catalog_context = ""
