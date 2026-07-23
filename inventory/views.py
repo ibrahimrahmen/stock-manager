@@ -331,8 +331,9 @@ BOT_SYSTEM_PROMPT_AR = (
     "Jaweb el 7arif direct.\n\n"
 
     "KIFEH TReponDI:\n"
-    "1) Ki el 7arif ybda ('slm', 'aslema', mntej...): 'Aslema khouya, bech "
-    "t3adi commande ab3athelna taille, adresse w noumrouk'.\n"
+    "1) Ki el 7arif ybda ('slm', 'aslema') barka bla ma ysemmi mntej: "
+    "'Aslema khouya, bech t3adi commande ab3athelna taille, adresse w "
+    "noumrouk'. 3OMREK ma tab3ath el catalogue kamel 3ala 'slm'.\n"
     "2) Ki yeb3ath taswira wa la ysemmi mntej: chouf el catalogue, al9a el "
     "mntej (el ecusson/logo kima FC Barcelone, Jordan, Nike howa a9wa dalil). "
     "Ba3d, jaweb b haka el forme EXACTE:\n"
@@ -342,6 +343,19 @@ BOT_SYSTEM_PROMPT_AR = (
     "y2akdoulek el thaman.'\n"
     "3) Ki el 7arif ye3ti taille/adresse/noumrou, chkorou w 9oll el equipe "
     "bech tkammel el commande.\n\n"
+
+    "THAMAN — TARTIB SARIM (ma tkhalfouch):\n"
+    "a) Kenou jetek MA3LOUMET EL PUB fel context: a3ti el thaman mte3 el pub "
+    "barka.\n"
+    "b) Kenou el 7arif ba3ath TASWIRA w enti MET2AKED mel mntej: a3ti esmou "
+    "w thamnou. Kenou mouch met2aked: 9oll el equipe bech t2aked el modele.\n"
+    "c) Kenou el 7arif sa2el 3al thaman ama ma famech la pub la taswira "
+    "(mathal 'b9adeh', 'prix'): 9oll BARKA: 'Ama article khouya svp? "
+    "ab3athelna taswira wala esm el mntej'.\n"
+    "d) Fi ay 7ala okhra: 9oll 'el equipe bech tjaweb 3lik fi a9rab wa9t'.\n"
+    "MOUHIM: 3OMREK ma tab3ath el catalogue kamel (el liste twila mte3 el "
+    "mntejat). Howa 3andek fel context bech tal9a el thaman barka, mouch "
+    "bech tab3athou lel 7arif.\n\n"
 
     "MA3LOUMET: livraison 7 DT l kol tounes, khlas aand el istilem. "
     "Ma tekhtere3ch aswem wa la kelmet. Ma tab3athch liens."
@@ -643,12 +657,16 @@ def _bot_reply(conv):
             _ad_id = (getattr(conv, "source_ad_id", "") or "").strip()
             if _ad_id:
                 _ad_txt = _fetch_ad_text(_ad_id)
-                if _ad_txt:
+                # Prefer the filtered price/size/delivery lines: they're what
+                # the customer actually asks about, without the marketing copy.
+                _ad_lines = _clean_ad_text(_ad_txt) or _ad_txt
+                if _ad_lines:
                     ad_context = (
-                        "\n\nEl 7arif jé mel pub hedhi. Hedha nass el pub "
-                        "(fih esm el mntej w el thaman — esta3mlou bech tjaweb "
-                        "aala el thaman b da9a, ama ma t9rahch kifeh mektoub, "
-                        "lkhesslou el ma3na):\n\"\"\"\n" + _ad_txt + "\n\"\"\""
+                        "\n\nMA3LOUMET EL PUB: el 7arif jé mel pub hedhi. "
+                        "Hedhi el ma3loumet mte3ha (thaman, tailles, "
+                        "livraison). Ki yes2el 3al thaman, a3tih el thaman "
+                        "mel hne barka, ma tekhtere3ch:\n\"\"\"\n"
+                        + _ad_lines + "\n\"\"\""
                     )
         except Exception:
             ad_context = ""
