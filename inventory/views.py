@@ -10549,6 +10549,17 @@ def api_messenger_webhook(request):
                 if text or images:
                     msgs = conv.messages or []
                     already = mid and any(m.get("mid") == mid for m in msgs)
+                    # Meta echoes back every message WE send (is_echo) with a
+                    # real mid, while our own record has an empty mid. Without
+                    # this check the same outgoing text gets stored twice, which
+                    # pollutes the transcript and the bot's context.
+                    if not already and is_echo and text:
+                        _t = (text or "").strip()
+                        already = any(
+                            (m.get("from") == "page")
+                            and not (m.get("mid") or "")
+                            and ((m.get("text") or "").strip() == _t)
+                            for m in msgs[-12:])
                     if not already:
                         msgs.append({
                             "from": "page" if is_echo else "user",
