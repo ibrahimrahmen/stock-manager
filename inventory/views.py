@@ -11509,6 +11509,11 @@ def _match_offers_from_text(order, conv):
     or product NAME and add matches to the order. Works even when Gemini is
     down/empty. Catches loose mentions like 'pull camo' → offer 'Pull Camo'."""
     from .models import Offer, Product, OrderOffer, OrderLine
+    # Staff asked for DM orders to carry only the customer details (name,
+    # phone, address); products are picked by the team. Set
+    # DM_AUTOFILL_OFFERS=1 to re-enable automatic offer matching.
+    if os.environ.get("DM_AUTOFILL_OFFERS", "0") != "1":
+        return
     text = " ".join(m.get("text", "") for m in (conv.messages or [])
                     if m.get("from") == "user").lower()
     if not text:
@@ -11550,6 +11555,10 @@ def _add_extracted_items_to_order(order, data):
     order, skipping items already present. Matches each product name against
     active offers first, then products. Best-effort; staff finalize."""
     from .models import Offer, Product, OrderOffer, OrderLine
+    # Same switch as _match_offers_from_text: no auto product/offer filling on
+    # DM orders unless DM_AUTOFILL_OFFERS=1.
+    if os.environ.get("DM_AUTOFILL_OFFERS", "0") != "1":
+        return
     items = data.get("items") or []
     if not items:
         return
