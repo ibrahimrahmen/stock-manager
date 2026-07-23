@@ -89,12 +89,29 @@ def _extract_tn_phone(text):
     cleaned = _r.sub(r"(?i)view post", " ", cleaned)
     # Find 8-digit groups that stand alone (allow spaces inside like "20 123 456"),
     # not embedded in a longer digit run.
-    for raw in _r.findall(r"(?<!\d)(?:\+?216[\s-]?)?(\d[\d\s-]{6,}\d)(?!\d)", cleaned):
+    _VALID_PREFIX = "24579"
+    candidates = _r.findall(r"(?<!\d)(?:\+?216[\s-]?)?(\d[\d\s-]{6,}\d)(?!\d)", cleaned)
+    # Pass 1: groups that are exactly a phone number.
+    for raw in candidates:
         digits = _r.sub(r"\D", "", raw)
         if len(digits) == 11 and digits.startswith("216"):
             digits = digits[3:]
-        if len(digits) == 8 and digits[0] in "2457 9".replace(" ", ""):
+        if len(digits) == 8 and digits[0] in _VALID_PREFIX:
             return digits
+    # Pass 2: customers often glue other numbers to the phone, e.g.
+    # "... w chlaka 40 29 252157" -> the run reads as 4029252157. Scan longer
+    # runs for an 8-digit window with a valid Tunisian prefix, preferring the
+    # one that ends the run (the phone is usually written last).
+    for raw in candidates:
+        digits = _r.sub(r"\D", "", raw)
+        if len(digits) == 11 and digits.startswith("216"):
+            digits = digits[3:]
+        if not (9 <= len(digits) <= 14):
+            continue
+        for start in range(len(digits) - 8, -1, -1):
+            window = digits[start:start + 8]
+            if window[0] in _VALID_PREFIX:
+                return window
     return ""
 
 
