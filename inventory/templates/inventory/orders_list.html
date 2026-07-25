@@ -2537,5 +2537,62 @@ async function runSearch(q) {
 }
 </script>
 
+<!-- ===== Bot IA — panneau de contrôle par page ===== -->
+<div id="botFab" onclick="toggleBotPanel()" title="Bot IA (réponses auto)"
+     style="position:fixed;bottom:22px;right:22px;z-index:9998;width:56px;height:56px;
+            border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);
+            box-shadow:0 4px 16px rgba(99,102,241,0.45);cursor:pointer;display:flex;
+            align-items:center;justify-content:center;font-size:26px;">🤖</div>
+
+<div id="botPanel" style="display:none;position:fixed;bottom:88px;right:22px;z-index:9999;
+     width:290px;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.28);
+     overflow:hidden;font-family:system-ui,sans-serif;">
+  <div style="padding:14px 16px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;">
+    <div style="font-weight:700;font-size:15px;">🤖 Bot IA — réponses auto</div>
+    <div id="botEnvWarn" style="font-size:11px;opacity:0.9;margin-top:3px;"></div>
+  </div>
+  <div id="botPagesList" style="padding:8px 0;max-height:340px;overflow:auto;">
+    <div style="padding:16px;text-align:center;color:#888;font-size:13px;">Chargement…</div>
+  </div>
+</div>
+
+<script>
+function _botCsrf(){return document.cookie.split('csrftoken=')[1]?.split(';')[0]||'';}
+function toggleBotPanel(){
+  const p=document.getElementById('botPanel');
+  const show=p.style.display==='none';
+  p.style.display=show?'block':'none';
+  if(show) loadBotPages();
+}
+async function loadBotPages(){
+  try{
+    const r=await fetch('/api/bot/toggle/');const d=await r.json();
+    const warn=document.getElementById('botEnvWarn');
+    warn.textContent = d.env_enabled ? '' : '⚠️ AUTOREPLY_BOT_ENABLED=0 (bot coupé globalement)';
+    const list=document.getElementById('botPagesList');
+    list.innerHTML='';
+    (d.pages||[]).forEach(pg=>{
+      const row=document.createElement('div');
+      row.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid #f0f0f0;';
+      const name=document.createElement('span');
+      name.textContent=pg.name;
+      name.style.cssText='font-size:14px;color:#222;font-weight:500;';
+      const sw=document.createElement('button');
+      sw.textContent=pg.on?'ON':'OFF';
+      sw.style.cssText='border:none;border-radius:20px;padding:5px 16px;font-weight:700;font-size:12px;cursor:pointer;color:#fff;background:'+(pg.on?'#22c55e':'#cbd5e1')+';';
+      sw.onclick=async()=>{
+        sw.disabled=true;
+        await fetch('/api/bot/toggle/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':_botCsrf()},body:JSON.stringify({sales_page:pg.sales_page,on:!pg.on})});
+        loadBotPages();
+      };
+      row.appendChild(name);row.appendChild(sw);
+      list.appendChild(row);
+    });
+  }catch(e){
+    document.getElementById('botPagesList').innerHTML='<div style="padding:16px;color:#e11;font-size:13px;">Erreur de chargement</div>';
+  }
+}
+</script>
+
 </body>
 </html>

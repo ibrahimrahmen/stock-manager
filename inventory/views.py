@@ -6669,24 +6669,45 @@ def api_n8n_create_order_from_dm(request):
 @csrf_exempt
 @require_POST
 def api_bot_toggle(request):
-    """Turn the auto-reply bot on/off instantly via a cache flag — no redeploy.
-    GET returns the current state; POST {off: true|false} sets it. When 'off'
-    is true the bot stops replying everywhere immediately."""
+    """Per-page auto-reply bot control.
+
+    GET  -> {pages:[{sales_page, name, on}], env_enabled}
+    POST {sales_page, on} -> set that page's flag (instant, no redeploy).
+    """
     from django.core.cache import cache as _kc
     if not _orders_role_check(request):
         return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+
+    # sales_page id -> display name (one entry per distinct page).
+    _names = {
+        2: "Arrow SportsWear", 3: "Barats", 4: "Next Generation",
+        5: "Handsome Collection", 6: "PrimeFit", 10: "Traffic",
+    }
+    _env_pages = os.environ.get("AUTOREPLY_BOT_PAGES", "").strip()
+    _env_allowed = set()
+    if _env_pages:
+        try:
+            _env_allowed = {int(x) for x in _env_pages.replace(" ", "").split(",") if x}
+        except Exception:
+            _env_allowed = set()
+
+    def _state(sp):
+        v = _kc.get("autoreply_bot_page:%s" % sp)
+        if v is None:
+            return sp in _env_allowed   # fall back to env default
+        return bool(v)
+
     try:
         if request.method == "POST":
             import json as _json
             data = _json.loads(request.body.decode("utf-8") or "{}")
-            off = bool(data.get("off"))
-            # No timeout: persists until toggled back.
-            _kc.set("autoreply_bot_kill", off, None)
-        killed = bool(_kc.get("autoreply_bot_kill"))
+            sp = int(data.get("sales_page"))
+            on = bool(data.get("on"))
+            _kc.set("autoreply_bot_page:%s" % sp, on, None)
         env_on = os.environ.get("AUTOREPLY_BOT_ENABLED", "").strip() in ("1", "true", "True")
-        pages = os.environ.get("AUTOREPLY_BOT_PAGES", "").strip()
-        return JsonResponse({"status": "ok", "off": killed,
-                             "env_enabled": env_on, "pages": pages})
+        pages = [{"sales_page": sp, "name": nm, "on": _state(sp)}
+                 for sp, nm in sorted(_names.items(), key=lambda kv: kv[1])]
+        return JsonResponse({"status": "ok", "pages": pages, "env_enabled": env_on})
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)}, status=400)
 
@@ -10919,27 +10940,26 @@ def api_messenger_webhook(request):
                 # prevents runaway loops.
                 _bot_on = os.environ.get("AUTOREPLY_BOT_ENABLED", "").strip() in ("1", "true", "True")
 
-                # Per-page activation: AUTOREPLY_BOT_PAGES is a comma list of
-                # sales_page ids where the bot may run (e.g. "10" = Traffic).
-                # Empty = all pages (back-compat). This lets us switch it on for
-                # one page only.
-                _bot_pages = os.environ.get("AUTOREPLY_BOT_PAGES", "").strip()
-                if _bot_on and _bot_pages:
-                    try:
-                        _allowed = {int(x) for x in _bot_pages.replace(" ", "").split(",") if x}
-                        _sp_here = MESSENGER_PAGE_TO_SALESPAGE.get(
-                            str(page_id or ""), MESSENGER_DEFAULT_SALESPAGE)
-                        if _sp_here not in _allowed:
-                            _bot_on = False
-                    except Exception:
-                        pass
+                _sp_here = MESSENGER_PAGE_TO_SALESPAGE.get(
+                    str(page_id or ""), MESSENGER_DEFAULT_SALESPAGE)
 
-                # Instant kill-switch: a button in the UI sets this cache flag to
-                # stop the bot immediately, no redeploy. cache.get returns True
-                # when the bot has been turned OFF.
+                # Per-page toggle from the UI panel. Each sales_page has its own
+                # on/off flag in the cache (key autoreply_bot_page:<id>), so you
+                # can run the bot on Traffic only, etc. Default OFF: a page must
+                # be explicitly switched on. An env AUTOREPLY_BOT_PAGES still
+                # works as a fallback default when no cache flag is set yet.
                 try:
                     from django.core.cache import cache as _kc
-                    if _kc.get("autoreply_bot_kill"):
+                    _flag = _kc.get("autoreply_bot_page:%s" % _sp_here)
+                    if _flag is None:
+                        # No UI choice yet → fall back to the env allow-list.
+                        _env_pages = os.environ.get("AUTOREPLY_BOT_PAGES", "").strip()
+                        if _env_pages:
+                            _allowed = {int(x) for x in _env_pages.replace(" ", "").split(",") if x}
+                            _flag = _sp_here in _allowed
+                        else:
+                            _flag = False
+                    if not _flag:
                         _bot_on = False
                 except Exception:
                     pass
