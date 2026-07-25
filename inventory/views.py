@@ -625,6 +625,19 @@ def _bot_reply(conv):
             )
             if _last_user and any(w in _last_user for w in _anger_markers):
                 return None
+
+            # Exchange / return requests are handled by a dedicated line, not
+            # by the order flow. Give the fixed instruction instead of letting
+            # the bot answer with delivery delays.
+            _exchange_markers = (
+                "tbadel", "tbadlou", "tbadloui", "tbadlouli", "nbadel",
+                "nbadlou", "badel", "badalt", "échange", "echange", "e5change",
+                "tbdel", "tbdlou", "nbdel", "change", "changi", "changer",
+                "retour", "rejou3", "raja3", "narja3", "nraja3", "irja3",
+            )
+            if _last_user and any(w in _last_user for w in _exchange_markers):
+                return ("Bech ta3mel échange kallamna mel 10 lel 16h 3al "
+                        "numéro 26200219 w na3mloulek échange khouya 🤍")
         except Exception:
             pass
 
