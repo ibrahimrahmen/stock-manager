@@ -501,12 +501,25 @@ def _offers_data_for_conv(conv, limit=60):
             except Exception:
                 price = o.bundle_price
             descs = []
+            # A pull/top with its motif is what distinguishes near-identical
+            # ensembles; the jogging pants ("Pants ICY Maze") are shared across
+            # many offers and, repeated in every description, drown the top's
+            # keywords during preselection. Put tops first and keep only a short
+            # tail of the shared bottoms so the distinctive piece dominates.
+            _tops, _bottoms = [], []
             for op in o.products.all():
                 prod = getattr(op, "product", None)
-                if prod:
-                    d = (getattr(prod, "description", "") or "").strip()
-                    if d:
-                        descs.append(d)
+                if not prod:
+                    continue
+                d = (getattr(prod, "description", "") or "").strip()
+                if not d:
+                    continue
+                _nm = (getattr(prod, "name", "") or "").lower()
+                if any(w in _nm for w in ("pant", "short", "jogging", "bas")):
+                    _bottoms.append(d)
+                else:
+                    _tops.append(d)
+            descs = _tops + [b[:80] for b in _bottoms]
             out.append({"name": o.name, "price": _fmt_price(price),
                         "desc": " ; ".join(descs)})
     except Exception:
