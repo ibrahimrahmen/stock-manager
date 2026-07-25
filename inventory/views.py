@@ -400,16 +400,23 @@ def _describe_product_image(product):
             "Voici " + ("les photos des variantes de couleur d'" if len(paths) > 1
                         else "la photo d'") + "un même vêtement. "
             + color_hint +
-            "Écris une description visuelle DÉTAILLÉE en français (2-3 phrases "
-            "max) pour identifier ce produit à partir d'une photo client. "
-            "Obligatoire: type exact (ensemble/pull/pantalon/short/tenue...), "
-            "TOUTES les couleurs des variantes montrées, logo/marque/écusson "
-            "visible (ex: Nike, FC Barcelone), motifs précis (rayures et leur "
-            "direction, camouflage, texture), et tout élément distinctif "
-            "(bandes latérales, col, poches). "
+            "Écris une description visuelle en français pour distinguer CE "
+            "produit d'autres vêtements très similaires à partir d'une photo. "
+            "COMMENCE OBLIGATOIREMENT par la PHRASE DISTINCTIVE: le seul détail "
+            "qui le différencie des produits qui lui ressemblent — le MOTIF "
+            "exact et sa forme (rayures HORIZONTALES ou VERTICALES, jacquard "
+            "géométrique type grecques/losanges/carrés, camouflage, vaches, "
+            "torsades, uni...), OU le logo/écusson visible (Nike, Jordan/"
+            "Jumpman, FC Barcelone, Zara...). Sois très précis sur ce détail. "
+            "Ensuite seulement: le type (ensemble/pull/pantalon/short), TOUTES "
+            "les couleurs des variantes, et le col. "
+            "INTERDIT: les phrases génériques qui vont sur n'importe quel "
+            "vêtement ('coupe décontractée', 'finitions côtelées', 'texture "
+            "confortable', 'taille élastiquée') — elles ne distinguent rien. "
+            "2 phrases max. "
             "RÉPONDS UNIQUEMENT avec la description brute: pas de titre, pas de "
             "markdown (aucun #), pas de préambule, pas de liste. Commence "
-            "directement par le type de vêtement."
+            "directement par le motif ou le logo distinctif."
         )
         # Strip any markdown/preamble the model may still add.
         def _clean_desc(t):
