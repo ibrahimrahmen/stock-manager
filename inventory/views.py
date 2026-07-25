@@ -1283,13 +1283,10 @@ def _build_category_carousel(text, sales_page_id=None, limit=10):
 
     # Category words -> Product.category value. Matched case-insensitively.
     _cat_map = {
-        "TOPS": ("pull", "top", "maryoul", "mrewel", "tshirt", "t-shirt",
-                 "chemise", "shirt", "polo", "sweat", "hoodie"),
-        "Pants": ("pantalon", "pants", "jean", "jogging", "survet"),
-        "Veste": ("veste", "manteau", "bombers", "jacket"),
-        "Sneakers": ("sneakers", "chaussures", "baskets", "sabbat", "sabot"),
-        "SHORT": ("short",),
-        "Tenue": ("tenue", "ensemble", "pack", "complet"),
+        "Pull": ("pull", "mrewel", "maryoul", "top"),
+        "Short": ("short",),
+        "Pants": ("serwel", "pantalon", "pants"),
+        "Ensemble": ("tenue", "ensemble", "pack", "complet"),
     }
     _wanted_cat = None
     for cat, words in _cat_map.items():
@@ -1308,9 +1305,7 @@ def _build_category_carousel(text, sales_page_id=None, limit=10):
         _season = "winter"
 
     qs = Product.objects.filter(archived=False)
-    if _wanted_cat == "TOPS":
-        qs = qs.filter(Q(category__iexact="TOPS") | Q(category__iexact="TOP"))
-    elif _wanted_cat:
+    if _wanted_cat:
         qs = qs.filter(category__iexact=_wanted_cat)
     if _season:
         qs = qs.filter(season=_season)
