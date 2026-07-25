@@ -1319,7 +1319,17 @@ def _build_category_carousel(text, sales_page_id=None, limit=10):
     base = os.environ.get(
         "PUBLIC_BASE_URL",
         "https://web-production-1391c5.up.railway.app").rstrip("/")
-    for p in qs.distinct()[:limit]:
+    for p in qs.distinct()[:limit * 3]:  # over-fetch, we filter to offer-linked
+        # Only show products that have an ACTIVE linked offer — otherwise there's
+        # no real customer price and the card is noise.
+        _op = None
+        try:
+            _op = (p.offerproduct_set.select_related("offer")
+                   .filter(offer__is_active=True).first())
+        except Exception:
+            _op = None
+        if not _op or not _op.offer or not _op.offer.bundle_price:
+            continue
         v = (p.variants.exclude(image="").exclude(image__isnull=True).first()
              if hasattr(p, "variants") else None)
         if not v:
@@ -1328,18 +1338,12 @@ def _build_category_carousel(text, sales_page_id=None, limit=10):
             img = base + v.image.url
         except Exception:
             continue
-        price = None
-        try:
-            _op = (p.offerproduct.select_related("offer").first()
-                   if hasattr(p, "offerproduct") else None)
-            if _op and _op.offer and _op.offer.bundle_price:
-                price = _op.offer.bundle_price
-        except Exception:
-            price = None
-        if price is None:
-            price = getattr(p, "sell_price", None)
-        sub = (f"{int(price)} DT" if price else "")
-        cards.append({"title": p.name, "subtitle": sub, "image_url": img})
+        price = _op.offer.bundle_price
+        sub = "%d DT" % int(price)
+        cards.append({"title": _op.offer.name or p.name,
+                      "subtitle": sub, "image_url": img})
+        if len(cards) >= limit:
+            break
     return cards or None
 
 
