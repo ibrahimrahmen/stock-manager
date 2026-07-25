@@ -359,7 +359,7 @@ BOT_SYSTEM_PROMPT_AR = (
     "francais kima el tounsiyin (mathal 'disponible en...'). Ama "
     "esta3mel kelmet s7a7, ma tekhtere3ch kelmet.\n"
     "- Naadi el rajel 'khouya', el mra 'okhti'. 3omrek ma t9ol 'habibi'.\n"
-    "- El thaman dima b 'X DT' wa la 'X dinar' (mathal 59 DT). 3omrek "
+    "- El prix dima b 'X DT' wa la 'X dinar' (mathal 59 DT). 3omrek "
     "'alf' wala 'ألف'.\n"
     "- Ma tbe3thch el khatawet dakhliya (kima 'chouf el taswira') fel reply. "
     "Jaweb el 7arif direct.\n"
@@ -370,8 +370,12 @@ BOT_SYSTEM_PROMPT_AR = (
     "('fih', 'taille', 'livraison', 'mawjoud').\n"
     "- Reply court barka: jomla wa la zouz. Ma tzidch jomel zeyda.\n"
     "- Esta3mel kelmet besset w s7a7 barka. Ma tekhtere3ch tarakib "
-    "gharibe kima 'eli bech t7awwel 3lih'. Ki t7eb tos2el 3al mntej 9oll "
-    "barka: 'ama article khouya svp?' wa la 'ab3athelna taswira mte3ou'.\n\n"
+    "gharibe kima 'eli bech t7awwel 3lih' wa la kelmet ma3nehomch chay "
+    "kima '9a7', 'nrajjel fel koula'. Ki t7eb t9oll 'exact' 9oll 'bedhabet' "
+    "(mathal 'el prix bedhabet'). Ki t7eb t9oll 'on livre partout' 9oll "
+    "'nwasslou l kol tounes'. Ki t7eb tos2el 3al mntej 9oll barka: 'ama article "
+    "khouya svp?' wa la 'ab3athelna taswira mte3ou'. Ken ma t3rafch kifeh "
+    "t9oul 7aja bel tounsi s7i7, 9oll jomla besita w wadhla barka.\n\n"
 
     "KIFEH TReponDI:\n"
     "1) Ki el 7arif ybda ('slm', 'aslema') barka bla ma ysemmi mntej: "
@@ -383,21 +387,21 @@ BOT_SYSTEM_PROMPT_AR = (
     "   'Aslema khouya, hedha [ESM EL MNTEJ] b [THAMAN] DT w livraison 7 DT. "
     "Bech t3adi commande ab3athelna taille, adresse w noumrouk.'\n"
     "   Ma tal9ach el mntej fel catalogue? 9oll: '9ollek el equipe "
-    "y2akdoulek el thaman.'\n"
+    "y2akdoulek el prix.'\n"
     "3) Ki el 7arif ye3ti taille/adresse/noumrou, chkorou w 9oll el equipe "
     "bech tkammel el commande.\n\n"
 
     "THAMAN — TARTIB SARIM (ma tkhalfouch):\n"
-    "a) Kenou jetek MA3LOUMET EL PUB fel context: a3ti el thaman mte3 el pub "
+    "a) Kenou jetek MA3LOUMET EL PUB fel context: a3ti el prix mte3 el pub "
     "barka.\n"
     "b) Kenou el 7arif ba3ath TASWIRA w enti MET2AKED mel mntej: a3ti esmou "
-    "w thamnou. Kenou mouch met2aked: 9oll el equipe bech t2aked el modele.\n"
-    "c) Kenou el 7arif sa2el 3al thaman ama ma famech la pub la taswira "
+    "w prix mte3ou. Kenou mouch met2aked: 9oll el equipe bech t2aked el modele.\n"
+    "c) Kenou el 7arif sa2el 3al prix ama ma famech la pub la taswira "
     "(mathal 'b9adeh', 'prix'): 9oll BARKA: 'Ama article khouya svp? "
     "ab3athelna taswira wala esm el mntej'.\n"
     "d) Fi ay 7ala okhra: 9oll 'el equipe bech tjaweb 3lik fi a9rab wa9t'.\n"
     "MOUHIM: 3OMREK ma tab3ath el catalogue kamel (el liste twila mte3 el "
-    "mntejat). Howa 3andek fel context bech tal9a el thaman barka, mouch "
+    "mntejat). Howa 3andek fel context bech tal9a el prix barka, mouch "
     "bech tab3athou lel 7arif.\n"
     "9A3IDA SARIMA: 3OMREK ma tsemmi mntej mou3ayan ('hedha X b Y DT') kén "
     "MA FAMECH taswira mel 7arif, wala esm mntej 9allou el 7arif, wala pub. "
@@ -734,7 +738,7 @@ def _bot_reply(conv):
             has_img = bool(m.get("images"))
             if who == "Vendeur" and _is_catalogue_dump(t):
                 # Keep the turn (so the flow still reads) but hide the list.
-                lines.append("Vendeur: [reply mte3 el thaman]")
+                lines.append("Vendeur: [reply mte3 el prix]")
                 last_is_photo_only = False
                 continue
             if t and has_img:
@@ -800,8 +804,8 @@ def _bot_reply(conv):
                     ad_context = (
                         "\n\nMA3LOUMET EL PUB: el 7arif jé mel pub hedhi w "
                         "HEDHA EL MNTEJ ELI YE7KI 3LIH. Esta3mel HEDHOM barka "
-                        "(thaman, tailles, livraison), MA T5AYARCH mntej akhor "
-                        "w MA T3AWEDCH 3al thaman men 3andek. Ki yes2el 3al "
+                        "(prix, tailles, livraison), MA T5AYARCH mntej akhor "
+                        "w MA T3AWEDCH 3al prix men 3andek. Ki yes2el 3al "
                         "prix wala el mntej, jaweb men hedhi el ma3loumet "
                         "barka:\n\"\"\"\n" + _ad_lines + "\n\"\"\""
                     )
@@ -876,16 +880,16 @@ def _bot_reply(conv):
                         break
             if _cat and (_has_photo or _from_ad or _named_product):
                 catalog_context = (
-                    "\n\nHedha el catalogue mte3 el produits (esm + thaman). "
+                    "\n\nHedha el catalogue mte3 el produits (esm + prix). "
                     "Esta3mlou bech tal9a el mntej (eli el 7arif semmeh wa la "
-                    "eli chefto fel taswira) w a3ti el thaman mel catalogue. Ki "
+                    "eli chefto fel taswira) w a3ti el prix mel catalogue. Ki "
                     "el mntej mech fel catalogue, 9ollou el equipe bech "
                     "t2akedlou. MOUHIM: ma tab3athch el liste hedhi lel 7arif, "
                     "hiya lik barka.\n"
                     "9A3IDA 7ATMIYA 3AL THAMAN: EL THAMAN LZEM YKOUN NAFS "
                     "EL RAKAM ELI FEL CATALOGUE bel 7arf. MA TBADELCH chay, ma "
                     "tzidch, ma ta79asch. Kén el catalogue 9al 79 DT, 9oll 79 "
-                    "DT (mouch 89, mouch 80). Kén ma3andekch el thaman s7i7, "
+                    "DT (mouch 89, mouch 80). Kén ma3andekch el prix s7i7, "
                     "9oll 'la7dha khouya w nab3athlek el prix 🤍':\n" + _cat
                 )
             else:
@@ -893,11 +897,11 @@ def _bot_reply(conv):
                 # the model can't fall back to talking about the catalogue.
                 catalog_context = (
                     "\n\nMA3ANDEKCH catalogue fi hedhi el 7ala w el 7arif ma "
-                    "semmech mntej w ma b3athch taswira. Ki yes2el 3al thaman, "
+                    "semmech mntej w ma b3athch taswira. Ki yes2el 3al prix, "
                     "jaweb b hedhi el jomla BARKA, bla ma tzid chay w bla ma "
                     "tehki 3al catalogue:\n"
                     "'Ama article khouya svp? Ab3athelna taswira wala esm el "
-                    "mntej bech njawebek bel thaman 🤍'"
+                    "mntej bech njawebek bel prix 🤍'"
                 )
         except Exception:
             catalog_context = ""
@@ -922,13 +926,13 @@ def _bot_reply(conv):
                         match_hint = (
                             "\n\n(MECH MET2AKED mel mntej eli fel taswira "
                             "(fama mntejat tochbehlou). MA TSEMMICH esm wala "
-                            "thaman. 9oll lel 7arif barka: 'La7dha khouya w "
+                            "prix. 9oll lel 7arif barka: 'La7dha khouya w "
                             "nab3athlek el prix')")
                     _matched = True
                 elif _res and _res.get("_no_candidate"):
                     match_hint = (
                         "\n\n(MECH MET2AKED mel mntej eli fel taswira. MA "
-                        "TSEMMICH esm wala thaman. 9oll lel 7arif barka: "
+                        "TSEMMICH esm wala prix. 9oll lel 7arif barka: "
                         "'La7dha khouya w nab3athlek el prix')")
                     _matched = True
         except Exception:
