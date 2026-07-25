@@ -855,7 +855,12 @@ def _bot_reply(conv):
                     "eli chefto fel taswira) w a3ti el thaman mel catalogue. Ki "
                     "el mntej mech fel catalogue, 9ollou el equipe bech "
                     "t2akedlou. MOUHIM: ma tab3athch el liste hedhi lel 7arif, "
-                    "hiya lik barka:\n" + _cat
+                    "hiya lik barka.\n"
+                    "9A3IDA 7ATMIYA 3AL THAMAN: EL THAMAN LZEM YKOUN NAFS "
+                    "EL RAKAM ELI FEL CATALOGUE bel 7arf. MA TBADELCH chay, ma "
+                    "tzidch, ma ta79asch. Kén el catalogue 9al 79 DT, 9oll 79 "
+                    "DT (mouch 89, mouch 80). Kén ma3andekch el thaman s7i7, "
+                    "9oll 'la7dha khouya w nab3athlek el prix 🤍':\n" + _cat
                 )
             else:
                 # No product context at all: force the single allowed answer so
@@ -952,6 +957,38 @@ def _bot_reply(conv):
         # Capitalise if the oath removal ate the first word's capital.
         if reply and reply[0].islower():
             reply = reply[0].upper() + reply[1:]
+
+        # Price guard: the model sometimes deforms a catalogue price (said
+        # "89 DT" for a product that is 79 DT). If the reply names a catalogue
+        # product AND states a price that doesn't match that product's real
+        # price, correct the number to the catalogue value.
+        try:
+            _cat_src = _build_catalog_for_conv(conv) or ""
+            if _cat_src and _rr.search(r"\d{2,3}\s*DT", reply, _rr.I):
+                _reply_low = reply.lower()
+                for _line in _cat_src.splitlines():
+                    _parts = _line.lstrip("- ").split(":")
+                    if len(_parts) < 2:
+                        continue
+                    _pname = _parts[0].strip().lower()
+                    if len(_pname) < 5 or _pname not in _reply_low:
+                        continue
+                    _m = _rr.search(r"(\d{2,4})", _parts[1])
+                    if not _m:
+                        continue
+                    _real = _m.group(1)
+                    # Replace any "<num> DT" in the reply that isn't the real
+                    # price or the 7 DT delivery fee.
+                    def _fix(mo):
+                        _n = mo.group(1)
+                        if _n == _real or _n == "7":
+                            return mo.group(0)
+                        return _real + " DT"
+                    reply = _rr.sub(r"(\d{2,4})\s*DT", _fix, reply)
+                    break
+        except Exception:
+            pass
+
         return reply[:600] or None
     except Exception:
         return None
