@@ -214,6 +214,15 @@ MESSENGER_FAQ_REPLIES = [
       "9adech men wa9t", "yo93od", "yo9od", "yoq3od", "9adeh yo93od",
       "chnowa el delai", "delai", "dele7", "ch7al mte3 wa9t"),
      None),
+    # "Where are you located?" -> we're online, we deliver to you, cash on
+    # delivery, can inspect before paying.
+    (("où vous", "ou vous", "trouvez-vous", "trouvez vous", "vous êtes où",
+      "vous etes ou", "localisation", "adresse mte3kom", "adresse mtaakom",
+      "fin ", "win ", "winkom", "finkom", "win entom", "fin entom",
+      "3andkom boutique", "magasin", "boutique fin", "boutique win",
+      "winha", "finha", "votre adresse", "local", "situe"),
+     "A7na boutique en ligne nwasloulek win enti w tnajem tetfa9ed colis "
+     "mte3ek 9bal ma t5alles 🤍"),
 ]
 
 
@@ -10879,6 +10888,15 @@ def api_messenger_webhook(request):
                     conv.source_campaign = str(referral.get("ads_context_data", {}).get("ad_title")
                                                or conv.source_campaign or "")
                     conv.ctwa_clid = str(referral.get("ctwa_clid") or conv.ctwa_clid or "")
+                    # TEMP DIAGNOSTIC: record what we actually extracted, so we
+                    # can confirm Instagram referral capture. Remove later.
+                    try:
+                        log_action(None, AuditLog.OTHER,
+                                   description=("REFERRAL %s | keys=%s | ad_id=%s"
+                                                % (platform, list(referral.keys()),
+                                                   referral.get("ad_id"))))
+                    except Exception:
+                        pass
                     # Resolve the ad_id to its real Meta campaign name once, so
                     # the UI can show "Traffic | Jordan" instead of the post
                     # title. Best-effort; won't block if Meta is slow.
