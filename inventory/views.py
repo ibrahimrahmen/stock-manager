@@ -10806,8 +10806,12 @@ def api_messenger_webhook(request):
     # TEMP DIAGNOSTIC: log the raw payload so we can see Instagram vs Messenger
     # structure. Remove once Instagram handling is confirmed.
     try:
+        _dump = _json.dumps(payload, ensure_ascii=False)
+        # If this payload carries an ad referral, log it in FULL (not truncated)
+        # so we can see exactly where the ad_id sits for Instagram.
+        _limit = 6000 if ("referral" in _dump or "ad_id" in _dump) else 1500
         log_action(None, AuditLog.OTHER,
-                   description="DM webhook RAW: " + _json.dumps(payload)[:1500])
+                   description="DM webhook RAW: " + _dump[:_limit])
     except Exception:
         pass
 
@@ -10861,9 +10865,14 @@ def api_messenger_webhook(request):
                     if nm:
                         conv.sender_name = nm
 
-                # Capture ad referral (attribution). Present on the first message
-                # from an ad, or as a standalone 'referral' event. (Not echoes.)
-                referral = None if is_echo else (ev.get("referral") or (ev.get("message") or {}).get("referral"))
+                # Capture ad referral (attribution). It can arrive in several
+                # shapes: a standalone 'referral' event, inside 'message', or —
+                # on Instagram — inside 'postback'. Check all of them.
+                referral = None
+                if not is_echo:
+                    referral = (ev.get("referral")
+                                or (ev.get("message") or {}).get("referral")
+                                or (ev.get("postback") or {}).get("referral"))
                 if referral:
                     conv.source_ad_id = str(referral.get("ad_id") or conv.source_ad_id or "")
                     conv.source_ad_ref = str(referral.get("ref") or conv.source_ad_ref or "")
