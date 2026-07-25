@@ -115,6 +115,39 @@ def _extract_tn_phone(text):
     return ""
 
 
+def _looks_like_incomplete_phone(text):
+    """True if the customer clearly TRIED to send a phone number but it isn't a
+    valid 8-digit Tunisian mobile — e.g. "2677382" (7 digits). Used so the bot
+    can ask them to resend it complete instead of staying silent.
+
+    Returns False when there's a valid phone (handled elsewhere) or when the
+    message is normal text with no phone-like intent.
+    """
+    import re as _r
+    if not text:
+        return False
+    if _extract_tn_phone(text):
+        return False  # a valid phone is present, nothing to fix
+    cleaned = _r.sub(r"https?://\S+", " ", text)
+    # A short message that is mostly digits (a phone attempt), 5-7 digits, or
+    # 8 digits with a wrong prefix.
+    _stripped = cleaned.strip()
+    _digits = _r.sub(r"\D", "", _stripped)
+    if not _digits:
+        return False
+    # The message should be mostly the number (not a long sentence with a stray
+    # figure like an address "3 rue ...").
+    _non_digit = _r.sub(r"[\d\s\-+]", "", _stripped)
+    if len(_non_digit) > 4:
+        return False  # too much text around it -> not a bare phone attempt
+    # 5-7 digits = too short; 8 digits but wrong prefix = wrong number.
+    if 5 <= len(_digits) <= 7:
+        return True
+    if len(_digits) == 8 and _digits[0] not in "24579":
+        return True
+    return False
+
+
 # Lines worth quoting back to a customer from an ad: prices, sizes, delivery.
 _AD_KEEP_PATTERNS = [
     r"\d\s*(?:dt|d\.t|tnd|dinars?|دينار|دت)\b",   # 49 DT / 89DT / 75 dinars
@@ -11285,8 +11318,32 @@ def api_messenger_webhook(request):
                 except Exception:
                     pass
 
-                # Product carousel: if the bot is on and the customer asked to
-                # SEE a category ("chnowa 3andkom", "3andkom pull mta3 sif"),
+                # Incomplete phone: the customer clearly tried to send their
+                # number but it's not a valid 8-digit Tunisian mobile (e.g. only
+                # 7 digits). Ask them to resend it complete, so the bot doesn't
+                # stay silent on a half-typed number. Only when the bot is on and
+                # nothing else already answered.
+                if (_bot_on and not _faq_fired and not is_echo
+                        and (text or "").strip()):
+                    try:
+                        if _looks_like_incomplete_phone(text):
+                            _pmsg = ("Khouya, el noumrou eli b3athtou naqes, "
+                                     "ab3athhouli kamel (8 chiffres) 🤍")
+                            _already = any(m.get("phonefix") for m in
+                                           (conv.messages or [])[-6:])
+                            if not _already and _messenger_send_text(
+                                    page_id, sender_id, _pmsg, platform):
+                                _faq_fired = True  # block the bot this round
+                                _mm = conv.messages or []
+                                _mm.append({"from": "page", "text": _pmsg,
+                                            "ts": "", "mid": "",
+                                            "phonefix": True})
+                                conv.messages = _mm
+                                conv.save(update_fields=["messages", "updated_at"])
+                    except Exception:
+                        pass
+
+
                 # send a horizontal carousel of matching products instead of a
                 # text reply. Only for real questions, not order data.
                 _carousel_sent = False
