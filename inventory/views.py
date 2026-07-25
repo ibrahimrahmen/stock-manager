@@ -10975,9 +10975,42 @@ def api_messenger_webhook(request):
                 # present or the conversation isn't NEW) so you can iterate. For
                 # real customers, keep the safe gates: no phone yet, not already
                 # greeted, and conversation still NEW.
-                _gates_ok = (_is_test) or (
-                    not has_phone_now and not conv.auto_replied
-                    and conv.status == MessengerConversation.NEW)
+                # Two situations let the bot reply:
+                #  (1) NEW conversation, no phone yet — the normal pre-order flow.
+                #  (2) POST-order: the customer already gave their number but
+                #      keeps asking things (delivery time, colour, price...).
+                #      Customers very often have questions after ordering, and
+                #      nobody was answering them. We let the bot answer, but only
+                #      when the latest message looks like a QUESTION rather than
+                #      order data (address / number / size), so it doesn't react
+                #      to the customer still typing their order.
+                _pre_order = (not has_phone_now and not conv.auto_replied
+                              and conv.status == MessengerConversation.NEW)
+
+                def _looks_like_question(t):
+                    t = (t or "").lower().strip()
+                    if not t:
+                        return False
+                    if "?" in t:
+                        return True
+                    _qwords = (
+                        "9adeh", "9adech", "kadeh", "kadech", "gadeh", "gadech",
+                        "gidach", "bgidach", "prix", "combien", "chhal", "ch7al",
+                        "wa9tech", "waktech", "w9tech", "w9th", "wa2tech",
+                        "yousel", "yousil", "touselni", "wa9t", "delai", "win",
+                        "kifeh", "kifech", "chnowa", "chneya", "chnia", "3lech",
+                        "couleur", "color", "lawn", "taswira", "photo", "video",
+                        "vd", "dispo", "disponible", "famma", "fama", "3andkom",
+                        "n7el", "the7el", "tbadel", "échange", "echange",
+                    )
+                    return any(w in t for w in _qwords)
+
+                _post_order_q = (
+                    (has_phone_now or conv.auto_replied
+                     or conv.status != MessengerConversation.NEW)
+                    and _looks_like_question(text))
+
+                _gates_ok = (_is_test) or _pre_order or _post_order_q
                 # FAQ first: fixed, reliable answers (open parcel, delivery
                 # timing, price-from-ad). If one fires, the bot must NOT also
                 # reply, or the customer gets two messages. This runs whether or
