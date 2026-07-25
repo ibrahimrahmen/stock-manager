@@ -90,14 +90,27 @@ def _extract_tn_phone(text):
     # Find 8-digit groups that stand alone (allow spaces inside like "20 123 456"),
     # not embedded in a longer digit run.
     _VALID_PREFIX = "24579"
+    # PRIORITY: an explicit +216 / 00216 GLUED to digits is a country code, e.g.
+    # "+21626773" = +216 then 26773 (only 5 digits -> INCOMPLETE, reject), while
+    # "+21621654789" = +216 then 21654789 (valid). Handle this first so the
+    # leading 216 isn't mistaken for the start of an 8-digit number.
+    _nospace = _r.sub(r"[\s-]", "", cleaned)
+    _glued = _r.search(r"(?:\+216|00216)(\d+)", _nospace)
+    if _glued:
+        _rest = _glued.group(1)
+        if len(_rest) == 8 and _rest[0] in _VALID_PREFIX:
+            return _rest
+        return ""  # +216 followed by not-exactly-8 digits -> incomplete
     candidates = _r.findall(r"(?<!\d)(?:\+?216[\s-]?)?(\d[\d\s-]{6,}\d)(?!\d)", cleaned)
     # Pass 1: groups that are exactly a phone number.
     for raw in candidates:
         digits = _r.sub(r"\D", "", raw)
-        if len(digits) == 11 and digits.startswith("216"):
-            digits = digits[3:]
         if len(digits) == 8 and digits[0] in _VALID_PREFIX:
             return digits
+        if len(digits) == 11 and digits.startswith("216"):
+            _d2 = digits[3:]
+            if len(_d2) == 8 and _d2[0] in _VALID_PREFIX:
+                return _d2
     # Pass 2: customers often glue other numbers to the phone, e.g.
     # "... w chlaka 40 29 252157" -> the run reads as 4029252157. Scan longer
     # runs for an 8-digit window with a valid Tunisian prefix, preferring the
@@ -135,6 +148,11 @@ def _looks_like_incomplete_phone(text):
     _digits = _r.sub(r"\D", "", _stripped)
     if not _digits:
         return False
+    # Strip an explicit +216 / 00216 country code before counting, so
+    # "+21626773" reads as 5 leftover digits (incomplete), not 8.
+    _has_cc = bool(_r.search(r"(?:\+\s*216|\b00\s*216)", _stripped))
+    if (_has_cc or len(_digits) > 8) and _digits.startswith("216"):
+        _digits = _digits[3:]
     # The message should be mostly the number (not a long sentence with a stray
     # figure like an address "3 rue ...").
     _non_digit = _r.sub(r"[\d\s\-+]", "", _stripped)
