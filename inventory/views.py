@@ -1215,6 +1215,134 @@ def _messenger_send_text(page_id, recipient_id, text, platform="messenger"):
         return False
 
 
+def _messenger_send_carousel(page_id, recipient_id, cards, platform="messenger"):
+    """Send a horizontal carousel (generic template) of product cards.
+
+    Each card is a dict: {title, subtitle, image_url}. image_url MUST be a
+    public https URL (Meta fetches it). Returns True on success. Best-effort,
+    never raises. Max 10 cards per Meta limits; we cap at 10.
+    """
+    import urllib.request as _ureq
+    import json as _json
+    token = _messenger_page_token(page_id)
+    if not token or not recipient_id or not cards:
+        return False
+    host = ("graph.instagram.com" if platform == "instagram"
+            else "graph.facebook.com")
+    url = (f"https://{host}/v21.0/me/messages?access_token="
+           + _ureq.quote(token, safe=""))
+    elements = []
+    for c in cards[:10]:
+        el = {"title": (c.get("title") or "")[:80]}
+        if c.get("subtitle"):
+            el["subtitle"] = c["subtitle"][:80]
+        if c.get("image_url"):
+            el["image_url"] = c["image_url"]
+        elements.append(el)
+    body = _json.dumps({
+        "recipient": {"id": str(recipient_id)},
+        "messaging_type": "RESPONSE",
+        "message": {
+            "attachment": {
+                "type": "template",
+                "payload": {
+                    "template_type": "generic",
+                    "elements": elements,
+                },
+            },
+        },
+    }).encode("utf-8")
+    try:
+        req = _ureq.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", "application/json")
+        with _ureq.urlopen(req, timeout=12) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def _build_category_carousel(text, sales_page_id=None, limit=10):
+    """If the customer asked to see a product category (e.g. 'chnowa 3andkom',
+    '3andkom pull', 'mrewel mta3 sif'), return a list of carousel cards for the
+    matching products, else None.
+
+    Maps Tunisian category words to Product.category, optionally filters by
+    season ('sif'=summer, 'chte'=winter), and takes the first variant image and
+    the linked offer price (falls back to sell_price) for each product.
+    """
+    from .models import Product
+    from django.db.models import Q
+    t = (text or "").lower()
+
+    # Does the customer want to browse / see products?
+    _show_kws = ("chnowa 3andkom", "chnia 3andkom", "chnowa fama", "montre",
+                 "montrer", "affichli", "wari", "warili", "farjini", "farjhili",
+                 "3andkom", "3andek", "nheb nchouf", "produits", "collection",
+                 "modeles", "modèles", "chwahom", "chnia mawjoud")
+    _wants_browse = any(k in t for k in _show_kws)
+
+    # Category words -> Product.category value. Matched case-insensitively.
+    _cat_map = {
+        "TOPS": ("pull", "top", "maryoul", "mrewel", "tshirt", "t-shirt",
+                 "chemise", "shirt", "polo", "sweat", "hoodie"),
+        "Pants": ("pantalon", "pants", "jean", "jogging", "survet"),
+        "Veste": ("veste", "manteau", "bombers", "jacket"),
+        "Sneakers": ("sneakers", "chaussures", "baskets", "sabbat", "sabot"),
+        "SHORT": ("short",),
+        "Tenue": ("tenue", "ensemble", "pack", "complet"),
+    }
+    _wanted_cat = None
+    for cat, words in _cat_map.items():
+        if any(w in t for w in words):
+            _wanted_cat = cat
+            break
+
+    if not _wanted_cat and not _wants_browse:
+        return None
+
+    # Season filter
+    _season = None
+    if any(w in t for w in ("sif", "sayf", "été", "ete", "summer")):
+        _season = "summer"
+    elif any(w in t for w in ("chte", "chta", "hiver", "winter")):
+        _season = "winter"
+
+    qs = Product.objects.filter(archived=False)
+    if _wanted_cat == "TOPS":
+        qs = qs.filter(Q(category__iexact="TOPS") | Q(category__iexact="TOP"))
+    elif _wanted_cat:
+        qs = qs.filter(category__iexact=_wanted_cat)
+    if _season:
+        qs = qs.filter(season=_season)
+
+    cards = []
+    base = os.environ.get(
+        "PUBLIC_BASE_URL",
+        "https://web-production-1391c5.up.railway.app").rstrip("/")
+    for p in qs.distinct()[:limit]:
+        v = (p.variants.exclude(image="").exclude(image__isnull=True).first()
+             if hasattr(p, "variants") else None)
+        if not v:
+            continue
+        try:
+            img = base + v.image.url
+        except Exception:
+            continue
+        price = None
+        try:
+            _op = (p.offerproduct.select_related("offer").first()
+                   if hasattr(p, "offerproduct") else None)
+            if _op and _op.offer and _op.offer.bundle_price:
+                price = _op.offer.bundle_price
+        except Exception:
+            price = None
+        if price is None:
+            price = getattr(p, "sell_price", None)
+        sub = (f"{int(price)} DT" if price else "")
+        cards.append({"title": p.name, "subtitle": sub, "image_url": img})
+    return cards or None
+
+
 def _claude_web_search(prompt, max_tokens=1024):
     """Call Claude WITH the web_search tool enabled. Returns the final text or
     None. Used to resolve which governorate a Tunisian locality belongs to when
@@ -11158,7 +11286,32 @@ def api_messenger_webhook(request):
                 except Exception:
                     pass
 
-                if _bot_on and _gates_ok and not _faq_fired and ((text or "").strip() or images):
+                # Product carousel: if the bot is on and the customer asked to
+                # SEE a category ("chnowa 3andkom", "3andkom pull mta3 sif"),
+                # send a horizontal carousel of matching products instead of a
+                # text reply. Only for real questions, not order data.
+                _carousel_sent = False
+                if (_bot_on and _gates_ok and not _faq_fired
+                        and (text or "").strip()):
+                    try:
+                        _cards = _build_category_carousel(text, _sp_here)
+                        if _cards:
+                            if _messenger_send_carousel(page_id, sender_id,
+                                                        _cards, platform):
+                                _carousel_sent = True
+                                _mm = conv.messages or []
+                                _mm.append({
+                                    "from": "page",
+                                    "text": "[carousel: %d produits]" % len(_cards),
+                                    "ts": "", "mid": "", "bot": True,
+                                    "carousel": True})
+                                conv.messages = _mm
+                                conv.save(update_fields=["messages", "updated_at"])
+                    except Exception:
+                        _carousel_sent = False
+
+                if (_bot_on and _gates_ok and not _faq_fired and not _carousel_sent
+                        and ((text or "").strip() or images)):
                     # Dedup: Meta sometimes delivers the same webhook event more
                     # than once (retries / duplicate deliveries). Without a guard
                     # each delivery spawns a reply → the bot answers twice. Skip
