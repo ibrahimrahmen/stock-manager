@@ -11129,12 +11129,28 @@ def api_messenger_webhook(request):
                         # Vision) is too slow to run inline — Meta times out the
                         # webhook and the reply never sends. Run it in a background
                         # thread so we return to Meta immediately.
-                        def _run_bot(conv_id, pg, sn, plat):
+                        def _run_bot(conv_id, pg, sn, plat, my_mid):
                             try:
                                 from .models import MessengerConversation as _MC
                                 import time as _time
+                                # Debounce: the customer often fires several
+                                # messages in a row. Wait a moment, then only the
+                                # thread for the LAST customer message proceeds;
+                                # the earlier ones bail out. This gives ONE reply
+                                # covering everything they typed.
+                                _time.sleep(6)
                                 _c = _MC.objects.filter(pk=conv_id).first()
                                 if not _c:
+                                    return
+                                # Find the latest customer message mid. If it's
+                                # not the one this thread was launched for, a
+                                # newer message arrived → let that thread answer.
+                                _latest_user_mid = None
+                                for _m in reversed(_c.messages or []):
+                                    if _m.get("from") == "user":
+                                        _latest_user_mid = _m.get("mid") or ""
+                                        break
+                                if my_mid and _latest_user_mid and _latest_user_mid != my_mid:
                                     return
                                 # Guard: if the bot already replied in the last
                                 # 8 seconds, skip (protects against two near-
@@ -11163,7 +11179,7 @@ def api_messenger_webhook(request):
                         try:
                             import threading as _thr
                             _thr.Thread(target=_run_bot,
-                                        args=(conv.id, page_id, sender_id, platform),
+                                        args=(conv.id, page_id, sender_id, platform, mid),
                                         daemon=True).start()
                         except Exception:
                             # Fallback: run inline if threads aren't available.
