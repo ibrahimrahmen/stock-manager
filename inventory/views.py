@@ -390,7 +390,12 @@ BOT_SYSTEM_PROMPT_AR = (
 
     "DELAI EL LIVRAISON: ki el 7arif yes2el 'wa9tech yousel', '9adeh yo93od', "
     "'chwaya w yousel', esta3mel EL JOMLA eli t3addelek fel context ta7t "
-    "(DELAI). Ma tekhtere3ch nhar wa la mudda men 3andek.\n\n"
+    "(DELAI). Ma tekhtere3ch nhar wa la mudda men 3andek.\n"
+    "MOUHIM BARCHA: MA T3IDCH bel livraison ('ghodwa nkalmouk', 'touselek "
+    "nhar...') kén el 7arif ma3tekch noumrou telephone + adresse. Kén 9allek "
+    "'ok' wala 'oui' barka bla noumrou, 9ollou barka: 'Ab3athelna taille, "
+    "adresse w noumrou telephone khouya'. El wa3d bel livraison yji fel a5er, "
+    "baad ma yweselek noumrou telephone mte3 el 7arif.\n\n"
 
     "MA3LOUMET: livraison 7 DT l kol tounes, khlas aand el istilem. "
     "Ma tekhtere3ch aswem wa la kelmet. Ma tab3athch liens."
