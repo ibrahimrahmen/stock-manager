@@ -233,9 +233,12 @@ MESSENGER_FAQ_REPLIES = [
     # Customer wants to see the real quality / a real photo before buying.
     (("quality", "qualité", "qualite", "kalite", "9alite", "9uality",
       "taswira réelle", "taswira reelle", "taswira real", "photo réelle",
-      "photo reelle", "photo real", "real photo", "nchouf el produit",
-      "nchouf el mntej", "nchuf quality", "nchouf quality", "vd réel",
-      "video réelle", "video reelle", "réel", "reel produit"),
+      "photo reelle", "photo real", "real photo", "photo reel",
+      "photo réel", "photo haqiqiya", "taswira reel", "tab3ethli photo",
+      "tab3athli photo", "ab3athli photo", "sourti", "swira real",
+      "nchouf el produit", "nchouf el mntej", "nchuf quality",
+      "nchouf quality", "vd réel", "video réelle", "video reelle",
+      "réel", "reel produit", "reel lel produit"),
      "El quality mte3na top khouya 🤍 w 3andek el 7a9 tetfa9ed el colis "
      "9bal ma tkhalles, ken ma3jbekch ma tekhdhouch."),
 ]
@@ -831,6 +834,7 @@ def _bot_reply(conv):
         # which is a wall of text on mobile. Without it in context, it asks
         # which article they mean, as intended.
         catalog_context = ""
+        import re as _rr
         try:
             _cat = _build_catalog_for_conv(conv)
             _has_photo = bool(img_urls or local_imgs)
@@ -841,11 +845,33 @@ def _bot_reply(conv):
                 if m.get("from") == "user").lower()
             _named_product = False
             if _cat and _user_txt:
+                # Normalise so orthographic variants match: jordan==jordon,
+                # accents dropped, etc.
+                def _norm(s):
+                    s = s.lower()
+                    for a, b in (("jordan", "jordon"), ("à", "a"), ("é", "e"),
+                                 ("è", "e"), ("ï", "i")):
+                        s = s.replace(a, b)
+                    return s
+                _utxt_n = _norm(_user_txt)
+                # Generic words that shouldn't count as "naming a product".
+                _stop = {"tenue", "ensemble", "pack", "pull", "short", "pants",
+                         "pantalon", "tshirt", "t-shirt", "baskets", "set",
+                         "pyjama", "survet", "survetement", "polo", "veste"}
                 for _line in _cat.splitlines():
-                    _nm = _line.lstrip("- ").split(":")[0].strip().lower()
-                    # Only meaningful names, and require the whole name to match
-                    # so a stray "air" inside a word doesn't count.
-                    if len(_nm) >= 5 and _nm in _user_txt:
+                    _nm = _line.lstrip("- ").split(":")[0].strip()
+                    _nm_n = _norm(_nm)
+                    # Full-name match (old behaviour).
+                    if len(_nm_n) >= 5 and _nm_n in _utxt_n:
+                        _named_product = True
+                        break
+                    # Distinctive-word match: any word of the product name that
+                    # is >=4 chars, not a generic clothing word, and appears in
+                    # what the customer wrote (e.g. "jordon" from "TENUE JORDON"
+                    # matching the customer's "jordan").
+                    _words = [w for w in _rr.split(r"[\s/,+()]+", _nm_n)
+                              if len(w) >= 4 and w not in _stop]
+                    if any(w in _utxt_n for w in _words):
                         _named_product = True
                         break
             if _cat and (_has_photo or _from_ad or _named_product):
