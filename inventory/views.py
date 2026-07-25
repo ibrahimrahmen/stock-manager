@@ -284,10 +284,10 @@ def _delivery_promise_tn(now=None):
     """Delivery promise in Tunisian Arabic, based on when the order arrives.
 
     Workflow it models:
-      - The team works 10:00-16:30 and prepares orders, then hands them to Navex
-        the same day.
-      - Navex delivers the next day or the day after.
-      - No delivery on Sunday (le7ed) -> Sundays are skipped.
+      - The team prepares orders EVERY day (Sunday included) and hands them to
+        Navex.
+      - Navex delivers the next day or the day after, but NEVER on Sunday, so
+        Sundays are skipped for delivery only.
 
     Time rules:
       - 00:00-10:00 : team calls after 10am today, prepares today
@@ -306,19 +306,17 @@ def _delivery_promise_tn(now=None):
     before_open = minutes < 10 * 60          # before 10:00
     after_cutoff = minutes >= (16 * 60 + 30)  # after 16:30
 
-    # Which day does the team prepare/ship it?
+    # Which day does the team prepare/ship it? The team works every day,
+    # Sunday included, so no Sunday skip here.
     prep = now.date() + _dt.timedelta(days=1) if after_cutoff else now.date()
-    # The team doesn't ship on Sunday -> push to Monday.
-    if prep.weekday() == 6:
-        prep += _dt.timedelta(days=1)
 
-    # Navex delivers next day / day after, skipping Sundays.
+    # Navex delivers next day / day after, but NOT on Sunday -> skip Sundays.
     def _next_delivery(d, n):
         out = []
         cur = d
         while len(out) < n:
             cur += _dt.timedelta(days=1)
-            if cur.weekday() != 6:   # skip Sunday
+            if cur.weekday() != 6:   # skip Sunday for delivery
                 out.append(cur)
         return out
 
