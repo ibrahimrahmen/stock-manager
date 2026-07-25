@@ -823,8 +823,8 @@ def _bot_reply(conv):
                         match_hint = (
                             "\n\n(EL MNTEJ ELI FEL TASWIRA t3aref b da9a: '"
                             + _res["name"] + "' b " + str(_res["price"]) + " DT. "
-                            "A3ti hedha el esm w hedha el thaman direct, w kammel "
-                            "b jomlet el commande.)")
+                            "HEDHA HOWA EL MNTEJ EL SA7I7 — esta3mel HEDHA EL ESM "
+                            "w HEDHA EL THAMAN barka, MA TBADELCH b mntej akhor.)")
                     else:
                         match_hint = (
                             "\n\n(EL MNTEJ ELI FEL TASWIRA ychbeh l '"
@@ -859,7 +859,12 @@ def _bot_reply(conv):
             + gender_hint
             + greet_hint
             + ad_context
-            + catalog_context
+            # When the 2-step matcher already identified the product from the
+            # photo, DROP the catalogue: otherwise the final model re-picks a
+            # different item from the 43-line list and contradicts the matcher
+            # (matcher said Jordan, bot answered "Sport Profit 5 pieces"). With
+            # only the match_hint it just formats the matcher's result.
+            + ("" if _matched else catalog_context)
             + delay_context
             + match_hint
             + "\n\nEl conversation lel7d ltew:\n" + transcript
