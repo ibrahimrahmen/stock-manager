@@ -827,19 +827,16 @@ def _bot_reply(conv):
                             "w HEDHA EL THAMAN barka, MA TBADELCH b mntej akhor.)")
                     else:
                         match_hint = (
-                            "\n\n(EL MNTEJ ELI FEL TASWIRA ychbeh l '"
-                            + _res["name"] + "' b " + str(_res["price"]) + " DT ama "
-                            "fama mntejat tochbehlou. 9oll lel 7arif eli ychbeh "
-                            "l hedha el mntej b hedha el thaman, w el equipe "
-                            "bech t2akedlou el modele bel dabt. Kammel b jomlet "
-                            "el commande.)")
+                            "\n\n(MECH MET2AKED mel mntej eli fel taswira "
+                            "(fama mntejat tochbehlou). MA TSEMMICH esm wala "
+                            "thaman. 9oll lel 7arif barka: 'La7dha khouya w "
+                            "nab3athlek el prix')")
                     _matched = True
                 elif _res and _res.get("_no_candidate"):
                     match_hint = (
-                        "\n\n(El mntej eli fel taswira ma tlamch m3a 7atta "
-                        "mntej fel catalogue b da9a. 9oll lel 7arif eli el "
-                        "equipe bech t2akedlou el thaman w el disponibilite, "
-                        "bla ma tekhtere3 esm wala thaman.)")
+                        "\n\n(MECH MET2AKED mel mntej eli fel taswira. MA "
+                        "TSEMMICH esm wala thaman. 9oll lel 7arif barka: "
+                        "'La7dha khouya w nab3athlek el prix')")
                     _matched = True
         except Exception:
             match_hint = ""
