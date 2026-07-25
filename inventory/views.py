@@ -230,6 +230,14 @@ MESSENGER_FAQ_REPLIES = [
       "raby yberek", "rabi yberek", "barak allah", "3aslema w chokran",
       "thanks", "3aslama barcha"),
      "3aychek khouya, raby ykhalik 🤍"),
+    # Customer wants to see the real quality / a real photo before buying.
+    (("quality", "qualité", "qualite", "kalite", "9alite", "9uality",
+      "taswira réelle", "taswira reelle", "taswira real", "photo réelle",
+      "photo reelle", "photo real", "real photo", "nchouf el produit",
+      "nchouf el mntej", "nchuf quality", "nchouf quality", "vd réel",
+      "video réelle", "video reelle", "réel", "reel produit"),
+     "El quality mte3na top khouya 🤍 w 3andek el 7a9 tetfa9ed el colis "
+     "9bal ma tkhalles, ken ma3jbekch ma tekhdhouch."),
 ]
 
 
