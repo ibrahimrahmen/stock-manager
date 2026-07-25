@@ -604,6 +604,30 @@ def _bot_reply(conv):
     Best-effort; never raises. Simple Étape-1 version: Q&A only."""
     try:
         msgs = conv.messages or []
+        # If the latest customer message is angry / hostile / a curse, stay
+        # silent and let a human handle it. A canned "shukran, baraka 3lik" to
+        # someone cursing the shop reads as mockery and makes things worse.
+        try:
+            _last_user = ""
+            for _m in reversed(msgs):
+                if _m.get("from") == "user" and (_m.get("text") or "").strip():
+                    _last_user = _m["text"].lower()
+                    break
+            _anger_markers = (
+                "7asibiah", "7asbiya", "hasbiya", "hasibiah", "na3mal wakil",
+                "la traba7", "la trba7", "ma traba7", "la yraba7",
+                "n7al 3lik", "haram 3lik", "7aram 3lik", "nachkik", "nachki",
+                "s7a9", "arnab", "nasseb", "sarra9", "voleur", "voleurs",
+                "arnaque", "arna9", "kdheb", "kadheb", "kdhaba", "menyek",
+                "nik", "3ars", "kleb", "kelb", "5anzir", "khanzir", "zebi",
+                "wsakh", "wsekh", "block", "signaler", "police", "tribunal",
+                "mahkma", "protection consommateur",
+            )
+            if _last_user and any(w in _last_user for w in _anger_markers):
+                return None
+        except Exception:
+            pass
+
         # Build a compact transcript (last ~12 messages) for context. A message
         # may carry only an image (no text) — represent that explicitly so the
         # bot knows the customer sent a photo instead of silently ignoring it.
