@@ -6663,11 +6663,8 @@ def api_n8n_create_order_from_dm(request):
 
 # ---- DM conversation: refresh / fetch latest --------------------------------
 
-@csrf_exempt
-@require_POST
 @login_required(login_url="/login/")
 @csrf_exempt
-@require_POST
 def api_bot_toggle(request):
     """Per-page auto-reply bot control.
 
@@ -6712,6 +6709,9 @@ def api_bot_toggle(request):
         return JsonResponse({"status": "error", "message": str(e)}, status=400)
 
 
+@login_required(login_url="/login/")
+@csrf_exempt
+@require_POST
 def api_conversation_send_message(request, pk):
     """Send a manual message from staff to the customer of this order's linked
     Messenger/Instagram conversation. Uses the same send path as the bot and
