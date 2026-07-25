@@ -223,6 +223,13 @@ MESSENGER_FAQ_REPLIES = [
       "winha", "finha", "votre adresse", "local", "situe"),
      "A7na boutique en ligne nwasloulek win enti w tnajem tetfa9ed colis "
      "mte3ek 9bal ma t5alles 🤍"),
+    # Customer closes with thanks / a blessing -> reply warmly, once.
+    (("raby y3inkom", "rabi y3inkom", "raby yeeinkom", "raby y3awenkom",
+      "raby ykhalik", "rabi ykhalik", "3aychek", "aychek", "3aychkom",
+      "merci", "chokran", "choukran", "shukran", "chukran", "yebarek",
+      "raby yberek", "rabi yberek", "barak allah", "3aslema w chokran",
+      "thanks", "3aslama barcha"),
+     "3aychek khouya, raby ykhalik 🤍"),
 ]
 
 
