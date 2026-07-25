@@ -219,9 +219,16 @@ MESSENGER_FAQ_REPLIES = [
 
 # Ways customers ask "how much?" in Tunisian latin / French / Arabic.
 _PRICE_QUESTION_KWS = (
-    "b9adeh", "b9adech", "9adeh", "9adech", "kadeh", "kadech", "b kadeh",
-    "bech9adeh", "prix", "price", "thaman", "combien", "chhal", "ch7al",
-    "بقداش", "قداش", "سعر", "الثمن",
+    # Tunisians spell "how much" many ways: 9/k/g for ق, with or without the
+    # leading b (bi=for), with e/i/a vowels. Cover the common variants.
+    "9adeh", "9adech", "9adেh", "9edeh", "9edech", "9dh", "9deh", "9dech",
+    "b9adeh", "b9adech", "b9dh", "b9deh", "b9dech", "be9adeh", "be9adech",
+    "kadeh", "kadech", "kdh", "kdeh", "kdech", "bkadeh", "bkadech", "b kadeh",
+    "gadeh", "gadech", "gadach", "gidach", "gidech", "gdh", "gdah", "gdach",
+    "bgadeh", "bgadech", "bgadach", "bgdh", "bgdach", "bgidach", "bgidech",
+    "9added", "9added", "bech9adeh", "ch9adeh", "ch9adech",
+    "prix", "price", "thaman", "combien", "chhal", "ch7al", "che7al",
+    "بقداش", "قداش", "بقداه", "قداه", "سعر", "الثمن", "بكم", "كم",
 )
 
 
@@ -6661,6 +6668,29 @@ def api_n8n_create_order_from_dm(request):
 @login_required(login_url="/login/")
 @csrf_exempt
 @require_POST
+def api_bot_toggle(request):
+    """Turn the auto-reply bot on/off instantly via a cache flag — no redeploy.
+    GET returns the current state; POST {off: true|false} sets it. When 'off'
+    is true the bot stops replying everywhere immediately."""
+    from django.core.cache import cache as _kc
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    try:
+        if request.method == "POST":
+            import json as _json
+            data = _json.loads(request.body.decode("utf-8") or "{}")
+            off = bool(data.get("off"))
+            # No timeout: persists until toggled back.
+            _kc.set("autoreply_bot_kill", off, None)
+        killed = bool(_kc.get("autoreply_bot_kill"))
+        env_on = os.environ.get("AUTOREPLY_BOT_ENABLED", "").strip() in ("1", "true", "True")
+        pages = os.environ.get("AUTOREPLY_BOT_PAGES", "").strip()
+        return JsonResponse({"status": "ok", "off": killed,
+                             "env_enabled": env_on, "pages": pages})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=400)
+
+
 def api_conversation_send_message(request, pk):
     """Send a manual message from staff to the customer of this order's linked
     Messenger/Instagram conversation. Uses the same send path as the bot and
@@ -10888,6 +10918,32 @@ def api_messenger_webhook(request):
                 # the confirmation auto-reply take over. A per-conversation cap
                 # prevents runaway loops.
                 _bot_on = os.environ.get("AUTOREPLY_BOT_ENABLED", "").strip() in ("1", "true", "True")
+
+                # Per-page activation: AUTOREPLY_BOT_PAGES is a comma list of
+                # sales_page ids where the bot may run (e.g. "10" = Traffic).
+                # Empty = all pages (back-compat). This lets us switch it on for
+                # one page only.
+                _bot_pages = os.environ.get("AUTOREPLY_BOT_PAGES", "").strip()
+                if _bot_on and _bot_pages:
+                    try:
+                        _allowed = {int(x) for x in _bot_pages.replace(" ", "").split(",") if x}
+                        _sp_here = MESSENGER_PAGE_TO_SALESPAGE.get(
+                            str(page_id or ""), MESSENGER_DEFAULT_SALESPAGE)
+                        if _sp_here not in _allowed:
+                            _bot_on = False
+                    except Exception:
+                        pass
+
+                # Instant kill-switch: a button in the UI sets this cache flag to
+                # stop the bot immediately, no redeploy. cache.get returns True
+                # when the bot has been turned OFF.
+                try:
+                    from django.core.cache import cache as _kc
+                    if _kc.get("autoreply_bot_kill"):
+                        _bot_on = False
+                except Exception:
+                    pass
+
                 # Test mode: if AUTOREPLY_BOT_TEST_SENDER is set, the bot ONLY
                 # replies to that one sender_id (your own account), so you can
                 # safely try it live without answering real customers.
@@ -10902,7 +10958,29 @@ def api_messenger_webhook(request):
                 _gates_ok = (_is_test) or (
                     not has_phone_now and not conv.auto_replied
                     and conv.status == MessengerConversation.NEW)
-                if _bot_on and _gates_ok and ((text or "").strip() or images):
+                # FAQ first: fixed, reliable answers (open parcel, delivery
+                # timing, price-from-ad). If one fires, the bot must NOT also
+                # reply, or the customer gets two messages. This runs whether or
+                # not the bot is on.
+                _faq_fired = False
+                try:
+                    if not is_echo and (text or "").strip():
+                        _ans = _faq_answer(text, conv)
+                        if _ans:
+                            _already = any(m.get("faq") == _ans
+                                           for m in (conv.messages or []))
+                            if not _already and _messenger_send_text(
+                                    page_id, sender_id, _ans, platform):
+                                _faq_fired = True
+                                _mm = conv.messages or []
+                                _mm.append({"from": "page", "text": _ans,
+                                            "ts": "", "mid": "", "faq": _ans})
+                                conv.messages = _mm
+                                conv.save(update_fields=["messages", "updated_at"])
+                except Exception:
+                    pass
+
+                if _bot_on and _gates_ok and not _faq_fired and ((text or "").strip() or images):
                     # Dedup: Meta sometimes delivers the same webhook event more
                     # than once (retries / duplicate deliveries). Without a guard
                     # each delivery spawns a reply → the bot answers twice. Skip
@@ -11075,23 +11153,8 @@ def api_messenger_webhook(request):
                         except Exception:
                             _send_order_confirmation(conv.pk, page_id, sender_id, platform)
 
-                # A2) FAQ quick answers (e.g. "can I open the parcel before
-                # paying?"). Simple keyword match, one reply per question.
-                try:
-                    if not is_echo and not _bot_on and (text or "").strip():
-                        _ans = _faq_answer(text, conv)
-                        if _ans:
-                            _already = any(m.get("faq") == _ans
-                                           for m in (conv.messages or []))
-                            if not _already and _messenger_send_text(
-                                    page_id, sender_id, _ans, platform):
-                                _mm = conv.messages or []
-                                _mm.append({"from": "page", "text": _ans,
-                                            "ts": "", "mid": "", "faq": _ans})
-                                conv.messages = _mm
-                                conv.save(update_fields=["messages", "updated_at"])
-                except Exception:
-                    pass
+                # A2) FAQ handled earlier (before the bot) so it can gate the
+                # bot and avoid double replies.
 
                 # B) Auto-extract when the conversation looks complete.
                 try:

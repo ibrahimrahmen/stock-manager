@@ -42,6 +42,7 @@ urlpatterns = [
     # Bot test page: simulate a customer chat with the auto-reply bot (no Meta)
     path("bot-test/", views.bot_test_page, name="bot_test"),
     path("api/bot-test/reply/", views.api_bot_test_reply, name="api_bot_test_reply"),
+    path("api/bot/toggle/", views.api_bot_toggle, name="api_bot_toggle"),
     path("api/orders/<int:pk>/mark-treated/", views.api_mark_treated, name="api_mark_treated"),
     path("api/create-return-order/", views.api_create_return_order, name="api_create_return_order"),
     path("api/orders/<int:pk>/return-unit/", views.api_return_unit_to_order, name="api_return_unit_to_order"),
