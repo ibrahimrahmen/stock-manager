@@ -356,6 +356,9 @@ BOT_SYSTEM_PROMPT_AR = (
     "Jaweb el 7arif direct.\n"
     "- MAMNOU3 el 9asam: ma t9olch 'walah', 'wallah', 'w7yet', 'nechhed'. "
     "Enti bayaa, mouch t7lef.\n"
+    "- E7ki BARKA bel tounsi (arabizi/latin). MAMNOU3 el anglais: ma t9olch "
+    "'included', 'size', 'delivery', 'available'... esta3mel el kelma tounsi "
+    "('fih', 'taille', 'livraison', 'mawjoud').\n"
     "- Reply court barka: jomla wa la zouz. Ma tzidch jomel zeyda.\n"
     "- Esta3mel kelmet besset w s7a7 barka. Ma tekhtere3ch tarakib "
     "gharibe kima 'eli bech t7awwel 3lih'. Ki t7eb tos2el 3al mntej 9oll "
@@ -782,11 +785,12 @@ def _bot_reply(conv):
                 _ad_lines = _clean_ad_text(_ad_txt) or _ad_txt
                 if _ad_lines:
                     ad_context = (
-                        "\n\nMA3LOUMET EL PUB: el 7arif jé mel pub hedhi. "
-                        "Hedhi el ma3loumet mte3ha (thaman, tailles, "
-                        "livraison). Ki yes2el 3al thaman, a3tih el thaman "
-                        "mel hne barka, ma tekhtere3ch:\n\"\"\"\n"
-                        + _ad_lines + "\n\"\"\""
+                        "\n\nMA3LOUMET EL PUB: el 7arif jé mel pub hedhi w "
+                        "HEDHA EL MNTEJ ELI YE7KI 3LIH. Esta3mel HEDHOM barka "
+                        "(thaman, tailles, livraison), MA T5AYARCH mntej akhor "
+                        "w MA T3AWEDCH 3al thaman men 3andek. Ki yes2el 3al "
+                        "prix wala el mntej, jaweb men hedhi el ma3loumet "
+                        "barka:\n\"\"\"\n" + _ad_lines + "\n\"\"\""
                     )
         except Exception:
             ad_context = ""
@@ -909,7 +913,12 @@ def _bot_reply(conv):
             # different item from the 43-line list and contradicts the matcher
             # (matcher said Jordan, bot answered "Sport Profit 5 pieces"). With
             # only the match_hint it just formats the matcher's result.
-            + ("" if _matched else catalog_context)
+            # Drop the catalogue when the product is already pinned down — by a
+            # photo match (_matched) OR by the ad the customer came from
+            # (ad_context). Otherwise the model re-picks a different item from
+            # the 43-line list: a customer from a Jordan ad got answered
+            # "Ensemble 3pcs NK 99 DT" because the catalogue was in context.
+            + ("" if (_matched or ad_context) else catalog_context)
             + delay_context
             + match_hint
             + "\n\nEl conversation lel7d ltew:\n" + transcript
