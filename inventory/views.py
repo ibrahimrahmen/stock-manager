@@ -225,17 +225,22 @@ def _ad_info_for_conv(conv):
 
 def _fetch_ig_story_origin(page_id, sender_id):
     """For an Instagram conversation, look up whether the customer's messages
-    were replies to one of our stories. Returns the story asset_id if found,
-    else "". This info is NOT in the webhook — only via the API. Best-effort.
+    were replies to one of our stories. Returns a dict
+    {asset_id, caption, media_url} if found, else None. This info is NOT in the
+    webhook — only via the API. Best-effort, never raises.
+
+    The caption usually names the product ("✨ Ensemble Pierce ..."), giving us
+    both the origin (story) AND which product the customer was looking at.
     """
     import json as _json
     import urllib.request as _ureq
     token = _messenger_page_token(page_id)
     if not token or not sender_id:
-        return ""
+        return None
     url = ("https://graph.instagram.com/v21.0/me/conversations"
            "?user_id=%s&fields=id,messages{id,story}&access_token=%s"
            % (sender_id, _ureq.quote(token, safe="")))
+    _asset = ""
     try:
         with _ureq.urlopen(url, timeout=12) as resp:
             data = _json.loads(resp.read().decode())
@@ -244,10 +249,29 @@ def _fetch_ig_story_origin(page_id, sender_id):
                 st = m.get("story") or {}
                 rt = st.get("reply_to") or {}
                 if rt.get("id"):
-                    return str(rt["id"])   # story asset_id
+                    _asset = str(rt["id"])
+                    break
+            if _asset:
+                break
+    except Exception:
+        return None
+    if not _asset:
+        return None
+    # Fetch the story media: caption (product) + image. Stories expire after
+    # 24h, so an old asset may no longer resolve — that's fine, we still keep
+    # the asset_id as the origin.
+    out = {"asset_id": _asset, "caption": "", "media_url": ""}
+    try:
+        murl = ("https://graph.instagram.com/v21.0/%s"
+                "?fields=id,caption,media_url&access_token=%s"
+                % (_asset, _ureq.quote(token, safe="")))
+        with _ureq.urlopen(murl, timeout=12) as resp:
+            md = _json.loads(resp.read().decode())
+        out["caption"] = (md.get("caption") or "").strip()
+        out["media_url"] = md.get("media_url") or ""
     except Exception:
         pass
-    return ""
+    return out
 
 
 def _messenger_page_token(page_id):
@@ -11221,17 +11245,26 @@ def api_messenger_webhook(request):
 
                         def _grab_story(cid, pg, sn):
                             try:
+                                import re as _rr_mod
                                 from .models import MessengerConversation as _MC
-                                _asset = _fetch_ig_story_origin(pg, sn)
-                                if _asset:
+                                _info = _fetch_ig_story_origin(pg, sn)
+                                if _info and _info.get("asset_id"):
                                     _c = _MC.objects.filter(pk=cid).first()
                                     if _c and not _c.source_ad_id and not (
                                             _c.source_ad_ref or "").startswith("story:"):
-                                        _c.source_ad_ref = "story:%s" % _asset
-                                        if not _c.source_campaign:
-                                            _c.source_campaign = "Story Instagram"
-                                        _c.save(update_fields=["source_ad_ref",
-                                                               "source_campaign"])
+                                        _c.source_ad_ref = "story:%s" % _info["asset_id"]
+                                        # Use the story caption's first line as the
+                                        # product/campaign name, e.g. "Ensemble Pierce".
+                                        _cap = (_info.get("caption") or "").strip()
+                                        _first = _cap.split("\n")[0].strip() if _cap else ""
+                                        # strip leading emojis/symbols
+                                        _first = _rr_mod.sub(r"^[^\w]+", "", _first).strip()
+                                        _c.source_campaign = _first or "Story Instagram"
+                                        _c.source_campaign_name = (
+                                            _first or _c.source_campaign_name or "")
+                                        _c.save(update_fields=[
+                                            "source_ad_ref", "source_campaign",
+                                            "source_campaign_name"])
                             except Exception:
                                 pass
 
