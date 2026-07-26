@@ -11423,11 +11423,19 @@ def api_messenger_webhook(request):
                     # pollutes the transcript and the bot's context.
                     if not already and is_echo and text:
                         _t = (text or "").strip()
+                        _tn = " ".join(_t.split())  # normalize whitespace
+                        # Meta echoes our outgoing bot/page messages back with a
+                        # real mid; our own record has an empty mid (and often a
+                        # bot flag). Match against ANY earlier page message with
+                        # the same normalized text — scan a wide window since Meta
+                        # notification messages can sit between our message and
+                        # its echo. This stops the transcript showing every bot
+                        # line twice.
                         already = any(
                             (m.get("from") == "page")
                             and not (m.get("mid") or "")
-                            and ((m.get("text") or "").strip() == _t)
-                            for m in msgs[-12:])
+                            and (" ".join((m.get("text") or "").split()) == _tn)
+                            for m in msgs[-40:])
                     if not already:
                         msgs.append({
                             "from": "page" if is_echo else "user",
