@@ -1230,10 +1230,26 @@ def _bot_reply(conv):
         if reply and reply[0].islower():
             reply = reply[0].upper() + reply[1:]
 
-        # Price guard: the model sometimes deforms a catalogue price (said
-        # "89 DT" for a product that is 79 DT). If the reply names a catalogue
-        # product AND states a price that doesn't match that product's real
-        # price, correct the number to the catalogue value.
+        # Price guard: the model sometimes deforms a price (said "89 DT" for a
+        # product that is 79 DT). Two layers:
+        # (1) If the customer came from an ad, the ad's price is authoritative —
+        #     force any other "<n> DT" (except the 7 DT delivery) to it.
+        # (2) Otherwise, fall back to matching a catalogue product name.
+        try:
+            _ad_price = ""
+            if ad_context:
+                _mp = _rr.search(r"(\d{2,4})\s*DT", ad_context, _rr.I)
+                if _mp:
+                    _ad_price = _mp.group(1)
+            if _ad_price and _rr.search(r"\d{2,4}\s*DT", reply, _rr.I):
+                def _fix_ad(mo):
+                    _n = mo.group(1)
+                    if _n == _ad_price or _n == "7":
+                        return mo.group(0)
+                    return _ad_price + " DT"
+                reply = _rr.sub(r"(\d{2,4})\s*DT", _fix_ad, reply)
+        except Exception:
+            pass
         try:
             _cat_src = _build_catalog_for_conv(conv) or ""
             if _cat_src and _rr.search(r"\d{2,3}\s*DT", reply, _rr.I):
