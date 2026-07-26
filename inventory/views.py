@@ -819,6 +819,26 @@ def _bot_reply(conv):
     Best-effort; never raises. Simple Étape-1 version: Q&A only."""
     try:
         msgs = conv.messages or []
+        # Language: reply in Arabic SCRIPT when the customer writes in Arabic or
+        # explicitly asks for it ("اكتب عربي" / "3arbi" / "عربي"). Some customers
+        # can't read arabizi (latin) — forcing it just frustrates them. We look
+        # at the last few customer messages.
+        _wants_arabic = False
+        try:
+            import re as _ra
+            _recent_user = [(_m.get("text") or "") for _m in msgs
+                            if _m.get("from") == "user"][-4:]
+            for _tx in _recent_user:
+                # any Arabic-script letters
+                if _ra.search(r"[\u0600-\u06FF]", _tx):
+                    _wants_arabic = True
+                    break
+            # explicit request even if typed in latin ("ekteb 3arbi", "arabe")
+            _joined = " ".join(_recent_user).lower()
+            if any(k in _joined for k in ("3arbi", "arabe", "arabic", "3arabiya")):
+                _wants_arabic = True
+        except Exception:
+            _wants_arabic = False
         # Has the shop already given a concrete price earlier in this convo? If
         # so, the bot must never say "attends je t'envoie le prix" again — that
         # confuses a customer who already knows the price (and may have ordered).
@@ -1167,6 +1187,12 @@ def _bot_reply(conv):
                "el prix' wala 'nchouf el prix' — el 7arif ya3ref el prix. Ken "
                "yes2el 3al prix marra okhra, 3awedlou el prix eli 3titou, ma "
                "t9oulou-ch nab3athlek." if _already_priced else "")
+            + ("\n\nMOHIM: el 7arif yekteb bel 3arbi wala 7ab el 3arbi. JAWBOU "
+               "BEL 3ARBI (script arabe, mouch latin). Nafs el ma3na, nafs el "
+               "ma3loumet (prix, taille, livraison), ama bel 7ourouf el "
+               "3arbiya. Mathal: 'أهلا خويا، هذا [المنتج] بـ 79 دينار و "
+               "التوصيل 7 دينار. باش تعدي الكوموند إبعثلنا القياس، العنوان و "
+               "النمرة'." if _wants_arabic else "")
             + "\n\nEl conversation lel7d ltew:\n" + transcript
             + "\n\nOkteb reply el bayaa ejjay barka bel tounsi latin (bla 'Vendeur:'): "
         )
