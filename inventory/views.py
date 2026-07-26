@@ -933,7 +933,31 @@ def _bot_reply(conv):
         except Exception:
             ad_context = ""
 
-        # Deterministic hint: has the bot already greeted in this conversation?
+        # Story / shared-media / reel origin: if the customer entered by replying
+        # to a story or sharing a reel/video, we captured the product in
+        # source_campaign(_name) via the background attribution thread. Feed it to
+        # the bot so it answers about THAT product — same idea as ad_context but
+        # for organic shares. Only when there's no ad_id (ad takes priority).
+        if not ad_context:
+            try:
+                _ref = (getattr(conv, "source_ad_ref", "") or "")
+                _prod = (getattr(conv, "source_campaign_name", "")
+                         or getattr(conv, "source_campaign", "") or "").strip()
+                # Only for story/share/media origins with a real product name
+                # (skip generic placeholders).
+                if (_ref.startswith(("story:", "share:", "media:")) and _prod
+                        and _prod.lower() not in ("story instagram",
+                                                  "reel/post instagram",
+                                                  "partage instagram")):
+                    ad_context = (
+                        "\n\nMA3LOUMET: el 7arif jé 3la khater chef/partagé "
+                        "HEDHA EL MNTEJ: \"" + _prod + "\". Ki yes2el 3al prix "
+                        "wala el mntej, e7ki 3la HEDHA barka, MA T5AYARCH mntej "
+                        "akhor."
+                    )
+            except Exception:
+                pass
+
         # If so, tell it explicitly NOT to say "Aslema" again.
         greet_hint = ""
         try:
@@ -11604,6 +11628,14 @@ def api_messenger_webhook(request):
                                             break
                                     if _last and (_time.time() - _last) < 8:
                                         return
+                                except Exception:
+                                    pass
+                                # Refresh so we pick up any attribution (story /
+                                # shared product) written by the background thread
+                                # during the debounce wait — lets the bot answer
+                                # about the shared product.
+                                try:
+                                    _c.refresh_from_db()
                                 except Exception:
                                     pass
                                 _rep = _bot_reply(_c)
