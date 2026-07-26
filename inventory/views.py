@@ -11709,6 +11709,24 @@ def api_messenger_webhook(request):
                                         return
                                 except Exception:
                                     pass
+                                # Wait for the ad referral: the "replied to an ad"
+                                # referral (which carries source_ad_id) sometimes
+                                # arrives in a SEPARATE webhook event, a beat after
+                                # the customer's first message. If we reply before
+                                # it lands, the bot asks "which article?" instead of
+                                # using the ad's product/price. Poll a few seconds
+                                # for an ad_id to appear.
+                                try:
+                                    if not _c.source_ad_id:
+                                        _aw = 0.0
+                                        while _aw < 6.0:
+                                            _c.refresh_from_db()
+                                            if _c.source_ad_id:
+                                                break
+                                            _time.sleep(2)
+                                            _aw += 2.0
+                                except Exception:
+                                    pass
                                 # Wait for media attribution: if this Instagram
                                 # convo came from a shared story/reel/video (no
                                 # ad_id), the background thread is downloading the
