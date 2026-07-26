@@ -1277,9 +1277,36 @@ def _bot_reply(conv):
         except Exception:
             pass
 
+        reply = _strip_delivery_if_no_phone(reply, conv)
         return reply[:600] or None
     except Exception:
         return None
+
+
+def _strip_delivery_if_no_phone(reply, conv):
+    """Guard: the bot must not promise confirmation/delivery ('ghodwa nkalmouk',
+    'touselek nhar') until the customer actually gave a phone number. Some
+    customers say 'ok' and the model jumps to promising delivery for an order
+    that doesn't exist yet. If there's no phone in the conversation and the reply
+    contains a delivery/confirmation promise, replace it with a request for the
+    order info. Returns the (possibly rewritten) reply.
+    """
+    try:
+        import re as _r
+        if not reply:
+            return reply
+        _all = " ".join((m.get("text") or "") for m in (conv.messages or []))
+        if _extract_tn_phone(_all):
+            return reply  # phone present -> promises are fine
+        _low = reply.lower()
+        _promise_markers = ("nkalmouk", "touselek", "touslek", "confirmation",
+                            "ghodwa nkalmouk", "nhar")
+        if any(k in _low for k in _promise_markers):
+            return ("Ab3athelna taille (S, M, L, XL, XXL), adresse w noumrou "
+                    "telephone khouya bech nkammlou el commande 🤍")
+        return reply
+    except Exception:
+        return reply
 
 
 _TN_FEMALE_NAMES = {
