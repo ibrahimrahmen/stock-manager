@@ -813,6 +813,33 @@ def _match_product_by_image(local_images, url_images, offers_data):
         return None
 
 
+def _match_named_product_from_campaign(campaign):
+    """Map a Meta campaign name (e.g. 'Traffic | Jordan') to a real catalogue
+    product name (e.g. 'Tenue Jordan') by matching distinctive words. Returns
+    the product name or "". Best-effort.
+    """
+    import re as _r
+    if not campaign:
+        return ""
+    from .models import Product
+    # distinctive words from the campaign (drop generic ones)
+    _generic = {"traffic", "barats", "pub", "ad", "offer", "promo", "tenue",
+                "ensemble", "pack", "sport", "nike", "the", "de", "la", "le"}
+    _cw = [w for w in _r.split(r"[^\w]+", campaign.lower())
+           if len(w) >= 4 and w not in _generic]
+    if not _cw:
+        return ""
+    for p in Product.objects.filter(archived=False):
+        _pn = (p.name or "").lower()
+        # normalize jordan/jordon
+        _pn_norm = _pn.replace("jordon", "jordan")
+        for w in _cw:
+            _w = w.replace("jordon", "jordan")
+            if _w in _pn_norm:
+                return p.name
+    return ""
+
+
 def _bot_reply(conv):
     """Generate a short Tunisian-Arabic bot reply to the latest customer
     message, using the conversation so far. Returns the reply text or None.
@@ -982,14 +1009,30 @@ def _bot_reply(conv):
                 # Prefer the filtered price/size/delivery lines: they're what
                 # the customer actually asks about, without the marketing copy.
                 _ad_lines = _clean_ad_text(_ad_txt) or _ad_txt
+                # Product NAME: the ad text rarely states it, so the model
+                # invents one ("T-shirt"). Derive it from the campaign name
+                # (e.g. "Traffic | Jordan" -> match catalogue "Tenue Jordan").
+                _prod_name = ""
+                try:
+                    _camp = (getattr(conv, "source_campaign_name", "")
+                             or getattr(conv, "source_campaign", "") or "")
+                    _prod_name = _match_named_product_from_campaign(_camp)
+                except Exception:
+                    _prod_name = ""
                 if _ad_lines:
                     ad_context = (
                         "\n\nMA3LOUMET EL PUB: el 7arif jé mel pub hedhi w "
                         "HEDHA EL MNTEJ ELI YE7KI 3LIH. Esta3mel HEDHOM barka "
                         "(prix, tailles, livraison), MA T5AYARCH mntej akhor "
-                        "w MA T3AWEDCH 3al prix men 3andek. Ki yes2el 3al "
-                        "prix wala el mntej, jaweb men hedhi el ma3loumet "
-                        "barka:\n\"\"\"\n" + _ad_lines + "\n\"\"\""
+                        "w MA T3AWEDCH 3al prix men 3andek. "
+                        + ("ESM EL MNTEJ: \"" + _prod_name + "\" — esta3mel "
+                           "hedha el esm, MA TEKHTERE3CH esm akhor (mathal "
+                           "'T-shirt'). " if _prod_name else
+                           "KEN EL PUB MA FIHACH esm mntej wadhe7, MA "
+                           "TSEMMICH esm mou3ayan — 9oll 'el article mte3 el "
+                           "pub' barka. ")
+                        + "Ki yes2el 3al prix wala el mntej, jaweb men hedhi "
+                        "el ma3loumet barka:\n\"\"\"\n" + _ad_lines + "\n\"\"\""
                     )
         except Exception:
             ad_context = ""
