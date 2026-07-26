@@ -11674,6 +11674,32 @@ def api_messenger_webhook(request):
                                         return
                                 except Exception:
                                     pass
+                                # Wait for media attribution: if this Instagram
+                                # convo came from a shared story/reel/video (no
+                                # ad_id), the background thread is downloading the
+                                # frame and running Vision to identify the product
+                                # — which can take longer than the debounce. Poll
+                                # briefly so the bot answers WITH the product
+                                # instead of asking "which article?".
+                                try:
+                                    if (plat == "instagram" and not _c.source_ad_id):
+                                        _waited = 0.0
+                                        while _waited < 12.0:
+                                            _c.refresh_from_db()
+                                            _ref = (_c.source_ad_ref or "")
+                                            _camp = (_c.source_campaign or "")
+                                            # done once we have a real product, or
+                                            # a definitive "no origin" resolution
+                                            if _ref.startswith(("story:", "share:", "media:")):
+                                                if _camp and _camp not in (
+                                                        "Partage Instagram",
+                                                        "Reel/Post Instagram",
+                                                        "Story Instagram"):
+                                                    break  # product identified
+                                            _time.sleep(2)
+                                            _waited += 2.0
+                                except Exception:
+                                    pass
                                 # Refresh so we pick up any attribution (story /
                                 # shared product) written by the background thread
                                 # during the debounce wait — lets the bot answer
