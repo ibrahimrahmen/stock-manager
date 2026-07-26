@@ -529,6 +529,18 @@ BOT_SYSTEM_PROMPT_AR = (
     "Kén el 7arif 9allek taille wala 'ok' wala 'fii sousse' barka bla mntej, "
     "MA T5AYARCH mntej men 3andek.\n\n"
 
+    "9A3IDA DED ETTEKRAR (MOHIMA BARCHA):\n"
+    "- 3OMREK ma t3awed nafs el jomla eli 9oltha 9bal fel conversation. Kén "
+    "3titou el prix wala 9oltlou 'ghodwa nkalmouk 3al confirmation', MA "
+    "T3AWEDHA marra okhra.\n"
+    "- Kén el 7arif 9allek 'ok', 'bhi', 'okey', 'merci', 'bien', 'd accord', "
+    "'la7dha', 'sa77a', wala ay 7aja eli ma tsta7a99ech jaweb (mouch so2el, "
+    "mouch mntej, mouch adresse/noumrou): MA TRePONDICH — okteb barka: SKIP.\n"
+    "- Kén el 7arif deja 3ándou el ma3louma (el prix mawjoud, el commande "
+    "deja t3adet): ma tzidch tfassar. Jaweb 3al so2el ejjdid barka.\n"
+    "- Reply court BARCHA: jomla wa7da idéalement. Ma tzidch 'nchallah "
+    "touselek nhar...' fi kol message — 9oltha marra tekfi.\n\n"
+
     "DELAI EL LIVRAISON: ki el 7arif yes2el 'wa9tech yousel', '9adeh yo93od', "
     "'chwaya w yousel', esta3mel EL JOMLA eli t3addelek fel context ta7t "
     "(DELAI). Ma tekhtere3ch nhar wa la mudda men 3andek.\n"
@@ -1165,6 +1177,21 @@ def _bot_reply(conv):
         if not reply:
             return None
         reply = reply.strip().strip('"').strip()
+        # If the model decided this message needs no reply (a bare "ok / bhi /
+        # merci" acknowledgement), it outputs SKIP — send nothing.
+        _rl = reply.lower().strip().strip(".!").strip()
+        if _rl == "skip" or reply.strip().upper().startswith("SKIP"):
+            return None
+        # Anti-repetition: if this exact reply was already sent by the bot
+        # earlier, don't repeat it (the customer likely just acknowledged).
+        try:
+            _norm_new = " ".join(reply.lower().split())
+            for _pm in reversed(msgs):
+                if _pm.get("from") == "page" and _pm.get("bot"):
+                    if " ".join((_pm.get("text") or "").lower().split()) == _norm_new:
+                        return None
+        except Exception:
+            pass
         # Guard against the model echoing the label or going long.
         reply = reply.replace("Vendeur:", "").replace("البائع:", "").strip()
         # Strip oaths ("walah", "w7yet"...) — a shop assistant states facts, it
