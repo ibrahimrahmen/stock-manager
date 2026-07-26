@@ -239,10 +239,11 @@ def _fetch_ig_story_origin(page_id, sender_id):
     if not token or not sender_id:
         return None
     url = ("https://graph.instagram.com/v21.0/me/conversations"
-           "?user_id=%s&fields=id,messages{id,story,shares}&access_token=%s"
+           "?user_id=%s&fields=id,messages{id,story,shares,attachments}&access_token=%s"
            % (sender_id, _ureq.quote(token, safe="")))
     _asset = ""
     _link = ""
+    _att_img = ""
     try:
         with _ureq.urlopen(url, timeout=12) as resp:
             data = _json.loads(resp.read().decode())
@@ -255,6 +256,13 @@ def _fetch_ig_story_origin(page_id, sender_id):
                 sh = (m.get("shares") or {}).get("data") or []
                 if sh and not _link:
                     _link = str(sh[0].get("link") or "")
+                # A shared story/reel often lands as an attachment image (a JPEG
+                # frame even for video). Capture the first one's URL so we can
+                # image-match the product from it.
+                at = (m.get("attachments") or {}).get("data") or []
+                if at and not _att_img:
+                    _id = at[0].get("image_data") or {}
+                    _att_img = str(_id.get("url") or "")
             if _asset:
                 break
     except Exception:
@@ -276,7 +284,12 @@ def _fetch_ig_story_origin(page_id, sender_id):
         return out
     if _link:
         return {"kind": "share", "asset_id": "", "link": _link,
-                "caption": "", "media_url": ""}
+                "caption": "", "media_url": _att_img}
+    if _att_img:
+        # Only a shared media image (video frame / story share) — no caption to
+        # read, but we can image-match the product from the frame.
+        return {"kind": "media", "asset_id": "", "link": "",
+                "caption": "", "media_url": _att_img}
     return None
 
 
@@ -11277,8 +11290,37 @@ def api_messenger_webhook(request):
                                     _c.source_ad_ref = "share:%s" % _info["link"]
                                     if not _c.source_campaign:
                                         _c.source_campaign = "Reel/Post Instagram"
+                                    # If we also got a frame image, try to match
+                                    # the product from it.
+                                    _img = _info.get("media_url") or ""
+                                    if _img:
+                                        try:
+                                            _od = _offers_data_for_conv(_c)
+                                            _res = _match_product_by_image([], [_img], _od)
+                                            if _res and _res.get("name"):
+                                                _c.source_campaign = _res["name"]
+                                                _c.source_campaign_name = _res["name"]
+                                        except Exception:
+                                            pass
                                     _c.save(update_fields=["source_ad_ref",
-                                                           "source_campaign"])
+                                                           "source_campaign",
+                                                           "source_campaign_name"])
+                                elif _info.get("kind") == "media" and _info.get("media_url"):
+                                    _c.source_ad_ref = "media:shared"
+                                    _c.source_campaign = "Partage Instagram"
+                                    # Image-match the shared frame to find the product.
+                                    try:
+                                        _od = _offers_data_for_conv(_c)
+                                        _res = _match_product_by_image(
+                                            [], [_info["media_url"]], _od)
+                                        if _res and _res.get("name"):
+                                            _c.source_campaign = _res["name"]
+                                            _c.source_campaign_name = _res["name"]
+                                    except Exception:
+                                        pass
+                                    _c.save(update_fields=["source_ad_ref",
+                                                           "source_campaign",
+                                                           "source_campaign_name"])
                             except Exception:
                                 pass
 
