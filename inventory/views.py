@@ -11257,8 +11257,12 @@ def api_messenger_webhook(request):
                                         # product/campaign name, e.g. "Ensemble Pierce".
                                         _cap = (_info.get("caption") or "").strip()
                                         _first = _cap.split("\n")[0].strip() if _cap else ""
-                                        # strip leading emojis/symbols
-                                        _first = _rr_mod.sub(r"^[^\w]+", "", _first).strip()
+                                        # strip leading symbols, then all emojis
+                                        # (flags, sparkles, fire...) anywhere.
+                                        _first = _rr_mod.sub(r"^[^\w]+", "", _first)
+                                        _first = _rr_mod.sub(
+                                            r"[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F]",
+                                            "", _first).strip()
                                         _c.source_campaign = _first or "Story Instagram"
                                         _c.source_campaign_name = (
                                             _first or _c.source_campaign_name or "")
