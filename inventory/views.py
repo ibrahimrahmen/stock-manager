@@ -224,13 +224,14 @@ def _ad_info_for_conv(conv):
 
 
 def _fetch_ig_story_origin(page_id, sender_id):
-    """For an Instagram conversation, look up whether the customer's messages
-    were replies to one of our stories. Returns a dict
-    {asset_id, caption, media_url} if found, else None. This info is NOT in the
-    webhook — only via the API. Best-effort, never raises.
+    """For an Instagram conversation, find how the customer entered: a reply to
+    one of our STORIES, or a shared REEL/POST. Returns a dict:
+      {kind: "story"|"share", asset_id, link, caption, media_url}
+    or None. This info is NOT in the webhook — only via the API. Best-effort.
 
-    The caption usually names the product ("✨ Ensemble Pierce ..."), giving us
-    both the origin (story) AND which product the customer was looking at.
+    - story: customer replied to a story -> we get asset_id, and can read the
+      story's caption (the product) and image.
+    - share: customer shared/commented a reel or post -> we get its link.
     """
     import json as _json
     import urllib.request as _ureq
@@ -238,9 +239,10 @@ def _fetch_ig_story_origin(page_id, sender_id):
     if not token or not sender_id:
         return None
     url = ("https://graph.instagram.com/v21.0/me/conversations"
-           "?user_id=%s&fields=id,messages{id,story}&access_token=%s"
+           "?user_id=%s&fields=id,messages{id,story,shares}&access_token=%s"
            % (sender_id, _ureq.quote(token, safe="")))
     _asset = ""
+    _link = ""
     try:
         with _ureq.urlopen(url, timeout=12) as resp:
             data = _json.loads(resp.read().decode())
@@ -248,30 +250,34 @@ def _fetch_ig_story_origin(page_id, sender_id):
             for m in (thread.get("messages", {}) or {}).get("data", []):
                 st = m.get("story") or {}
                 rt = st.get("reply_to") or {}
-                if rt.get("id"):
+                if rt.get("id") and not _asset:
                     _asset = str(rt["id"])
-                    break
+                sh = (m.get("shares") or {}).get("data") or []
+                if sh and not _link:
+                    _link = str(sh[0].get("link") or "")
             if _asset:
                 break
     except Exception:
         return None
-    if not _asset:
-        return None
-    # Fetch the story media: caption (product) + image. Stories expire after
-    # 24h, so an old asset may no longer resolve — that's fine, we still keep
-    # the asset_id as the origin.
-    out = {"asset_id": _asset, "caption": "", "media_url": ""}
-    try:
-        murl = ("https://graph.instagram.com/v21.0/%s"
-                "?fields=id,caption,media_url&access_token=%s"
-                % (_asset, _ureq.quote(token, safe="")))
-        with _ureq.urlopen(murl, timeout=12) as resp:
-            md = _json.loads(resp.read().decode())
-        out["caption"] = (md.get("caption") or "").strip()
-        out["media_url"] = md.get("media_url") or ""
-    except Exception:
-        pass
-    return out
+
+    if _asset:
+        out = {"kind": "story", "asset_id": _asset, "link": "",
+               "caption": "", "media_url": ""}
+        try:
+            murl = ("https://graph.instagram.com/v21.0/%s"
+                    "?fields=id,caption,media_url&access_token=%s"
+                    % (_asset, _ureq.quote(token, safe="")))
+            with _ureq.urlopen(murl, timeout=12) as resp:
+                md = _json.loads(resp.read().decode())
+            out["caption"] = (md.get("caption") or "").strip()
+            out["media_url"] = md.get("media_url") or ""
+        except Exception:
+            pass
+        return out
+    if _link:
+        return {"kind": "share", "asset_id": "", "link": _link,
+                "caption": "", "media_url": ""}
+    return None
 
 
 def _messenger_page_token(page_id):
@@ -11239,7 +11245,7 @@ def api_messenger_webhook(request):
                 # the webhook fast). We store it in source_ad_ref as "story:<id>".
                 if (platform == "instagram" and not is_echo
                         and not conv.source_ad_id
-                        and not (conv.source_ad_ref or "").startswith("story:")):
+                        and not (conv.source_ad_ref or "").startswith(("story:", "share:"))):
                     try:
                         import threading as _thr2
 
@@ -11248,27 +11254,31 @@ def api_messenger_webhook(request):
                                 import re as _rr_mod
                                 from .models import MessengerConversation as _MC
                                 _info = _fetch_ig_story_origin(pg, sn)
-                                if _info and _info.get("asset_id"):
-                                    _c = _MC.objects.filter(pk=cid).first()
-                                    if _c and not _c.source_ad_id and not (
-                                            _c.source_ad_ref or "").startswith("story:"):
-                                        _c.source_ad_ref = "story:%s" % _info["asset_id"]
-                                        # Use the story caption's first line as the
-                                        # product/campaign name, e.g. "Ensemble Pierce".
-                                        _cap = (_info.get("caption") or "").strip()
-                                        _first = _cap.split("\n")[0].strip() if _cap else ""
-                                        # strip leading symbols, then all emojis
-                                        # (flags, sparkles, fire...) anywhere.
-                                        _first = _rr_mod.sub(r"^[^\w]+", "", _first)
-                                        _first = _rr_mod.sub(
-                                            r"[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F]",
-                                            "", _first).strip()
-                                        _c.source_campaign = _first or "Story Instagram"
-                                        _c.source_campaign_name = (
-                                            _first or _c.source_campaign_name or "")
-                                        _c.save(update_fields=[
-                                            "source_ad_ref", "source_campaign",
-                                            "source_campaign_name"])
+                                if not _info:
+                                    return
+                                _c = _MC.objects.filter(pk=cid).first()
+                                if not _c or _c.source_ad_id or (
+                                        _c.source_ad_ref or "").startswith(("story:", "share:")):
+                                    return
+                                if _info.get("kind") == "story" and _info.get("asset_id"):
+                                    _c.source_ad_ref = "story:%s" % _info["asset_id"]
+                                    _cap = (_info.get("caption") or "").strip()
+                                    _first = _cap.split("\n")[0].strip() if _cap else ""
+                                    _first = _rr_mod.sub(r"^[^\w]+", "", _first)
+                                    _first = _rr_mod.sub(
+                                        r"[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F]",
+                                        "", _first).strip()
+                                    _c.source_campaign = _first or "Story Instagram"
+                                    _c.source_campaign_name = _first or _c.source_campaign_name or ""
+                                    _c.save(update_fields=["source_ad_ref",
+                                                           "source_campaign",
+                                                           "source_campaign_name"])
+                                elif _info.get("kind") == "share" and _info.get("link"):
+                                    _c.source_ad_ref = "share:%s" % _info["link"]
+                                    if not _c.source_campaign:
+                                        _c.source_campaign = "Reel/Post Instagram"
+                                    _c.save(update_fields=["source_ad_ref",
+                                                           "source_campaign"])
                             except Exception:
                                 pass
 
