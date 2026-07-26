@@ -710,6 +710,20 @@ def _match_product_by_image(local_images, url_images, offers_data):
     dict {name, price} or None. Much more reliable than showing all 43 offers
     at once. offers_data = [{'name','price','desc'}]."""
     try:
+        # --- Step 0: is this actually a clothing product photo at all? ---
+        # Customers on Instagram sometimes share random content (a celebrity
+        # page, a meme, a screenshot). Without this check the bot treats it as a
+        # product and promises a price. Ask a cheap yes/no first.
+        _gate = _claude_generate(
+            "Regarde l'image. Est-ce que c'est une photo d'un VÊTEMENT à vendre "
+            "(habit, ensemble, pull, short, chaussures) ? Réponds UNIQUEMENT "
+            "'OUI' ou 'NON'. Si c'est une personne connue, un meme, une capture "
+            "d'écran, un logo de marque célèbre sans vêtement clair, réponds NON.",
+            max_tokens=5, temperature=0.0,
+            image_urls=url_images or None, local_images=local_images or None)
+        if _gate and "non" in _gate.strip().lower()[:6]:
+            return {"_not_product": True}
+
         # --- Step 1: describe what's in the customer's photo ---
         desc_prompt = (
             "Décris ce vêtement précisément en français (2 phrases max). "
@@ -793,6 +807,21 @@ def _bot_reply(conv):
     Best-effort; never raises. Simple Étape-1 version: Q&A only."""
     try:
         msgs = conv.messages or []
+        # Has the shop already given a concrete price earlier in this convo? If
+        # so, the bot must never say "attends je t'envoie le prix" again — that
+        # confuses a customer who already knows the price (and may have ordered).
+        _already_priced = False
+        try:
+            import re as _rp
+            for _m in msgs:
+                if _m.get("from") == "page":
+                    _t = (_m.get("text") or "")
+                    # a real price looks like "59dt", "79 DT", "99 dinar"
+                    if _rp.search(r"\d{2,3}\s*(dt|dinar|د\.?ت|tnd)", _t.lower()):
+                        _already_priced = True
+                        break
+        except Exception:
+            _already_priced = False
         # If the latest customer message is angry / hostile / a curse, stay
         # silent and let a human handle it. A canned "shukran, baraka 3lik" to
         # someone cursing the shop reads as mockery and makes things worse.
@@ -1080,6 +1109,16 @@ def _bot_reply(conv):
                         "TSEMMICH esm wala prix. 9oll lel 7arif barka: "
                         "'La7dha khouya w nab3athlek el prix')")
                     _matched = True
+                elif _res and _res.get("_not_product"):
+                    # The shared image isn't a clothing product (celebrity page,
+                    # meme, screenshot...). Don't promise a price — ask what they
+                    # want instead.
+                    match_hint = (
+                        "\n\n(EL TASWIRA/PARTAGE MECH mntej mte3na. MA T3IDCH "
+                        "prix wala 'nab3athlek el prix'. As2el el 7arif barka "
+                        "chnowa el article eli 7abou: 'Aslema khouya, chnowa "
+                        "el article eli 7abbito? 🤍')")
+                    _matched = True
         except Exception:
             match_hint = ""
             _matched = False
@@ -1111,6 +1150,11 @@ def _bot_reply(conv):
             + ("" if (_matched or ad_context) else catalog_context)
             + delay_context
             + match_hint
+            + ("\n\nMOHIM BARCHA: enti 3ATIT EL PRIX mte3 el mntej fi hedhi "
+               "el conversation men 9bal. MA T9OULCH abadan 'la7dha w nab3athlek "
+               "el prix' wala 'nchouf el prix' — el 7arif ya3ref el prix. Ken "
+               "yes2el 3al prix marra okhra, 3awedlou el prix eli 3titou, ma "
+               "t9oulou-ch nab3athlek." if _already_priced else "")
             + "\n\nEl conversation lel7d ltew:\n" + transcript
             + "\n\nOkteb reply el bayaa ejjay barka bel tounsi latin (bla 'Vendeur:'): "
         )
