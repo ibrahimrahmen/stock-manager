@@ -223,6 +223,33 @@ def _ad_info_for_conv(conv):
         return ""
 
 
+def _fetch_ig_story_origin(page_id, sender_id):
+    """For an Instagram conversation, look up whether the customer's messages
+    were replies to one of our stories. Returns the story asset_id if found,
+    else "". This info is NOT in the webhook — only via the API. Best-effort.
+    """
+    import json as _json
+    import urllib.request as _ureq
+    token = _messenger_page_token(page_id)
+    if not token or not sender_id:
+        return ""
+    url = ("https://graph.instagram.com/v21.0/me/conversations"
+           "?user_id=%s&fields=id,messages{id,story}&access_token=%s"
+           % (sender_id, _ureq.quote(token, safe="")))
+    try:
+        with _ureq.urlopen(url, timeout=12) as resp:
+            data = _json.loads(resp.read().decode())
+        for thread in data.get("data", []):
+            for m in (thread.get("messages", {}) or {}).get("data", []):
+                st = m.get("story") or {}
+                rt = st.get("reply_to") or {}
+                if rt.get("id"):
+                    return str(rt["id"])   # story asset_id
+    except Exception:
+        pass
+    return ""
+
+
 def _messenger_page_token(page_id):
     """Page access token for sending replies. Tokens are stored in the env var
     MESSENGER_PAGE_TOKENS as 'page_id:token,page_id:token,...' so they're never
@@ -11180,6 +11207,39 @@ def api_messenger_webhook(request):
                         nm = _resolve_ad_campaign_name(conv.source_ad_id)
                         if nm:
                             conv.source_campaign_name = nm
+
+                # Instagram story attribution: if this is an Instagram convo with
+                # NO ad_id and no story origin yet, the customer may have replied
+                # to one of our stories. That info isn't in the webhook — only via
+                # the API — so fetch it in a background thread (best-effort, keeps
+                # the webhook fast). We store it in source_ad_ref as "story:<id>".
+                if (platform == "instagram" and not is_echo
+                        and not conv.source_ad_id
+                        and not (conv.source_ad_ref or "").startswith("story:")):
+                    try:
+                        import threading as _thr2
+
+                        def _grab_story(cid, pg, sn):
+                            try:
+                                from .models import MessengerConversation as _MC
+                                _asset = _fetch_ig_story_origin(pg, sn)
+                                if _asset:
+                                    _c = _MC.objects.filter(pk=cid).first()
+                                    if _c and not _c.source_ad_id and not (
+                                            _c.source_ad_ref or "").startswith("story:"):
+                                        _c.source_ad_ref = "story:%s" % _asset
+                                        if not _c.source_campaign:
+                                            _c.source_campaign = "Story Instagram"
+                                        _c.save(update_fields=["source_ad_ref",
+                                                               "source_campaign"])
+                            except Exception:
+                                pass
+
+                        _thr2.Thread(target=_grab_story,
+                                     args=(conv.id, page_id, sender_id),
+                                     daemon=True).start()
+                    except Exception:
+                        pass
 
                 # Capture the message text. Dedupe by Meta's message id (mid):
                 # Meta retries webhook deliveries, and without this the same
