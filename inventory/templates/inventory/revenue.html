@@ -76,21 +76,66 @@
 <div class="page">
 
   <!-- DATE FILTER -->
-  <form method="get" style="display:flex;align-items:center;gap:10px;margin-bottom:32px;flex-wrap:wrap;">
-    <div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:8px 14px;">
-      <label style="font-size:12px;color:var(--muted);white-space:nowrap;">Du</label>
-      <input type="date" name="date_from" value="{{ date_from }}" style="background:transparent;border:none;color:var(--text);font-size:13px;outline:none;cursor:pointer;">
+  <div style="margin-bottom:32px;">
+    <!-- quick period chips -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="quickChips">
+      <button type="button" class="chip" data-days="0">Aujourd'hui</button>
+      <button type="button" class="chip" data-days="7">7 jours</button>
+      <button type="button" class="chip" data-days="30">30 jours</button>
+      <button type="button" class="chip" data-month="1">Ce mois-ci</button>
+      <a href="{% url 'revenue' %}" class="chip chip-clear">Tout</a>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:8px 14px;">
-      <label style="font-size:12px;color:var(--muted);white-space:nowrap;">Au</label>
-      <input type="date" name="date_to" value="{{ date_to }}" style="background:transparent;border:none;color:var(--text);font-size:13px;outline:none;cursor:pointer;">
-    </div>
-    <button type="submit" style="padding:8px 20px;background:var(--text);color:#000;border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:500;cursor:pointer;">Filtrer</button>
-    <a href="{% url 'revenue' %}" style="font-size:13px;color:var(--muted);text-decoration:none;">Tout afficher</a>
-    {% if date_from or date_to %}
-    <span style="font-size:12px;color:var(--amber);background:var(--amber-dim);padding:4px 10px;border-radius:20px;">Période filtrée</span>
-    {% endif %}
-  </form>
+    <form method="get" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;" id="dateForm">
+      <div class="date-field">
+        <span class="date-ico">📅</span>
+        <input type="date" name="date_from" id="dfrom" value="{{ date_from }}">
+      </div>
+      <span style="color:var(--hint);">→</span>
+      <div class="date-field">
+        <span class="date-ico">📅</span>
+        <input type="date" name="date_to" id="dto" value="{{ date_to }}">
+      </div>
+      <button type="submit" class="filter-btn">Appliquer</button>
+      {% if date_from or date_to %}
+      <span style="font-size:12px;color:var(--amber);background:var(--amber-dim);padding:5px 12px;border-radius:20px;">Période active</span>
+      {% endif %}
+    </form>
+  </div>
+  <style>
+    .chip{font-family:'DM Sans',sans-serif;font-size:13px;color:var(--muted);background:var(--surface);border:0.5px solid var(--border);border-radius:20px;padding:7px 16px;cursor:pointer;text-decoration:none;transition:all .15s;}
+    .chip:hover{color:var(--text);border-color:rgba(255,255,255,0.15);background:var(--surface2);}
+    .chip.active{color:var(--green);background:var(--green-dim);border-color:rgba(61,186,138,0.3);}
+    .chip-clear{color:var(--hint);}
+    .date-field{display:flex;align-items:center;gap:8px;background:var(--surface);border:0.5px solid var(--border);border-radius:var(--radius-sm);padding:9px 14px;transition:border-color .15s;}
+    .date-field:focus-within{border-color:rgba(61,186,138,0.4);}
+    .date-ico{font-size:13px;opacity:.6;}
+    .date-field input[type=date]{background:transparent;border:none;color:var(--text);font-size:13px;font-family:'DM Sans',sans-serif;outline:none;cursor:pointer;color-scheme:dark;}
+    .filter-btn{padding:9px 22px;background:var(--green);color:#04120c;border:none;border-radius:var(--radius-sm);font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif;cursor:pointer;transition:opacity .15s;}
+    .filter-btn:hover{opacity:.88;}
+  </style>
+  <script>
+    (function(){
+      function fmt(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+      document.querySelectorAll('#quickChips .chip[data-days],#quickChips .chip[data-month]').forEach(function(btn){
+        btn.addEventListener('click',function(){
+          var to=new Date(),from=new Date();
+          if(btn.dataset.month){from=new Date(to.getFullYear(),to.getMonth(),1);}
+          else{from.setDate(to.getDate()-parseInt(btn.dataset.days||'0',10));}
+          document.getElementById('dfrom').value=fmt(from);
+          document.getElementById('dto').value=fmt(to);
+          document.getElementById('dateForm').submit();
+        });
+      });
+      // highlight active chip based on current range
+      var cf="{{ date_from }}",ct="{{ date_to }}";
+      if(cf&&ct){
+        var days=Math.round((new Date(ct)-new Date(cf))/86400000);
+        document.querySelectorAll('#quickChips .chip[data-days]').forEach(function(b){
+          if(parseInt(b.dataset.days,10)===days)b.classList.add('active');
+        });
+      }
+    })();
+  </script>
 
   {% if ad_spend_available %}
   <div class="page-title {% if net_profit < 0 %}negative{% endif %}" style="{% if net_profit < 0 %}color:var(--red){% else %}color:var(--green){% endif %};">{{ net_profit|floatformat:3 }} TND</div>
