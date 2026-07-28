@@ -3396,11 +3396,32 @@ def revenue(request):
     return_fees  = RETURN_FEE * total_returns
     net_revenue  = gross_margin - return_fees
 
+    # Ad spend for the SAME period, deducted to get the true net profit. We hit
+    # Meta only when a date range is set (an all-time query would be slow and
+    # spend history may be capped by Meta's window). Best-effort: if the fetch
+    # fails or no range is given, ad_spend stays 0 and net_profit == net_revenue.
+    ad_spend = Decimal("0")
+    ad_spend_available = False
+    if date_from and date_to:
+        try:
+            _spend_map = _meta_fetch_spend_by_campaign(date_from, date_to)
+            if _spend_map:
+                ad_spend = sum(
+                    (Decimal(str(v.get("spend", 0) or 0)) for v in _spend_map.values()),
+                    Decimal("0"))
+                ad_spend_available = True
+        except Exception:
+            ad_spend = Decimal("0")
+            ad_spend_available = False
+    net_profit = net_revenue - ad_spend
+
     return render(request, "inventory/revenue.html", {
         "total_sell": total_sell, "total_buy": total_buy,
         "total_paid_units": total_paid_units, "gross_margin": gross_margin,
         "margin_pct": margin_pct, "total_returns": total_returns,
         "return_fees": return_fees, "net_revenue": net_revenue,
+        "ad_spend": ad_spend, "ad_spend_available": ad_spend_available,
+        "net_profit": net_profit,
         "order_rows": order_rows,
         "date_from": date_from_str, "date_to": date_to_str,
     })
@@ -10030,6 +10051,21 @@ def _push_order_to_navex_internal(request, order):
 
     designation = _build_designation(order)
     nb_article = _count_articles(order)
+
+    # Guard: never ship an order that has no product lines yet. This happens for
+    # DM/Messenger orders that get pushed to Navex before the articles are
+    # attached — the designation falls back to a generic "Commande" and the
+    # label ends up saying just "<id> Barats | Commande" with no products. Refuse
+    # and ask to add the articles first.
+    _has_products = (order.lines.exists()
+                     or any(oo.lines.exists() for oo in order.order_offers.all()))
+    if not _has_products:
+        return JsonResponse({
+            "status": "error",
+            "message": ("Cette commande n'a aucun article. Ajoute les produits "
+                        "avant de l'envoyer à Navex (sinon le bordereau affiche "
+                        "'Commande' sans détail)."),
+        }, status=400)
 
     # If this is an exchange order, build the exchange-specific params.
     # - echange     : ID of the original delivered order (for our tracking)

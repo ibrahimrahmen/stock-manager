@@ -92,8 +92,20 @@
     {% endif %}
   </form>
 
+  {% if ad_spend_available %}
+  <div class="page-title {% if net_profit < 0 %}negative{% endif %}" style="{% if net_profit < 0 %}color:var(--red){% else %}color:var(--green){% endif %};">{{ net_profit|floatformat:3 }} TND</div>
+  <div class="page-sub">Profit net · période filtrée — ventes − achats − retours − publicités</div>
+
+  <div class="formula">
+    <span>{{ total_sell|floatformat:3 }} TND</span> (ventes)
+    <span class="minus"> − {{ total_buy|floatformat:3 }} TND</span> (achats)
+    <span class="minus"> − {{ return_fees|floatformat:3 }} TND</span> (retours)
+    <span class="minus"> − {{ ad_spend|floatformat:3 }} TND</span> (publicités)
+    <span class="equals"> = {{ net_profit|floatformat:3 }} TND</span>
+  </div>
+  {% else %}
   <div class="page-title">{{ net_revenue|floatformat:3 }} TND</div>
-  <div class="page-sub">Revenu net{% if date_from or date_to %} · période filtrée{% else %} total{% endif %} — prix vente - prix achat - frais retours</div>
+  <div class="page-sub">Revenu net{% if date_from or date_to %} · période filtrée{% else %} total{% endif %} — prix vente - prix achat - frais retours{% if not date_from or not date_to %} · <span style="color:var(--amber);">choisis une période pour déduire les publicités</span>{% endif %}</div>
 
   <div class="formula">
     <span>{{ total_sell|floatformat:3 }} TND</span> (ventes)
@@ -101,6 +113,7 @@
     <span class="minus"> − {{ return_fees|floatformat:3 }} TND</span> ({{ total_returns }} retour(s) × 1 TND)
     <span class="equals"> = {{ net_revenue|floatformat:3 }} TND</span>
   </div>
+  {% endif %}
 
   <div class="breakdown">
     <div class="bcard">
@@ -123,6 +136,18 @@
       <div class="bcard-val amber">{{ return_fees|floatformat:3 }} TND</div>
       <div class="bcard-sub">{{ total_returns }} retour(s) × 1 TND</div>
     </div>
+    {% if ad_spend_available %}
+    <div class="bcard">
+      <div class="bcard-label">Revenu net (avant pub)</div>
+      <div class="bcard-val {% if net_revenue >= 0 %}green{% else %}red{% endif %}">{{ net_revenue|floatformat:3 }} TND</div>
+      <div class="bcard-sub">Marge − retours</div>
+    </div>
+    <div class="bcard">
+      <div class="bcard-label">Dépenses publicités</div>
+      <div class="bcard-val red">− {{ ad_spend|floatformat:3 }} TND</div>
+      <div class="bcard-sub">Meta Ads · même période</div>
+    </div>
+    {% endif %}
   </div>
 
   <!-- ORDERS BREAKDOWN -->
