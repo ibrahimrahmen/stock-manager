@@ -215,11 +215,50 @@
   {% if expenses_by_cat %}
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;">
     {% for c in expenses_by_cat %}
-    <span style="font-size:12px;background:var(--surface2);border:0.5px solid var(--border);border-radius:20px;padding:5px 12px;color:var(--muted);">
+    <span class="cat-chip" data-cat="{{ c.category }}" style="font-size:12px;background:var(--surface2);border:0.5px solid var(--border);border-radius:20px;padding:5px 12px;color:var(--muted);cursor:pointer;transition:all .12s;">
       {{ c.category }} · <b style="color:var(--text);">{{ c.total|floatformat:3 }}</b>
     </span>
     {% endfor %}
   </div>
+  <style>.cat-chip:hover{border-color:rgba(61,186,138,0.4);color:var(--text);}</style>
+
+  <!-- CATEGORY DETAIL POPUP -->
+  <div id="catDetailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:20px;padding:28px;max-width:560px;width:92%;max-height:80vh;overflow:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:600;" id="detailCat"></div>
+        <button type="button" onclick="document.getElementById('catDetailModal').style.display='none';" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;">✕</button>
+      </div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:18px;">Total : <b id="detailTotal" style="color:var(--red);"></b> TND</div>
+      <table><thead><tr><th>Commentaire</th><th>Nb</th><th>Total</th></tr></thead>
+        <tbody id="detailBody"></tbody></table>
+    </div>
+  </div>
+  <script>
+    (function(){
+      document.querySelectorAll('.cat-chip').forEach(function(chip){
+        chip.addEventListener('click',function(){
+          var cat=chip.dataset.cat;
+          var url="{% url 'api_expense_category_detail' %}?category="+encodeURIComponent(cat)
+                  +"&date_from={{ date_from }}&date_to={{ date_to }}";
+          fetch(url).then(function(r){return r.json();}).then(function(d){
+            if(d.status!=='ok')return;
+            document.getElementById('detailCat').textContent=d.category;
+            document.getElementById('detailTotal').textContent=parseFloat(d.total).toFixed(3);
+            var body=document.getElementById('detailBody');
+            body.innerHTML='';
+            d.groups.forEach(function(g){
+              var tr=document.createElement('tr');
+              tr.innerHTML='<td>'+g.comment+'</td><td style="color:var(--muted);">'+g.count
+                +'</td><td class="r">'+parseFloat(g.total).toFixed(3)+'</td>';
+              body.appendChild(tr);
+            });
+            document.getElementById('catDetailModal').style.display='flex';
+          });
+        });
+      });
+    })();
+  </script>
   {% endif %}
 
   <!-- recent expenses list -->

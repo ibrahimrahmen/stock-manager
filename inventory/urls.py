@@ -64,6 +64,7 @@ urlpatterns = [
     path("revenue/", views.revenue, name="revenue"),
     path("api/expense/add/", views.api_expense_add, name="api_expense_add"),
     path("api/expense/<int:pk>/delete/", views.api_expense_delete, name="api_expense_delete"),
+    path("api/expense/category-detail/", views.api_expense_category_detail, name="api_expense_category_detail"),
     path("ads-spending/", views.ads_dashboard, name="ads_dashboard"),
     path("products/<int:pk>/", views.product_detail, name="product_detail"),
     path("api/products/<int:pk>/toggle-flag/", views.api_toggle_product_flag, name="api_toggle_product_flag"),

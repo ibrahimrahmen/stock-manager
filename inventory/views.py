@@ -3500,6 +3500,36 @@ def api_expense_delete(request, pk):
 
 
 @login_required(login_url="/login/")
+def api_expense_category_detail(request):
+    """Return a category's expenses for the period, grouped by comment with
+    summed amounts. Query params: category, date_from, date_to. Admin only."""
+    if not request.user.is_staff:
+        return JsonResponse({"status": "error", "message": "Non autorisé"}, status=403)
+    from django.db.models import Sum as _Sum, Count as _Count
+    category = (request.GET.get("category") or "").strip()
+    date_from = (request.GET.get("date_from") or "").strip()
+    date_to = (request.GET.get("date_to") or "").strip()
+    qs = Expense.objects.filter(category=category)
+    if date_from:
+        qs = qs.filter(date__gte=date_from)
+    if date_to:
+        qs = qs.filter(date__lte=date_to)
+    rows = (qs.values("comment")
+              .annotate(total=_Sum("amount"), n=_Count("id"))
+              .order_by("-total"))
+    total = qs.aggregate(s=_Sum("amount"))["s"] or 0
+    groups = [{
+        "comment": (r["comment"] or "(sans commentaire)"),
+        "total": str(r["total"]),
+        "count": r["n"],
+    } for r in rows]
+    return JsonResponse({
+        "status": "ok", "category": category,
+        "total": str(total), "groups": groups,
+    })
+
+
+@login_required(login_url="/login/")
 def navex_sync_page(request):
     if not request.user.is_staff:
         from django.http import HttpResponseForbidden
