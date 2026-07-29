@@ -14,6 +14,7 @@ from django.contrib.auth.decorators import login_required
 from .models import (
     Product, ProductVariant, ProductUnit,
     ShippingOrder, OrderItem, StockMovement, Payment, SizeAlert, OrderVerification, ScanSessionLog,
+    Expense,
 )
 from .scan_service import handle_shipping_scan, handle_stock_scan
 
@@ -3413,7 +3414,21 @@ def revenue(request):
         except Exception:
             ad_spend = Decimal("0")
             ad_spend_available = False
-    net_profit = net_revenue - ad_spend
+    # Manual expenses recorded for the same period (loyer, salaires, tissu...).
+    # Deducted on top of ad spend to get the real net profit.
+    from django.db.models import Sum as _Sum
+    _exp_qs = Expense.objects.all()
+    if date_from:
+        _exp_qs = _exp_qs.filter(date__gte=date_from)
+    if date_to:
+        _exp_qs = _exp_qs.filter(date__lte=date_to)
+    total_expenses = _exp_qs.aggregate(s=_Sum("amount"))["s"] or Decimal("0")
+    # breakdown by category (for display), largest first
+    expenses_by_cat = list(
+        _exp_qs.values("category").annotate(total=_Sum("amount")).order_by("-total"))
+    recent_expenses = list(_exp_qs.order_by("-date", "-created_at")[:40])
+
+    net_profit = net_revenue - ad_spend - total_expenses
 
     return render(request, "inventory/revenue.html", {
         "total_sell": total_sell, "total_buy": total_buy,
@@ -3421,10 +3436,67 @@ def revenue(request):
         "margin_pct": margin_pct, "total_returns": total_returns,
         "return_fees": return_fees, "net_revenue": net_revenue,
         "ad_spend": ad_spend, "ad_spend_available": ad_spend_available,
+        "total_expenses": total_expenses, "expenses_by_cat": expenses_by_cat,
+        "recent_expenses": recent_expenses,
+        "expense_categories": Expense.CATEGORY_CHOICES,
         "net_profit": net_profit,
         "order_rows": order_rows,
         "date_from": date_from_str, "date_to": date_to_str,
     })
+
+
+@login_required(login_url="/login/")
+@require_POST
+def api_expense_add(request):
+    """Create an expense. Body: amount, category, comment, date (optional,
+    defaults to today). Admin only."""
+    if not request.user.is_staff:
+        return JsonResponse({"status": "error", "message": "Non autorisé"}, status=403)
+    import json as _json
+    from datetime import date as _date
+    try:
+        data = _json.loads(request.body or "{}")
+    except Exception:
+        data = request.POST
+    try:
+        amount = Decimal(str(data.get("amount", "")).replace(",", ".").strip())
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Montant invalide"}, status=400)
+    if amount <= 0:
+        return JsonResponse({"status": "error", "message": "Montant invalide"}, status=400)
+    category = (data.get("category") or "").strip()
+    valid_cats = {c[0] for c in Expense.CATEGORY_CHOICES}
+    if category not in valid_cats:
+        return JsonResponse({"status": "error", "message": "Catégorie invalide"}, status=400)
+    comment = (data.get("comment") or "").strip()[:300]
+    _d = (data.get("date") or "").strip()
+    if _d:
+        try:
+            from datetime import datetime as _dt
+            exp_date = _dt.strptime(_d, "%Y-%m-%d").date()
+        except Exception:
+            exp_date = _date.today()
+    else:
+        exp_date = _date.today()
+    exp = Expense.objects.create(amount=amount, category=category,
+                                 comment=comment, date=exp_date)
+    return JsonResponse({
+        "status": "ok",
+        "expense": {
+            "id": exp.id, "amount": str(exp.amount), "category": exp.category,
+            "comment": exp.comment, "date": exp.date.strftime("%Y-%m-%d"),
+        },
+    })
+
+
+@login_required(login_url="/login/")
+@require_POST
+def api_expense_delete(request, pk):
+    """Delete an expense by id. Admin only."""
+    if not request.user.is_staff:
+        return JsonResponse({"status": "error", "message": "Non autorisé"}, status=403)
+    Expense.objects.filter(pk=pk).delete()
+    return JsonResponse({"status": "ok"})
 
 
 @login_required(login_url="/login/")

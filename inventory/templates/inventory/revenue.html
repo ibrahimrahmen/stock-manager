@@ -137,15 +137,16 @@
     })();
   </script>
 
-  {% if ad_spend_available %}
+  {% if ad_spend_available or total_expenses %}
   <div class="page-title {% if net_profit < 0 %}negative{% endif %}" style="{% if net_profit < 0 %}color:var(--red){% else %}color:var(--green){% endif %};">{{ net_profit|floatformat:3 }} TND</div>
-  <div class="page-sub">Profit net · période filtrée — ventes − achats − retours − publicités</div>
+  <div class="page-sub">Profit net · période filtrée — ventes − achats − retours − publicités − dépenses</div>
 
   <div class="formula">
     <span>{{ total_sell|floatformat:3 }} TND</span> (ventes)
     <span class="minus"> − {{ total_buy|floatformat:3 }} TND</span> (achats)
     <span class="minus"> − {{ return_fees|floatformat:3 }} TND</span> (retours)
-    <span class="minus"> − {{ ad_spend|floatformat:3 }} TND</span> (publicités)
+    {% if ad_spend_available %}<span class="minus"> − {{ ad_spend|floatformat:3 }} TND</span> (publicités){% endif %}
+    <span class="minus"> − {{ total_expenses|floatformat:3 }} TND</span> (dépenses)
     <span class="equals"> = {{ net_profit|floatformat:3 }} TND</span>
   </div>
   {% else %}
@@ -196,6 +197,126 @@
   </div>
 
   <!-- ORDERS BREAKDOWN -->
+  <!-- EXPENSES -->
+  <div class="section-title">Dépenses{% if date_from or date_to %} · période{% endif %}</div>
+
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+    <div class="date-field" style="flex:0 0 auto;">
+      <span class="date-ico">➕</span>
+      <input type="number" step="0.001" id="expAmount" placeholder="Montant (TND) puis Entrée"
+             style="background:transparent;border:none;color:var(--text);font-size:14px;outline:none;width:220px;font-family:'DM Sans',sans-serif;">
+    </div>
+    {% if total_expenses %}
+    <span style="font-size:13px;color:var(--muted);">Total dépenses période : <b style="color:var(--red);">{{ total_expenses|floatformat:3 }} TND</b></span>
+    {% endif %}
+  </div>
+
+  <!-- category breakdown chips -->
+  {% if expenses_by_cat %}
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;">
+    {% for c in expenses_by_cat %}
+    <span style="font-size:12px;background:var(--surface2);border:0.5px solid var(--border);border-radius:20px;padding:5px 12px;color:var(--muted);">
+      {{ c.category }} · <b style="color:var(--text);">{{ c.total|floatformat:3 }}</b>
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- recent expenses list -->
+  {% if recent_expenses %}
+  <table style="margin-bottom:28px;">
+    <thead><tr><th>Date</th><th>Catégorie</th><th>Commentaire</th><th>Montant</th><th></th></tr></thead>
+    <tbody id="expBody">
+      {% for e in recent_expenses %}
+      <tr data-exp="{{ e.id }}">
+        <td style="color:var(--muted);font-size:12px;">{{ e.date|date:"d/m/Y" }}</td>
+        <td>{{ e.category }}</td>
+        <td style="color:var(--muted);">{{ e.comment }}</td>
+        <td class="r">{{ e.amount|floatformat:3 }}</td>
+        <td><button onclick="delExpense({{ e.id }})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;">✕</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <!-- CATEGORY POPUP -->
+  <div id="catModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:20px;padding:28px;max-width:560px;width:92%;max-height:80vh;overflow:auto;">
+      <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:600;margin-bottom:4px;">Catégorie de la dépense</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:18px;">Montant : <b id="modalAmount" style="color:var(--text);"></b> TND</div>
+      <div id="catGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;">
+        {% for val, label in expense_categories %}
+        <button type="button" class="cat-opt" data-cat="{{ val }}"
+          style="text-align:left;font-size:13px;color:var(--text);background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:11px 14px;cursor:pointer;transition:all .12s;">{{ val }}</button>
+        {% endfor %}
+      </div>
+      <div id="commentBox" style="display:none;">
+        <input type="text" id="expComment" placeholder="Commentaire (ex: Loyer bureau, Tissu kamraya...)"
+          style="width:100%;background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:14px;outline:none;margin-bottom:14px;font-family:'DM Sans',sans-serif;">
+        <div style="display:flex;gap:10px;">
+          <button id="saveExp" class="filter-btn" style="flex:1;">Enregistrer</button>
+          <button type="button" onclick="closeCatModal()" style="flex:0 0 auto;padding:9px 18px;background:var(--surface2);color:var(--muted);border:0.5px solid var(--border);border-radius:10px;cursor:pointer;">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .cat-opt:hover{border-color:rgba(61,186,138,0.4);background:var(--surface);}
+    .cat-opt.selected{border-color:var(--green);background:var(--green-dim);color:var(--green);}
+  </style>
+  <script>
+    (function(){
+      var amount=0, chosenCat="";
+      var inp=document.getElementById('expAmount');
+      inp.addEventListener('keydown',function(e){
+        if(e.key==='Enter'){
+          var v=parseFloat((inp.value||"").replace(',','.'));
+          if(!v||v<=0){inp.focus();return;}
+          amount=v; chosenCat="";
+          document.getElementById('modalAmount').textContent=v.toFixed(3);
+          document.getElementById('commentBox').style.display='none';
+          document.querySelectorAll('.cat-opt').forEach(function(b){b.classList.remove('selected');});
+          document.getElementById('catModal').style.display='flex';
+        }
+      });
+      document.querySelectorAll('.cat-opt').forEach(function(b){
+        b.addEventListener('click',function(){
+          document.querySelectorAll('.cat-opt').forEach(function(x){x.classList.remove('selected');});
+          b.classList.add('selected'); chosenCat=b.dataset.cat;
+          document.getElementById('commentBox').style.display='block';
+          document.getElementById('expComment').focus();
+        });
+      });
+      document.getElementById('saveExp').addEventListener('click',function(){
+        if(!chosenCat)return;
+        var comment=document.getElementById('expComment').value||"";
+        fetch("{% url 'api_expense_add' %}",{
+          method:"POST",
+          headers:{"Content-Type":"application/json","X-CSRFToken":getCookie('csrftoken')},
+          body:JSON.stringify({amount:amount,category:chosenCat,comment:comment})
+        }).then(function(r){return r.json();}).then(function(d){
+          if(d.status==='ok'){location.reload();}
+          else{alert(d.message||'Erreur');}
+        }).catch(function(){alert('Erreur réseau');});
+      });
+      window.closeCatModal=function(){document.getElementById('catModal').style.display='none';};
+      window.delExpense=function(id){
+        if(!confirm('Supprimer cette dépense ?'))return;
+        fetch("/api/expense/"+id+"/delete/",{
+          method:"POST",headers:{"X-CSRFToken":getCookie('csrftoken')}
+        }).then(function(r){return r.json();}).then(function(d){
+          if(d.status==='ok'){location.reload();}
+        });
+      };
+      function getCookie(name){
+        var v=document.cookie.match('(^|;)\\s*'+name+'\\s*=\\s*([^;]+)');
+        return v?v.pop():'';
+      }
+    })();
+  </script>
+
   <div class="section-title">Détail par ordre payé</div>
   <table>
     <thead>

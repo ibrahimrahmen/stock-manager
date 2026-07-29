@@ -39,10 +39,6 @@ urlpatterns = [
     path("api/orders/<int:pk>/navex-status/", views.api_navex_status, name="api_navex_status"),
     path("navex-sync/", views.navex_sync, name="navex_sync"),
     path("a-verifier/", views.a_verifier, name="a_verifier"),
-    # Bot test page: simulate a customer chat with the auto-reply bot (no Meta)
-    path("bot-test/", views.bot_test_page, name="bot_test"),
-    path("api/bot-test/reply/", views.api_bot_test_reply, name="api_bot_test_reply"),
-    path("api/bot/toggle/", views.api_bot_toggle, name="api_bot_toggle"),
     path("api/orders/<int:pk>/mark-treated/", views.api_mark_treated, name="api_mark_treated"),
     path("api/create-return-order/", views.api_create_return_order, name="api_create_return_order"),
     path("api/orders/<int:pk>/return-unit/", views.api_return_unit_to_order, name="api_return_unit_to_order"),
@@ -66,6 +62,8 @@ urlpatterns = [
     path("products/", views.products_list, name="products_list"),
     path("admin-panel/", views.admin_panel, name="admin_panel"),
     path("revenue/", views.revenue, name="revenue"),
+    path("api/expense/add/", views.api_expense_add, name="api_expense_add"),
+    path("api/expense/<int:pk>/delete/", views.api_expense_delete, name="api_expense_delete"),
     path("ads-spending/", views.ads_dashboard, name="ads_dashboard"),
     path("products/<int:pk>/", views.product_detail, name="product_detail"),
     path("api/products/<int:pk>/toggle-flag/", views.api_toggle_product_flag, name="api_toggle_product_flag"),
@@ -99,12 +97,10 @@ urlpatterns = [
     # Scheduling: set the "to be processed on" date
     path("api/sales-orders/<int:pk>/scheduled/", views.api_order_set_scheduled, name="api_order_set_scheduled"),
     path("api/sales-orders/<int:pk>/refresh-conversation/", views.api_order_refresh_conversation, name="api_order_refresh_conversation"),
-    path("api/sales-orders/<int:pk>/send-message/", views.api_conversation_send_message, name="api_conversation_send_message"),
     path("api/dm/create-order/", views.api_n8n_create_order_from_dm, name="api_n8n_create_order_from_dm"),
     # Ads & offers: Meta spend per campaign linked to offers, cross-source revenue
     path("ads-offers/", views.ads_offers_dashboard, name="ads_offers_dashboard"),
     path("api/ads/<int:pk>/link-offer/", views.api_ad_link_offer, name="api_ad_link_offer"),
-    path("api/ads/<int:pk>/archive/", views.api_ad_archive, name="api_ad_archive"),
     # Exchange: get the items from the source delivered order, save return selection
     path("api/sales-orders/<int:pk>/exchange-source-items/", views.api_exchange_source_items, name="api_exchange_source_items"),
     path("api/sales-orders/<int:pk>/exchange-set-returns/", views.api_exchange_set_returns, name="api_exchange_set_returns"),

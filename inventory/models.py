@@ -620,15 +620,11 @@ class Order(models.Model):
     SOURCE_WEBFORM = "web_form"
     SOURCE_SHOPIFY = "shopify"
     SOURCE_CONVERTY = "converty"
-    SOURCE_MESSENGER = "messenger"
-    SOURCE_INSTAGRAM = "instagram"
 
     SOURCE_CHOICES = [
         (SOURCE_WEBFORM, "Saisie manuelle"),
         (SOURCE_SHOPIFY, "Shopify"),
         (SOURCE_CONVERTY, "Converty"),
-        (SOURCE_MESSENGER, "Messenger"),
-        (SOURCE_INSTAGRAM, "Instagram"),
     ]
 
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="orders")
@@ -802,26 +798,6 @@ class Order(models.Model):
         self.save(update_fields=["total", "updated_at"])
 
     @property
-    def dm_platform(self):
-        """Return 'instagram' or 'messenger' if this order came from a DM
-        conversation, else ''. Used to show the right logo on the 💬 button.
-        Cached per instance to avoid repeat queries."""
-        if hasattr(self, "_dm_platform_cache"):
-            return self._dm_platform_cache
-        val = ""
-        try:
-            from .models import MessengerConversation
-            conv = (MessengerConversation.objects
-                    .filter(pending_order_id=self.id)
-                    .order_by("-id").only("platform").first())
-            if conv:
-                val = conv.platform or "messenger"
-        except Exception:
-            val = ""
-        self._dm_platform_cache = val
-        return val
-
-    @property
     def is_navex_delivered(self):
         """True if Navex shows this order as delivered (paid or otherwise).
         Used to gate the "Create Exchange" feature.
@@ -872,6 +848,9 @@ class Order(models.Model):
 
         if not parts:
             return "—"
+        if len(parts) > 4:
+            shown, extra = parts[:4], len(parts) - 4
+            return ", ".join(shown) + f", +{extra}"
         return ", ".join(parts)
 
 
@@ -973,49 +952,14 @@ class OfferProduct(models.Model):
 # the sheet; the offer link is set manually in the ads interface.
 # ---------------------------------------------------------------------------
 class Ad(models.Model):
-    # attribution kind: 'offer' = linked to 1-2 specific offers (Converty/FB),
-    # 'barats' = part of the barats.tn carousel pool (spend blended over ALL
-    # barats.tn orders, not any single offer).
-    ATTR_OFFER = "offer"
-    ATTR_BARATS = "barats"
-    ATTR_CHOICES = [(ATTR_OFFER, "Offre(s) liée(s)"), (ATTR_BARATS, "Carrousel Barats.tn")]
-
-    # Meta campaign id — the STABLE key. Names can be renamed in Ads Manager,
-    # so we sync/match on this id and only display the (latest) name.
-    campaign_id = models.CharField(max_length=64, unique=True, null=True, blank=True,
-        help_text="ID de campagne Meta (clé stable de synchronisation).")
-    # campaign_name is now just a display label, refreshed on each sync.
-    campaign_name = models.CharField(max_length=200, db_index=True,
-        help_text="Nom de la campagne (affichage ; peut changer).")
+    # campaign_name from the sheet is the unique key we match/sync on.
+    campaign_name = models.CharField(max_length=200, unique=True,
+        help_text="Nom de la campagne (clé de synchronisation avec le Google Sheet).")
     spend = models.DecimalField(max_digits=12, decimal_places=2, default=0,
-        help_text="Dépense convertie en TND (dinars).")
-    # Original (pre-conversion) spend and its account/currency, so the dashboard
-    # can show both the account's native amount (EUR/USD) and the TND value.
-    spend_original = models.DecimalField(max_digits=12, decimal_places=2, default=0,
-        help_text="Dépense dans la devise d'origine du compte.")
-    account_id = models.CharField(max_length=64, blank=True, default="",
-        help_text="Compte publicitaire Meta d'où vient cette pub.")
-    currency = models.CharField(max_length=8, blank=True, default="",
-        help_text="Devise d'origine du compte (EUR, USD, TND…).")
-    archived = models.BooleanField(default=False,
-        help_text="Pub annulée/désactivée dans Meta : masquée du dashboard du "
-                  "jour et exclue de l'attribution (l'historique passé reste).")
-    effective_status = models.CharField(max_length=32, blank=True, default="",
-        help_text="Statut Meta de la campagne (ACTIVE, PAUSED, DELETED…), "
-                  "rafraîchi à chaque sync.")
-    attribution = models.CharField(max_length=10, choices=ATTR_CHOICES, default=ATTR_OFFER,
-        help_text="Comment cette pub est attribuée : à des offres précises, ou au pool Barats.tn.")
-    # Legacy single link — kept for back-compat. New code uses `offers` (M2M).
+        help_text="Dépense synchronisée depuis le Google Sheet (devise du compte).")
     offer = models.ForeignKey(Offer, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="ads",
-        help_text="(Ancien) Offre unique liée. Utiliser plutôt 'offers'.")
-    # Converty / Facebook ads link to ONE or TWO (offer, page) pairs. The page
-    # matters: the same offer (e.g. Ensemble ICY MAZE) is sold on several pages
-    # and each page has its OWN ad. Linking through AdOfferLink lets us match
-    # orders on BOTH offer AND sales_page. Spend is pooled across the ad's links.
-    offers = models.ManyToManyField(Offer, through="AdOfferLink",
-        related_name="linked_ads", blank=True,
-        help_text="1 ou 2 paires (offre, page) liées à cette pub.")
+        help_text="Offre liée à cette publicité (une offre peut avoir plusieurs pubs).")
     last_synced_at = models.DateTimeField(null=True, blank=True,
         help_text="Dernière synchronisation de la dépense depuis le Sheet.")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1026,24 +970,6 @@ class Ad(models.Model):
 
     def __str__(self):
         return f"{self.campaign_name} ({self.spend})"
-
-
-class AdOfferLink(models.Model):
-    """One (offer, page) pair covered by an ad. An ad may have 1 or 2 of these.
-    Orders are attributed to the ad only when they match BOTH the offer and the
-    sales page, so the same offer on different pages goes to different ads."""
-    ad = models.ForeignKey(Ad, on_delete=models.CASCADE, related_name="links")
-    offer = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name="ad_links")
-    sales_page = models.ForeignKey(SalesPage, on_delete=models.CASCADE,
-        related_name="ad_links", null=True, blank=True,
-        help_text="Page de vente. Vide = toutes pages (rare).")
-
-    class Meta:
-        unique_together = (("ad", "offer", "sales_page"),)
-
-    def __str__(self):
-        pg = self.sales_page.name if self.sales_page else "toutes pages"
-        return f"{self.ad.campaign_name} → {self.offer.name} @ {pg}"
 
 
 # ---------------------------------------------------------------------------
@@ -1340,8 +1266,6 @@ class MessengerConversation(models.Model):
     source_ad_id        = models.CharField(max_length=120, blank=True, default="")
     source_ad_ref       = models.CharField(max_length=200, blank=True, default="")
     source_campaign     = models.CharField(max_length=200, blank=True, default="")
-    source_campaign_name = models.CharField(max_length=200, blank=True, default="",
-        help_text="Vrai nom de la campagne Meta, résolu depuis l'ad_id du referral.")
     ctwa_clid           = models.CharField(max_length=200, blank=True, default="")
     matched_ad      = models.ForeignKey("Ad", on_delete=models.SET_NULL,
         null=True, blank=True, related_name="conversations")
@@ -1372,3 +1296,48 @@ class MessengerConversation(models.Model):
             if m.get("from") == "user" and m.get("text"):
                 return m["text"]
         return ""
+
+
+class Expense(models.Model):
+    """A manually-recorded business expense, deducted from the month's net
+    profit on the revenue page. Categories mirror the company's cash journal.
+    """
+    CATEGORY_CHOICES = [
+        ("Tailor",               "Tailor (confection/broderie/coupe)"),
+        ("Tissu",                "Tissu"),
+        ("Fourniture",           "Fourniture (emballage, cordon, étiquettes...)"),
+        ("Fournitures Bureau",   "Fournitures Bureau"),
+        ("Salaire",              "Salaire / Avance / Prime"),
+        ("CNSS",                 "CNSS"),
+        ("% des commerciaux",    "% des commerciaux"),
+        ("Sponsoring",           "Sponsoring (pub externe)"),
+        ("Marketing",            "Marketing (shooting, concours)"),
+        ("Bureau",               "Bureau / Loyer dépôt"),
+        ("Home",                 "Home / Loyer maison"),
+        ("SONEDE + STEG",        "SONEDE + STEG (eau/électricité)"),
+        ("Internet",             "Internet"),
+        ("Telecom",              "Telecom"),
+        ("ENTRETIEN & MAINTENANCE", "Entretien & Maintenance"),
+        ("Transportation",       "Transportation (essence, leasing...)"),
+        ("FullFillment",         "FullFillment"),
+        ("Comptable",            "Comptable (honoraires)"),
+        ("Recette des finances", "Recette des finances (impôts, DM)"),
+        ("Investissement",       "Investissement"),
+        ("Restaurant",           "Restaurant"),
+        ("Groceries",            "Groceries (déjeuner équipe)"),
+        ("Pressing",             "Pressing"),
+        ("Other",                "Autre"),
+    ]
+
+    amount     = models.DecimalField(max_digits=12, decimal_places=3)
+    category   = models.CharField(max_length=40, choices=CATEGORY_CHOICES,
+                                  db_index=True)
+    comment    = models.CharField(max_length=300, blank=True, default="")
+    date       = models.DateField(db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date", "-created_at"]
+
+    def __str__(self):
+        return f"{self.date} · {self.category} · {self.amount} TND"
