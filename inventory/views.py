@@ -2278,7 +2278,7 @@ def _do_return_unit(unit, user=None):
     # Update order status based on remaining units (handles paid / livre / closed)
     if order_item and order_item.order_id:
         order_item.order.refresh_from_db()
-        _update_order_return_status(order_item.order)
+        _update_order_return_status(order_item.order, user=user)
     unit_data = {
         "barcode": unit.barcode, "size": unit.size,
         "product_name": variant.product.name, "color_label": variant.color_label,
@@ -2288,8 +2288,10 @@ def _do_return_unit(unit, user=None):
     return unit_data, reconciliation
 
 
-def _update_order_return_status(order):
-    """Update order status after a unit return."""
+def _update_order_return_status(order, user=None):
+    """Update order status after a unit return. `user` is the person who did the
+    scan, so the auto v1->v2 propagation log is attributed to them instead of
+    showing 'anonymous'."""
     items = list(order.items.select_related("unit").all())
     if not items:
         return
@@ -2321,7 +2323,7 @@ def _update_order_return_status(order):
                 v2.status = _V2Order.RETURNED
                 v2.save(update_fields=["status", "updated_at"])
                 log_action(
-                    None, AuditLog.STATUS_CHANGE,
+                    user, AuditLog.STATUS_CHANGE,
                     description=f"Auto: commande v2 #{v2.id} {old_label} → 'Retourné' "
                                 f"(scan retour v1, bordereau {order.bordereau_barcode})",
                     target_model="Order", target_id=v2.id,
@@ -4108,7 +4110,7 @@ def api_return_unit_to_order(request, pk):
                 new_amount = max(original_order.amount_collected - unit_price, Decimal("0"))
                 original_order.amount_collected = new_amount
             
-            _update_order_return_status(original_order)
+            _update_order_return_status(original_order, user=getattr(request, "user", None))
         
         # Update return order status
         return_items = return_order.items.select_related("unit").all()
