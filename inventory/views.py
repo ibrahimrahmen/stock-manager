@@ -224,6 +224,32 @@ def _ad_info_for_conv(conv):
         return ""
 
 
+def _fetch_ig_post_media(page_id, media_id):
+    """A customer can SHARE one of our Instagram posts in a DM (attachment
+    type == 'ig_post'). The webhook only gives us the post's media_id, so we
+    resolve it to the image URL (and caption) here, then Vision can identify
+    the product. Returns {media_url, caption} or None. Best-effort.
+    """
+    import json as _json
+    import urllib.request as _ureq
+    import urllib.error as _uerr
+    token = _messenger_page_token(page_id)
+    if not token or not media_id:
+        return None
+    try:
+        url = ("https://graph.instagram.com/v21.0/%s"
+               "?fields=media_url,caption,media_type&access_token=%s"
+               % (media_id, token))
+        with _ureq.urlopen(url, timeout=12) as r:
+            d = _json.load(r)
+        murl = d.get("media_url") or ""
+        if not murl:
+            return None
+        return {"media_url": murl, "caption": d.get("caption") or ""}
+    except Exception:
+        return None
+
+
 def _fetch_ig_story_origin(page_id, sender_id):
     """For an Instagram conversation, find how the customer entered: a reply to
     one of our STORIES, or a shared REEL/POST. Returns a dict:
@@ -11688,11 +11714,30 @@ def api_messenger_webhook(request):
                 # type == "image" and payload.url. Instagram customers often
                 # send photos, so without this those messages looked empty.
                 images = []
+                _shared_post_media = ""
                 for att in (msg.get("attachments") or []):
-                    if (att.get("type") == "image"):
+                    _atype = att.get("type")
+                    if _atype == "image":
                         u = (att.get("payload") or {}).get("url")
                         if u:
                             images.append(u)
+                    elif _atype in ("ig_post", "share", "story_mention"):
+                        # Customer SHARED one of our posts/reels or replied to a
+                        # story. The webhook gives a media_id (or a url); resolve
+                        # it to an image so Vision can identify the product and
+                        # the bot can quote the price.
+                        _pl = att.get("payload") or {}
+                        _u = _pl.get("url")
+                        if _u:
+                            images.append(_u)
+                        else:
+                            _pmid = (_pl.get("ig_post_media_id")
+                                     or _pl.get("id") or "")
+                            if _pmid:
+                                _pm = _fetch_ig_post_media(page_id, _pmid)
+                                if _pm and _pm.get("media_url"):
+                                    images.append(_pm["media_url"])
+                                    _shared_post_media = _pmid
                 if text or images:
                     msgs = conv.messages or []
                     already = mid and any(m.get("mid") == mid for m in msgs)
