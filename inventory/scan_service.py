@@ -452,21 +452,25 @@ def _handle_bordereau(barcode: str, user=None) -> dict:
                 )
             closed_order = order
 
-            # Customer SMS: order shipped (expédié). Fires once per v2 order.
-            try:
-                v2 = order.order  # linked v2 Order, if any
-                if v2 is not None and not getattr(v2, "sms_expedie_sent", False):
-                    from . import sms_service
-                    total = sms_service._fmt_total(v2)
-                    ok, _info = sms_service.send_sms(
-                        v2.customer.phone if v2.customer else "",
-                        sms_service.msg_expedie(total),
-                    )
-                    if ok:
-                        v2.sms_expedie_sent = True
-                        v2.save(update_fields=["sms_expedie_sent"])
-            except Exception:
-                pass
+            # Customer SMS: order shipped (expédié) — DISABLED per request.
+            # We no longer notify the customer at scan expedition. They still get
+            # the "en cours" SMS when Navex marks the colis in delivery.
+            # (Block kept but neutralised via `if False` so it's easy to re-enable.)
+            if False:
+                try:
+                    v2 = order.order  # linked v2 Order, if any
+                    if v2 is not None and not getattr(v2, "sms_expedie_sent", False):
+                        from . import sms_service
+                        total = sms_service._fmt_total(v2)
+                        ok, _info = sms_service.send_sms(
+                            v2.customer.phone if v2.customer else "",
+                            sms_service.msg_expedie(total),
+                        )
+                        if ok:
+                            v2.sms_expedie_sent = True
+                            v2.save(update_fields=["sms_expedie_sent"])
+                except Exception:
+                    pass
 
         # Check if this bordereau already exists
         existing = ShippingOrder.objects.filter(bordereau_barcode=barcode).first()
