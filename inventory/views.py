@@ -82,6 +82,12 @@ def _extract_tn_phone(text):
     import re as _r
     if not text:
         return ""
+    # Business/hotline numbers that customers often quote ("je vous ai appelés
+    # sur 26200219") — these are OUR numbers, never the customer's. Strip them
+    # so they can't be mistaken for the client's phone.
+    _BUSINESS_NUMBERS = ("26200219",)
+    for _bn in _BUSINESS_NUMBERS:
+        text = text.replace(_bn, " ")
     # Drop URLs and the FB "replied to a post" noise — their long numeric IDs
     # were being mis-read as phone numbers.
     cleaned = _r.sub(r"https?://\S+", " ", text)
@@ -8644,11 +8650,11 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
             customer_name=name,
             created_by=None,  # No user — webhook is unauthenticated
             source=({
-                "converty": Order.SOURCE_CONVERTY,
-                "messenger": Order.SOURCE_MESSENGER,
-                "instagram": Order.SOURCE_INSTAGRAM,
-                "shopify": Order.SOURCE_SHOPIFY,
-            }.get(source, Order.SOURCE_SHOPIFY)),
+                "converty": "converty",
+                "messenger": "messenger",
+                "instagram": "instagram",
+                "shopify": "shopify",
+            }.get(source, "shopify")),
             converty_order_id=(external_id if source == "converty" else ""),
         )
 
