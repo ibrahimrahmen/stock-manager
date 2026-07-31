@@ -5105,6 +5105,14 @@ def api_navex_sync(request):
                                         f"{dict(Order.STATUS_CHOICES)[new_v2_status]} (bordereau {bc}, etat '{navex_etat}')",
                             request=request,
                         )
+                    elif (linked_order.status == Order.EN_COURS
+                          and navex_lower in ("en cours", "en-cours",
+                                              "en cours de livraison")):
+                        # Order already EN_COURS and Navex still reports it in
+                        # delivery — this may be a NEW attempt (different livreur
+                        # or a later day). _maybe_send_status_sms re-sends the
+                        # "en cours" SMS only in that case (livreur/day changed).
+                        _maybe_send_status_sms(linked_order)
             except ShippingOrder.DoesNotExist:
                 pass
 
@@ -7898,13 +7906,31 @@ def _maybe_send_status_sms(order):
             if ok:
                 order.sms_injoignable_sent = True
                 order.save(update_fields=["sms_injoignable_sent"])
-        elif order.status == Order.EN_COURS and not order.sms_en_cours_sent:
-            total = sms_service._fmt_total(order)
+        elif order.status == Order.EN_COURS:
+            from datetime import date as _date
             tel = (order.navex_livreur_tel or "").strip()
-            ok, _ = sms_service.send_sms(phone, sms_service.msg_en_cours(total, tel))
-            if ok:
-                order.sms_en_cours_sent = True
-                order.save(update_fields=["sms_en_cours_sent"])
+            navex_lower = (order.navex_last_status or "").strip().lower()
+            navex_en_cours = navex_lower in (
+                "en cours", "en-cours", "en cours de livraison")
+            today = _date.today()
+            # First time → always send. After that, only RE-send if Navex still
+            # reports "en cours" AND this looks like a NEW attempt: the livreur
+            # phone changed, or it's a different day than the last en_cours SMS.
+            first_time = not order.sms_en_cours_sent
+            new_attempt = navex_en_cours and (
+                (tel and tel != (order.sms_en_cours_last_tel or "").strip())
+                or (order.sms_en_cours_last_date != today)
+            )
+            if first_time or new_attempt:
+                total = sms_service._fmt_total(order)
+                ok, _ = sms_service.send_sms(phone, sms_service.msg_en_cours(total, tel))
+                if ok:
+                    order.sms_en_cours_sent = True
+                    order.sms_en_cours_last_tel = tel[:30]
+                    order.sms_en_cours_last_date = today
+                    order.save(update_fields=[
+                        "sms_en_cours_sent", "sms_en_cours_last_tel",
+                        "sms_en_cours_last_date"])
     except Exception as _sms_exc:
         try:
             from .models import log_action as _la, AuditLog as _AL

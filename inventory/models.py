@@ -686,6 +686,11 @@ class Order(models.Model):
     sms_injoignable_sent = models.BooleanField(default=False)
     sms_expedie_sent     = models.BooleanField(default=False)
     sms_en_cours_sent    = models.BooleanField(default=False)
+    # Track the livreur phone and date of the last "en cours" SMS so we can
+    # re-send it on a NEW delivery attempt (different livreur or different day),
+    # as long as Navex still reports the colis as "en cours".
+    sms_en_cours_last_tel  = models.CharField(max_length=30, blank=True, default="")
+    sms_en_cours_last_date = models.DateField(null=True, blank=True)
 
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_WEBFORM)
     # Converty order _id (MongoDB ObjectId), used to push status changes back
