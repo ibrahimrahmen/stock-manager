@@ -7904,8 +7904,13 @@ def _maybe_send_status_sms(order):
             if ok:
                 order.sms_en_cours_sent = True
                 order.save(update_fields=["sms_en_cours_sent"])
-    except Exception:
-        pass
+    except Exception as _sms_exc:
+        try:
+            from .models import log_action as _la, AuditLog as _AL
+            _la(None, _AL.OTHER,
+                description=f"SMS statut FAIL order {getattr(order,'id','?')}: {str(_sms_exc)[:200]}")
+        except Exception:
+            pass
 
 
 def _maybe_send_expedie_sms(order):
