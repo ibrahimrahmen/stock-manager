@@ -620,11 +620,15 @@ class Order(models.Model):
     SOURCE_WEBFORM = "web_form"
     SOURCE_SHOPIFY = "shopify"
     SOURCE_CONVERTY = "converty"
+    SOURCE_MESSENGER = "messenger"
+    SOURCE_INSTAGRAM = "instagram"
 
     SOURCE_CHOICES = [
         (SOURCE_WEBFORM, "Saisie manuelle"),
         (SOURCE_SHOPIFY, "Shopify"),
         (SOURCE_CONVERTY, "Converty"),
+        (SOURCE_MESSENGER, "Messenger"),
+        (SOURCE_INSTAGRAM, "Instagram"),
     ]
 
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name="orders")
@@ -1266,8 +1270,6 @@ class MessengerConversation(models.Model):
     source_ad_id        = models.CharField(max_length=120, blank=True, default="")
     source_ad_ref       = models.CharField(max_length=200, blank=True, default="")
     source_campaign     = models.CharField(max_length=200, blank=True, default="")
-    source_campaign_name = models.CharField(max_length=200, blank=True, default="",
-        help_text="Vrai nom de la campagne Meta, resolu depuis l'ad_id du referral.")
     ctwa_clid           = models.CharField(max_length=200, blank=True, default="")
     matched_ad      = models.ForeignKey("Ad", on_delete=models.SET_NULL,
         null=True, blank=True, related_name="conversations")
