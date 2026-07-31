@@ -309,6 +309,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
     <div class="chip-group chip-group-left">
     <a href="?status=all&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'all' %}active{% endif %}">Toutes <span class="count">{{ total }}</span></a>
     <a href="?status=non_confirmee&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'non_confirmee' %}active{% endif %}">Non confirmée <span class="count">{{ counts.non_confirmee|default:0 }}</span></a>
+    <a href="?status=double&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'double' %}active{% endif %}" title="Commandes non confirmées de clients récurrents (2+ commandes)">🔁 Double <span class="count">{{ double_count|default:0 }}</span></a>
     <a href="?status=confirmee&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'confirmee' %}active{% endif %}">Confirmée <span class="count">{{ counts.confirmee|default:0 }}</span></a>
     <a href="?status=rappeler_plus_tard&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'rappeler_plus_tard' %}active{% endif %}">Rappeler <span class="count">{{ counts.rappeler_plus_tard|default:0 }}</span></a>
     <a href="?status=injoignable&source={{ source_filter }}{% if today_on %}&today=1{% endif %}" class="chip {% if status_filter == 'injoignable' %}active{% endif %}">Injoignable <span class="count">{{ counts.injoignable|default:0 }}</span></a>
@@ -453,14 +454,6 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
         Chargement…
       </div>
       <div id="conv-modal-meta" class="muted" style="font-size:11px;margin-top:8px;"></div>
-      <!-- Manual reply box: staff can send a message to the customer -->
-      <div id="conv-send-row" style="display:none;margin-top:10px;gap:8px;align-items:flex-end;">
-        <textarea id="conv-send-text" rows="1" placeholder="Écris un message au client…"
-          style="flex:1;resize:none;padding:10px 12px;border:0.5px solid var(--border);border-radius:20px;font-size:13px;background:var(--bg,#0a0a08);color:inherit;outline:none;max-height:100px;"></textarea>
-        <button id="conv-send-btn" onclick="sendConversationMessage()"
-          style="padding:10px 18px;border:none;border-radius:20px;background:#0084ff;color:#fff;font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap;">Envoyer</button>
-      </div>
-      <div id="conv-send-status" style="font-size:11px;margin-top:6px;color:var(--muted);"></div>
     </div>
   </div>
 </div>
@@ -1040,17 +1033,6 @@ async function refreshOrderRow(orderId) {
 
 // Build HTML for one order row. Must match the Django template structure
 // in orders_list.html (10 cells).
-// Messenger / Instagram bubble shown next to the customer name. Search results
-// need the same bubble as the server-rendered list, so it lives in one helper.
-function convBubbleHtml(o) {
-  const plat = o.dm_platform || '';
-  if (!plat) return '';
-  const icon = plat === 'instagram'
-    ? `<svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:middle;"><defs><linearGradient id="igs${o.id}" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stop-color="#feda75"/><stop offset="50%" stop-color="#d62976"/><stop offset="100%" stop-color="#4f5bd5"/></linearGradient></defs><path fill="url(#igs${o.id})" d="M12 2.16c3.2 0 3.58.01 4.85.07 1.17.05 1.8.25 2.23.41.56.22.96.48 1.38.9.42.42.68.82.9 1.38.16.42.36 1.06.41 2.23.06 1.27.07 1.65.07 4.85s-.01 3.58-.07 4.85c-.05 1.17-.25 1.8-.41 2.23-.22.56-.48.96-.9 1.38-.42.42-.82.68-1.38.9-.42.16-1.06.36-2.23.41-1.27.06-1.65.07-4.85.07s-3.58-.01-4.85-.07c-1.17-.05-1.8-.25-2.23-.41-.56-.22-.96-.48-1.38-.9-.42-.42-.68-.82-.9-1.38-.16-.42-.36-1.06-.41-2.23C5.01 15.58 5 15.2 5 12s.01-3.58.07-4.85c.05-1.17.25-1.8.41-2.23.22-.56.48-.96.9-1.38.42-.42.82-.68 1.38-.9.42-.16 1.06-.36 2.23-.41C8.42 2.17 8.8 2.16 12 2.16zm0 3.68a6.16 6.16 0 100 12.32 6.16 6.16 0 000-12.32zm0 10.16a4 4 0 110-8 4 4 0 010 8zm7.85-10.4a1.44 1.44 0 11-2.88 0 1.44 1.44 0 012.88 0z"/></svg>`
-    : `<svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:middle;"><path fill="#0084ff" d="M12 2C6.5 2 2 6.14 2 11.25c0 2.88 1.43 5.45 3.67 7.15V22l3.36-1.84c.9.25 1.85.38 2.97.38 5.5 0 10-4.14 10-9.25S17.5 2 12 2zm1.03 12.42l-2.55-2.72-4.98 2.72 5.48-5.82 2.61 2.72 4.92-2.72-5.48 5.82z"/></svg>`;
-  return `<button class="conv-btn" onclick="openConversation(event, ${o.id})" title="Voir la conversation" style="margin-left:6px;border:none;background:transparent;cursor:pointer;font-size:14px;padding:2px;vertical-align:middle;opacity:0.85;">${icon}</button>`;
-}
-
 function buildOrderRowHtml(o) {
   const name = (o.name || o.phone || '').replace(/</g,'&lt;');
   const phone = (o.phone || '').replace(/</g,'&lt;');
@@ -1104,7 +1086,7 @@ function buildOrderRowHtml(o) {
       </div>
     </td>
     <td>
-      <div>${name}${o.is_vip ? ' <span title="Client VIP : 3+ commandes livrées" style="font-size:13px;">⭐</span>' : ''}${o.is_risky ? ' <span title="Client à risque : plus de retours que de livraisons" style="font-size:13px;">👎</span>' : ''}${convBubbleHtml(o)}</div>
+      <div>${name}${o.is_vip ? ' <span title="Client VIP : 3+ commandes livrées" style="font-size:13px;">⭐</span>' : ''}${o.is_risky ? ' <span title="Client à risque : plus de retours que de livraisons" style="font-size:13px;">👎</span>' : ''}</div>
       <div class="muted" style="font-size:11px;">${phone}${(o.phone_order_count && o.phone_order_count > 1) ? ` <span onclick="searchPhone('${phone}', event)" title="Voir les commandes en système de ce numéro" style="display:inline-block;background:rgba(245,166,35,0.15);color:#f5a623;font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px;margin-left:4px;cursor:pointer;">${o.phone_order_count} cmd</span>${(o.combined_delivered || o.combined_returned) ? ` <span title="Livré / Retour (historique inclus, annulé exclu)" style="display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px;margin-left:2px;${o.combined_returned > o.combined_delivered ? 'background:rgba(220,80,80,0.15);color:#dc5050;' : 'background:rgba(26,158,110,0.15);color:#1a9e6e;'}">✓${o.combined_delivered} / ↩${o.combined_returned}</span>` : ''}` : ''}</div>
       ${phone2Block}
     </td>
@@ -1500,19 +1482,14 @@ function renderConversationBubbles(messages, text, platform) {
 
 async function openConversation(ev, orderId) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
-  window._convOrderId = orderId;
   const modal = document.getElementById('conversation-modal');
   const body = document.getElementById('conv-modal-body');
   const header = document.getElementById('conv-chat-header');
   const meta = document.getElementById('conv-modal-meta');
-  const sendRow = document.getElementById('conv-send-row');
-  const sendStatus = document.getElementById('conv-send-status');
   document.getElementById('conv-order-id').textContent = '#' + orderId;
   body.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Chargement…</div>';
   header.style.display = 'none';
   meta.textContent = '';
-  if (sendRow) sendRow.style.display = 'none';
-  if (sendStatus) sendStatus.textContent = '';
   modal.classList.add('show');
   try {
     const res = await fetch('/api/sales-orders/' + orderId + '/refresh-conversation/', {
@@ -1533,8 +1510,6 @@ async function openConversation(ev, orderId) {
       }
       body.innerHTML = adBanner + renderConversationBubbles(data.messages, data.conversation_text, platform);
       meta.textContent = data.updated_at ? ('Capturée le ' + data.updated_at + ' — peut ne pas inclure les messages plus récents.') : '';
-      // Show the reply box only for DM conversations (has a platform).
-      if (sendRow && platform) sendRow.style.display = 'flex';
     } else {
       body.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">' +
         (data.message || "Aucune conversation enregistrée pour cette commande.") + '</div>';
@@ -1542,40 +1517,6 @@ async function openConversation(ev, orderId) {
   } catch (e) {
     body.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;">Erreur réseau lors du chargement de la conversation.</div>';
   }
-}
-
-async function sendConversationMessage() {
-  const orderId = window._convOrderId;
-  const ta = document.getElementById('conv-send-text');
-  const btn = document.getElementById('conv-send-btn');
-  const status = document.getElementById('conv-send-status');
-  const body = document.getElementById('conv-modal-body');
-  const text = (ta.value || '').trim();
-  if (!text || !orderId) return;
-  btn.disabled = true; status.style.color = 'var(--muted)'; status.textContent = 'Envoi…';
-  try {
-    const res = await fetch('/api/sales-orders/' + orderId + '/send-message/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
-      body: JSON.stringify({ text: text }),
-    });
-    const data = await res.json();
-    if (data.status === 'ok') {
-      // Append the sent bubble to the chat immediately.
-      const bubble = document.createElement('div');
-      bubble.style.cssText = 'display:flex;justify-content:flex-end;margin:4px 0;';
-      bubble.innerHTML = '<div style="background:#0084ff;color:#fff;padding:8px 12px;border-radius:16px;border-bottom-right-radius:4px;max-width:75%;font-size:13px;">' + escapeHtml(text) + '</div>';
-      body.appendChild(bubble);
-      body.scrollTop = body.scrollHeight;
-      ta.value = '';
-      status.style.color = '#22c55e'; status.textContent = '✓ Envoyé';
-    } else {
-      status.style.color = '#e11'; status.textContent = '⚠ ' + (data.message || "Échec de l'envoi");
-    }
-  } catch (e) {
-    status.style.color = '#e11'; status.textContent = '⚠ Erreur réseau';
-  }
-  btn.disabled = false;
 }
 function closeConversationModal() { document.getElementById('conversation-modal').classList.remove('show'); }
 document.addEventListener('DOMContentLoaded', function() {
@@ -2533,63 +2474,6 @@ async function runSearch(q) {
     tbody.innerHTML = html;
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="10" style="padding:30px;text-align:center;color:var(--red);">Erreur : ${e.message}</td></tr>`;
-  }
-}
-</script>
-
-<!-- ===== Bot IA — panneau de contrôle par page ===== -->
-<div id="botFab" onclick="toggleBotPanel()" title="Bot IA (réponses auto)"
-     style="position:fixed;bottom:22px;right:22px;z-index:9998;width:56px;height:56px;
-            border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);
-            box-shadow:0 4px 16px rgba(99,102,241,0.45);cursor:pointer;display:flex;
-            align-items:center;justify-content:center;font-size:26px;">🤖</div>
-
-<div id="botPanel" style="display:none;position:fixed;bottom:88px;right:22px;z-index:9999;
-     width:290px;background:#fff;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.28);
-     overflow:hidden;font-family:system-ui,sans-serif;">
-  <div style="padding:14px 16px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;">
-    <div style="font-weight:700;font-size:15px;">🤖 Bot IA — réponses auto</div>
-    <div id="botEnvWarn" style="font-size:11px;opacity:0.9;margin-top:3px;"></div>
-  </div>
-  <div id="botPagesList" style="padding:8px 0;max-height:340px;overflow:auto;">
-    <div style="padding:16px;text-align:center;color:#888;font-size:13px;">Chargement…</div>
-  </div>
-</div>
-
-<script>
-function _botCsrf(){return document.cookie.split('csrftoken=')[1]?.split(';')[0]||'';}
-function toggleBotPanel(){
-  const p=document.getElementById('botPanel');
-  const show=p.style.display==='none';
-  p.style.display=show?'block':'none';
-  if(show) loadBotPages();
-}
-async function loadBotPages(){
-  try{
-    const r=await fetch('/api/bot/toggle/');const d=await r.json();
-    const warn=document.getElementById('botEnvWarn');
-    warn.textContent = d.env_enabled ? '' : '⚠️ AUTOREPLY_BOT_ENABLED=0 (bot coupé globalement)';
-    const list=document.getElementById('botPagesList');
-    list.innerHTML='';
-    (d.pages||[]).forEach(pg=>{
-      const row=document.createElement('div');
-      row.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid #f0f0f0;';
-      const name=document.createElement('span');
-      name.textContent=pg.name;
-      name.style.cssText='font-size:14px;color:#222;font-weight:500;';
-      const sw=document.createElement('button');
-      sw.textContent=pg.on?'ON':'OFF';
-      sw.style.cssText='border:none;border-radius:20px;padding:5px 16px;font-weight:700;font-size:12px;cursor:pointer;color:#fff;background:'+(pg.on?'#22c55e':'#cbd5e1')+';';
-      sw.onclick=async()=>{
-        sw.disabled=true;
-        await fetch('/api/bot/toggle/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':_botCsrf()},body:JSON.stringify({sales_page:pg.sales_page,on:!pg.on})});
-        loadBotPages();
-      };
-      row.appendChild(name);row.appendChild(sw);
-      list.appendChild(row);
-    });
-  }catch(e){
-    document.getElementById('botPagesList').innerHTML='<div style="padding:16px;color:#e11;font-size:13px;">Erreur de chargement</div>';
   }
 }
 </script>

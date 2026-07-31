@@ -5677,7 +5677,19 @@ def orders_list(request):
         today_end = timezone.make_aware(_dt.datetime.combine(today_local, _dt.time(17, 0)), _tz)
         today_start = today_end - _dt.timedelta(days=1)
 
-    if status_filter and status_filter != "all":
+    # "double" filter: non_confirmee orders whose customer has MORE THAN ONE
+    # order in the system (any status) — i.e. recurrent customers. Useful to
+    # spot repeat buyers / possible duplicate orders across all sources.
+    if status_filter == "double":
+        from django.db.models import Count as _CountD
+        _recurrent_ids = set(
+            Order.objects.values("customer_id")
+            .annotate(n=_CountD("id"))
+            .filter(n__gte=2)
+            .values_list("customer_id", flat=True)
+        )
+        qs = qs.filter(status="non_confirmee", customer_id__in=_recurrent_ids)
+    elif status_filter and status_filter != "all":
         qs = qs.filter(status=status_filter)
 
     # Apply the today window only to early statuses.
@@ -5788,6 +5800,18 @@ def orders_list(request):
     counts = dict(counts_qs.values_list("status").annotate(n=Count("id")))
     source_total = counts_qs.count()
 
+    # "Double" chip count: non_confirmee orders (within the chosen source) whose
+    # customer has 2+ orders total (recurrent customer).
+    _recurrent_ids_cnt = set(
+        Order.objects.values("customer_id")
+        .annotate(n=Count("id"))
+        .filter(n__gte=2)
+        .values_list("customer_id", flat=True)
+    )
+    double_count = counts_qs.filter(
+        status="non_confirmee", customer_id__in=_recurrent_ids_cnt
+    ).count()
+
     # If ?create_exchange=ID is in the URL, fetch the original order so the
     # template can pre-fill the inline editor for an exchange.
     exchange_source = None
@@ -5807,6 +5831,7 @@ def orders_list(request):
         "source_filter": source_filter,
         "today_on": today_on,
         "counts": counts,
+        "double_count": double_count,
         "total": source_total,
         "future_count": future_count,
         "show_scheduled": request.GET.get("show_scheduled") == "1",
