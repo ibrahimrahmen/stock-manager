@@ -7886,6 +7886,7 @@ def _maybe_send_status_sms(order):
     en_cours (with livreur phone + amount). Best-effort, never raises."""
     try:
         from . import sms_service
+        from .models import Order
     except Exception:
         return
     if not order or not order.customer:
