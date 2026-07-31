@@ -9388,7 +9388,11 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
 
     # --- Customer SMS: order received (today/tomorrow by Tunisia time) ---
     # For website / Converty / Messenger DM orders. Fires once per order.
-    if source in ("shopify", "converty", "messenger") and not order.sms_created_sent:
+    # "Commande reçue" SMS only for website channels (Shopify / Converty).
+    # Messenger & Instagram customers are already talking to us in the DM
+    # conversation, so we skip this one for them (they still get the
+    # injoignable / expédié / en cours SMS via _maybe_send_status_sms).
+    if source in ("shopify", "converty") and not order.sms_created_sent:
         try:
             from . import sms_service
             local_now = timezone.localtime(timezone.now())
