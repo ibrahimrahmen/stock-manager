@@ -5729,7 +5729,25 @@ def orders_list(request):
     except Exception:
         hist = {}
 
+    # Which of these orders came from a DM? The list shows a Messenger /
+    # Instagram bubble for them. This must be computed here (the HTML view),
+    # not only in the JSON search endpoint, or the bubble disappears from the
+    # main list.
+    _dm_map = {}
+    try:
+        from .models import MessengerConversation as _MC_list
+        _oids_list = [o.id for o in orders]
+        if _oids_list:
+            for _cid, _plat in (_MC_list.objects
+                                .filter(pending_order_id__in=_oids_list)
+                                .values_list("pending_order_id", "platform")):
+                if _cid and _cid not in _dm_map:
+                    _dm_map[_cid] = _plat or "messenger"
+    except Exception:
+        _dm_map = {}
+
     for o in orders:
+        o.dm_platform = _dm_map.get(o.id, "")
         live_count = order_counts.get(o.customer_id, 1)
         ph = phones.get(o.customer_id)
         h = hist.get(ph) if ph else None
