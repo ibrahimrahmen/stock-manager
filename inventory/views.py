@@ -759,19 +759,19 @@ def _match_product_by_image(local_images, url_images, offers_data):
         # Customers on Instagram sometimes share random content (a celebrity
         # page, a meme, a screenshot). Without this check the bot treats it as a
         # product and promises a price. Ask a cheap yes/no first.
-        _gate = _claude_generate(
-            "Regarde l'image. Est-ce que c'est une photo d'un VÊTEMENT à vendre "
-            "(habit, ensemble, pull, short, chaussures) ? Réponds UNIQUEMENT "
-            "'OUI' ou 'NON'. Si c'est une personne connue, un meme, une capture "
-            "d'écran, un logo de marque célèbre sans vêtement clair, réponds NON.",
-            max_tokens=5, temperature=0.0,
-            image_urls=url_images or None, local_images=local_images or None)
-        if _gate and "non" in _gate.strip().lower()[:6]:
-            return {"_not_product": True}
-
-        # --- Step 1: describe what's in the customer's photo ---
-        desc_prompt = (
-            "Décris ce vêtement précisément en français (2 phrases max). "
+        # --- Step 1: gate + describe in ONE vision call (previously two) ---
+        # Sending the customer's photos to Claude is the expensive part, so we
+        # ask both questions in a single call: reply "NON" if it isn't a
+        # garment, otherwise reply directly with the description. This removes
+        # one whole photo-bearing call per incoming image.
+        seen_prompt = (
+            "Regarde l'image. D'ABORD: est-ce une photo d'un VÊTEMENT à vendre "
+            "(habit, ensemble, pull, short, chaussures) ? Si ce n'est PAS un "
+            "vêtement clair (personne connue, meme, capture d'écran, logo de "
+            "marque célèbre sans vêtement clair), réponds UNIQUEMENT le mot "
+            "'NON' et rien d'autre.\n"
+            "Si OUI, n'écris pas 'OUI' — décris directement ce vêtement "
+            "précisément en français (2 phrases max). "
             "OBLIGATOIRE: (1) type exact (ensemble polo+pantalon, pull, "
             "gilet sans manches, short...), (2) TOUTES les couleurs, "
             "(3) logo/marque visible (Nike, Zara, FC Barcelone, Jordan...), "
@@ -782,10 +782,16 @@ def _match_product_by_image(local_images, url_images, offers_data):
             "Sois précis sur le motif car c'est ce qui distingue les "
             "produits similaires. Juste la description."
         )
-        seen = _claude_generate(desc_prompt, max_tokens=120, temperature=0.1,
+        seen = _claude_generate(seen_prompt, max_tokens=130, temperature=0.1,
                                 image_urls=url_images or None,
                                 local_images=local_images or None)
         seen = (seen or "").strip()
+        # A bare "NON" means: not a garment photo. Only treat a SHORT reply as
+        # the gate rejection, so a real description that happens to contain the
+        # substring "non" is never misread as a rejection.
+        _seen_norm = seen.lower().strip(" .!\"'")
+        if _seen_norm == "non" or (len(_seen_norm) <= 5 and _seen_norm.startswith("non")):
+            return {"_not_product": True}
         if not seen:
             return None
 
