@@ -1737,6 +1737,37 @@ def _claude_web_search(prompt, max_tokens=1024):
         return None
 
 
+def _downscale_for_vision(raw, max_edge=1024, quality=80):
+    """Shrink an image (raw bytes) before sending it to Claude Vision.
+
+    Claude bills image input by pixel area, so full-size Messenger/WhatsApp
+    photos cost far more tokens than the model needs to read an order. We
+    downscale the long edge to ~1024px and re-encode as JPEG, which cuts the
+    per-image token cost substantially with no loss of the detail needed to
+    identify a product.
+
+    Returns (bytes, media_type) when it downscaled, or None to signal the
+    caller should keep the original bytes (image already small, or PIL/decoding
+    unavailable). Never raises.
+    """
+    try:
+        import io as _io
+        from PIL import Image as _PILImage
+        with _PILImage.open(_io.BytesIO(raw)) as _im:
+            _im.load()
+            # Already small and light — not worth re-encoding.
+            if max(_im.width, _im.height) <= max_edge and len(raw) <= 300_000:
+                return None
+            if _im.mode not in ("RGB", "L"):
+                _im = _im.convert("RGB")
+            _im.thumbnail((max_edge, max_edge), _PILImage.LANCZOS)
+            _buf = _io.BytesIO()
+            _im.save(_buf, format="JPEG", quality=quality, optimize=True)
+            return (_buf.getvalue(), "image/jpeg")
+    except Exception:
+        return None
+
+
 def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None, image_urls=None, local_images=None):
     """Call the Anthropic Claude API. Returns response text or None on failure.
     Replaces Gemini for DM order extraction and transliteration. Uses
@@ -1765,9 +1796,12 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
             _ireq = _ureq.Request(_u, headers={"User-Agent": "Mozilla/5.0"})
             with _ureq.urlopen(_ireq, timeout=10) as _ir:
                 _raw = _ir.read()
-            # Detect the real format from magic bytes (Content-Type headers can
-            # be wrong or generic); fall back to the header only if unknown.
-            if _raw[:3] == b"\xff\xd8\xff":
+            # Downscale large photos first to cut Vision token cost; falls back
+            # to the original bytes + magic-byte format detection if it can't.
+            _ds = _downscale_for_vision(_raw)
+            if _ds is not None:
+                _raw, _mt = _ds
+            elif _raw[:3] == b"\xff\xd8\xff":
                 _mt = "image/jpeg"
             elif _raw[:8] == b"\x89PNG\r\n\x1a\n":
                 _mt = "image/png"
@@ -1792,11 +1826,15 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
             import base64 as _b64
             with open(_lp, "rb") as _lf:
                 _raw = _lf.read()
+            # Downscale large photos first to cut Vision token cost; falls back
+            # to the original bytes + format detection if it can't.
+            _ds = _downscale_for_vision(_raw)
+            if _ds is not None:
+                _raw, _mt = _ds
             # Detect the REAL format from the file's magic bytes — many files
             # have a wrong extension (e.g. a .png that is actually JPEG), which
             # Claude rejects if the declared media_type doesn't match.
-            _mt = "image/jpeg"
-            if _raw[:3] == b"\xff\xd8\xff":
+            elif _raw[:3] == b"\xff\xd8\xff":
                 _mt = "image/jpeg"
             elif _raw[:8] == b"\x89PNG\r\n\x1a\n":
                 _mt = "image/png"
