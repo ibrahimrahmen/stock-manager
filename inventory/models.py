@@ -857,9 +857,7 @@ class Order(models.Model):
 
         if not parts:
             return "—"
-        if len(parts) > 4:
-            shown, extra = parts[:4], len(parts) - 4
-            return ", ".join(shown) + f", +{extra}"
+        # Show every article — no "+N" truncation.
         return ", ".join(parts)
 
 
