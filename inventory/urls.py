@@ -98,6 +98,7 @@ urlpatterns = [
     # Scheduling: set the "to be processed on" date
     path("api/sales-orders/<int:pk>/scheduled/", views.api_order_set_scheduled, name="api_order_set_scheduled"),
     path("api/sales-orders/<int:pk>/refresh-conversation/", views.api_order_refresh_conversation, name="api_order_refresh_conversation"),
+    path("api/sales-orders/<int:pk>/send-message/", views.api_conversation_send_message, name="api_conversation_send_message"),
     path("api/dm/create-order/", views.api_n8n_create_order_from_dm, name="api_n8n_create_order_from_dm"),
     # Ads & offers: Meta spend per campaign linked to offers, cross-source revenue
     path("ads-offers/", views.ads_offers_dashboard, name="ads_offers_dashboard"),
