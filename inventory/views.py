@@ -5083,6 +5083,40 @@ def api_navex_sync(request):
                 # return is physically scanned in v1.
                 linked_order = getattr(so, "order", None)
                 if linked_order:
+                    # Refresh the cached Navex fields on the linked v2 Order from
+                    # THIS fresh response, BEFORE any SMS fires. Previously the
+                    # livreur name/phone were written only by the separate hourly
+                    # bulk sync, so the first "en cours" SMS sent from here went
+                    # out with an empty livreur number. Persisting the driver
+                    # phone here lets msg_en_cours include it (and keeps the
+                    # order page's Livreur field current too).
+                    if navex:
+                        _navex_upd = []
+                        _liv = (navex.get("livreur") or "")[:120]
+                        if linked_order.navex_livreur != _liv:
+                            linked_order.navex_livreur = _liv
+                            _navex_upd.append("navex_livreur")
+                        _liv_tel = (navex.get("livreur_tel") or "")[:30]
+                        if linked_order.navex_livreur_tel != _liv_tel:
+                            linked_order.navex_livreur_tel = _liv_tel
+                            _navex_upd.append("navex_livreur_tel")
+                        _etat = (navex.get("etat") or "")[:80]
+                        if _etat and linked_order.navex_last_status != _etat:
+                            linked_order.navex_last_status = _etat
+                            _navex_upd.append("navex_last_status")
+                        _motif = (navex.get("motif") or "")[:200]
+                        if linked_order.navex_motif != _motif:
+                            linked_order.navex_motif = _motif
+                            _navex_upd.append("navex_motif")
+                        _pre = (navex.get("pre_etat") or "")[:80]
+                        if linked_order.navex_pre_etat != _pre:
+                            linked_order.navex_pre_etat = _pre
+                            _navex_upd.append("navex_pre_etat")
+                        linked_order.navex_last_synced_at = timezone.now()
+                        _navex_upd.append("navex_last_synced_at")
+                        if _navex_upd:
+                            _navex_upd.append("updated_at")
+                            linked_order.save(update_fields=_navex_upd)
                     new_v2_status = None
                     if linked_order.status == Order.CONFIRMEE:
                         if navex_lower in ("au magasin", "au-magasin", "au magasin navex"):

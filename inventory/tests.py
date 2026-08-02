@@ -1,0 +1,122 @@
+"""
+Tests for the "en cours" customer SMS, focused on the bug where the driver
+(livreur) phone number was missing from the message.
+
+Root cause covered here: the en-cours SMS is fired from api_navex_sync, which
+holds the fresh Navex response (including livreur_tel) but previously never
+persisted it onto the linked v2 Order before sending. _maybe_send_status_sms
+then read the still-empty Order.navex_livreur_tel, so the number was dropped.
+"""
+import json
+import urllib.request
+
+from django.test import TestCase
+from django.test.client import RequestFactory
+from django.contrib.auth.models import AnonymousUser
+
+from inventory import views, sms_service
+from inventory.models import Customer, Order, ShippingOrder
+
+
+class _FakeResponse:
+    """Minimal stand-in for urllib's response, usable as a context manager."""
+    def __init__(self, payload):
+        self._body = json.dumps(payload).encode("utf-8")
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class EnCoursSmsLivreurTest(TestCase):
+    BORDEREAU = "977452543171"
+    LIVREUR_TEL = "26527710"
+
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.customer = Customer.objects.create(phone="20123456", name="Test Client")
+        # v2 Order, confirmed, waiting to move to "en cours".
+        self.order = Order.objects.create(
+            customer=self.customer,
+            status=Order.CONFIRMEE,
+            total=86,
+            bordereau_barcode=self.BORDEREAU,
+        )
+        # v1 ShippingOrder, CLOSED (api_navex_sync only syncs CLOSED orders),
+        # linked to the v2 Order.
+        self.shipping = ShippingOrder.objects.create(
+            bordereau_barcode=self.BORDEREAU,
+            status=ShippingOrder.CLOSED,
+            order=self.order,
+        )
+        # Capture every SMS that would be sent, instead of hitting the network.
+        self.sent = []
+
+        def _fake_send(phone, message):
+            self.sent.append((phone, message))
+            return (True, "ok")
+
+        self._orig_send = sms_service.send_sms
+        sms_service.send_sms = _fake_send
+
+        # Fake the Navex API call inside api_navex_sync.
+        self._orig_urlopen = urllib.request.urlopen
+
+        def _fake_urlopen(req, timeout=None):
+            return _FakeResponse({
+                "status": 1,
+                "total": 1,
+                "results": [{
+                    "status": 1,
+                    "code": self.BORDEREAU,
+                    "etat": "En cours",
+                    "motif": "",
+                    "pre_etat": "",
+                    "livreur": "Navex Bizerte",
+                    "livreur_tel": self.LIVREUR_TEL,
+                    "prix": "86.0",
+                }],
+            })
+
+        urllib.request.urlopen = _fake_urlopen
+
+    def tearDown(self):
+        sms_service.send_sms = self._orig_send
+        urllib.request.urlopen = self._orig_urlopen
+
+    def _run_sync(self):
+        request = self.factory.post("/api/navex/sync/")
+        request.user = AnonymousUser()
+        return views.api_navex_sync(request)
+
+    def test_en_cours_sms_includes_livreur_number(self):
+        self._run_sync()
+
+        # Exactly one SMS, and it must contain the driver phone number.
+        self.assertEqual(len(self.sent), 1, f"expected 1 SMS, got {self.sent}")
+        phone, message = self.sent[0]
+        self.assertEqual(phone, self.customer.phone)
+        self.assertIn(self.LIVREUR_TEL, message,
+                      f"livreur number missing from SMS: {message!r}")
+
+        # The order should now be EN_COURS with the driver phone persisted,
+        # and the en-cours dedup flag set.
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, Order.EN_COURS)
+        self.assertEqual(self.order.navex_livreur_tel, self.LIVREUR_TEL)
+        self.assertTrue(self.order.sms_en_cours_sent)
+        self.assertEqual(self.order.sms_en_cours_last_tel, self.LIVREUR_TEL)
+
+    def test_second_sync_same_attempt_does_not_resend(self):
+        # First sync sends once.
+        self._run_sync()
+        self.assertEqual(len(self.sent), 1)
+        # Second sync, same livreur + same day: must NOT re-send.
+        self._run_sync()
+        self.assertEqual(len(self.sent), 1,
+                         f"should not resend on same attempt: {self.sent}")
