@@ -12214,7 +12214,37 @@ def api_messenger_webhook(request):
                                 auto_replied=True,
                                 updated_at__gte=_tz2.now() - _td2(hours=6))
                         .exclude(pk=conv.pk).exists())
-                    if recently_greeted:
+                    # Don't send "commande reçue" if this customer already has a
+                    # recent order (by phone): they're following up on an existing
+                    # order (e.g. asking where their colis is), not placing a new
+                    # one. Sending the confirmation again spams them.
+                    has_recent_order = False
+                    try:
+                        from .models import Order as _OrderChk
+                        # 1) By phone found in the current conversation text.
+                        _cust_phone = _extract_tn_phone(conv_text_all)
+                        if _cust_phone:
+                            has_recent_order = (_OrderChk.objects.filter(
+                                customer__phone=_cust_phone,
+                                created_at__gte=_tz2.now() - _td2(days=7)
+                            ).exists())
+                        # 2) The customer may be following up WITHOUT re-sending
+                        # their number (it was given in an earlier conversation).
+                        # Link by sender_id: any pending_order from this same
+                        # Instagram/Messenger user in the last 7 days counts.
+                        if not has_recent_order:
+                            _pids = list(MessengerConversation.objects.filter(
+                                sender_id=sender_id, page_id=page_id,
+                                pending_order__isnull=False)
+                                .values_list("pending_order_id", flat=True))
+                            if _pids:
+                                has_recent_order = (_OrderChk.objects.filter(
+                                    id__in=_pids,
+                                    created_at__gte=_tz2.now() - _td2(days=7)
+                                ).exists())
+                    except Exception:
+                        has_recent_order = False
+                    if recently_greeted or has_recent_order:
                         conv.auto_replied = True
                         conv.save(update_fields=["auto_replied", "updated_at"])
                     else:
