@@ -784,7 +784,8 @@ def _match_product_by_image(local_images, url_images, offers_data):
         )
         seen = _claude_generate(seen_prompt, max_tokens=130, temperature=0.1,
                                 image_urls=url_images or None,
-                                local_images=local_images or None)
+                                local_images=local_images or None,
+                                max_images=1)
         seen = (seen or "").strip()
         # A bare "NON" means: not a garment photo. Only treat a SHORT reply as
         # the gate rejection, so a real description that happens to contain the
@@ -1281,7 +1282,8 @@ def _bot_reply(conv):
         _fin_urls = [] if _matched else img_urls
         _fin_local = [] if _matched else local_imgs
         reply = _claude_generate(prompt, max_tokens=200, temperature=0.6,
-                                 image_urls=_fin_urls, local_images=_fin_local)
+                                 image_urls=_fin_urls, local_images=_fin_local,
+                                 max_images=1)
         if not reply:
             return None
         reply = reply.strip().strip('"').strip()
@@ -1774,7 +1776,7 @@ def _downscale_for_vision(raw, max_edge=1024, quality=80):
         return None
 
 
-def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None, image_urls=None, local_images=None):
+def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None, image_urls=None, local_images=None, max_images=3):
     """Call the Anthropic Claude API. Returns response text or None on failure.
     Replaces Gemini for DM order extraction and transliteration. Uses
     ANTHROPIC_API_KEY. On rate limit (429) it bails out immediately so a worker
@@ -1794,7 +1796,7 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
     # Meta CDN URLs (fbcdn.net) are blocked for Claude by robots.txt, so we
     # download each image ourselves and send it as base64 instead of a URL.
     _img_blocks = []
-    for _u in (image_urls or [])[:3]:  # cap at 3 images to control cost
+    for _u in (image_urls or [])[:max_images]:  # cap images to control cost
         if not _u:
             continue
         try:
@@ -1825,7 +1827,7 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
         except Exception:
             # If a single image can't be fetched, skip it (bot still replies).
             continue
-    for _lp in (local_images or [])[:3]:
+    for _lp in (local_images or [])[:max_images]:
         if not _lp:
             continue
         try:
