@@ -75,26 +75,33 @@ def send_sms(phone, message):
 CALLBACK_NUMBER = "26200219"
 
 
+# The SMS sender header is already "Barats" (SMS_SENDER), so we don't repeat
+# "Barats:" inside the message body.
+
+
 def msg_created(when_today):
     """Order received. when_today=True -> 'today', else 'tomorrow' (غدوة)."""
     quand = "اليوم" if when_today else "غدوة"
-    return f"Barats: وصلنا طلبك، باش نتواصلو معاك {quand} باش نأكدوه. شكرا"
+    return f"وصلنا طلبك، باش نتواصلو معاك {quand} باش نأكدوه. شكرا"
 
 
 def msg_injoignable():
-    return (f"Barats: حاولنا نتصلو بيك وما نجمناش، يرجى الاتصال على "
+    return (f"حاولنا نتصلو بيك وما نجمناش، يرجى الاتصال على "
             f"{CALLBACK_NUMBER}")
 
 
 def msg_expedie(total):
-    return f"Barats: طلبك تبعث، باش يوصلك غدوة وإلا بعد غدوة، المبلغ {total} د. شكرا"
+    return f"طلبك تبعث، باش يوصلك غدوة وإلا بعد غدوة، المبلغ {total} د. شكرا"
 
 
 def msg_en_cours(total, livreur_tel=""):
-    if livreur_tel:
-        return (f"Barats: طلبك في الطريق مع الليفرور {livreur_tel}، "
+    # Normalize the driver phone to plain digits — Navex sometimes stores it
+    # with spaces (e.g. "56 497 948"), which reads badly and can't tap-to-dial.
+    tel = "".join(ch for ch in str(livreur_tel or "") if ch.isdigit())
+    if tel:
+        return (f"طلبك في الطريق مع الليفرور {tel}، "
                 f"المبلغ {total} د. شكرا")
-    return f"Barats: طلبك في الطريق، المبلغ {total} د. شكرا"
+    return f"طلبك في الطريق، المبلغ {total} د. شكرا"
 
 
 def _fmt_total(order):
