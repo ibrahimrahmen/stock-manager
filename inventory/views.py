@@ -5172,7 +5172,10 @@ def api_navex_sync(request):
                     if linked_order.status in (Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN):
                         if navex_lower in ("retour expediteur", "retour expéditeur",
                                            "retour vers expediteur", "retour vers expéditeur",
-                                           "rtn client/agence", "rtn client", "rtn agence"):
+                                           "rtn client/agence", "rtn client", "rtn agence",
+                                           "retour recu", "retour reçu",
+                                           "retourne", "retourné",
+                                           "retour confirme", "retour confirmé"):
                             new_v2_status = Order.RETURNING
                     if new_v2_status and new_v2_status != linked_order.status:
                         old_label = dict(Order.STATUS_CHOICES).get(linked_order.status, linked_order.status)
@@ -10949,7 +10952,10 @@ def _sync_navex_for_v2_orders(only_pending=True):
         if o.status in (Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN):
             if navex_lower in ("retour expediteur", "retour expéditeur",
                                "retour vers expediteur", "retour vers expéditeur",
-                               "rtn client/agence", "rtn client", "rtn agence"):
+                               "rtn client/agence", "rtn client", "rtn agence",
+                               "retour recu", "retour reçu",
+                               "retourne", "retourné",
+                               "retour confirme", "retour confirmé"):
                 old_label = dict(Order.STATUS_CHOICES).get(o.status, o.status)
                 o.status = Order.RETURNING
                 if "status" not in update_fields:
