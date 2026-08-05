@@ -5170,12 +5170,9 @@ def api_navex_sync(request):
                         elif navex_lower in ("en cours", "en-cours", "en cours de livraison"):
                             new_v2_status = Order.EN_COURS
                     if linked_order.status in (Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN):
-                        if navex_lower in ("retour expediteur", "retour expéditeur",
-                                           "retour vers expediteur", "retour vers expéditeur",
-                                           "rtn client/agence", "rtn client", "rtn agence",
-                                           "retour recu", "retour reçu",
-                                           "retourne", "retourné",
-                                           "retour confirme", "retour confirmé"):
+                        # Any Navex return status → En retour (see the cron sync
+                        # for the rationale). Match "retour"/"rtn" broadly.
+                        if "retour" in navex_lower or "rtn" in navex_lower:
                             new_v2_status = Order.RETURNING
                     if new_v2_status and new_v2_status != linked_order.status:
                         old_label = dict(Order.STATUS_CHOICES).get(linked_order.status, linked_order.status)
@@ -10949,13 +10946,15 @@ def _sync_navex_for_v2_orders(only_pending=True):
         # RETURNING ("En retour"). Can come from Confirmée or an in-transit
         # status (en_cours / au_magasin). NOTE: the final RETURNED status is set
         # by physical scan in v1, not from Navex sync.
+        # Any Navex return status → En retour. Navex uses many return
+        # sub-statuses (Retour Expéditeur, Rtn client/agence, Retour recu,
+        # Retour définitif, Retour payé, Retour Dépôt, Retour inter-agence, ...),
+        # so match anything containing "retour"/"rtn" rather than listing each.
+        # No forward/delivery status (En cours, Au magasin, Livré, ...) contains
+        # those words, so this is safe. Final RETURNED still needs the physical
+        # warehouse scan.
         if o.status in (Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN):
-            if navex_lower in ("retour expediteur", "retour expéditeur",
-                               "retour vers expediteur", "retour vers expéditeur",
-                               "rtn client/agence", "rtn client", "rtn agence",
-                               "retour recu", "retour reçu",
-                               "retourne", "retourné",
-                               "retour confirme", "retour confirmé"):
+            if "retour" in navex_lower or "rtn" in navex_lower:
                 old_label = dict(Order.STATUS_CHOICES).get(o.status, o.status)
                 o.status = Order.RETURNING
                 if "status" not in update_fields:
