@@ -5777,6 +5777,9 @@ def orders_list(request):
             .values_list("customer_id", flat=True)
         )
         qs = qs.filter(status="non_confirmee", customer_id__in=_recurrent_ids)
+    elif status_filter == "angry":
+        # Orders whose captured DM conversation contains an angry word/insult.
+        qs = qs.filter(is_angry=True)
     elif status_filter and status_filter != "all":
         qs = qs.filter(status=status_filter)
 
@@ -5900,6 +5903,10 @@ def orders_list(request):
         status="non_confirmee", customer_id__in=_recurrent_ids_cnt
     ).count()
 
+    # "😡 Colère" chip count: orders (within the chosen source) whose DM
+    # conversation was auto-flagged as angry (see inventory/angry_words.py).
+    angry_count = counts_qs.filter(is_angry=True).count()
+
     # If ?create_exchange=ID is in the URL, fetch the original order so the
     # template can pre-fill the inline editor for an exchange.
     exchange_source = None
@@ -5920,6 +5927,7 @@ def orders_list(request):
         "today_on": today_on,
         "counts": counts,
         "double_count": double_count,
+        "angry_count": angry_count,
         "total": source_total,
         "future_count": future_count,
         "show_scheduled": request.GET.get("show_scheduled") == "1",
@@ -9611,6 +9619,8 @@ def api_admin_run_tool(request, tool_name):
         "fix_livree_orders_dryrun":         ("fix_livree_orders", []),
         "fix_livree_orders_apply":          ("fix_livree_orders", ["--apply"]),
         "recalc_order_totals":              ("recalc_order_totals", []),
+        "flag_angry_orders_dryrun":         ("flag_angry_orders", []),
+        "flag_angry_orders_apply":          ("flag_angry_orders", ["--apply"]),
     }
     if tool_name not in ALLOWED:
         return JsonResponse({"status": "error", "message": f"Outil inconnu : {tool_name}"}, status=400)

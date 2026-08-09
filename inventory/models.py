@@ -705,6 +705,11 @@ class Order(models.Model):
         help_text="Conversation Messenger capturée pour vérifier la commande. Supprimée après 10 jours.")
     conversation_updated_at = models.DateTimeField(null=True, blank=True,
         help_text="Date de la dernière capture/mise à jour de la conversation.")
+    # Auto-set whenever conversation_text is written: True if the chat contains
+    # an angry word/insult (see inventory/angry_words.py). Powers the 😡 Colère
+    # filter in the orders list. Keyword-based — no AI cost.
+    is_angry = models.BooleanField(default=False, db_index=True,
+        help_text="Auto: la conversation contient des mots de colère / insultes.")
     created_by = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="orders_created")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -767,6 +772,21 @@ class Order(models.Model):
 
     def __str__(self):
         return f"#{self.id} — {self.customer} — {self.get_status_display()}"
+
+    def save(self, *args, **kwargs):
+        # Auto-flag angry conversations whenever the conversation text is
+        # (re)written — or on a full save (e.g. creation). Keyword-based scan,
+        # no AI cost. Works for update_fields saves too: we add "is_angry" to
+        # the field list when we change it, so it actually persists.
+        uf = kwargs.get("update_fields")
+        if uf is None or "conversation_text" in uf:
+            from .angry_words import detect_angry
+            flag = detect_angry(self.conversation_text or "")
+            if flag != self.is_angry:
+                self.is_angry = flag
+                if uf is not None and "is_angry" not in uf:
+                    kwargs["update_fields"] = list(uf) + ["is_angry"]
+        super().save(*args, **kwargs)
 
     @property
     def display_name(self):

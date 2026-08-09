@@ -120,3 +120,37 @@ class EnCoursSmsLivreurTest(TestCase):
         self._run_sync()
         self.assertEqual(len(self.sent), 1,
                          f"should not resend on same attempt: {self.sent}")
+
+
+class AngryOrderFlagTest(TestCase):
+    """The is_angry flag is set automatically from the conversation text
+    whenever it's written (creation or update), keyword-based, no AI cost."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(phone="20999888", name="Test")
+
+    def test_angry_conversation_is_flagged_on_create(self):
+        o = Order.objects.create(
+            customer=self.customer,
+            conversation_text="Client: hasbi allah 3lik, quelle arnaque!",
+        )
+        o.refresh_from_db()
+        self.assertTrue(o.is_angry)
+
+    def test_normal_conversation_is_not_flagged(self):
+        o = Order.objects.create(
+            customer=self.customer,
+            conversation_text="Client: bonjour, je veux annuler la commande svp",
+        )
+        o.refresh_from_db()
+        self.assertFalse(o.is_angry)  # "annuler" must not trip on "nul"
+
+    def test_flag_updates_when_conversation_changes(self):
+        o = Order.objects.create(customer=self.customer, conversation_text="ok merci")
+        o.refresh_from_db()
+        self.assertFalse(o.is_angry)
+        # An angry follow-up arrives; saved via update_fields (like the webhook).
+        o.conversation_text = "Client: ya kelb, nechki 3likom"
+        o.save(update_fields=["conversation_text", "updated_at"])
+        o.refresh_from_db()
+        self.assertTrue(o.is_angry)  # update_fields path must persist is_angry
