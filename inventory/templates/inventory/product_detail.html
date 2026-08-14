@@ -118,6 +118,8 @@
     tr:last-child td{border-bottom:none;}
     tr:hover td{background:var(--bg);}
     .ubc{font-family:monospace;font-size:12px;}
+    .print-unit-btn{background:transparent;border:none;cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:6px;opacity:.65;transition:all .12s;}
+    .print-unit-btn:hover{opacity:1;background:var(--bg);}
     .us{font-size:11px;padding:2px 8px;border-radius:8px;}
     .us-in_stock{background:var(--green-bg);color:var(--green);}
     .us-shipped{background:var(--blue-bg);color:var(--blue);}
@@ -271,7 +273,7 @@
 
   <!-- TABLE -->
   <table>
-    <thead><tr><th>Barcode</th><th>Couleur</th><th>Taille</th><th>Statut</th><th>Réception</th></tr></thead>
+    <thead><tr><th>Barcode</th><th>Couleur</th><th>Taille</th><th>Statut</th><th>Réception</th><th></th></tr></thead>
     <tbody id="tbody">
       {% for variant in variants %}{% for unit in variant.units.all %}
       <tr data-status="{{ unit.status }}" data-size="{{ unit.size }}" data-color="{{ variant.color_label }}" data-date="{{ unit.updated_at|date:'Y-m-d' }}">
@@ -280,6 +282,7 @@
         <td>{{ unit.size }}</td>
         <td><span class="us us-{{ unit.status }}">{{ unit.get_status_display }}</span></td>
         <td style="color:var(--muted);font-size:12px;">{{ unit.created_at|date:"d/m/Y" }}</td>
+        <td style="text-align:right;"><button class="print-unit-btn" title="Réimprimer l'étiquette QR" onclick="printUnit('{{ unit.barcode|escapejs }}')">🖨️</button></td>
       </tr>
       {% endfor %}{% endfor %}
     </tbody>
@@ -539,6 +542,12 @@ function pad3(n) { return String(n).padStart(3, '0'); }
 </div>
 <script>
   var LABEL_TREE = JSON.parse(document.getElementById('label-tree-data').textContent || '[]');
+  // Reprint one unit's label (e.g. a ruined QR) — opens the print view for it.
+  function printUnit(barcode){
+    barcode = (barcode || '').trim();
+    if (!barcode) return;
+    window.open("{% url 'print_labels' %}?code=" + encodeURIComponent(barcode), '_blank');
+  }
   function _lblVer(){ return LABEL_TREE[parseInt(document.getElementById('lbl-version').value || 0)] || {variants:[]}; }
   function _lblVar(){ var p=_lblVer(); return p.variants[parseInt(document.getElementById('lbl-color').value || 0)] || {sizes:[]}; }
   function openLabelModal(){
