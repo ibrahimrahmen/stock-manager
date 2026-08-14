@@ -1993,6 +1993,67 @@ def shipping_scan(request):
 def reception_scan(request):
     return render(request, "inventory/reception_scan.html", {})
 
+
+def _qr_data_uri(text, box_size=8, border=1):
+    """Return a base64 PNG data-URI QR code for `text`. '' on failure."""
+    try:
+        import qrcode as _qr, io as _io, base64 as _b64
+        q = _qr.QRCode(error_correction=_qr.constants.ERROR_CORRECT_M,
+                       box_size=box_size, border=border)
+        q.add_data(text)
+        q.make(fit=True)
+        img = q.make_image(fill_color="black", back_color="white")
+        buf = _io.BytesIO()
+        img.save(buf, format="PNG")
+        return "data:image/png;base64," + _b64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return ""
+
+
+def print_labels(request):
+    """Render 40x30mm QR labels for one or more product-unit barcodes, ready to
+    print on the LABEL 2 thermal printer.
+
+    Query params:
+      codes=BC1,BC2,...  (or code=BC)  — the barcode(s) to print.
+      auto=0             — don't auto-open the print dialog (default: auto-print).
+
+    Unknown barcodes are still printed (raw), so a ruined-QR reprint works even
+    if the unit record was removed.
+    """
+    from .models import ProductUnit
+    raw = (request.GET.get("codes") or request.GET.get("code") or "")
+    codes = [c.strip().upper() for c in raw.replace("\n", ",").split(",") if c.strip()]
+    labels = []
+    for bc in codes:
+        u = (ProductUnit.objects.select_related("variant__product")
+             .filter(barcode=bc).first())
+        if u:
+            labels.append({
+                "barcode": u.barcode,
+                "product": u.variant.product.name,
+                "color": u.variant.color_label,
+                "size": u.size,
+                "qr": _qr_data_uri(u.barcode),
+            })
+        else:
+            # Unknown code — still print the raw barcode (reprint fallback).
+            labels.append({"barcode": bc, "product": "", "color": "",
+                           "size": "", "qr": _qr_data_uri(bc)})
+    def _num(name, default):
+        try:
+            v = float(request.GET.get(name) or default)
+        except (TypeError, ValueError):
+            v = float(default)
+        return int(v) if v == int(v) else v  # 50.0 -> 50, keep 49.5
+    return render(request, "inventory/label_print.html", {
+        "labels": labels,
+        "auto_print": request.GET.get("auto", "1") != "0",
+        # Label size in mm — default 50x30 (5x3 cm); override with ?w=&h=.
+        "label_w": _num("w", 50),
+        "label_h": _num("h", 30),
+    })
+
 @login_required(login_url="/login/")
 def return_scan(request):
     return render(request, "inventory/return_scan.html", {})

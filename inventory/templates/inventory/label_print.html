@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Étiquettes ({{ labels|length }})</title>
+<style>
+  /* Label page size in mm — driven by the view (?w=&h=), default 50x30. */
+  @page { size: {{ label_w }}mm {{ label_h }}mm; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+
+  .toolbar {
+    padding: 10px 14px; background: #111; color: #fff; font-family: Arial, sans-serif;
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  .toolbar button {
+    font-size: 15px; padding: 8px 16px; border: none; border-radius: 6px;
+    background: #22c55e; color: #05270f; font-weight: 700; cursor: pointer;
+  }
+  .toolbar .muted { opacity: .8; font-size: 13px; }
+
+  .sheet { display: flex; flex-direction: column; align-items: center; }
+
+  /* One label = one page. Big centered QR, "BARATS: <code>" underneath —
+     matching the shop's existing label design. */
+  .label {
+    width: {{ label_w }}mm; height: {{ label_h }}mm;
+    page-break-after: always; overflow: hidden;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 1mm; gap: 0.6mm;
+    font-family: Arial, "Helvetica Neue", sans-serif; color: #000;
+  }
+  .label:last-child { page-break-after: auto; }
+
+  .qr { width: 22mm; height: 22mm; }
+  .code-line {
+    font-size: 3.4mm; font-weight: 700; white-space: nowrap;
+    letter-spacing: .2px;
+  }
+  .code-line .pfx { font-weight: 700; }
+
+  @media screen { .label { outline: 1px dashed #bbb; margin: 4px 0; } .sheet { padding: 16px 0; } }
+  @media print  { .toolbar { display: none; } .sheet { padding: 0; } }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="window.print()">🖨️ Imprimer</button>
+    <span class="muted">{{ labels|length }} étiquette(s) · {{ label_w }}×{{ label_h }} mm · imprimante <b>LABEL 2</b></span>
+    <span class="muted">Astuce : mets « LABEL 2 » comme imprimante par défaut pour imprimer en un clic.</span>
+  </div>
+
+  <div class="sheet">
+    {% for l in labels %}
+    <div class="label">
+      {% if l.qr %}<img class="qr" src="{{ l.qr }}" alt="QR">{% endif %}
+      <div class="code-line"><span class="pfx">BARATS:</span> {{ l.barcode }}</div>
+    </div>
+    {% empty %}
+    <p style="font-family:Arial;padding:20px;">Aucun code à imprimer.</p>
+    {% endfor %}
+  </div>
+
+  {% if auto_print and labels %}
+  <script>
+    window.addEventListener('load', function () {
+      setTimeout(function () { window.print(); }, 350);
+    });
+  </script>
+  {% endif %}
+</body>
+</html>
