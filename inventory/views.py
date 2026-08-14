@@ -1994,6 +1994,51 @@ def reception_scan(request):
     return render(request, "inventory/reception_scan.html", {})
 
 
+@csrf_exempt
+@require_POST
+def api_generate_labels(request):
+    """Compute the next N unit barcodes for a variant+size and return them for
+    printing. Does NOT create the units — the numbers continue from the LAST
+    existing unit in stock for that colour+size (numbering is per colour+size,
+    3-digit, e.g. AF1-WHI-42-011). A brand-new size starts at 001.
+    """
+    from .models import ProductVariant, ProductUnit
+    from django.urls import reverse
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+    variant_id = data.get("variant_id")
+    size = (data.get("size") or "").strip().upper()
+    try:
+        qty = int(data.get("quantity") or 0)
+    except (TypeError, ValueError):
+        qty = 0
+    if not variant_id or not size or qty < 1:
+        return JsonResponse({"status": "error", "message": "Choisis couleur, taille et quantité."}, status=400)
+    if qty > 500:
+        return JsonResponse({"status": "error", "message": "Maximum 500 étiquettes à la fois."}, status=400)
+    variant = get_object_or_404(ProductVariant, pk=variant_id)
+    code = variant.product.code
+
+    # Highest existing unit number for this variant + size (barcode tail).
+    max_n = 0
+    for bc in ProductUnit.objects.filter(
+            variant=variant, size__iexact=size).values_list("barcode", flat=True):
+        tail = (bc or "").rsplit("-", 1)[-1]
+        if tail.isdigit():
+            max_n = max(max_n, int(tail))
+    start = max_n + 1
+    codes = [f"{code}-{variant.color_name}-{size}-{n:03d}".upper()
+             for n in range(start, start + qty)]
+    return JsonResponse({
+        "status": "ok",
+        "codes": codes,
+        "start": start,
+        "print_url": reverse("print_labels") + "?codes=" + ",".join(codes),
+    })
+
+
 def _qr_data_uri(text, box_size=8, border=1):
     """Return a base64 PNG data-URI QR code for `text`. '' on failure."""
     try:
@@ -5627,9 +5672,25 @@ def product_detail(request, pk):
                        for c, n in sorted(colors.items(), key=lambda x: -x[1])],
         })
 
+    # Data for the "Imprimer QR unités" popup: the SKU family → variants
+    # (colors) → existing sizes, driving the cascading picker. Sizes come from
+    # existing units; a new size can also be typed in the popup.
+    label_tree = []
+    for p in family:
+        vlist = []
+        for v in p.variants.all():
+            sizes = sorted(set(s for s in v.units.values_list("size", flat=True) if s),
+                           key=lambda s: (len(s), s))
+            vlist.append({"id": v.id, "color_name": v.color_name,
+                          "color_label": v.color_label, "sizes": sizes})
+        if vlist:
+            label_tree.append({"id": p.id, "name": p.name, "code": p.code,
+                               "variants": vlist})
+
     return render(request, "inventory/product_detail.html", {
         "product": product,
         "root_product": root,
+        "label_tree": label_tree,
         "variants": variants,
         "variants_data": variants_data,
         "in_stock_total": in_stock_total,

@@ -24,6 +24,7 @@ urlpatterns = [
     path("api/orders/<int:pk>/state/", views.api_get_order_state, name="api_get_order_state"),
     path("api/scan/reception/", views.api_scan_reception, name="api_scan_reception"),
     path("labels/print/", views.print_labels, name="print_labels"),
+    path("api/labels/generate/", views.api_generate_labels, name="api_generate_labels"),
     path("api/scan/return/", views.api_scan_return, name="api_scan_return"),
     path("api/scan/return/multiple/", views.api_return_multiple, name="api_return_multiple"),
     path("api/scan/return/exchange-received/", views.api_exchange_mark_received, name="api_exchange_mark_received"),

@@ -93,9 +93,6 @@
   </div>
 
   <div class="feedback-bar idle" id="feedback">Prêt à recevoir du stock...</div>
-  <div style="text-align:center;margin-top:14px;">
-    <button onclick="reprintPrompt()" style="background:#1f2937;color:#fff;border:none;padding:9px 16px;border-radius:8px;cursor:pointer;font-size:14px;">🖨️ Réimprimer une étiquette (QR abîmé)</button>
-  </div>
 </div>
 
 <!-- POPUP -->
@@ -110,8 +107,6 @@
         <span class="tag tag-ok">Ajouté au stock</span>
       </div>
       <div class="popup-bc" id="popup-bc"></div>
-      <button onclick="printLabel(document.getElementById('popup-bc').textContent)"
-        style="width:100%;margin-bottom:8px;background:#22c55e;color:#05270f;border:none;padding:11px;border-radius:8px;font-weight:700;font-size:15px;cursor:pointer;">🖨️ Imprimer l'étiquette</button>
       <button class="popup-close" onclick="closePopup()">Fermer et continuer →</button>
     </div>
   </div>
@@ -165,18 +160,6 @@
     document.getElementById('overlay').classList.remove('visible');
     if (autoCloseTimer) { clearTimeout(autoCloseTimer); autoCloseTimer = null; }
     input.focus();
-  }
-
-  function printLabel(barcode) {
-    barcode = (barcode || '').trim();
-    if (!barcode) return;
-    if (autoCloseTimer) { clearTimeout(autoCloseTimer); autoCloseTimer = null; }
-    window.open("{% url 'print_labels' %}?code=" + encodeURIComponent(barcode), '_blank');
-  }
-
-  function reprintPrompt() {
-    var bc = prompt("Barcode à réimprimer (ex: NKCLR-GRN-2-018) :");
-    if (bc) printLabel(bc);
   }
 
   function setFeedback(type, msg) {

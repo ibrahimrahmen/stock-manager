@@ -149,6 +149,7 @@
         {% if product.alert_disabled %}<span class="badge badge-muted">Alertes désactivées</span>{% endif %}
       </h1>
       <div class="meta">Code : {{ product.code }}{% if product.category %} · {{ product.category }}{% endif %} · Achat {{ product.buy_price|floatformat:3 }} TND · Vente {{ product.sell_price|floatformat:3 }} TND</div>
+      <button class="adm-btn" style="margin-top:10px;background:#22c55e;color:#05270f;border-color:#22c55e;font-weight:700;" onclick="openLabelModal()">🖨️ Imprimer QR unités</button>
     </div>
     {% if request.user.is_superuser %}
     <div class="admin-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -503,6 +504,94 @@ function pad3(n) { return String(n).padStart(3, '0'); }
   });
   rows.forEach(function(r){ tbody.appendChild(r); });
 })();
+</script>
+
+<!-- ===== Imprimer QR unités ===== -->
+{{ label_tree|json_script:"label-tree-data" }}
+<div id="lbl-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;padding:22px;max-width:420px;width:92%;font-family:inherit;box-shadow:0 20px 50px rgba(0,0,0,.3);">
+    <h3 style="margin:0 0 4px;font-size:18px;">🖨️ Imprimer les QR unités</h3>
+    <div style="font-size:12px;color:#888;margin-bottom:16px;">Les numéros continuent après la dernière unité en stock. Les étiquettes ne créent pas de stock — scanne-les à la réception.</div>
+
+    <div id="lbl-row-version" style="margin-bottom:12px;">
+      <label style="display:block;font-size:13px;margin-bottom:5px;color:#555;">Version</label>
+      <select id="lbl-version" onchange="lblOnVersion()" style="width:100%;padding:9px;border-radius:8px;border:1px solid #ccc;"></select>
+    </div>
+    <div id="lbl-row-color" style="margin-bottom:12px;">
+      <label style="display:block;font-size:13px;margin-bottom:5px;color:#555;">Couleur</label>
+      <select id="lbl-color" onchange="lblOnColor()" style="width:100%;padding:9px;border-radius:8px;border:1px solid #ccc;"></select>
+    </div>
+    <div style="margin-bottom:12px;">
+      <label style="display:block;font-size:13px;margin-bottom:5px;color:#555;">Taille</label>
+      <select id="lbl-size" onchange="lblOnSize()" style="width:100%;padding:9px;border-radius:8px;border:1px solid #ccc;"></select>
+      <input id="lbl-size-new" placeholder="Nouvelle taille (ex: 2)" style="display:none;margin-top:8px;width:100%;padding:9px;border-radius:8px;border:1px solid #ccc;">
+    </div>
+    <div style="margin-bottom:16px;">
+      <label style="display:block;font-size:13px;margin-bottom:5px;color:#555;">Combien d'unités ?</label>
+      <input id="lbl-qty" type="number" min="1" max="500" value="1" style="width:100%;padding:9px;border-radius:8px;border:1px solid #ccc;">
+    </div>
+    <div id="lbl-msg" style="font-size:13px;color:#e11;margin-bottom:10px;min-height:16px;"></div>
+    <div style="display:flex;gap:10px;">
+      <button onclick="lblGenerate()" style="flex:1;background:#22c55e;color:#05270f;border:none;padding:11px;border-radius:8px;font-weight:700;cursor:pointer;font-size:15px;">Imprimer</button>
+      <button onclick="closeLabelModal()" style="background:#eee;border:none;padding:11px 16px;border-radius:8px;cursor:pointer;">Annuler</button>
+    </div>
+  </div>
+</div>
+<script>
+  var LABEL_TREE = JSON.parse(document.getElementById('label-tree-data').textContent || '[]');
+  function _lblVer(){ return LABEL_TREE[parseInt(document.getElementById('lbl-version').value || 0)] || {variants:[]}; }
+  function _lblVar(){ var p=_lblVer(); return p.variants[parseInt(document.getElementById('lbl-color').value || 0)] || {sizes:[]}; }
+  function openLabelModal(){
+    if (!LABEL_TREE.length){ alert("Aucune variante à imprimer."); return; }
+    var vsel=document.getElementById('lbl-version');
+    vsel.innerHTML=LABEL_TREE.map(function(p,i){return '<option value="'+i+'">'+p.name+'</option>';}).join('');
+    document.getElementById('lbl-row-version').style.display = LABEL_TREE.length>1 ? 'block':'none';
+    lblOnVersion();
+    document.getElementById('lbl-msg').textContent='';
+    document.getElementById('lbl-overlay').style.display='flex';
+  }
+  function closeLabelModal(){ document.getElementById('lbl-overlay').style.display='none'; }
+  function lblOnVersion(){
+    var p=_lblVer(); var csel=document.getElementById('lbl-color');
+    csel.innerHTML=p.variants.map(function(v,i){return '<option value="'+i+'">'+(v.color_label||v.color_name)+'</option>';}).join('');
+    document.getElementById('lbl-row-color').style.display = p.variants.length>1 ? 'block':'none';
+    lblOnColor();
+  }
+  function lblOnColor(){
+    var v=_lblVar(); var ssel=document.getElementById('lbl-size');
+    var opts=(v.sizes||[]).map(function(s){return '<option value="'+s+'">'+s+'</option>';});
+    opts.push('<option value="__new__">➕ Nouvelle taille…</option>');
+    ssel.innerHTML=opts.join('');
+    lblOnSize();
+  }
+  function lblOnSize(){
+    var isNew=document.getElementById('lbl-size').value==='__new__';
+    document.getElementById('lbl-size-new').style.display=isNew?'block':'none';
+  }
+  function _lblSize(){
+    var s=document.getElementById('lbl-size').value;
+    if(s==='__new__') s=(document.getElementById('lbl-size-new').value||'').trim();
+    return s;
+  }
+  function _csrf(){ var m=document.cookie.match(/csrftoken=([^;]+)/); return m?m[1]:''; }
+  async function lblGenerate(){
+    var v=_lblVar(); var size=_lblSize(); var qty=parseInt(document.getElementById('lbl-qty').value||0);
+    var msg=document.getElementById('lbl-msg'); msg.textContent='';
+    if(!v || !v.id){ msg.textContent='Choisis une couleur.'; return; }
+    if(!size){ msg.textContent='Choisis ou saisis une taille.'; return; }
+    if(!(qty>=1)){ msg.textContent='Quantité invalide.'; return; }
+    try{
+      var res=await fetch("{% url 'api_generate_labels' %}",{
+        method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrf()},
+        body:JSON.stringify({variant_id:v.id, size:size, quantity:qty}),
+      });
+      var data=await res.json();
+      if(data.status!=='ok'){ msg.textContent=data.message||'Erreur.'; return; }
+      window.open(data.print_url,'_blank');
+      closeLabelModal();
+    }catch(e){ msg.textContent='Erreur réseau.'; }
+  }
+  document.getElementById('lbl-overlay').addEventListener('click',function(e){ if(e.target===this) closeLabelModal(); });
 </script>
 
 </body>
