@@ -33,10 +33,10 @@
   }
   .label:last-child { page-break-after: auto; }
 
-  .qr { width: 22mm; height: 22mm; }
+  .qr { width: 20mm; height: 20mm; }
   .code-line {
-    font-size: 3.4mm; font-weight: 700; white-space: nowrap;
-    letter-spacing: .2px;
+    font-size: 3.2mm; font-weight: 700; white-space: nowrap;
+    letter-spacing: 0; max-width: 100%;  /* JS shrinks the font to fit the width */
   }
   .code-line .pfx { font-weight: 700; }
 
@@ -62,12 +62,31 @@
     {% endfor %}
   </div>
 
-  {% if auto_print and labels %}
   <script>
+    // Shrink each code line's font until it fits the label width — so long V2
+    // codes (e.g. PTSICYV2-WTE-2-493) don't get cut off.
+    function fitLabels() {
+      var labels = document.querySelectorAll('.label');
+      for (var i = 0; i < labels.length; i++) {
+        var line = labels[i].querySelector('.code-line');
+        if (!line) continue;
+        var avail = labels[i].clientWidth - 6; // px, small side margin
+        var size = 15;                          // px starting size
+        line.style.fontSize = size + 'px';
+        var guard = 0;
+        while (line.scrollWidth > avail && size > 5 && guard < 80) {
+          size -= 0.5; guard++;
+          line.style.fontSize = size + 'px';
+        }
+      }
+    }
     window.addEventListener('load', function () {
-      setTimeout(function () { window.print(); }, 350);
+      fitLabels();
+      {% if auto_print and labels %}
+      setTimeout(function () { window.print(); }, 300);
+      {% endif %}
     });
+    window.addEventListener('beforeprint', fitLabels);
   </script>
-  {% endif %}
 </body>
 </html>
