@@ -5270,15 +5270,20 @@ def api_navex_sync(request):
                             _navex_upd.append("updated_at")
                             linked_order.save(update_fields=_navex_upd)
                     new_v2_status = None
-                    if linked_order.status == Order.CONFIRMEE:
+                    # Forward / recovery: from Confirmée, or back out of
+                    # RETURNING when a depot bounce / en-cours shows the parcel
+                    # is in delivery again.
+                    if linked_order.status in (Order.CONFIRMEE, Order.RETURNING):
                         if navex_lower in ("au magasin", "au-magasin", "au magasin navex"):
                             new_v2_status = Order.AU_MAGASIN
                         elif navex_lower in ("en cours", "en-cours", "en cours de livraison"):
                             new_v2_status = Order.EN_COURS
+                        elif _navex_is_depot_bounce(navex_lower):
+                            new_v2_status = Order.EN_COURS
                     if linked_order.status in (Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN):
-                        # Any Navex return status → En retour (see the cron sync
-                        # for the rationale). Match "retour"/"rtn" broadly.
-                        if "retour" in navex_lower or "rtn" in navex_lower:
+                        # Real return only — _navex_is_return EXCLUDES the
+                        # 'Rtn depot' / 'Retour Dépôt' bounce (still en cours).
+                        if _navex_is_return(navex_lower):
                             new_v2_status = Order.RETURNING
                     if new_v2_status and new_v2_status != linked_order.status:
                         old_label = dict(Order.STATUS_CHOICES).get(linked_order.status, linked_order.status)
@@ -10917,6 +10922,27 @@ def _sync_navex_status_for_order(order, force=False):
     return True
 
 
+def _navex_is_return(navex_lower):
+    """True if a Navex status means the colis is being returned to us (→ En
+    retour). Matches any 'retour'/'rtn' status EXCEPT depot bounces:
+    'Rtn depot' / 'Retour Dépôt' mean a failed delivery attempt where the
+    parcel went back to the depot to be RE-ATTEMPTED — still in delivery, not
+    a return to sender. The real return is confirmed later (e.g. 'Retour reçu')
+    and does not contain 'depot'.
+    """
+    s = (navex_lower or "").strip().lower()
+    if "depot" in s or "dépôt" in s:
+        return False
+    return ("retour" in s) or ("rtn" in s)
+
+
+def _navex_is_depot_bounce(navex_lower):
+    """True for 'Rtn depot' / 'Retour Dépôt' — parcel back at the depot between
+    delivery attempts (still en cours)."""
+    s = (navex_lower or "").strip().lower()
+    return ("depot" in s or "dépôt" in s) and ("retour" in s or "rtn" in s)
+
+
 def _sync_navex_for_v2_orders(only_pending=True):
     """Bulk-refresh Navex status for v2 orders that have a bordereau.
 
@@ -11056,12 +11082,17 @@ def _sync_navex_for_v2_orders(only_pending=True):
         # from Confirmée or between the two in-transit states themselves
         # (the colis can bounce en_cours <-> au_magasin). Don't disturb final
         # or return states.
-        if o.status in (Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN):
+        # Also allow recovery FROM RETURNING: a 'Rtn depot' bounce, or an "en
+        # cours" after a temporary depot return, means the parcel is back in
+        # delivery — move it out of En retour.
+        if o.status in (Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN, Order.RETURNING):
             new_v2_status = None
             if navex_lower in ("au magasin", "au-magasin", "au magasin navex"):
                 new_v2_status = Order.AU_MAGASIN
             elif navex_lower in ("en cours", "en-cours", "en cours de livraison"):
                 new_v2_status = Order.EN_COURS
+            elif _navex_is_depot_bounce(navex_lower):
+                new_v2_status = Order.EN_COURS  # back at depot between attempts
             if new_v2_status and new_v2_status != o.status:
                 old_label = dict(Order.STATUS_CHOICES).get(o.status, o.status)
                 o.status = new_v2_status
@@ -11078,15 +11109,13 @@ def _sync_navex_for_v2_orders(only_pending=True):
         # RETURNING ("En retour"). Can come from Confirmée or an in-transit
         # status (en_cours / au_magasin). NOTE: the final RETURNED status is set
         # by physical scan in v1, not from Navex sync.
-        # Any Navex return status → En retour. Navex uses many return
-        # sub-statuses (Retour Expéditeur, Rtn client/agence, Retour recu,
-        # Retour définitif, Retour payé, Retour Dépôt, Retour inter-agence, ...),
-        # so match anything containing "retour"/"rtn" rather than listing each.
-        # No forward/delivery status (En cours, Au magasin, Livré, ...) contains
-        # those words, so this is safe. Final RETURNED still needs the physical
-        # warehouse scan.
+        # Any real Navex return status → En retour (Retour Expéditeur, Rtn
+        # client/agence, Retour recu, Retour définitif, Retour payé, Retour
+        # inter-agence, ...). _navex_is_return EXCLUDES 'Rtn depot' / 'Retour
+        # Dépôt' — those are depot bounces (still en cours), handled above.
+        # Final RETURNED still needs the physical warehouse scan.
         if o.status in (Order.CONFIRMEE, Order.EN_COURS, Order.AU_MAGASIN):
-            if "retour" in navex_lower or "rtn" in navex_lower:
+            if _navex_is_return(navex_lower):
                 old_label = dict(Order.STATUS_CHOICES).get(o.status, o.status)
                 o.status = Order.RETURNING
                 if "status" not in update_fields:
