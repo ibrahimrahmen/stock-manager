@@ -1666,6 +1666,16 @@ function renderOfferProducts(idx) {
   if (!mo.offer_id) return '<div class="muted" style="font-size:11px;padding:6px 0;">Choisissez une offre pour voir les produits.</div>';
   const detail = offerCache[mo.offer_id];
   if (!detail) return '<div class="muted" style="font-size:11px;padding:6px 0;">Chargement...</div>';
+  // Keep mo.products aligned with the offer's product list — one slot per
+  // product — so every per-product select has an entry to write to (prevents
+  // "Cannot set properties of undefined" when a variant is picked).
+  if (!Array.isArray(mo.products)) mo.products = [];
+  detail.products.forEach((p, i) => {
+    if (!mo.products[i]) mo.products[i] = {
+      offer_product_id: p.offer_product_id, product_id: p.product_id,
+      variant_id: null, size: '', quantity: p.quantity,
+    };
+  });
   return `
     <table class="offer-products-table">
       <thead><tr><th>Produit</th><th>Couleur</th><th>Taille</th><th style="text-align:center;">Stock</th></tr></thead>
@@ -1733,13 +1743,26 @@ async function onOfferPicked(idx, offerId) {
   recalcModalTotal();
 }
 
+function _ensureOfferProduct(offerIdx, prodIdx, productId) {
+  const mo = modalOffers[offerIdx];
+  if (!mo) return null;
+  if (!Array.isArray(mo.products)) mo.products = [];
+  if (!mo.products[prodIdx]) {
+    mo.products[prodIdx] = { product_id: productId, variant_id: null, size: '', quantity: 1 };
+  }
+  return mo.products[prodIdx];
+}
 function onVariantPicked(offerIdx, prodIdx, productId, variantId) {
-  modalOffers[offerIdx].products[prodIdx].variant_id = variantId ? parseInt(variantId) : null;
-  modalOffers[offerIdx].products[prodIdx].size = '';
+  const prod = _ensureOfferProduct(offerIdx, prodIdx, productId);
+  if (!prod) return;
+  prod.variant_id = variantId ? parseInt(variantId) : null;
+  prod.size = '';
   document.getElementById('offer-products-' + offerIdx).innerHTML = renderOfferProducts(offerIdx);
 }
 function onSizePicked(offerIdx, prodIdx, size) {
-  modalOffers[offerIdx].products[prodIdx].size = size;
+  const prod = _ensureOfferProduct(offerIdx, prodIdx);
+  if (!prod) return;
+  prod.size = size;
   document.getElementById('offer-products-' + offerIdx).innerHTML = renderOfferProducts(offerIdx);
 }
 
