@@ -11829,6 +11829,135 @@ def stats_commandes(request):
     })
 
 
+def stats_modeles(request):
+    """Statistics — Modèles tab. Per-product (model) breakdown counted in
+    UNITS, across the same order-status rows as the Commandes tab, over a date
+    range. Shows, per product: total / Sortie / Livrée / Retour / En cours /
+    Payée / Annulée / Échange units, plus a return rate (Retour % vs Sortie)."""
+    if not request.user.is_superuser:
+        return redirect("home")
+    from .models import Order, ShippingOrder, OrderLine, OrderOffer, OfferProduct, Product
+    from collections import defaultdict
+    import datetime as _dt
+    try:
+        import zoneinfo
+        tz = zoneinfo.ZoneInfo("Africa/Tunis")
+    except Exception:
+        tz = timezone.get_current_timezone()
+
+    today = timezone.localdate()
+    try:
+        start_date = _dt.date.fromisoformat(request.GET.get("from", ""))
+    except ValueError:
+        start_date = today - _dt.timedelta(days=13)
+    try:
+        end_date = _dt.date.fromisoformat(request.GET.get("to", ""))
+    except ValueError:
+        end_date = today
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    win_start, _ = _business_day_bounds(start_date, tz)
+    _, win_end = _business_day_bounds(end_date, tz)
+
+    orders = Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end)
+    source_filter = request.GET.get("source", "all")
+    if source_filter == "barats":
+        orders = orders.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "converty":
+        orders = orders.filter(sales_page__name__iexact="Converty")
+    elif source_filter == "facebook":
+        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+    orders = list(orders.values("id", "status", "exchange_of_id"))
+    order_ids = [o["id"] for o in orders]
+
+    sortie_ids = set(ShippingOrder.objects.filter(order_id__in=order_ids)
+                     .values_list("order_id", flat=True))
+
+    def _row_for(o):
+        if o["exchange_of_id"]:
+            return ["echange"]
+        rows = []
+        st = o["status"]
+        if st in ("returned", "returning"):
+            rows.append("retour")
+        elif st in ("en_cours", "au_magasin"):
+            rows.append("encours")
+        elif st == "livree":
+            rows.append("livree")
+        elif st == "payee":
+            rows.append("payee")
+        elif st == "annulee":
+            rows.append("annulee")
+        if o["id"] in sortie_ids:
+            rows.append("sortie")
+        return rows
+
+    # Units per (order, product): standalone lines + offer lines (× offer qty);
+    # offers with no lines are expanded from their OfferProduct pieces.
+    pu = defaultdict(lambda: defaultdict(int))
+    if order_ids:
+        for l in OrderLine.objects.filter(order_id__in=order_ids).values(
+                "order_id", "product_id", "order_offer_id", "quantity", "order_offer__quantity"):
+            if not l["product_id"]:
+                continue
+            mult = (l["order_offer__quantity"] or 1) if l["order_offer_id"] else 1
+            pu[l["order_id"]][l["product_id"]] += (l["quantity"] or 1) * mult
+        offers = list(OrderOffer.objects.filter(order_id__in=order_ids)
+                      .values("id", "order_id", "offer_id", "quantity"))
+        with_lines = set(OrderLine.objects.filter(
+            order_offer_id__in=[o["id"] for o in offers]).values_list("order_offer_id", flat=True))
+        empty_offers = [o for o in offers if o["id"] not in with_lines and o["offer_id"]]
+        if empty_offers:
+            op = defaultdict(list)
+            for r in OfferProduct.objects.filter(
+                    offer_id__in=[o["offer_id"] for o in empty_offers]).values(
+                    "offer_id", "product_id", "quantity"):
+                if r["product_id"]:
+                    op[r["offer_id"]].append((r["product_id"], r["quantity"] or 1))
+            for o in empty_offers:
+                for pid, q in op.get(o["offer_id"], []):
+                    pu[o["order_id"]][pid] += q * (o["quantity"] or 1)
+
+    order_by_id = {o["id"]: o for o in orders}
+    pm = defaultdict(lambda: defaultdict(int))
+    for oid, pmap in pu.items():
+        o = order_by_id.get(oid)
+        if not o:
+            continue
+        rows = _row_for(o)
+        for pid, units in pmap.items():
+            pm[pid]["total"] += units
+            for rk in rows:
+                pm[pid][rk] += units
+
+    names = dict(Product.objects.filter(id__in=list(pm.keys())).values_list("id", "name"))
+    per_model = []
+    totals = defaultdict(int)
+    for pid, c in pm.items():
+        sortie = c.get("sortie", 0)
+        retour = c.get("retour", 0)
+        for k in ("total", "sortie", "livree", "retour", "encours", "payee", "annulee", "echange"):
+            totals[k] += c.get(k, 0)
+        per_model.append({
+            "product": names.get(pid, f"#{pid}"),
+            "total": c.get("total", 0), "sortie": sortie, "livree": c.get("livree", 0),
+            "retour": retour, "encours": c.get("encours", 0), "payee": c.get("payee", 0),
+            "annulee": c.get("annulee", 0), "echange": c.get("echange", 0),
+            "retour_pct": round(retour / sortie * 100, 1) if sortie else 0.0,
+        })
+    per_model.sort(key=lambda r: -r["total"])
+    totals["retour_pct"] = round(totals["retour"] / totals["sortie"] * 100, 1) if totals["sortie"] else 0.0
+
+    return render(request, "inventory/stats_modeles.html", {
+        "per_model": per_model,
+        "totals": dict(totals),
+        "from_date": start_date.isoformat(),
+        "to_date": end_date.isoformat(),
+        "source_filter": source_filter,
+    })
+
+
 # ---------------------------------------------------------------------------
 # MESSENGER DM ORDER AUTOMATION
 # Webhook receives Messenger messages + ad referral, stores the conversation,

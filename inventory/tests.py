@@ -154,3 +154,46 @@ class AngryOrderFlagTest(TestCase):
         o.save(update_fields=["conversation_text", "updated_at"])
         o.refresh_from_db()
         self.assertTrue(o.is_angry)  # update_fields path must persist is_angry
+
+
+class StatsModelesTest(TestCase):
+    """Per-model stats count UNITS and bucket by the order's status."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from inventory.models import (Product, Customer, Order, OrderLine,
+                                       ShippingOrder)
+        self.admin = User.objects.create_superuser("admin", "a@a.com", "pw")
+        self.client.force_login(self.admin)
+        self.P = Product
+        self.C = Customer
+        self.O = Order
+        self.OL = OrderLine
+        self.SO = ShippingOrder
+
+    def _row(self, resp, name):
+        return next((r for r in resp.context["per_model"] if r["product"] == name), None)
+
+    def test_units_counted_and_bucketed(self):
+        p = self.P.objects.create(name="Pants ICY Maze", code="PICY")
+        c = self.C.objects.create(phone="20111222")
+        # delivered order: 3 units
+        o1 = self.O.objects.create(customer=c, status=self.O.LIVREE)
+        self.OL.objects.create(order=o1, product=p, quantity=3, unit_price=0)
+        # a linked shipping order → counts as Sortie
+        self.SO.objects.create(bordereau_barcode="999000111222", order=o1)
+        # returned order: 1 unit
+        o2 = self.O.objects.create(customer=c, status=self.O.RETURNED)
+        self.OL.objects.create(order=o2, product=p, quantity=1, unit_price=0)
+
+        resp = self.client.get("/statistiques/modeles/",
+                               {"from": "2020-01-01", "to": "2035-01-01", "source": "all"})
+        self.assertEqual(resp.status_code, 200)
+        row = self._row(resp, "Pants ICY Maze")
+        self.assertIsNotNone(row)
+        self.assertEqual(row["total"], 4)     # 3 + 1 units
+        self.assertEqual(row["livree"], 3)
+        self.assertEqual(row["retour"], 1)
+        self.assertEqual(row["sortie"], 3)    # only o1 has a shipping order
+        # retour % is vs Sortie: 1/3 → 33.3
+        self.assertEqual(row["retour_pct"], 33.3)
