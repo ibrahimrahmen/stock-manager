@@ -51,6 +51,12 @@ tr.totaux td{color:var(--text);}
 .ret-high{color:var(--red);font-weight:700;}
 .ret-mid{color:var(--amber);}
 .ret-low{color:var(--green);}
+.modelrow{cursor:pointer;}
+.modelrow:hover td{background:var(--surface2);}
+.caret{display:inline-block;width:14px;color:var(--muted);font-size:11px;transition:transform .1s;}
+.pagerow{display:none;}
+.pagerow td{background:var(--surface2);font-size:13px;}
+.pagecell{padding-left:34px !important;font-weight:400;color:var(--muted);}
 .n-info{font-size:12px;color:var(--muted);margin-bottom:10px;}
 </style>
 </head>
@@ -117,8 +123,8 @@ tr.totaux td{color:var(--text);}
       </thead>
       <tbody id="modbody">
         {% for r in per_model %}
-        <tr>
-          <td class="modele">{{ r.product }}</td>
+        <tr class="modelrow modelrow-{{ r.id }}" onclick="togglePages({{ r.id }})" title="Cliquer pour voir par page">
+          <td class="modele"><span class="caret">▸</span> {{ r.product }}</td>
           <td>{{ r.total }}</td>
           <td>{{ r.sortie }}</td>
           <td>{{ r.livree }}</td>
@@ -129,6 +135,20 @@ tr.totaux td{color:var(--text);}
           <td>{{ r.echange }}</td>
           <td class="{% if r.retour_pct >= 20 %}ret-high{% elif r.retour_pct >= 8 %}ret-mid{% else %}ret-low{% endif %}">{{ r.retour_pct }}%</td>
         </tr>
+        {% for pg in r.pages %}
+        <tr class="pagerow pagerow-{{ r.id }}">
+          <td class="modele pagecell">↳ {{ pg.page }}</td>
+          <td>{{ pg.total }}</td>
+          <td>{{ pg.sortie }}</td>
+          <td>{{ pg.livree }}</td>
+          <td>{{ pg.retour }}</td>
+          <td>{{ pg.encours }}</td>
+          <td>{{ pg.payee }}</td>
+          <td>{{ pg.annulee }}</td>
+          <td>{{ pg.echange }}</td>
+          <td class="{% if pg.retour_pct >= 20 %}ret-high{% elif pg.retour_pct >= 8 %}ret-mid{% else %}ret-low{% endif %}">{{ pg.retour_pct }}%</td>
+        </tr>
+        {% endfor %}
         {% empty %}
         <tr><td class="modele" colspan="10" style="text-align:center;color:var(--muted);padding:26px;">Aucune vente sur la période.</td></tr>
         {% endfor %}
@@ -157,27 +177,55 @@ tr.totaux td{color:var(--text);}
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
 
+// A "group" = one model row (head) plus its page sub-rows.
+function _groups(){
+  const body = document.getElementById('modbody');
+  const groups = []; let cur = null;
+  Array.from(body.children).forEach(function(tr){
+    if (tr.classList.contains('modelrow')){ cur = {head: tr, pages: []}; groups.push(cur); }
+    else if (tr.classList.contains('pagerow') && cur){ cur.pages.push(tr); }
+  });
+  return groups;
+}
+
+function togglePages(pid){
+  const rows = document.querySelectorAll('.pagerow-' + pid);
+  const caret = document.querySelector('.modelrow-' + pid + ' .caret');
+  let anyHidden = false;
+  rows.forEach(function(r){ if (getComputedStyle(r).display === 'none') anyHidden = true; });
+  rows.forEach(function(r){ r.style.display = anyHidden ? 'table-row' : 'none'; });
+  if (caret) caret.textContent = anyHidden ? '▾' : '▸';
+}
+
 function filterRows(){
   const q = (document.getElementById('search').value || '').toLowerCase();
-  document.querySelectorAll('#modbody tr').forEach(function(tr){
-    const name = (tr.querySelector('.modele') || {}).textContent || '';
-    tr.style.display = name.toLowerCase().includes(q) ? '' : 'none';
+  _groups().forEach(function(g){
+    const name = (g.head.querySelector('.modele').textContent || '').toLowerCase();
+    const match = name.includes(q);
+    g.head.style.display = match ? '' : 'none';
+    if (!match) g.pages.forEach(function(p){ p.style.display = 'none'; });
   });
 }
 
+const _cell = (tr, col) => tr.children[col] ? tr.children[col].textContent.replace('%','').trim() : '';
 let sortState = {col: 1, asc: false};
 function sortBy(col, numeric){
-  const body = document.getElementById('modbody');
-  const rows = Array.from(body.querySelectorAll('tr')).filter(r => r.children.length > 1);
-  if (sortState.col === col) sortState.asc = !sortState.asc; else { sortState.col = col; sortState.asc = !numeric ? true : false; }
+  if (sortState.col === col) sortState.asc = !sortState.asc;
+  else { sortState.col = col; sortState.asc = numeric ? false : true; }
   const asc = sortState.asc;
-  rows.sort(function(a,b){
-    let av = a.children[col].textContent.replace('%','').trim();
-    let bv = b.children[col].textContent.replace('%','').trim();
+  const cmp = (a, b) => {
+    let av = _cell(a, col), bv = _cell(b, col);
     if (numeric){ av = parseFloat(av)||0; bv = parseFloat(bv)||0; return asc ? av-bv : bv-av; }
     return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+  };
+  const body = document.getElementById('modbody');
+  const groups = _groups();
+  groups.sort((a, b) => cmp(a.head, b.head));
+  groups.forEach(function(g){
+    g.pages.sort(cmp);
+    body.appendChild(g.head);
+    g.pages.forEach(p => body.appendChild(p));
   });
-  rows.forEach(r => body.appendChild(r));
 }
 
 // Quick range links (?range=N) -> set dates and submit.

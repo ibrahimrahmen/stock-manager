@@ -174,16 +174,18 @@ class StatsModelesTest(TestCase):
     def _row(self, resp, name):
         return next((r for r in resp.context["per_model"] if r["product"] == name), None)
 
-    def test_units_counted_and_bucketed(self):
+    def test_units_counted_bucketed_and_per_page(self):
+        from inventory.models import SalesPage
         p = self.P.objects.create(name="Pants ICY Maze", code="PICY")
         c = self.C.objects.create(phone="20111222")
-        # delivered order: 3 units
-        o1 = self.O.objects.create(customer=c, status=self.O.LIVREE)
+        sp1 = SalesPage.objects.create(name="Barats.tn")
+        sp2 = SalesPage.objects.create(name="Insta Store")
+        # delivered order on Barats: 3 units + shipping order (Sortie)
+        o1 = self.O.objects.create(customer=c, status=self.O.LIVREE, sales_page=sp1)
         self.OL.objects.create(order=o1, product=p, quantity=3, unit_price=0)
-        # a linked shipping order → counts as Sortie
         self.SO.objects.create(bordereau_barcode="999000111222", order=o1)
-        # returned order: 1 unit
-        o2 = self.O.objects.create(customer=c, status=self.O.RETURNED)
+        # returned order on Insta: 1 unit
+        o2 = self.O.objects.create(customer=c, status=self.O.RETURNED, sales_page=sp2)
         self.OL.objects.create(order=o2, product=p, quantity=1, unit_price=0)
 
         resp = self.client.get("/statistiques/modeles/",
@@ -195,5 +197,12 @@ class StatsModelesTest(TestCase):
         self.assertEqual(row["livree"], 3)
         self.assertEqual(row["retour"], 1)
         self.assertEqual(row["sortie"], 3)    # only o1 has a shipping order
-        # retour % is vs Sortie: 1/3 → 33.3
-        self.assertEqual(row["retour_pct"], 33.3)
+        self.assertEqual(row["retour_pct"], 33.3)   # 1/3 vs Sortie
+
+        # Per-page drill-down: two pages, each with the right split.
+        pages = {pg["page"]: pg for pg in row["pages"]}
+        self.assertEqual(set(pages), {"Barats.tn", "Insta Store"})
+        self.assertEqual(pages["Barats.tn"]["livree"], 3)
+        self.assertEqual(pages["Barats.tn"]["sortie"], 3)
+        self.assertEqual(pages["Insta Store"]["retour"], 1)
+        self.assertEqual(pages["Insta Store"]["total"], 1)

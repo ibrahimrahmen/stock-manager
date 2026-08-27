@@ -11868,7 +11868,7 @@ def stats_modeles(request):
         orders = orders.filter(sales_page__name__iexact="Converty")
     elif source_filter == "facebook":
         orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
-    orders = list(orders.values("id", "status", "exchange_of_id"))
+    orders = list(orders.values("id", "status", "exchange_of_id", "sales_page__name"))
     order_ids = [o["id"] for o in orders]
 
     sortie_ids = set(ShippingOrder.objects.filter(order_id__in=order_ids)
@@ -11920,32 +11920,51 @@ def stats_modeles(request):
                     pu[o["order_id"]][pid] += q * (o["quantity"] or 1)
 
     order_by_id = {o["id"]: o for o in orders}
-    pm = defaultdict(lambda: defaultdict(int))
+    pm = defaultdict(lambda: defaultdict(int))            # product_id -> row -> units
+    pm_page = defaultdict(lambda: defaultdict(int))       # (product_id, page) -> row -> units
     for oid, pmap in pu.items():
         o = order_by_id.get(oid)
         if not o:
             continue
         rows = _row_for(o)
+        page = o.get("sales_page__name") or "—"
         for pid, units in pmap.items():
             pm[pid]["total"] += units
+            pm_page[(pid, page)]["total"] += units
             for rk in rows:
                 pm[pid][rk] += units
+                pm_page[(pid, page)][rk] += units
+
+    def _mk_row(c):
+        sortie = c.get("sortie", 0)
+        retour = c.get("retour", 0)
+        return {
+            "total": c.get("total", 0), "sortie": sortie, "livree": c.get("livree", 0),
+            "retour": retour, "encours": c.get("encours", 0), "payee": c.get("payee", 0),
+            "annulee": c.get("annulee", 0), "echange": c.get("echange", 0),
+            "retour_pct": round(retour / sortie * 100, 1) if sortie else 0.0,
+        }
+
+    # Per-product page breakdown (for the click-to-expand drill-down).
+    pages_by_product = defaultdict(list)
+    for (pid, page), c in pm_page.items():
+        d = _mk_row(c)
+        d["page"] = page
+        pages_by_product[pid].append(d)
+    for pid in pages_by_product:
+        pages_by_product[pid].sort(key=lambda r: -r["total"])
 
     names = dict(Product.objects.filter(id__in=list(pm.keys())).values_list("id", "name"))
     per_model = []
     totals = defaultdict(int)
     for pid, c in pm.items():
-        sortie = c.get("sortie", 0)
-        retour = c.get("retour", 0)
+        row = _mk_row(c)
+        row["id"] = pid
+        row["product"] = names.get(pid, f"#{pid}")
+        row["pages"] = pages_by_product.get(pid, [])
         for k in ("total", "sortie", "livree", "retour", "encours", "payee", "annulee", "echange"):
             totals[k] += c.get(k, 0)
-        per_model.append({
-            "product": names.get(pid, f"#{pid}"),
-            "total": c.get("total", 0), "sortie": sortie, "livree": c.get("livree", 0),
-            "retour": retour, "encours": c.get("encours", 0), "payee": c.get("payee", 0),
-            "annulee": c.get("annulee", 0), "echange": c.get("echange", 0),
-            "retour_pct": round(retour / sortie * 100, 1) if sortie else 0.0,
-        })
+        per_model.append(row)
     per_model.sort(key=lambda r: -r["total"])
     totals["retour_pct"] = round(totals["retour"] / totals["sortie"] * 100, 1) if totals["sortie"] else 0.0
 
