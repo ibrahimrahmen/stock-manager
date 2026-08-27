@@ -123,6 +123,42 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     </div>
     <div id="output-recalc" class="output"></div>
   </div>
+
+  <div class="section-title">Boutique Shopify (Barats.tn)</div>
+
+  <div class="tool-card">
+    <div class="tool-title">Rattraper les commandes Shopify manquées</div>
+    <div class="tool-desc">
+      Récupère les commandes de la boutique Shopify (14 derniers jours) et crée
+      celles qui <strong>manquent</strong> dans le système — utile quand des
+      commandes du site n'ont pas pu être enregistrées (ex : base de données
+      pleine). <strong>Idempotent</strong> : ne touche jamais une commande déjà
+      présente.<br><strong>Fais d'abord le Dry-run</strong> pour voir combien
+      manquent.
+    </div>
+    <div class="tool-buttons">
+      <button class="btn" onclick="runTool('backfill_shopify_dryrun', this, 'output-shopify')">🔍 Dry-run (juste voir)</button>
+      <button class="btn btn-primary" onclick="runToolWithConfirm('backfill_shopify_apply', this, 'output-shopify', 'Créer les commandes Shopify manquantes ?')">⬇️ Rattraper (créer les manquantes)</button>
+    </div>
+    <div id="output-shopify" class="output"></div>
+  </div>
+
+  <div class="section-title">Base de données — Nettoyage</div>
+
+  <div class="tool-card">
+    <div class="tool-title">Vider les vieilles conversations (libérer de l'espace)</div>
+    <div class="tool-desc">
+      Efface uniquement le <strong>texte des conversations</strong> Messenger /
+      Instagram de plus de 10 jours. <strong>Aucune commande n'est supprimée</strong>
+      — seul le texte du chat est vidé. Réduit la taille de la base de données.
+      <br><strong>Fais d'abord le Dry-run.</strong>
+    </div>
+    <div class="tool-buttons">
+      <button class="btn" onclick="runTool('purge_conversations_dryrun', this, 'output-purge')">🔍 Dry-run (juste voir)</button>
+      <button class="btn btn-warning" onclick="runToolWithConfirm('purge_conversations_apply', this, 'output-purge', 'Vider le texte des conversations de +10 jours ? (les commandes restent)')">🗑️ Vider les conversations</button>
+    </div>
+    <div id="output-purge" class="output"></div>
+  </div>
 </div>
 
 <script>

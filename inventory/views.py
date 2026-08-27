@@ -9748,6 +9748,10 @@ def api_admin_run_tool(request, tool_name):
         "recalc_order_totals":              ("recalc_order_totals", []),
         "flag_angry_orders_dryrun":         ("flag_angry_orders", []),
         "flag_angry_orders_apply":          ("flag_angry_orders", ["--apply"]),
+        "backfill_shopify_dryrun":          ("backfill_shopify", []),
+        "backfill_shopify_apply":           ("backfill_shopify", ["--apply"]),
+        "purge_conversations_dryrun":       ("purge_old_conversations", []),
+        "purge_conversations_apply":        ("purge_old_conversations", ["--apply"]),
     }
     if tool_name not in ALLOWED:
         return JsonResponse({"status": "error", "message": f"Outil inconnu : {tool_name}"}, status=400)
