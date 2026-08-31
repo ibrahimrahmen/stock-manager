@@ -979,14 +979,45 @@ class OfferProduct(models.Model):
 # the sheet; the offer link is set manually in the ads interface.
 # ---------------------------------------------------------------------------
 class Ad(models.Model):
-    # campaign_name from the sheet is the unique key we match/sync on.
-    campaign_name = models.CharField(max_length=200, unique=True,
-        help_text="Nom de la campagne (clé de synchronisation avec le Google Sheet).")
+    # Attribution model. Kept in sync with migrations 0063-0067 (the DB already
+    # has all these columns + the AdOfferLink table). Do NOT drop them.
+    ATTR_OFFER = "offer"
+    ATTR_BARATS = "barats"
+    ATTRIBUTION_CHOICES = [
+        (ATTR_OFFER, "Offre(s) liée(s)"),
+        (ATTR_BARATS, "Carrousel Barats.tn"),
+    ]
+
+    # Display name (can change in Ads Manager); campaign_id is the stable key.
+    # NOTE: help_text below matches migrations 0042/0063-0067 verbatim so no
+    # spurious AlterField is generated. Do not "improve" the wording here.
+    campaign_name = models.CharField(max_length=200, db_index=True,
+        help_text="Nom de la campagne (affichage ; peut changer).")
+    campaign_id = models.CharField(max_length=64, unique=True, null=True, blank=True,
+        help_text="ID de campagne Meta (cle stable de synchronisation).")
+    attribution = models.CharField(max_length=10, choices=ATTRIBUTION_CHOICES,
+        default=ATTR_OFFER,
+        help_text="Comment cette pub est attribuée : à des offres précises, ou au pool Barats.tn.")
     spend = models.DecimalField(max_digits=12, decimal_places=2, default=0,
         help_text="Dépense synchronisée depuis le Google Sheet (devise du compte).")
+    spend_original = models.DecimalField(max_digits=12, decimal_places=2, default=0,
+        help_text="Depense dans la devise d'origine du compte.")
+    account_id = models.CharField(max_length=64, blank=True, default="",
+        help_text="Compte publicitaire Meta d'ou vient cette pub.")
+    currency = models.CharField(max_length=8, blank=True, default="",
+        help_text="Devise d'origine du compte (EUR, USD, TND...).")
+    archived = models.BooleanField(default=False,
+        help_text="Pub annulee/desactivee dans Meta : masquee du dashboard du jour "
+                  "et exclue de l'attribution (l'historique passe reste).")
+    effective_status = models.CharField(max_length=32, blank=True, default="",
+        help_text="Statut Meta de la campagne (ACTIVE, PAUSED, DELETED...), rafraichi a chaque sync.")
+    # Legacy single offer (kept for back-compat); use `links` / `offers` instead.
     offer = models.ForeignKey(Offer, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="ads",
-        help_text="Offre liée à cette publicité (une offre peut avoir plusieurs pubs).")
+        help_text="(Ancien) Offre unique liée. Utiliser plutôt les liens.")
+    offers = models.ManyToManyField(Offer, through="inventory.AdOfferLink",
+        related_name="linked_ads", blank=True,
+        help_text="1 ou 2 paires (offre, page) liees a cette pub.")
     last_synced_at = models.DateTimeField(null=True, blank=True,
         help_text="Dernière synchronisation de la dépense depuis le Sheet.")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -997,6 +1028,25 @@ class Ad(models.Model):
 
     def __str__(self):
         return f"{self.campaign_name} ({self.spend})"
+
+
+class AdOfferLink(models.Model):
+    """Links an Ad to an (offer, sales_page) pair. An ad can have 1-2 links.
+    Matches migration 0063 — the DB table already exists."""
+    # Migration 0063 created this with a plain AutoField; declare it so the
+    # BigAutoField project default doesn't try to widen the column.
+    id = models.AutoField(primary_key=True)
+    ad = models.ForeignKey(Ad, on_delete=models.CASCADE, related_name="links")
+    offer = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name="ad_links")
+    sales_page = models.ForeignKey(SalesPage, on_delete=models.CASCADE,
+        null=True, blank=True, related_name="ad_links",
+        help_text="Page de vente. Vide = toutes pages (rare).")
+
+    class Meta:
+        unique_together = (("ad", "offer", "sales_page"),)
+
+    def __str__(self):
+        return f"{self.ad_id} → {self.offer_id} ({self.sales_page_id or 'all'})"
 
 
 # ---------------------------------------------------------------------------
@@ -1293,6 +1343,8 @@ class MessengerConversation(models.Model):
     source_ad_id        = models.CharField(max_length=120, blank=True, default="")
     source_ad_ref       = models.CharField(max_length=200, blank=True, default="")
     source_campaign     = models.CharField(max_length=200, blank=True, default="")
+    source_campaign_name = models.CharField(max_length=200, blank=True, default="",
+        help_text="Vrai nom de la campagne Meta, resolu depuis l'ad_id du referral.")
     ctwa_clid           = models.CharField(max_length=200, blank=True, default="")
     matched_ad      = models.ForeignKey("Ad", on_delete=models.SET_NULL,
         null=True, blank=True, related_name="conversations")
