@@ -3709,9 +3709,17 @@ def api_expense_category_detail(request):
         "total": str(r["total"]),
         "count": r["n"],
     } for r in rows]
+    # Individual entries so a wrong one (e.g. a typo or a duplicate saved under
+    # the wrong category) can be spotted and deleted directly from the popup.
+    items = [{
+        "id": e.id,
+        "amount": str(e.amount),
+        "comment": (e.comment or "(sans commentaire)"),
+        "date": e.date.strftime("%d/%m/%Y") if e.date else "",
+    } for e in qs.order_by("-amount", "-date", "-created_at")[:300]]
     return JsonResponse({
         "status": "ok", "category": category,
-        "total": str(total), "groups": groups,
+        "total": str(total), "groups": groups, "items": items,
     })
 
 

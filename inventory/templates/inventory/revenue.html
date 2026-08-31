@@ -232,6 +232,9 @@
       <div style="font-size:13px;color:var(--muted);margin-bottom:18px;">Total : <b id="detailTotal" style="color:var(--red);"></b> TND</div>
       <table><thead><tr><th>Commentaire</th><th>Nb</th><th>Total</th></tr></thead>
         <tbody id="detailBody"></tbody></table>
+      <div style="font-size:12px;color:var(--muted);margin:18px 0 8px;text-transform:uppercase;letter-spacing:.05em;">Entrées individuelles</div>
+      <table><thead><tr><th>Date</th><th>Commentaire</th><th class="r">Montant</th><th></th></tr></thead>
+        <tbody id="detailItems"></tbody></table>
     </div>
   </div>
   <script>
@@ -252,6 +255,16 @@
               tr.innerHTML='<td>'+g.comment+'</td><td style="color:var(--muted);">'+g.count
                 +'</td><td class="r">'+parseFloat(g.total).toFixed(3)+'</td>';
               body.appendChild(tr);
+            });
+            var items=document.getElementById('detailItems');
+            items.innerHTML='';
+            (d.items||[]).forEach(function(it){
+              var tr=document.createElement('tr');
+              tr.innerHTML='<td style="color:var(--muted);font-size:12px;">'+it.date
+                +'</td><td style="color:var(--muted);">'+it.comment
+                +'</td><td class="r">'+parseFloat(it.amount).toFixed(3)
+                +'</td><td><button onclick="delExpense('+it.id+')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;">✕</button></td>';
+              items.appendChild(tr);
             });
             document.getElementById('catDetailModal').style.display='flex';
           });
