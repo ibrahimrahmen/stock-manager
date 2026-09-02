@@ -78,7 +78,7 @@ canvas{max-height:420px;}
     <span class="tab" style="opacity:0.4;cursor:default;">Offres</span>
     <span class="tab" style="opacity:0.4;cursor:default;">Pages</span>
     <span class="tab" style="opacity:0.4;cursor:default;">Couleurs</span>
-    <span class="tab" style="opacity:0.4;cursor:default;">Gouvernorat</span>
+    <a href="{% url 'stats_gouvernorats' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Gouvernorat</a>
     <span class="tab" style="opacity:0.4;cursor:default;">Stock</span>
   </div>
 

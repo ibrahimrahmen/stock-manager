@@ -206,3 +206,60 @@ class StatsModelesTest(TestCase):
         self.assertEqual(pages["Barats.tn"]["sortie"], 3)
         self.assertEqual(pages["Insta Store"]["retour"], 1)
         self.assertEqual(pages["Insta Store"]["total"], 1)
+
+
+class StatsGouvernoratsTest(TestCase):
+    """Per-governorate stats count ORDERS, bucket by status, show all 24
+    governorates (even empty), and drill down per city (ville)."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        self.admin = User.objects.create_superuser("gadmin", "g@a.com", "pw")
+        self.client.force_login(self.admin)
+
+    def _row(self, resp, gov):
+        return next((r for r in resp.context["per_gov"] if r["gov"] == gov), None)
+
+    def test_orders_counted_by_governorate_and_city(self):
+        from inventory.models import Customer, Order, Region, ShippingOrder
+        c = Customer.objects.create(phone="20333444")
+        sfax = Region.objects.get(name="Sfax")
+        tunis = Region.objects.filter(name__icontains="Tunis").first()
+        # Sfax: one delivered (with Sortie) in Sfax city, one returned in Sakiet.
+        o1 = Order.objects.create(customer=c, status=Order.LIVREE, region=sfax, ville="Sfax")
+        ShippingOrder.objects.create(bordereau_barcode="111222333444", order=o1)
+        Order.objects.create(customer=c, status=Order.RETURNED, region=sfax, ville="Sakiet")
+        # Tunis: one en_cours.
+        Order.objects.create(customer=c, status=Order.EN_COURS, region=tunis, ville="")
+        # No region -> "Non spécifié".
+        Order.objects.create(customer=c, status=Order.LIVREE, region=None, ville="?")
+
+        resp = self.client.get("/statistiques/gouvernorats/",
+                               {"from": "2020-01-01", "to": "2035-01-01", "source": "all"})
+        self.assertEqual(resp.status_code, 200)
+
+        # All 24 governorates are present, plus the "Non spécifié" bucket.
+        self.assertGreaterEqual(len([r for r in resp.context["per_gov"]
+                                     if r["gov"] != "Non spécifié"]), 24)
+
+        sf = self._row(resp, "Sfax")
+        self.assertEqual(sf["total"], 2)      # 2 orders in Sfax
+        self.assertEqual(sf["livree"], 1)
+        self.assertEqual(sf["retour"], 1)
+        self.assertEqual(sf["sortie"], 1)     # only o1 has a shipping order
+        self.assertEqual(sf["retour_pct"], 100.0)   # 1 retour / 1 sortie
+        # City drill-down splits Sfax into its two cities.
+        cities = {p["city"]: p for p in sf["cities"]}
+        self.assertEqual(set(cities), {"Sfax", "Sakiet"})
+        self.assertEqual(cities["Sfax"]["livree"], 1)
+        self.assertEqual(cities["Sakiet"]["retour"], 1)
+
+        # A governorate with no orders shows all-zero.
+        empty = next(r for r in resp.context["per_gov"]
+                     if r["gov"] not in ("Sfax", "Non spécifié") and r["total"] == 0)
+        self.assertEqual(empty["retour_pct"], 0.0)
+
+        # Null-region orders land in the "Non spécifié" bucket.
+        ns = self._row(resp, "Non spécifié")
+        self.assertIsNotNone(ns)
+        self.assertEqual(ns["total"], 1)

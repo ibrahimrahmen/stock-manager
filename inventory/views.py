@@ -11989,6 +11989,142 @@ def stats_modeles(request):
     })
 
 
+@login_required(login_url="/login/")
+def stats_gouvernorats(request):
+    """Statistics — Gouvernorat tab. Per-governorate (region) breakdown counted
+    in ORDERS, across the same status rows as the Commandes/Modèles tabs, over a
+    date range. Shows ALL 24 governorates (even those with 0 orders) plus a
+    'Non spécifié' row for orders with no region, a return rate (Retour % vs
+    Sortie), and a click-to-expand per-city (ville) drill-down."""
+    if not request.user.is_superuser:
+        return redirect("home")
+    from .models import Order, ShippingOrder, Region
+    from collections import defaultdict
+    import datetime as _dt
+    try:
+        import zoneinfo
+        tz = zoneinfo.ZoneInfo("Africa/Tunis")
+    except Exception:
+        tz = timezone.get_current_timezone()
+
+    today = timezone.localdate()
+    try:
+        start_date = _dt.date.fromisoformat(request.GET.get("from", ""))
+    except ValueError:
+        start_date = today - _dt.timedelta(days=13)
+    try:
+        end_date = _dt.date.fromisoformat(request.GET.get("to", ""))
+    except ValueError:
+        end_date = today
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    win_start, _ = _business_day_bounds(start_date, tz)
+    _, win_end = _business_day_bounds(end_date, tz)
+
+    orders = Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end)
+    source_filter = request.GET.get("source", "all")
+    if source_filter == "barats":
+        orders = orders.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "converty":
+        orders = orders.filter(sales_page__name__iexact="Converty")
+    elif source_filter == "facebook":
+        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+    orders = list(orders.values("id", "status", "exchange_of_id", "region_id", "ville"))
+    order_ids = [o["id"] for o in orders]
+
+    sortie_ids = set(ShippingOrder.objects.filter(order_id__in=order_ids)
+                     .values_list("order_id", flat=True))
+
+    def _row_for(o):
+        if o["exchange_of_id"]:
+            return ["echange"]
+        rows = []
+        st = o["status"]
+        if st in ("returned", "returning"):
+            rows.append("retour")
+        elif st in ("en_cours", "au_magasin"):
+            rows.append("encours")
+        elif st == "livree":
+            rows.append("livree")
+        elif st == "payee":
+            rows.append("payee")
+        elif st == "annulee":
+            rows.append("annulee")
+        if o["id"] in sortie_ids:
+            rows.append("sortie")
+        return rows
+
+    # One order = one governorate. Aggregate per region_id, and per (region, ville).
+    gm = defaultdict(lambda: defaultdict(int))          # region_id -> row -> orders
+    gm_city = defaultdict(lambda: defaultdict(int))     # (region_id, ville) -> row -> orders
+    for o in orders:
+        rows = _row_for(o)
+        rid = o["region_id"]
+        city = (o["ville"] or "").strip() or "—"
+        gm[rid]["total"] += 1
+        gm_city[(rid, city)]["total"] += 1
+        for rk in rows:
+            gm[rid][rk] += 1
+            gm_city[(rid, city)][rk] += 1
+
+    def _mk_row(c):
+        sortie = c.get("sortie", 0)
+        retour = c.get("retour", 0)
+        return {
+            "total": c.get("total", 0), "sortie": sortie, "livree": c.get("livree", 0),
+            "retour": retour, "encours": c.get("encours", 0), "payee": c.get("payee", 0),
+            "annulee": c.get("annulee", 0), "echange": c.get("echange", 0),
+            "retour_pct": round(retour / sortie * 100, 1) if sortie else 0.0,
+        }
+
+    # Cities per region (drill-down).
+    cities_by_gov = defaultdict(list)
+    for (rid, city), c in gm_city.items():
+        d = _mk_row(c)
+        d["city"] = city
+        cities_by_gov[rid].append(d)
+    for rid in cities_by_gov:
+        cities_by_gov[rid].sort(key=lambda r: -r["total"])
+
+    # Every governorate is shown, even with zero orders. `id` is the region pk
+    # (0 for the "Non spécifié" null-region bucket) — used by the drill-down JS.
+    regions = list(Region.objects.order_by("name").values("id", "name"))
+    per_gov = []
+    totals = defaultdict(int)
+    ROW_SUM = ("total", "sortie", "livree", "retour", "encours", "payee", "annulee", "echange")
+    for r in regions:
+        rid = r["id"]
+        row = _mk_row(gm.get(rid, {}))
+        row["id"] = rid
+        row["gov"] = r["name"]
+        row["cities"] = cities_by_gov.get(rid, [])
+        for k in ROW_SUM:
+            totals[k] += row[k]
+        per_gov.append(row)
+    # Orders with no region -> "Non spécifié" (only if any exist).
+    if None in gm:
+        row = _mk_row(gm.get(None, {}))
+        row["id"] = 0
+        row["gov"] = "Non spécifié"
+        row["cities"] = cities_by_gov.get(None, [])
+        for k in ROW_SUM:
+            totals[k] += row[k]
+        per_gov.append(row)
+
+    per_gov.sort(key=lambda r: -r["total"])
+    totals["retour_pct"] = round(totals["retour"] / totals["sortie"] * 100, 1) if totals["sortie"] else 0.0
+
+    return render(request, "inventory/stats_gouvernorats.html", {
+        "per_gov": per_gov,
+        "totals": dict(totals),
+        "n_gov": len(per_gov),
+        "from_date": start_date.isoformat(),
+        "to_date": end_date.isoformat(),
+        "source_filter": source_filter,
+    })
+
+
 # ---------------------------------------------------------------------------
 # MESSENGER DM ORDER AUTOMATION
 # Webhook receives Messenger messages + ad referral, stores the conversation,
