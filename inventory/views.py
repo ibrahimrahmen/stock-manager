@@ -8388,6 +8388,11 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
         or _safe_name(billing)
         or _safe_name(customer_data)
     )
+    # Fold fancy social-media unicode (bold/fraktur display names) back to plain
+    # letters and strip emoji, so the stored name — and everything downstream
+    # (order display, labels, SMS, Navex) — is clean. Navex rejects such
+    # characters outright.
+    name = _navex_clean_text(name)
     address1_raw = shipping.get("address1") or billing.get("address1") or ""
     address2_raw = shipping.get("address2") or billing.get("address2") or ""
     city_raw = (shipping.get("city") or billing.get("city") or "").strip()

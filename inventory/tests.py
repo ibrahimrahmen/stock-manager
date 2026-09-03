@@ -359,3 +359,16 @@ class UnifunlSyncTest(TestCase):
         res = views._sync_unifunl_orders(apply=True)
         self.assertEqual(res["status"], "error")
         self.assertIn("UNIFUNL_API_KEY", res["message"])
+
+
+class NavexNameCleanTest(TestCase):
+    """Fancy social-media names (bold/fraktur unicode) and emoji must be folded
+    to plain letters, since Navex rejects them. Normal names pass through."""
+
+    def test_folds_fancy_and_strips_emoji(self):
+        self.assertEqual(views._navex_clean_text("𝕳𝖆𝖒𝖒𝖒𝖆🪬"), "Hammma")
+        self.assertEqual(views._navex_clean_text("𝓙𝓸𝓾𝓲𝓷𝓲 🔥"), "Jouini")
+
+    def test_leaves_normal_names_untouched(self):
+        self.assertEqual(views._navex_clean_text("Mohamed Ali"), "Mohamed Ali")
+        self.assertEqual(views._navex_clean_text("أحمد"), "أحمد")
