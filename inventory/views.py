@@ -5186,7 +5186,13 @@ def _sync_unifunl_orders(apply=True, max_pages=30):
     if not key:
         return {"status": "error",
                 "message": "UNIFUNL_API_KEY manquant (variable d'environnement)."}
-    sp, _ = SalesPage.objects.get_or_create(name="Unifunl", defaults={"is_active": True})
+    # Unifunl handles the Barats social DMs, so its orders belong to the same
+    # "Barats" sales page as our own Barats DM orders (not a separate page).
+    sp = (SalesPage.objects.filter(pk=MESSENGER_DEFAULT_SALESPAGE).first()
+          or SalesPage.objects.filter(name__iexact="Barats").first()
+          or SalesPage.objects.filter(name__iexact="Barats.tn").first())
+    if not sp:
+        sp, _ = SalesPage.objects.get_or_create(name="Barats", defaults={"is_active": True})
 
     created = skipped = errors = fetched = 0
     would, err_list = [], []

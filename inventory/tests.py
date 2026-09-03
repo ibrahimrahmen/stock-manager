@@ -344,7 +344,7 @@ class UnifunlSyncTest(TestCase):
         # Order landed as a pending Unifunl order.
         o = Order.objects.get(notes__contains=f"shopify_order_id=unifunl:{self.UID}")
         self.assertEqual(o.status, Order.NON_CONFIRMEE)
-        self.assertEqual(o.sales_page.name, "Unifunl")
+        self.assertEqual(o.sales_page.name, "Barats")   # tagged like normal Barats orders
         self.assertEqual(o.customer.phone, "23364111")   # last 8 digits
         # Second run must NOT re-create (idempotent).
         self.assertEqual(res2["created"], 0)
