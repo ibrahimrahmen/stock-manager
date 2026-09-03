@@ -12563,6 +12563,29 @@ def api_messenger_webhook(request):
                 _sp_here = MESSENGER_PAGE_TO_SALESPAGE.get(
                     str(page_id or ""), MESSENGER_DEFAULT_SALESPAGE)
 
+                # Pages whose DMs are handled entirely by an EXTERNAL agent
+                # (e.g. Unifunl). For these our system stays completely silent —
+                # no FAQ, no bot, no auto-reply — and does NOT extract orders
+                # from the chat (the external agent captures the order and we
+                # import it via its own sync), so the two systems never both
+                # message the customer nor create duplicate orders. Controlled
+                # by env EXTERNAL_AGENT_PAGES="3,10" or a per-page cache flag
+                # (key external_agent_page:<id>) set from the UI.
+                _external_agent = False
+                try:
+                    from django.core.cache import cache as _kc_ext
+                    _ext_flag = _kc_ext.get("external_agent_page:%s" % _sp_here)
+                    if _ext_flag is None:
+                        _ext_pages = os.environ.get("EXTERNAL_AGENT_PAGES", "").strip()
+                        if _ext_pages:
+                            _ext_allowed = {int(x) for x in _ext_pages.replace(" ", "").split(",") if x}
+                            _ext_flag = _sp_here in _ext_allowed
+                        else:
+                            _ext_flag = False
+                    _external_agent = bool(_ext_flag)
+                except Exception:
+                    _external_agent = False
+
                 # Per-page toggle from the UI panel. Each sales_page has its own
                 # on/off flag in the cache (key autoreply_bot_page:<id>), so you
                 # can run the bot on Traffic only, etc. Default OFF: a page must
@@ -12583,6 +12606,10 @@ def api_messenger_webhook(request):
                         _bot_on = False
                 except Exception:
                     pass
+
+                # An external agent owning the page overrides everything: no bot.
+                if _external_agent:
+                    _bot_on = False
 
                 # Test mode: if AUTOREPLY_BOT_TEST_SENDER is set, the bot ONLY
                 # replies to that one sender_id (your own account), so you can
@@ -12637,7 +12664,7 @@ def api_messenger_webhook(request):
                 # not the bot is on.
                 _faq_fired = False
                 try:
-                    if not is_echo and (text or "").strip():
+                    if not _external_agent and not is_echo and (text or "").strip():
                         _ans = _faq_answer(text, conv)
                         if _ans:
                             _already = any(m.get("faq") == _ans
@@ -12861,6 +12888,7 @@ def api_messenger_webhook(request):
                 _already_greeted_here = any(
                     m.get("greeting") for m in (conv.messages or []))
                 if (greeting_env == "1" and not _bot_on
+                        and not _external_agent
                         and not is_echo
                         and (text or "").strip()
                         and not has_phone_now
@@ -12889,7 +12917,7 @@ def api_messenger_webhook(request):
                         except Exception:
                             pass
 
-                if not conv.auto_replied and has_phone_now:
+                if not _external_agent and not conv.auto_replied and has_phone_now:
                     from django.utils import timezone as _tz2
                     from datetime import timedelta as _td2
                     recently_greeted = (MessengerConversation.objects
@@ -12976,11 +13004,14 @@ def api_messenger_webhook(request):
                 # A2) FAQ handled earlier (before the bot) so it can gate the
                 # bot and avoid double replies.
 
-                # B) Auto-extract when the conversation looks complete.
-                try:
-                    _try_extract_and_create_pending(conv)
-                except Exception:
-                    pass
+                # B) Auto-extract when the conversation looks complete — unless
+                # an external agent owns this page (it creates the order and we
+                # import it via its sync, so extracting here would duplicate it).
+                if not _external_agent:
+                    try:
+                        _try_extract_and_create_pending(conv)
+                    except Exception:
+                        pass
     except Exception as e:
         try:
             log_action(None, AuditLog.OTHER,
