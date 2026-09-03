@@ -5119,6 +5119,145 @@ def cron_navex_sync(request):
         return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
 
 
+# ---------------------------------------------------------------------------
+# UNIFUNL — pull orders captured by the Unifunl AI chat agent (Messenger /
+# Instagram / WhatsApp) into our system as pending orders for confirmation.
+# Unifunl exposes a read API (GET /api/v1/public/orders, x-api-key header); we
+# poll it, transform each order into the Shopify-shaped payload our existing
+# order engine understands, and reuse that engine (customer + region + product
+# matching, dedup). Idempotent: an order already imported is never re-created.
+# ---------------------------------------------------------------------------
+def _unifunl_to_shopify_shaped(o):
+    """Map one Unifunl order (camelCase JSON) to the Shopify-shaped dict that
+    _create_order_from_shopify_shaped_payload expects."""
+    import re as _re
+    addr = o.get("shippingAddress") or o.get("billingAddress") or {}
+    phone = str(o.get("customerPhone") or addr.get("phone") or "")
+    first = (o.get("customerFirstName") or addr.get("firstName") or "").strip()
+    last = (o.get("customerLastName") or "").strip()
+
+    def _line(li):
+        raw = (li.get("name") or "").strip()
+        # Unifunl embeds the size in the name, e.g. "Ensemble Premium Casa -
+        # Taille: XL". Split it into a clean title + a variant_title (size) so
+        # product/variant matching has a chance; the order is reviewed anyway.
+        size = ""
+        title = raw
+        m = _re.search(r"taille\s*[:\-]?\s*([A-Za-z0-9]+)", raw, _re.I)
+        if m:
+            size = m.group(1)
+            stripped = _re.sub(r"\s*[-–|]?\s*taille\s*[:\-]?\s*[A-Za-z0-9]+\s*$",
+                               "", raw, flags=_re.I).strip()
+            title = stripped or raw
+        return {
+            "title": title, "name": title, "variant_title": size,
+            "quantity": int(li.get("quantity") or 1),
+            "price": str(li.get("price") or li.get("total") or 0),
+        }
+
+    address = {
+        "first_name": first, "last_name": last, "phone": phone,
+        "address1": addr.get("address1") or "", "address2": addr.get("address2") or "",
+        "city": addr.get("city") or "",
+        "province": addr.get("governorate") or addr.get("province") or addr.get("state") or "",
+        "country": addr.get("country") or "TN",
+    }
+    return {
+        "order_number": o.get("orderNumber") or "",
+        "name": o.get("orderNumber") or "",
+        "phone": phone,
+        "shipping_address": address,
+        "billing_address": address,
+        "customer": {"phone": phone, "first_name": first, "last_name": last},
+        "line_items": [_line(li) for li in (o.get("lineItems") or [])],
+        "shipping_lines": [{"price": str(o.get("shippingTotal") or 0)}],
+    }
+
+
+def _sync_unifunl_orders(apply=True, max_pages=30):
+    """Fetch orders from Unifunl and create the missing ones as pending v2
+    orders. Returns a summary dict. In dry-run (apply=False) it only lists what
+    WOULD be created. Idempotent via the shopify_order_id=unifunl:<id> note."""
+    import urllib.request
+    import json as _json
+    from .models import Order, SalesPage
+
+    key = os.environ.get("UNIFUNL_API_KEY", "").strip()
+    if not key:
+        return {"status": "error",
+                "message": "UNIFUNL_API_KEY manquant (variable d'environnement)."}
+    sp, _ = SalesPage.objects.get_or_create(name="Unifunl", defaults={"is_active": True})
+
+    created = skipped = errors = fetched = 0
+    would, err_list = [], []
+    page = 1
+    while page <= max_pages:
+        url = f"https://api.unifunl.io/api/v1/public/orders?page={page}&take=50"
+        req = urllib.request.Request(url, headers={"x-api-key": key})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = _json.load(resp)
+        except Exception as e:
+            return {"status": "error", "message": f"API Unifunl: {str(e)[:200]}",
+                    "created": created, "skipped": skipped, "errors": errors}
+        orders = data.get("data") or []
+        fetched += len(orders)
+        for o in orders:
+            uid = str(o.get("id") or "")
+            if not uid:
+                continue
+            ext = f"unifunl:{uid}"
+            if Order.objects.filter(notes__contains=f"shopify_order_id={ext}").exists():
+                skipped += 1
+                continue
+            if not apply:
+                would.append(
+                    f"{o.get('orderNumber') or uid} — {o.get('customerFirstName') or ''} "
+                    f"{o.get('customerPhone') or ''} ({o.get('total')} {o.get('currency') or ''})")
+                continue
+            try:
+                payload = _unifunl_to_shopify_shaped(o)
+                _create_order_from_shopify_shaped_payload(
+                    payload, source="messenger", external_id=ext, sales_page_id=sp.id)
+                if Order.objects.filter(notes__contains=f"shopify_order_id={ext}").exists():
+                    created += 1
+                else:
+                    errors += 1
+                    err_list.append(f"{uid}: créée mais introuvable après")
+            except Exception as e:
+                errors += 1
+                err_list.append(f"{uid}: {str(e)[:150]}")
+        meta = data.get("meta") or {}
+        if not meta.get("hasNextPage"):
+            break
+        page += 1
+
+    return {"status": "ok", "fetched": fetched, "created": created,
+            "skipped": skipped, "errors": errors, "would_create": would,
+            "err_list": err_list}
+
+
+@csrf_exempt
+def cron_unifunl_sync(request):
+    """Called periodically by Railway cron to pull new Unifunl orders into the
+    system as pending orders. No auth (cron hits it directly); read + create
+    only, fully idempotent."""
+    try:
+        res = _sync_unifunl_orders(apply=True)
+        try:
+            from .models import AuditLog as _AL
+            _AL.objects.create(
+                user=None, username="system_cron", action=_AL.OTHER,
+                description=(f"Sync auto Unifunl: {res.get('created', 0)} créée(s), "
+                             f"{res.get('skipped', 0)} déjà là, "
+                             f"{res.get('errors', 0)} erreur(s)"))
+        except Exception:
+            pass
+        return JsonResponse(res)
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
+
+
 def navex_sync(request):
     """Sync page — shows all shipped orders with their Navex status."""
     if not request.user.is_staff:
@@ -9760,6 +9899,8 @@ def api_admin_run_tool(request, tool_name):
         "backfill_shopify_apply":           ("backfill_shopify", ["--apply"]),
         "purge_conversations_dryrun":       ("purge_old_conversations", []),
         "purge_conversations_apply":        ("purge_old_conversations", ["--apply"]),
+        "sync_unifunl_dryrun":              ("sync_unifunl", []),
+        "sync_unifunl_apply":               ("sync_unifunl", ["--apply"]),
     }
     if tool_name not in ALLOWED:
         return JsonResponse({"status": "error", "message": f"Outil inconnu : {tool_name}"}, status=400)

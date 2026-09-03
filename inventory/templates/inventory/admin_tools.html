@@ -143,6 +143,26 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     <div id="output-shopify" class="output"></div>
   </div>
 
+  <div class="section-title">Unifunl (agent IA → commandes)</div>
+
+  <div class="tool-card">
+    <div class="tool-title">Importer les commandes Unifunl</div>
+    <div class="tool-desc">
+      Récupère les commandes captées par l'agent IA <strong>Unifunl</strong>
+      (chats Messenger / Instagram / WhatsApp) et crée celles qui
+      <strong>manquent</strong> dans le système, en statut
+      <strong>Non confirmée</strong> pour validation. <strong>Idempotent</strong> :
+      ne recrée jamais une commande déjà importée. Normalement automatique
+      (cron) ; ce bouton sert à tester ou rattraper.<br>
+      <strong>Fais d'abord le Dry-run.</strong>
+    </div>
+    <div class="tool-buttons">
+      <button class="btn" onclick="runTool('sync_unifunl_dryrun', this, 'output-unifunl')">🔍 Dry-run (juste voir)</button>
+      <button class="btn btn-primary" onclick="runToolWithConfirm('sync_unifunl_apply', this, 'output-unifunl', 'Créer les commandes Unifunl manquantes ?')">⬇️ Importer</button>
+    </div>
+    <div id="output-unifunl" class="output"></div>
+  </div>
+
   <div class="section-title">Base de données — Nettoyage</div>
 
   <div class="tool-card">

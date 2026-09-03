@@ -263,3 +263,99 @@ class StatsGouvernoratsTest(TestCase):
         ns = self._row(resp, "Non spécifié")
         self.assertIsNotNone(ns)
         self.assertEqual(ns["total"], 1)
+
+
+class UnifunlSyncTest(TestCase):
+    """Pull orders from the Unifunl API and import the missing ones as pending
+    orders, idempotently. The heavy order engine is stubbed so the test stays
+    offline and focused on the sync (fetch / transform / dedup / pagination)."""
+
+    UID = "6ffb37ee-9644-4ed6-b666-6221fcd7d3f9"
+
+    def _envelope(self):
+        return {
+            "data": [{
+                "id": self.UID, "orderNumber": "000001", "storeType": "manual",
+                "status": "pending", "customerFirstName": "Jouini",
+                "customerLastName": None, "customerPhone": "21623364111",
+                "subtotal": 89, "shippingTotal": 7, "total": 96, "currency": "TND",
+                "lineItems": [{
+                    "name": "Ensemble Premium Casa - Taille: XL", "price": "89.00",
+                    "total": 89, "quantity": 1}],
+                "shippingAddress": {"city": "Tunis", "phone": "21623364111",
+                                    "country": "TN", "address1": "Ibn khaldoun",
+                                    "firstName": "Jouini"},
+            }],
+            "meta": {"hasNextPage": False},
+        }
+
+    def test_transform_maps_fields_and_splits_size(self):
+        o = self._envelope()["data"][0]
+        shaped = views._unifunl_to_shopify_shaped(o)
+        self.assertEqual(shaped["shipping_address"]["phone"], "21623364111")
+        self.assertEqual(shaped["shipping_address"]["city"], "Tunis")
+        li = shaped["line_items"][0]
+        self.assertEqual(li["title"], "Ensemble Premium Casa")   # size stripped
+        self.assertEqual(li["variant_title"], "XL")              # size extracted
+        self.assertEqual(li["quantity"], 1)
+        self.assertEqual(shaped["shipping_lines"][0]["price"], "7")
+
+    def test_sync_creates_then_is_idempotent(self):
+        import os
+        from inventory.models import Customer, Order, SalesPage
+
+        # Stub the heavy engine: create a minimal pending order carrying the
+        # dedup note the sync relies on.
+        created_calls = []
+
+        def _fake_engine(payload, source="shopify", external_id="", request=None,
+                         sales_page_id=None):
+            created_calls.append((source, external_id, sales_page_id))
+            cust, _ = Customer.objects.get_or_create(
+                phone=payload["shipping_address"]["phone"][-8:])
+            sp = SalesPage.objects.filter(pk=sales_page_id).first()
+            Order.objects.create(
+                customer=cust, sales_page=sp, status=Order.NON_CONFIRMEE,
+                source=Order.SOURCE_MESSENGER,
+                notes=f"shopify_order_id={external_id}")
+            return None
+
+        env = self._envelope()
+
+        def _fake_urlopen(req, timeout=None):
+            return _FakeResponse(env)
+
+        orig_engine = views._create_order_from_shopify_shaped_payload
+        orig_urlopen = urllib.request.urlopen
+        views._create_order_from_shopify_shaped_payload = _fake_engine
+        urllib.request.urlopen = _fake_urlopen
+        os.environ["UNIFUNL_API_KEY"] = "ufl_test"
+        try:
+            res1 = views._sync_unifunl_orders(apply=True)
+            res2 = views._sync_unifunl_orders(apply=True)   # second run
+            dry = views._sync_unifunl_orders(apply=False)
+        finally:
+            views._create_order_from_shopify_shaped_payload = orig_engine
+            urllib.request.urlopen = orig_urlopen
+            os.environ.pop("UNIFUNL_API_KEY", None)
+
+        self.assertEqual(res1["created"], 1)
+        self.assertEqual(res1["skipped"], 0)
+        # Order landed as a pending Unifunl order.
+        o = Order.objects.get(notes__contains=f"shopify_order_id=unifunl:{self.UID}")
+        self.assertEqual(o.status, Order.NON_CONFIRMEE)
+        self.assertEqual(o.sales_page.name, "Unifunl")
+        self.assertEqual(o.customer.phone, "23364111")   # last 8 digits
+        # Second run must NOT re-create (idempotent).
+        self.assertEqual(res2["created"], 0)
+        self.assertEqual(res2["skipped"], 1)
+        self.assertEqual(len(created_calls), 1)
+        # Dry-run reports nothing to create once it already exists.
+        self.assertEqual(dry["would_create"], [])
+
+    def test_sync_without_key_errors_cleanly(self):
+        import os
+        os.environ.pop("UNIFUNL_API_KEY", None)
+        res = views._sync_unifunl_orders(apply=True)
+        self.assertEqual(res["status"], "error")
+        self.assertIn("UNIFUNL_API_KEY", res["message"])

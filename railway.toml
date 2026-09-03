@@ -12,3 +12,7 @@ command = "curl https://web-production-1391c5.up.railway.app/cron/evening/"
 [[crons]]
 schedule = "0 7-19 * * *"
 command = "curl https://web-production-1391c5.up.railway.app/cron/navex-sync/"
+
+[[crons]]
+schedule = "*/15 6-22 * * *"
+command = "curl https://web-production-1391c5.up.railway.app/cron/unifunl-sync/"
