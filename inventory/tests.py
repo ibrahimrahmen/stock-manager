@@ -412,6 +412,8 @@ class UnifunlHealthFailoverTest(TestCase):
     shared across workers/cron."""
 
     def test_missing_heartbeat_is_unhealthy(self):
+        from inventory.models import AppKeyValue
+        AppKeyValue.objects.filter(key="unifunl_last_ok").delete()  # remove the seed
         self.assertFalse(views._unifunl_healthy())
 
     def test_fresh_heartbeat_is_healthy(self):
