@@ -5174,6 +5174,54 @@ def _unifunl_to_shopify_shaped(o):
     }
 
 
+def _link_unifunl_conversation(order):
+    """Attach the customer's stored Messenger/Instagram conversation to a
+    Unifunl order. Unifunl's API returns only order data (no chat), but our own
+    Meta webhook still stores the Barats conversation. We match by phone: find a
+    recent, not-yet-linked conversation whose messages contain the order's
+    8-digit number, link it (pending_order) and snapshot the transcript onto the
+    order so it shows in the order view. Best-effort — silent if none matches."""
+    from .models import MessengerConversation
+    from django.utils import timezone as _tz
+    from datetime import timedelta as _td
+
+    try:
+        phone8 = "".join(c for c in (order.customer.phone or "") if c.isdigit())[-8:]
+    except Exception:
+        phone8 = ""
+    if len(phone8) < 8:
+        return None
+
+    qs = (MessengerConversation.objects
+          .filter(updated_at__gte=_tz.now() - _td(days=14), pending_order__isnull=True)
+          .order_by("-updated_at")[:400])
+    for conv in qs:
+        digits = "".join(c for m in (conv.messages or [])
+                         for c in (m.get("text") or "") if c.isdigit())
+        if phone8 not in digits:
+            continue
+        try:
+            conv.pending_order = order
+            conv.save(update_fields=["pending_order", "updated_at"])
+            lines = []
+            for m in (conv.messages or []):
+                who = "Client" if m.get("from") == "user" else "Barats"
+                t = (m.get("text") or "").strip()
+                if t:
+                    lines.append(f"{who}: {t}")
+            if lines:
+                order.conversation_text = "\n".join(lines)
+                order.conversation_updated_at = _tz.now()
+                # save() also re-runs the angry-word auto-flag on the new text.
+                order.save(update_fields=["conversation_text",
+                                          "conversation_updated_at", "is_angry",
+                                          "updated_at"])
+        except Exception:
+            return None
+        return conv
+    return None
+
+
 def _sync_unifunl_orders(apply=True, max_pages=30):
     """Fetch orders from Unifunl and create the missing ones as pending v2
     orders. Returns a summary dict. In dry-run (apply=False) it only lists what
@@ -5225,8 +5273,16 @@ def _sync_unifunl_orders(apply=True, max_pages=30):
                 payload = _unifunl_to_shopify_shaped(o)
                 _create_order_from_shopify_shaped_payload(
                     payload, source="messenger", external_id=ext, sales_page_id=sp.id)
-                if Order.objects.filter(notes__contains=f"shopify_order_id={ext}").exists():
+                _new = (Order.objects
+                        .filter(notes__contains=f"shopify_order_id={ext}")
+                        .select_related("customer").order_by("-id").first())
+                if _new:
                     created += 1
+                    # Attach the stored Messenger/Instagram conversation, if any.
+                    try:
+                        _link_unifunl_conversation(_new)
+                    except Exception:
+                        pass
                 else:
                     errors += 1
                     err_list.append(f"{uid}: créée mais introuvable après")

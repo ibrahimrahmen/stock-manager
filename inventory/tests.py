@@ -360,6 +360,51 @@ class UnifunlSyncTest(TestCase):
         self.assertEqual(res["status"], "error")
         self.assertIn("UNIFUNL_API_KEY", res["message"])
 
+    def test_stored_conversation_is_linked_by_phone(self):
+        import os
+        from inventory.models import Customer, Order, SalesPage, MessengerConversation
+
+        # A conversation captured by our webhook, containing the customer's phone
+        # (last 8 digits of the Unifunl phone 21623364111 -> 23364111).
+        conv = MessengerConversation.objects.create(
+            platform="messenger", page_id="580021675198711", sender_id="PSID123",
+            sender_name="Jouini",
+            messages=[{"from": "user", "text": "3aslema, 23364111, nheb ncommandi"},
+                      {"from": "page", "text": "ahla bik"}])
+
+        def _fake_engine(payload, source="shopify", external_id="", request=None,
+                         sales_page_id=None):
+            cust, _ = Customer.objects.get_or_create(
+                phone=payload["shipping_address"]["phone"][-8:])
+            sp = SalesPage.objects.filter(pk=sales_page_id).first()
+            Order.objects.create(
+                customer=cust, sales_page=sp, status=Order.NON_CONFIRMEE,
+                source=Order.SOURCE_MESSENGER,
+                notes=f"shopify_order_id={external_id}")
+            return None
+
+        def _fake_urlopen(req, timeout=None):
+            return _FakeResponse(self._envelope())
+
+        orig_engine = views._create_order_from_shopify_shaped_payload
+        orig_urlopen = urllib.request.urlopen
+        views._create_order_from_shopify_shaped_payload = _fake_engine
+        urllib.request.urlopen = _fake_urlopen
+        os.environ["UNIFUNL_API_KEY"] = "ufl_test"
+        try:
+            views._sync_unifunl_orders(apply=True)
+        finally:
+            views._create_order_from_shopify_shaped_payload = orig_engine
+            urllib.request.urlopen = orig_urlopen
+            os.environ.pop("UNIFUNL_API_KEY", None)
+
+        order = Order.objects.get(notes__contains=f"shopify_order_id=unifunl:{self.UID}")
+        conv.refresh_from_db()
+        # Conversation linked to the order, and its transcript snapshotted.
+        self.assertEqual(conv.pending_order_id, order.id)
+        self.assertIn("23364111", order.conversation_text)
+        self.assertIn("Client:", order.conversation_text)
+
 
 class NavexNameCleanTest(TestCase):
     """Fancy social-media names (bold/fraktur unicode) and emoji must be folded
