@@ -1420,3 +1420,17 @@ class Expense(models.Model):
 
     def __str__(self):
         return f"{self.date} · {self.category} · {self.amount} TND"
+
+
+class AppKeyValue(models.Model):
+    """Tiny cross-process key/value store for small pieces of app state that
+    must be shared across gunicorn workers and the cron (the cache backend here
+    is per-process LocMem, so it can't be trusted for that). Updated in place —
+    one row per key, so it never grows. Currently used for the Unifunl
+    heartbeat (key 'unifunl_last_ok')."""
+    key = models.CharField(max_length=100, unique=True)
+    value = models.CharField(max_length=255, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.key}={self.value}"

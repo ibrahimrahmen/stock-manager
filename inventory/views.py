@@ -5174,6 +5174,27 @@ def _unifunl_to_shopify_shaped(o):
     }
 
 
+def _unifunl_healthy():
+    """True if the Unifunl API answered a sync recently (heartbeat fresh).
+
+    The cron syncs Unifunl every 15 min and stamps `unifunl_last_ok` on each
+    success. If that stamp goes stale (API down / cron failing), Unifunl is
+    considered broken and our own DM automation takes over the page (failover).
+    Threshold defaults to 40 min (≈ 2-3 missed cron cycles) to avoid flapping on
+    a single transient failure; override with UNIFUNL_HEALTH_MAX_AGE_MIN.
+    A missing stamp counts as NOT healthy, so our system answers by default
+    until Unifunl proves itself alive."""
+    try:
+        from .models import AppKeyValue
+        from django.utils import timezone as _tzh
+        from datetime import timedelta as _tdh
+        max_age = int(os.environ.get("UNIFUNL_HEALTH_MAX_AGE_MIN", "40") or "40")
+        row = AppKeyValue.objects.filter(key="unifunl_last_ok").first()
+        return bool(row) and (_tzh.now() - row.updated_at < _tdh(minutes=max_age))
+    except Exception:
+        return False
+
+
 def _link_unifunl_conversation(order):
     """Attach the customer's stored Messenger/Instagram conversation to a
     Unifunl order. Unifunl's API returns only order data (no chat), but our own
@@ -5254,6 +5275,15 @@ def _sync_unifunl_orders(apply=True, max_pages=30):
         except Exception as e:
             return {"status": "error", "message": f"API Unifunl: {str(e)[:200]}",
                     "created": created, "skipped": skipped, "errors": errors}
+        # Heartbeat: the API answered, so Unifunl is alive. Stored in the DB
+        # (shared across workers + cron) so our DM automation knows whether to
+        # stay silent or take over (failover). Updated in place — no growth.
+        try:
+            from .models import AppKeyValue
+            AppKeyValue.objects.update_or_create(
+                key="unifunl_last_ok", defaults={"value": "ok"})
+        except Exception:
+            pass
         orders = data.get("data") or []
         fetched += len(orders)
         for o in orders:
@@ -12652,6 +12682,21 @@ def api_messenger_webhook(request):
                     _external_agent = bool(_ext_flag)
                 except Exception:
                     _external_agent = False
+
+                # FAILOVER: the page is normally handled by Unifunl, but if the
+                # Unifunl API has gone silent (heartbeat stale), take over so
+                # customers still get answered and their orders captured.
+                if _external_agent and not _unifunl_healthy():
+                    _external_agent = False
+                    try:
+                        from django.core.cache import cache as _fc
+                        if not _fc.get("unifunl_failover_logged"):
+                            log_action(None, AuditLog.OTHER,
+                                       description="Unifunl injoignable — bascule "
+                                       "sur l'auto-réponse interne (failover).")
+                            _fc.set("unifunl_failover_logged", 1, 3600)
+                    except Exception:
+                        pass
 
                 # Per-page toggle from the UI panel. Each sales_page has its own
                 # on/off flag in the cache (key autoreply_bot_page:<id>), so you

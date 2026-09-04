@@ -406,6 +406,48 @@ class UnifunlSyncTest(TestCase):
         self.assertIn("Client:", order.conversation_text)
 
 
+class UnifunlHealthFailoverTest(TestCase):
+    """Heartbeat drives failover: a fresh stamp = Unifunl alive (we stay
+    silent); stale/missing = take over. Stored in the DB (AppKeyValue) so it is
+    shared across workers/cron."""
+
+    def test_missing_heartbeat_is_unhealthy(self):
+        self.assertFalse(views._unifunl_healthy())
+
+    def test_fresh_heartbeat_is_healthy(self):
+        from inventory.models import AppKeyValue
+        AppKeyValue.objects.update_or_create(key="unifunl_last_ok",
+                                             defaults={"value": "ok"})
+        self.assertTrue(views._unifunl_healthy())
+
+    def test_stale_heartbeat_is_unhealthy(self):
+        from inventory.models import AppKeyValue
+        from django.utils import timezone
+        from datetime import timedelta
+        AppKeyValue.objects.update_or_create(key="unifunl_last_ok",
+                                             defaults={"value": "ok"})
+        # Force the stamp to be 1h old (> 40 min threshold).
+        AppKeyValue.objects.filter(key="unifunl_last_ok").update(
+            updated_at=timezone.now() - timedelta(hours=1))
+        self.assertFalse(views._unifunl_healthy())
+
+    def test_sync_stamps_heartbeat(self):
+        import os
+
+        def _fake_urlopen(req, timeout=None):
+            return _FakeResponse({"data": [], "meta": {"hasNextPage": False}})
+
+        orig = urllib.request.urlopen
+        urllib.request.urlopen = _fake_urlopen
+        os.environ["UNIFUNL_API_KEY"] = "ufl_test"
+        try:
+            views._sync_unifunl_orders(apply=True)
+        finally:
+            urllib.request.urlopen = orig
+            os.environ.pop("UNIFUNL_API_KEY", None)
+        self.assertTrue(views._unifunl_healthy())
+
+
 class NavexNameCleanTest(TestCase):
     """Fancy social-media names (bold/fraktur unicode) and emoji must be folded
     to plain letters, since Navex rejects them. Normal names pass through."""
