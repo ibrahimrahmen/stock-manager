@@ -144,20 +144,57 @@ def _offer_updated_at(offer):
     return (getattr(offer, "updated_at", None) or offer.created_at or timezone.now()).isoformat()
 
 
+def _offer_variants(offer, request, price):
+    """One Unifunl variant per distinct colour across the offer's products
+    (deduped by colour). The price is the offer price for every colour. Size is
+    still chosen in chat, so it's not a variant axis here. Falls back to a single
+    'default' variant when the offer's products have no colours."""
+    seen = {}
+    for op in offer.products.all():
+        p = op.product
+        if not p:
+            continue
+        for v in p.variants.all():
+            key = (v.color_name or "").strip().upper()
+            if not key or key in seen:
+                continue
+            img = None
+            if v.image:
+                try:
+                    img = request.build_absolute_uri(v.image.url) if request is not None else v.image.url
+                except Exception:
+                    img = None
+            seen[key] = {
+                "id": f"{offer.id}-{key}",
+                "sku": f"OFFER-{offer.id}-{key}",
+                "price": _money(price),
+                "compare_at_price": None,
+                "inventory_quantity": None,  # not tracked at offer level -> sellable
+                "is_in_stock": True,
+                "options": {"Couleur": v.color_label or key},
+                "image": img,
+            }
+    variants = list(seen.values())
+    if not variants:
+        imgs = _offer_image_urls(offer, request, limit=1)
+        variants = [{
+            "id": "default",
+            "sku": f"OFFER-{offer.id}",
+            "price": _money(price),
+            "compare_at_price": None,
+            "inventory_quantity": None,
+            "is_in_stock": True,
+            "options": {},
+            "image": imgs[0] if imgs else None,
+        }]
+    return variants
+
+
 def _offer_to_product(offer, request):
     """Map one Offer to a Unifunl product object (v1 contract)."""
     price = offer.price_for_page_name("Barats") or offer.bundle_price or 0
     images = _offer_image_urls(offer, request)
-    variant = {
-        "id": "default",  # single purchasable form; size is chosen in chat
-        "sku": f"OFFER-{offer.id}",
-        "price": _money(price),
-        "compare_at_price": None,
-        "inventory_quantity": None,  # not tracked at offer level -> sellable
-        "is_in_stock": True,
-        "options": {},
-        "image": images[0] if images else None,
-    }
+    variants = _offer_variants(offer, request, price)
     return {
         "id": str(offer.id),
         "sku": f"OFFER-{offer.id}",
@@ -165,8 +202,8 @@ def _offer_to_product(offer, request):
         "description": _offer_description(offer),
         "status": "active",
         "images": images,
-        "has_variants": False,
-        "variants": [variant],
+        "has_variants": len(variants) > 1,
+        "variants": variants,
         "updated_at": _offer_updated_at(offer),
     }
 
@@ -406,7 +443,15 @@ def order_create(request):
         except (TypeError, ValueError):
             qty = 1
         price = offer.price_for_page_name("Barats") or offer.bundle_price or Decimal("0")
-        resolved.append((offer, qty, Decimal(str(price))))
+        # variant_id we sent is "<offer_id>-<COLOUR>"; recover the colour so the
+        # order records which colour the customer chose.
+        vid = str(li.get("variant_id") or "")
+        colour = ""
+        if "-" in vid:
+            head, tail = vid.split("-", 1)
+            if head.isdigit() and tail.lower() != "default":
+                colour = tail
+        resolved.append((offer, qty, Decimal(str(price)), colour))
 
     first = (customer.get("first_name") or "").strip()
     last = (customer.get("last_name") or "").strip()
@@ -424,9 +469,10 @@ def order_create(request):
         },
         "customer": {"phone": phone, "first_name": first, "last_name": last},
         "line_items": [{
-            "title": o.name, "name": o.name, "variant_title": "",
+            "title": (o.name + (f" - {col}" if col else "")),
+            "name": o.name, "variant_title": col,
             "quantity": q, "price": _money(pr),
-        } for (o, q, pr) in resolved],
+        } for (o, q, pr, col) in resolved],
         "shipping_lines": shipping_lines,
     }
     payload["billing_address"] = payload["shipping_address"]
