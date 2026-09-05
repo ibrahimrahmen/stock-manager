@@ -104,13 +104,14 @@ def products_list(request):
         page_size = 50
 
     products = []  # TODO: map the real catalogue once the item contract is known
+    total_items = len(products)
     return JsonResponse({
         "products": products,
         "pagination": {
-            "page": page,
-            "page_size": page_size,
-            "total": len(products),
-            "total_pages": 1,
+            "current_page": page,
+            "per_page": page_size,
+            "total_items": total_items,
+            "total_pages": 1 if total_items else 0,
             "has_next": False,
             "has_previous": page > 1,
         },
