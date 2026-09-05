@@ -7,6 +7,7 @@ urlpatterns = [
     # --- Unifunl Commerce API (Unifunl "Connect your own store" backend) ---
     path("api/v1/ping", unifunl_commerce.ping, name="unifunl_ping"),
     path("api/v1/products", unifunl_commerce.products_list, name="unifunl_products"),
+    path("api/v1/products/<str:identifier>", unifunl_commerce.product_get, name="unifunl_product_get"),
     path("api/v1/orders", unifunl_commerce.order_create, name="unifunl_order_create"),
     path("api/v1/orders/<str:order_id>", unifunl_commerce.order_get, name="unifunl_order_get"),
     path("api/v1/_debug/last-auth", unifunl_commerce.debug_last_auth, name="unifunl_debug_last_auth"),

@@ -1,37 +1,69 @@
-"""Unifunl Commerce API — the backend Unifunl calls when you use its
-"Connect your own store" mode.
+"""Unifunl Commerce API v1 — the backend Unifunl calls in "Connect your own
+store" mode. Implements the endpoints from the Unifunl Commerce API v1 contract:
+GET /ping, GET /products, GET /products/{identifier}, POST /orders,
+GET /orders/{order_id}. Exposed under /api/v1/ (see urls.py).
 
-Unifunl (the AI chat agent) talks to THIS app as its commerce backend: it reads
-the catalog/currency from here and pushes orders here when it captures them.
-Exposed under /api/v1/ (see urls.py).
+Key contract rules honoured here:
+- Money is decimal STRINGS with the currency's decimal places (TND -> 3).
+- Errors are {"error": {"code","message","details?"}} with stable codes.
+- Every response repeats `currency`.
+- Prices are server-authoritative: prices sent by the client are ignored.
+- Order creation is atomic and idempotent on external_order_id.
 
-Auth: Unifunl sends the token you issued it, either as
-`Authorization: Bearer <token>` or `X-API-Key: <token>`. We check it against the
-UNIFUNL_INBOUND_TOKEN env var and REJECT anything else with 401. If that var is
-unset we fail closed (reject everything) — Unifunl's verification explicitly
-tests that a bad token is refused.
+Auth: Bearer or X-API-Key, checked against UNIFUNL_INBOUND_TOKEN (comma-
+separated list allowed). Fails closed with 401 when unset/wrong.
 """
 import json
 import os
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.http import JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
+DECIMALS = 3  # TND has 3 decimal places
 
+
+def _currency():
+    return os.environ.get("UNIFUNL_CURRENCY", "") or "TND"
+
+
+def _money(v):
+    """Format a value as a decimal string with the currency's decimal places."""
+    try:
+        d = Decimal(str(v))
+    except Exception:
+        d = Decimal("0")
+    q = Decimal(1).scaleb(-DECIMALS)  # 0.001 for 3 dp
+    return str(d.quantize(q, rounding=ROUND_HALF_UP))
+
+
+def _now_iso():
+    return timezone.now().isoformat()
+
+
+def _err(code, message, status, details=None):
+    e = {"code": code, "message": message}
+    if details is not None:
+        e["details"] = details
+    return JsonResponse({"error": e}, status=status)
+
+
+# --------------------------------------------------------------------------- #
+# Auth
+# --------------------------------------------------------------------------- #
 def _presented_token(request):
-    """The token the caller presented (Bearer or X-API-Key), or ''."""
     auth = request.META.get("HTTP_AUTHORIZATION", "") or ""
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
     if auth.strip():
-        return auth.strip()  # some clients send the bare token
+        return auth.strip()
     return (request.META.get("HTTP_X_API_KEY", "") or "").strip()
 
 
 def _check_auth(request):
-    """True if the presented token matches ANY token in UNIFUNL_INBOUND_TOKEN
-    (comma-separated list allowed). Fails closed when nothing is configured."""
     raw = (os.environ.get("UNIFUNL_INBOUND_TOKEN", "") or "").strip()
     valid = {t.strip() for t in raw.split(",") if t.strip()}
     if not valid:
@@ -39,57 +71,40 @@ def _check_auth(request):
     return _presented_token(request) in valid
 
 
-def _record_failed_auth(request):
-    """Record HOW the caller authenticated on a rejected call, so the owner can
-    read it (superuser-only) and configure UNIFUNL_INBOUND_TOKEN to match —
-    instead of guessing. Captures the Authorization + X-API-Key values and the
-    names of any other auth-ish headers (in case Unifunl uses a custom one).
-    Best-effort; value is truncated to fit."""
+def _reject(request):
+    # capture how the caller authenticated, for setup diagnostics (superuser)
     try:
         from .models import AppKeyValue
         authz = (request.META.get("HTTP_AUTHORIZATION", "") or "")[:120]
         xkey = (request.META.get("HTTP_X_API_KEY", "") or "")[:120]
-        others = [k[5:] for k in request.META
-                  if k.startswith("HTTP_") and k not in ("HTTP_AUTHORIZATION", "HTTP_X_API_KEY")
-                  and any(s in k.lower() for s in ("token", "key", "auth", "sign"))]
-        val = f"Authorization={authz!r} X-API-Key={xkey!r} other_auth_headers={others}"
         AppKeyValue.objects.update_or_create(
-            key="unifunl_seen_auth", defaults={"value": val[:250]})
+            key="unifunl_seen_auth",
+            defaults={"value": f"Authorization={authz!r} X-API-Key={xkey!r}"[:250]})
     except Exception:
         pass
+    return _err("unauthorized", "Token manquant ou invalide.", 401)
 
 
-def _unauthorized():
-    return JsonResponse({"error": "unauthorized"}, status=401)
-
-
-def _reject(request):
-    _record_failed_auth(request)
-    return _unauthorized()
-
-
-@csrf_exempt
-def ping(request):
-    """Store handshake / health check. Must return spec_version, currency and
-    capabilities, and must enforce auth (a bad token → 401). Values are
-    env-tunable: UNIFUNL_SPEC_VERSION, UNIFUNL_CURRENCY, UNIFUNL_CAPABILITIES."""
-    if not _check_auth(request):
-        return _reject(request)
-    default_caps = "products.list,orders.create,orders.get"
-    caps = [c.strip() for c in (os.environ.get("UNIFUNL_CAPABILITIES") or default_caps).split(",")
-            if c.strip()]
-    return JsonResponse({
-        "status": "ok",
-        "spec_version": (os.environ.get("UNIFUNL_SPEC_VERSION", "") or "1.0"),
-        "currency": (os.environ.get("UNIFUNL_CURRENCY", "") or "TND"),
-        "capabilities": caps,
-    })
+# --------------------------------------------------------------------------- #
+# Catalogue mapping (Offers -> Unifunl products)
+# --------------------------------------------------------------------------- #
+def _offer_description(offer):
+    """Description from the offer's products' AI descriptions, deduped per SKU
+    family (parent + versions) so a product's versions never repeat."""
+    by_root = {}
+    for op in offer.products.all():
+        p = op.product
+        if not p:
+            continue
+        root = p.parent_product_id or p.id
+        d = (p.description or "").strip()
+        if d and root not in by_root:
+            by_root[root] = d
+    return "\n\n".join(by_root.values())
 
 
 def _offer_image_urls(offer, request, limit=10):
-    """ALL colour-variant photos for this offer's products, as absolute URLs
-    (deduped, capped). Sending every colour lets Unifunl's AI recognise the item
-    whatever colour the customer photographs."""
+    """All colour-variant photos for the offer's products (deduped, capped)."""
     urls, seen = [], set()
     try:
         for op in offer.products.all():
@@ -114,136 +129,335 @@ def _offer_image_urls(offer, request, limit=10):
     return urls
 
 
-def _offer_description(offer):
-    """Build the offer's description from its products' AI descriptions.
-    Collapses each SKU family (parent + V2/V3 versions) to a single entry so the
-    same physical item never appears twice — that's why parent/child products
-    don't create 'double products' in Unifunl."""
-    by_root = {}
-    for op in offer.products.all():
-        p = op.product
-        if not p:
-            continue
-        root = p.parent_product_id or p.id  # family root — dedups versions
-        d = (p.description or "").strip()
-        if d and root not in by_root:
-            by_root[root] = d
-    return "\n\n".join(by_root.values())
+def _offer_updated_at(offer):
+    return (offer.created_at or timezone.now()).isoformat()
 
 
 def _offer_to_product(offer, request):
-    """Map one Offer to a Unifunl product. Each product needs title, status,
-    has_variants and at least one variant. Offers don't pin a variant (size is
-    chosen in chat), so we expose a single default variant carrying the price."""
-    currency = (os.environ.get("UNIFUNL_CURRENCY", "") or "TND")
-    price = float(offer.price_for_page_name("Barats") or offer.bundle_price or 0)
+    """Map one Offer to a Unifunl product object (v1 contract)."""
+    price = offer.price_for_page_name("Barats") or offer.bundle_price or 0
     images = _offer_image_urls(offer, request)
     variant = {
-        "id": f"{offer.id}-default",
-        "title": offer.name,
+        "id": "default",  # single purchasable form; size is chosen in chat
         "sku": f"OFFER-{offer.id}",
-        "price": price,
-        "currency": currency,
-        "available": True,
-        "in_stock": True,
+        "price": _money(price),
+        "compare_at_price": None,
+        "inventory_quantity": None,  # not tracked at offer level -> sellable
         "is_in_stock": True,
-        "images": images,
+        "options": {},
+        "image": images[0] if images else None,
     }
     return {
         "id": str(offer.id),
+        "sku": f"OFFER-{offer.id}",
         "title": offer.name,
-        "name": offer.name,
         "description": _offer_description(offer),
         "status": "active",
-        "currency": currency,
-        "price": price,
-        "available": True,
-        "in_stock": True,
-        "has_variants": False,
         "images": images,
+        "has_variants": False,
         "variants": [variant],
+        "updated_at": _offer_updated_at(offer),
     }
 
 
+def _clamp_int(val, default, lo, hi):
+    try:
+        n = int(val)
+    except (TypeError, ValueError):
+        return default
+    return max(lo, min(n, hi))
+
+
+# --------------------------------------------------------------------------- #
+# Endpoints
+# --------------------------------------------------------------------------- #
 @csrf_exempt
-def products_list(request):
-    """products.list — Unifunl reads the catalog here. Contract: a top-level
-    `products` array and a `pagination` object. Supports `?updated_after=` for
-    incremental sync and `?page=` / `?page_size=`. Serves active Offers."""
+def ping(request):
+    """Health check + capability discovery + store settings."""
     if not _check_auth(request):
         return _reject(request)
-    from .models import Offer
-    try:
-        page = max(1, int(request.GET.get("page", "1") or "1"))
-    except ValueError:
-        page = 1
-    try:
-        page_size = int(request.GET.get("page_size", request.GET.get("take", "100")) or "100")
-    except ValueError:
-        page_size = 100
-    page_size = max(1, min(page_size, 250))
-
-    qs = (Offer.objects.filter(is_active=True)
-          .prefetch_related("products__product__variants").order_by("id"))
-    total_items = qs.count()
-    start = (page - 1) * page_size
-    offers = list(qs[start:start + page_size])
-
-    products = [_offer_to_product(o, request) for o in offers]
-    total_pages = (total_items + page_size - 1) // page_size if total_items else 0
     return JsonResponse({
-        "products": products,
-        "pagination": {
-            "current_page": page,
-            "per_page": page_size,
-            "total_items": total_items,
-            "total_pages": total_pages,
-            "has_next": page < total_pages,
-            "has_previous": page > 1,
-        },
+        "service": os.environ.get("UNIFUNL_SERVICE", "") or "Barats",
+        "spec_version": "1.0",
+        "currency": _currency(),
+        "shipping_amount": _money(os.environ.get("UNIFUNL_SHIPPING", "7")),
+        "capabilities": [
+            "products.list", "products.get", "orders.create", "orders.get",
+        ],
+        "rate_limit": {"requests": 120, "window_seconds": 60},
+        "time": _now_iso(),
     })
 
 
 @csrf_exempt
-def order_create(request):
-    """orders.create — Unifunl pushes a captured order here."""
-    if request.method != "POST":
-        return JsonResponse({"error": "method_not_allowed"}, status=405)
+def products_list(request):
+    """Paginated catalogue of active Offers."""
     if not _check_auth(request):
         return _reject(request)
-    raw = (request.body or b"").decode("utf-8", "replace")
-    try:
-        body = json.loads(raw or "{}")
-    except Exception:
-        body = {}
-    # Capture the exact payload Unifunl pushes so we can wire real order
-    # creation to its real shape (temporary setup aid; superuser-readable).
-    try:
-        from .models import AppKeyValue
-        AppKeyValue.objects.update_or_create(
-            key="unifunl_last_order_payload", defaults={"value": raw[:20000]})
-    except Exception:
-        pass
-    # TODO: create the order via the existing engine once the shape is confirmed.
+    from .models import Offer
+
+    page = _clamp_int(request.GET.get("page", "1"), 1, 1, 10_000_000)
+    limit = _clamp_int(request.GET.get("limit", request.GET.get("page_size", "50")),
+                       50, 1, 200)  # clamp, never error
+    search = (request.GET.get("search") or "").strip()
+    updated_after = (request.GET.get("updated_after") or "").strip()
+
+    qs = (Offer.objects.filter(is_active=True)
+          .prefetch_related("products__product__variants").order_by("id"))
+    if search:
+        qs = qs.filter(name__icontains=search)
+    if updated_after:
+        try:
+            from django.utils.dateparse import parse_datetime
+            dt = parse_datetime(updated_after)
+            if dt:
+                qs = qs.filter(created_at__gte=dt)  # best-effort incremental sync
+        except Exception:
+            pass
+
+    total_items = qs.count()
+    start = (page - 1) * limit
+    offers = list(qs[start:start + limit])
+    products = [_offer_to_product(o, request) for o in offers]
+    total_pages = (total_items + limit - 1) // limit if total_items else 0
     return JsonResponse({
-        "id": str(body.get("id") or body.get("orderNumber") or ""),
-        "status": "received",
-    }, status=201)
+        "products": products,
+        "pagination": {
+            "current_page": page,
+            "per_page": limit,
+            "total_items": total_items,
+            "total_pages": total_pages,
+        },
+        "currency": _currency(),
+    })
+
+
+@csrf_exempt
+def product_get(request, identifier):
+    """Resolve a single product by id, then SKU (OFFER-<id>), then name."""
+    if not _check_auth(request):
+        return _reject(request)
+    from .models import Offer
+    offer = None
+    ident = (identifier or "").strip()
+    if ident.isdigit():
+        offer = Offer.objects.filter(pk=int(ident)).first()
+    if offer is None and ident.upper().startswith("OFFER-"):
+        tail = ident.split("-", 1)[1]
+        if tail.isdigit():
+            offer = Offer.objects.filter(pk=int(tail)).first()
+    if offer is None:
+        offer = Offer.objects.filter(name__iexact=ident).first()
+    if offer is None or not offer.is_active:
+        return _err("product_not_found", "Produit introuvable.", 404)
+    return JsonResponse({"product": _offer_to_product(offer, request),
+                         "currency": _currency()})
+
+
+def _resolve_offer(pid):
+    """Resolve a line_item product_id (id or SKU) to an active Offer."""
+    from .models import Offer
+    pid = str(pid or "").strip()
+    if pid.isdigit():
+        return Offer.objects.filter(pk=int(pid)).first()
+    if pid.upper().startswith("OFFER-"):
+        tail = pid.split("-", 1)[1]
+        if tail.isdigit():
+            return Offer.objects.filter(pk=int(tail)).first()
+    return Offer.objects.filter(name__iexact=pid).first()
+
+
+def _unifunl_status(order):
+    from .models import Order
+    m = {
+        Order.NON_CONFIRMEE: ("pending", "Commande reçue, en attente de confirmation"),
+        Order.CONFIRMEE: ("confirmed", "Confirmée, en préparation"),
+        Order.EN_COURS: ("shipped", "Expédiée"),
+        Order.AU_MAGASIN: ("shipped", "En cours de livraison"),
+        Order.LIVREE: ("delivered", "Livrée"),
+        Order.PAYEE: ("delivered", "Livrée et payée"),
+        Order.RETURNING: ("returned", "En retour"),
+        Order.RETURNED: ("returned", "Retournée"),
+        Order.ANNULEE: ("cancelled", "Annulée"),
+    }
+    return m.get(order.status, ("pending", "Commande reçue"))
+
+
+def _external_id_from_notes(order):
+    for part in (order.notes or "").split("|"):
+        part = part.strip()
+        if part.startswith("shopify_order_id=unifunl:"):
+            return part.split("unifunl:", 1)[1].strip()
+    return ""
+
+
+def _order_response(order, http_status):
+    """Build the v1 order response from one of our Orders."""
+    status, label = _unifunl_status(order)
+    subtotal = Decimal("0")
+    line_items = []
+    for oo in order.order_offers.all():
+        qty = oo.quantity or 1
+        unit = Decimal(str(oo.bundle_price or 0))
+        line_total = unit * qty
+        subtotal += line_total
+        line_items.append({
+            "product_id": str(oo.offer_id or ""),
+            "variant_id": "default",
+            "sku": f"OFFER-{oo.offer_id}" if oo.offer_id else "",
+            "product_name": oo.offer_name or "",
+            "quantity": qty,
+            "unit_price": _money(unit),
+            "line_total": _money(line_total),
+        })
+    shipping = Decimal(str(order.delivery_fee or 0))
+    discount = Decimal(str(order.discount or 0))
+    tax = Decimal("0")
+    total = subtotal - discount + shipping + tax
+    cust = order.customer
+    data = {
+        "order_id": str(order.id),
+        "external_order_id": _external_id_from_notes(order),
+        "status": status,
+        "status_label": label,
+        "created_at": order.created_at.isoformat() if order.created_at else _now_iso(),
+        "updated_at": order.updated_at.isoformat() if getattr(order, "updated_at", None) else _now_iso(),
+        "currency": _currency(),
+        "customer": {
+            "first_name": (order.customer_name or (cust.name if cust else "") or "").split(" ")[0],
+            "last_name": "",
+            "phone": (cust.phone if cust else ""),
+        },
+        "shipping_address": {
+            "address_line": order.address or "",
+            "city": order.ville or "",
+            "state_region": (order.region.name if order.region_id else ""),
+        },
+        "payment_method": "cod",
+        "subtotal": _money(subtotal),
+        "discount": _money(discount),
+        "shipping_cost": _money(shipping),
+        "tax": _money(tax),
+        "total": _money(total),
+        "line_items": line_items,
+    }
+    return JsonResponse({"order": data}, status=http_status)
+
+
+@csrf_exempt
+def order_create(request):
+    """Create a real order (server-authoritative pricing, atomic, idempotent)."""
+    if request.method != "POST":
+        return _err("invalid_request", "POST requis.", 400)
+    if not _check_auth(request):
+        return _reject(request)
+    from .models import Order, SalesPage
+
+    try:
+        body = json.loads((request.body or b"{}").decode("utf-8"))
+    except Exception:
+        return _err("invalid_request", "JSON invalide.", 400)
+
+    ext = str(body.get("external_order_id") or "").strip()
+    if not ext:
+        return _err("validation_failed", "external_order_id requis.", 422,
+                    {"fields": ["external_order_id"]})
+
+    # Idempotency: same external_order_id -> return the existing order.
+    note_key = f"shopify_order_id=unifunl:{ext}"
+    existing = Order.objects.filter(notes__contains=note_key).first()
+    if existing:
+        return _order_response(existing, 200)
+
+    customer = body.get("customer") or {}
+    phone = str(customer.get("phone") or "").strip()
+    if not phone:
+        return _err("validation_failed", "Téléphone client requis.", 422,
+                    {"fields": ["customer.phone"]})
+    addr = body.get("shipping_address") or {}
+    line_items = body.get("line_items") or []
+    if not line_items:
+        return _err("validation_failed", "line_items requis.", 422,
+                    {"fields": ["line_items"]})
+
+    # Resolve + validate every line BEFORE writing anything (atomic).
+    resolved = []
+    for i, li in enumerate(line_items):
+        offer = _resolve_offer(li.get("product_id"))
+        if offer is None:
+            return _err("product_not_found", "Produit introuvable.", 422,
+                        {"line_item_index": i})
+        if not offer.is_active:
+            return _err("product_not_available", "Produit indisponible.", 422,
+                        {"line_item_index": i})
+        try:
+            qty = max(1, int(li.get("quantity") or 1))
+        except (TypeError, ValueError):
+            qty = 1
+        price = offer.price_for_page_name("Barats") or offer.bundle_price or Decimal("0")
+        resolved.append((offer, qty, Decimal(str(price))))
+
+    first = (customer.get("first_name") or "").strip()
+    last = (customer.get("last_name") or "").strip()
+    name = (first + " " + last).strip()
+    shipping_lines = [{"price": _money(os.environ.get("UNIFUNL_SHIPPING", "7"))}]
+    payload = {
+        "order_number": ext, "name": ext, "note": (body.get("note") or ""),
+        "phone": phone,
+        "shipping_address": {
+            "first_name": first, "last_name": last, "phone": phone,
+            "address1": addr.get("address_line") or "",
+            "city": addr.get("city") or "",
+            "province": addr.get("state_region") or addr.get("city") or "",
+            "country": addr.get("country") or "TN",
+        },
+        "customer": {"phone": phone, "first_name": first, "last_name": last},
+        "line_items": [{
+            "title": o.name, "name": o.name, "variant_title": "",
+            "quantity": q, "price": _money(pr),
+        } for (o, q, pr) in resolved],
+        "shipping_lines": shipping_lines,
+    }
+    payload["billing_address"] = payload["shipping_address"]
+
+    sp = (SalesPage.objects.filter(pk=3).first()
+          or SalesPage.objects.filter(name__iexact="Barats").first()
+          or SalesPage.objects.filter(name__iexact="Barats.tn").first())
+    sp_id = sp.id if sp else None
+
+    from .views import _create_order_from_shopify_shaped_payload
+    try:
+        with transaction.atomic():
+            _create_order_from_shopify_shaped_payload(
+                payload, source="messenger", external_id=f"unifunl:{ext}",
+                sales_page_id=sp_id)
+    except Exception as e:
+        return _err("internal_error", str(e)[:200], 500)
+
+    order = (Order.objects.filter(notes__contains=note_key)
+             .prefetch_related("order_offers").select_related("customer", "region")
+             .order_by("-id").first())
+    if not order:
+        return _err("internal_error", "Commande créée mais introuvable.", 500)
+    return _order_response(order, 201)
 
 
 @csrf_exempt
 def order_get(request, order_id):
-    """orders.get — Unifunl reads back an order we hold."""
     if not _check_auth(request):
         return _reject(request)
-    return JsonResponse({"id": order_id, "status": "pending"})
+    from .models import Order
+    order = (Order.objects.filter(pk=order_id)
+             .prefetch_related("order_offers").select_related("customer", "region").first()
+             if str(order_id).isdigit() else None)
+    if order is None:
+        return _err("order_not_found", "Commande introuvable.", 404)
+    return _order_response(order, 200)
 
 
 @login_required(login_url="/login/")
 def debug_last_auth(request):
-    """Superuser-only: show the token Unifunl last presented on a REJECTED call,
-    so the owner can set UNIFUNL_INBOUND_TOKEN to match exactly. Temporary setup
-    aid — remove once the connection is verified."""
+    """Superuser-only setup aid: shows how Unifunl last authenticated (rejected)."""
     if not request.user.is_superuser:
         return JsonResponse({"error": "forbidden"}, status=403)
     from .models import AppKeyValue
@@ -255,5 +469,4 @@ def debug_last_auth(request):
         "seen_at": row.updated_at.isoformat() if row else None,
         "configured_token_count": len([t for t in raw.split(",") if t.strip()]),
         "last_order_payload": order_row.value if order_row else None,
-        "last_order_at": order_row.updated_at.isoformat() if order_row else None,
     })
