@@ -102,20 +102,36 @@ def _offer_image_url(offer, request):
 
 
 def _offer_to_product(offer, request):
-    """Map one Offer to a Unifunl product. Field set is a best-effort guess;
-    verification will name any required fields we're missing and we adjust."""
-    price = offer.price_for_page_name("Barats") or offer.bundle_price or 0
+    """Map one Offer to a Unifunl product. Each product needs title, status,
+    has_variants and at least one variant. Offers don't pin a variant (size is
+    chosen in chat), so we expose a single default variant carrying the price."""
+    currency = (os.environ.get("UNIFUNL_CURRENCY", "") or "TND")
+    price = float(offer.price_for_page_name("Barats") or offer.bundle_price or 0)
     img = _offer_image_url(offer, request)
-    return {
-        "id": str(offer.id),
-        "name": offer.name,
-        "description": "",
-        "price": float(price),
-        "currency": (os.environ.get("UNIFUNL_CURRENCY", "") or "TND"),
+    images = [img] if img else []
+    variant = {
+        "id": f"{offer.id}-default",
+        "title": offer.name,
+        "sku": f"OFFER-{offer.id}",
+        "price": price,
+        "currency": currency,
         "available": True,
         "in_stock": True,
-        "images": [img] if img else [],
-        "variants": [],
+        "images": images,
+    }
+    return {
+        "id": str(offer.id),
+        "title": offer.name,
+        "name": offer.name,
+        "description": "",
+        "status": "active",
+        "currency": currency,
+        "price": price,
+        "available": True,
+        "in_stock": True,
+        "has_variants": False,
+        "images": images,
+        "variants": [variant],
     }
 
 
