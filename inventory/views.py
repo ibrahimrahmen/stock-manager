@@ -1776,7 +1776,7 @@ def _downscale_for_vision(raw, max_edge=1024, quality=80):
         return None
 
 
-def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None, image_urls=None, local_images=None, max_images=3):
+def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None, image_urls=None, local_images=None, max_images=3, errbox=None):
     """Call the Anthropic Claude API. Returns response text or None on failure.
     Replaces Gemini for DM order extraction and transliteration. Uses
     ANTHROPIC_API_KEY. On rate limit (429) it bails out immediately so a worker
@@ -1789,6 +1789,8 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
     import json as _json
     api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not api_key or not prompt:
+        if errbox is not None:
+            errbox.append("ANTHROPIC_API_KEY manquant" if not api_key else "prompt vide")
         return None
     model = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001").strip()
     # Build the message content. If images are supplied (Claude Vision), send
@@ -1894,6 +1896,15 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
             return txt or None
         except Exception as e:
             es = str(e)
+            # HTTPError carries the API's JSON error body — capture it so callers
+            # can show the real reason (bad key, image too large, quota...).
+            try:
+                if hasattr(e, "read"):
+                    es = es + " | " + e.read().decode("utf-8", "replace")[:300]
+            except Exception:
+                pass
+            if errbox is not None:
+                errbox.append(es[:400])
             # 429 = rate limit: don't retry (pins the worker); bail out.
             if "429" in es:
                 return None
@@ -10619,9 +10630,10 @@ def api_product_generate_description(request):
         "Objectif : qu'une IA puisse reconnaître ce produit à partir de la photo d'un "
         "client. Écris 3 à 6 phrases, sans listes à puces.\n\n" + "\n".join(ctx)
     )
+    errs = []
     try:
         text = _claude_generate(prompt, max_tokens=500, temperature=0.3,
-                                local_images=local_images, max_images=4)
+                                local_images=local_images, max_images=4, errbox=errs)
     finally:
         for tp in tmp_paths:
             try:
@@ -10629,8 +10641,9 @@ def api_product_generate_description(request):
             except Exception:
                 pass
     if not text:
+        detail = ("; ".join(errs))[:300] if errs else "aucune réponse"
         return JsonResponse({"status": "error",
-                             "message": "L'IA n'a pas répondu (clé API ou quota ?). Réessaie."}, status=502)
+                             "message": f"L'IA n'a pas répondu : {detail}"}, status=502)
     return JsonResponse({"status": "ok", "description": text.strip()})
 
 
