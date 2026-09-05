@@ -86,19 +86,32 @@ def ping(request):
     })
 
 
-def _offer_image_url(offer, request):
-    """First available product-variant image for this offer, as an absolute URL."""
-    from .models import ProductVariant
+def _offer_image_urls(offer, request, limit=10):
+    """ALL colour-variant photos for this offer's products, as absolute URLs
+    (deduped, capped). Sending every colour lets Unifunl's AI recognise the item
+    whatever colour the customer photographs."""
+    urls, seen = [], set()
     try:
         for op in offer.products.all():
-            v = (ProductVariant.objects.filter(product_id=op.product_id)
-                 .exclude(image="").exclude(image__isnull=True).first())
-            if v and v.image:
-                url = v.image.url
-                return request.build_absolute_uri(url) if request is not None else url
+            p = op.product
+            if not p:
+                continue
+            for v in p.variants.all():
+                if not v.image:
+                    continue
+                try:
+                    u = v.image.url
+                except Exception:
+                    continue
+                if not u or u in seen:
+                    continue
+                seen.add(u)
+                urls.append(request.build_absolute_uri(u) if request is not None else u)
+                if len(urls) >= limit:
+                    return urls
     except Exception:
         pass
-    return ""
+    return urls
 
 
 def _offer_description(offer):
@@ -124,8 +137,7 @@ def _offer_to_product(offer, request):
     chosen in chat), so we expose a single default variant carrying the price."""
     currency = (os.environ.get("UNIFUNL_CURRENCY", "") or "TND")
     price = float(offer.price_for_page_name("Barats") or offer.bundle_price or 0)
-    img = _offer_image_url(offer, request)
-    images = [img] if img else []
+    images = _offer_image_urls(offer, request)
     variant = {
         "id": f"{offer.id}-default",
         "title": offer.name,
@@ -172,7 +184,7 @@ def products_list(request):
     page_size = max(1, min(page_size, 250))
 
     qs = (Offer.objects.filter(is_active=True)
-          .prefetch_related("products__product").order_by("id"))
+          .prefetch_related("products__product__variants").order_by("id"))
     total_items = qs.count()
     start = (page - 1) * page_size
     offers = list(qs[start:start + page_size])
