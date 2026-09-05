@@ -86,33 +86,72 @@ def ping(request):
     })
 
 
+def _offer_image_url(offer, request):
+    """First available product-variant image for this offer, as an absolute URL."""
+    from .models import ProductVariant
+    try:
+        for op in offer.products.all():
+            v = (ProductVariant.objects.filter(product_id=op.product_id)
+                 .exclude(image="").exclude(image__isnull=True).first())
+            if v and v.image:
+                url = v.image.url
+                return request.build_absolute_uri(url) if request is not None else url
+    except Exception:
+        pass
+    return ""
+
+
+def _offer_to_product(offer, request):
+    """Map one Offer to a Unifunl product. Field set is a best-effort guess;
+    verification will name any required fields we're missing and we adjust."""
+    price = offer.price_for_page_name("Barats") or offer.bundle_price or 0
+    img = _offer_image_url(offer, request)
+    return {
+        "id": str(offer.id),
+        "name": offer.name,
+        "description": "",
+        "price": float(price),
+        "currency": (os.environ.get("UNIFUNL_CURRENCY", "") or "TND"),
+        "available": True,
+        "in_stock": True,
+        "images": [img] if img else [],
+        "variants": [],
+    }
+
+
 @csrf_exempt
 def products_list(request):
     """products.list — Unifunl reads the catalog here. Contract: a top-level
     `products` array and a `pagination` object. Supports `?updated_after=` for
-    incremental sync and `?page=` / `?page_size=`. Starts empty; the real
-    catalog is populated once the connection verifies."""
+    incremental sync and `?page=` / `?page_size=`. Serves active Offers."""
     if not _check_auth(request):
         return _reject(request)
+    from .models import Offer
     try:
-        page = int(request.GET.get("page", "1") or "1")
+        page = max(1, int(request.GET.get("page", "1") or "1"))
     except ValueError:
         page = 1
     try:
-        page_size = int(request.GET.get("page_size", request.GET.get("take", "50")) or "50")
+        page_size = int(request.GET.get("page_size", request.GET.get("take", "100")) or "100")
     except ValueError:
-        page_size = 50
+        page_size = 100
+    page_size = max(1, min(page_size, 250))
 
-    products = []  # TODO: map the real catalogue once the item contract is known
-    total_items = len(products)
+    qs = Offer.objects.filter(is_active=True).order_by("id")
+    total_items = qs.count()
+    start = (page - 1) * page_size
+    offers = list(qs[start:start + page_size])
+
+    products = [_offer_to_product(o, request) for o in offers]
+    total_pages = (total_items + page_size - 1) // page_size if total_items else 0
     return JsonResponse({
         "products": products,
         "pagination": {
             "current_page": page,
             "per_page": page_size,
             "total_items": total_items,
-            "total_pages": 1 if total_items else 0,
-            "has_next": False,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
             "has_previous": page > 1,
         },
     })
