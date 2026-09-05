@@ -6474,6 +6474,8 @@ def api_offer_detail(request, offer_id):
             "bundle_price": str(resolved_price),
             "default_price": str(offer.bundle_price),
             "is_active": offer.is_active,
+            "description": offer.description or "",
+            "image": (offer.image.url if offer.image else ""),
             "sales_page_ids": list(offer.sales_pages.values_list("id", flat=True)),
             "page_prices": {str(pp.sales_page_id): str(pp.price) for pp in offer.page_prices.all()},
             "products": products_data,
@@ -10246,13 +10248,40 @@ def offers_manage(request):
     })
 
 
+def _parse_offer_request(request):
+    """Parse an offer create/update request. Supports JSON (legacy) and
+    multipart/form-data (image + JSON-encoded array fields). Returns
+    (data_dict, image_file_or_None)."""
+    ct = (request.content_type or "")
+    if ct.startswith("multipart/") or ct.startswith("application/x-www-form-urlencoded"):
+        def _js(key, default):
+            v = request.POST.get(key)
+            if v in (None, ""):
+                return default
+            try:
+                return json.loads(v)
+            except Exception:
+                return default
+        data = {
+            "name": request.POST.get("name", ""),
+            "bundle_price": request.POST.get("bundle_price", "0"),
+            "is_active": request.POST.get("is_active", "1") in ("1", "true", "True", "on"),
+            "description": request.POST.get("description", ""),
+            "sales_page_ids": _js("sales_page_ids", []),
+            "page_prices": _js("page_prices", {}),
+            "products": _js("products", []),
+        }
+        return data, request.FILES.get("image")
+    return json.loads(request.body or "{}"), None
+
+
 @csrf_exempt
 @require_POST
 @_admin_or_office
 def api_offer_create(request):
     from .models import Offer, SalesPage, Product, OfferProduct, log_action, AuditLog
     try:
-        data = json.loads(request.body or "{}")
+        data, image = _parse_offer_request(request)
     except json.JSONDecodeError:
         return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
     name = (data.get("name") or "").strip()
@@ -10266,7 +10295,13 @@ def api_offer_create(request):
     products_data = data.get("products") or []  # list of {product_id, quantity}
 
     with transaction.atomic():
-        offer = Offer.objects.create(name=name, bundle_price=bundle_price)
+        offer = Offer.objects.create(
+            name=name, bundle_price=bundle_price,
+            is_active=bool(data.get("is_active", True)),
+            description=(data.get("description") or "").strip())
+        if image:
+            offer.image = image
+            offer.save()
         if page_ids:
             offer.sales_pages.set(SalesPage.objects.filter(id__in=page_ids))
         from .models import OfferPagePrice
@@ -10303,7 +10338,7 @@ def api_offer_create(request):
 def api_offer_update(request, pk):
     from .models import Offer, SalesPage, Product, OfferProduct, log_action, AuditLog
     try:
-        data = json.loads(request.body or "{}")
+        data, image = _parse_offer_request(request)
     except json.JSONDecodeError:
         return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
     try:
@@ -10313,11 +10348,15 @@ def api_offer_update(request, pk):
 
     with transaction.atomic():
         if "name" in data:
-            offer.name = data["name"].strip() or offer.name
+            offer.name = (data["name"] or "").strip() or offer.name
         if "bundle_price" in data:
             offer.bundle_price = Decimal(str(data["bundle_price"]))
         if "is_active" in data:
             offer.is_active = bool(data["is_active"])
+        if "description" in data:
+            offer.description = (data.get("description") or "").strip()
+        if image:  # only replace the photo when a new one is uploaded
+            offer.image = image
         offer.save()
         if "sales_page_ids" in data:
             offer.sales_pages.set(SalesPage.objects.filter(id__in=data["sales_page_ids"]))
@@ -10598,6 +10637,7 @@ def api_product_generate_description(request):
         local_images = list(tmp_paths)
     else:
         pid = request.POST.get("product_id")
+        oid = request.POST.get("offer_id")
         if pid:
             from .models import ProductVariant
             for v in (ProductVariant.objects.filter(product_id=pid)
@@ -10606,6 +10646,24 @@ def api_product_generate_description(request):
                     local_images.append(v.image.path)
                 except Exception:
                     pass
+        elif oid:
+            from .models import Offer, ProductVariant
+            o = Offer.objects.filter(pk=oid).first()
+            if o and o.image:
+                try:
+                    local_images.append(o.image.path)
+                except Exception:
+                    pass
+            if o and not local_images:  # fall back to the offer's product photos
+                for op in o.products.all():
+                    for v in (ProductVariant.objects.filter(product_id=op.product_id)
+                              .exclude(image="").exclude(image__isnull=True)[:4]):
+                        try:
+                            local_images.append(v.image.path)
+                        except Exception:
+                            pass
+                    if len(local_images) >= 4:
+                        break
     if not local_images:
         return JsonResponse({"status": "error",
                              "message": "Ajoute d'abord une photo de couleur, puis génère."}, status=400)

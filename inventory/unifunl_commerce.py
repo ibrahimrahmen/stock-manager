@@ -89,8 +89,11 @@ def _reject(request):
 # Catalogue mapping (Offers -> Unifunl products)
 # --------------------------------------------------------------------------- #
 def _offer_description(offer):
-    """Description from the offer's products' AI descriptions, deduped per SKU
-    family (parent + versions) so a product's versions never repeat."""
+    """The offer's own description if set; otherwise built from its products'
+    AI descriptions, deduped per SKU family (parent + versions)."""
+    own = (offer.description or "").strip()
+    if own:
+        return own
     by_root = {}
     for op in offer.products.all():
         p = op.product
@@ -104,9 +107,17 @@ def _offer_description(offer):
 
 
 def _offer_image_urls(offer, request, limit=10):
-    """All colour-variant photos for the offer's products (deduped, capped)."""
+    """The offer's own photo first (if set), then all colour-variant photos of
+    its products (deduped, capped)."""
     urls, seen = [], set()
     try:
+        if offer.image:
+            try:
+                u = offer.image.url
+                seen.add(u)
+                urls.append(request.build_absolute_uri(u) if request is not None else u)
+            except Exception:
+                pass
         for op in offer.products.all():
             p = op.product
             if not p:
@@ -130,7 +141,7 @@ def _offer_image_urls(offer, request, limit=10):
 
 
 def _offer_updated_at(offer):
-    return (offer.created_at or timezone.now()).isoformat()
+    return (getattr(offer, "updated_at", None) or offer.created_at or timezone.now()).isoformat()
 
 
 def _offer_to_product(offer, request):

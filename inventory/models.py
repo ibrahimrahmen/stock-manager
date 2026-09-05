@@ -919,14 +919,27 @@ class Offer(models.Model):
     name = models.CharField(max_length=120, unique=True)
     bundle_price = models.DecimalField(max_digits=10, decimal_places=3, default=0)
     is_active = models.BooleanField(default=True)
+    description = models.TextField(blank=True, default="",
+        help_text="Description de l'offre (pour l'IA / Unifunl et l'affichage).")
+    image = models.ImageField(upload_to="offers/", blank=True, null=True,
+        help_text="Photo représentative de l'offre.")
     sales_pages = models.ManyToManyField(SalesPage, related_name="offers", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["name"]
 
     def __str__(self):
         return f"{self.name} ({self.bundle_price} DT)"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.image:
+            try:
+                _resize_image_in_place(self.image.path, max_size=1200, quality=80)
+            except Exception:
+                pass
 
     def price_for_page(self, page):
         """Return the price for this offer on a given SalesPage. Falls back to

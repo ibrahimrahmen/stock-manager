@@ -90,11 +90,14 @@ input:focus,select:focus{outline:none;border-color:var(--green);}
   {% for offer in offers %}
   <div class="card" data-offer-id="{{ offer.id }}">
     <div class="card-head">
-      <div>
+      <div style="display:flex;gap:12px;align-items:flex-start;">
+        {% if offer.image %}<img src="{{ offer.image.url }}" alt="" style="width:54px;height:54px;border-radius:8px;object-fit:cover;border:0.5px solid var(--border);flex:0 0 auto;">{% endif %}
+        <div>
         <div class="offer-name">{{ offer.name }} <span class="offer-price">— {{ offer.bundle_price|floatformat:0 }} DT</span></div>
         <div class="offer-meta">
           Pages : {% for p in offer.sales_pages.all %}<span>{{ p.name }}{% if not forloop.last %}, {% endif %}</span>{% empty %}<em>aucune page</em>{% endfor %}
           {% if not offer.is_active %}· <span style="color:var(--amber);">INACTIVE</span>{% endif %}
+        </div>
         </div>
       </div>
       <div class="btn-row">
@@ -129,6 +132,22 @@ input:focus,select:focus{outline:none;border-color:var(--green);}
       <div class="error" id="modal-err"></div>
       <div class="field"><label>Nom *</label><input id="of-name" type="text" placeholder="ex: Tenue Camo"></div>
       <div class="field"><label>Prix par défaut *</label><input id="of-price" type="number" min="0" step="0.001" placeholder="96"><div style="font-size:11px;color:var(--muted);margin-top:4px;">Utilisé si une page n'a pas de prix spécifique.</div></div>
+
+      <div class="field">
+        <label>Photo de l'offre</label>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <img id="of-img-preview" src="" style="width:56px;height:56px;border-radius:8px;object-fit:cover;border:0.5px solid var(--border);display:none;">
+          <input id="of-image" type="file" accept="image/*" onchange="offerImgPreview(this)" style="font-size:12px;">
+        </div>
+      </div>
+
+      <div class="field">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <label>Description (pour l'IA / Unifunl)</label>
+          <button type="button" id="of-gen-btn" onclick="generateOfferDescription()" style="background:var(--green-dim);color:var(--green);border:0.5px solid var(--green);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;font-weight:600;">✨ Générer depuis la photo</button>
+        </div>
+        <textarea id="of-desc" rows="4" placeholder="Décris l'offre — ou ajoute une photo et clique « Générer »." style="background:var(--surface2);border:0.5px solid var(--border);color:var(--text);padding:9px 12px;border-radius:6px;font-size:13px;font-family:inherit;width:100%;"></textarea>
+      </div>
 
       <div class="field">
         <label>Pages où cette offre apparaît (prix par page optionnel)</label>
@@ -192,6 +211,9 @@ function openCreate() {
   document.getElementById('of-name').value = '';
   document.getElementById('of-price').value = '';
   document.getElementById('of-active').checked = true;
+  document.getElementById('of-desc').value = '';
+  document.getElementById('of-image').value = '';
+  document.getElementById('of-img-preview').style.display = 'none';
   document.querySelectorAll('input[name="sp"]').forEach(c => c.checked = false);
   document.querySelectorAll('.page-price-input').forEach(i => { i.value = ''; i.style.display = 'none'; });
   productPicks = [];
@@ -200,12 +222,40 @@ function openCreate() {
   document.getElementById('offer-modal').classList.add('show');
 }
 
-function openEdit(id, name, price, active, pageIds, products, pagePrices) {
+function offerImgPreview(input){
+  const f = input.files[0]; if(!f) return;
+  const img = document.getElementById('of-img-preview');
+  img.src = URL.createObjectURL(f); img.style.display = 'block';
+}
+
+async function generateOfferDescription(){
+  const btn = document.getElementById('of-gen-btn');
+  const fd = new FormData();
+  fd.append('name', document.getElementById('of-name').value.trim());
+  const f = document.getElementById('of-image').files[0];
+  if(f){ fd.append('image', f); }
+  else if(editingOfferId){ fd.append('offer_id', editingOfferId); }
+  else { alert('Ajoute une photo à l\'offre d\'abord.'); return; }
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = '✨ Génération…';
+  try{
+    const res = await fetch('/api/products-manage/generate-description/', {method:'POST', headers:{'X-CSRFToken':csrfToken()}, body:fd});
+    const data = await res.json();
+    if(data.status === 'ok'){ document.getElementById('of-desc').value = data.description; }
+    else alert(data.message || 'Erreur');
+  }catch(e){ alert('Réseau : '+e.message); }
+  finally{ btn.disabled = false; btn.textContent = orig; }
+}
+
+function openEdit(id, name, price, active, pageIds, products, pagePrices, description, image) {
   editingOfferId = id;
   document.getElementById('modal-title').textContent = 'Modifier l\'offre';
   document.getElementById('of-name').value = name;
   document.getElementById('of-price').value = price;
   document.getElementById('of-active').checked = active;
+  document.getElementById('of-desc').value = description || '';
+  document.getElementById('of-image').value = '';
+  const prev = document.getElementById('of-img-preview');
+  if (image) { prev.src = image; prev.style.display = 'block'; } else { prev.style.display = 'none'; }
   document.querySelectorAll('input[name="sp"]').forEach(c => { c.checked = pageIds.includes(parseInt(c.value)); });
   // Show/fill per-page price inputs.
   const pp = pagePrices || {};
@@ -242,7 +292,9 @@ async function openEditFromButton(btn) {
       !!offer.is_active,
       (offer.sales_page_ids || (offer.sales_pages || []).map(p => p.id || p)) || [],
       (offer.products || []).map(p => ({ product_id: p.product_id || p.product?.id, quantity: p.quantity })),
-      offer.page_prices || {}
+      offer.page_prices || {},
+      offer.description || '',
+      offer.image || ''
     );
   } catch (e) {
     alert('Erreur lors du chargement de l\'offre : ' + e.message);
@@ -270,21 +322,25 @@ async function saveOffer() {
     if (inp && inp.value !== '') page_prices[pid] = parseFloat(inp.value) || 0;
   });
 
-  const payload = {
-    name, bundle_price: price,
-    is_active: document.getElementById('of-active').checked,
-    sales_page_ids: sp,
-    page_prices,
-    products,
-  };
+  const fd = new FormData();
+  fd.append('name', name);
+  fd.append('bundle_price', price);
+  fd.append('is_active', document.getElementById('of-active').checked ? '1' : '0');
+  fd.append('description', document.getElementById('of-desc').value.trim());
+  fd.append('sales_page_ids', JSON.stringify(sp));
+  fd.append('page_prices', JSON.stringify(page_prices));
+  fd.append('products', JSON.stringify(products));
+  const imgFile = document.getElementById('of-image').files[0];
+  if (imgFile) fd.append('image', imgFile);
+
   const url = editingOfferId ? `/api/offers/${editingOfferId}/edit/` : '/api/offers/';
   const btn = document.getElementById('btn-save-offer');
   btn.disabled = true; btn.textContent = '...';
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: {'Content-Type':'application/json','X-CSRFToken':csrfToken()},
-      body: JSON.stringify(payload),
+      headers: {'X-CSRFToken':csrfToken()},   // no Content-Type: browser sets multipart boundary
+      body: fd,
     });
     const data = await res.json();
     if (data.status === 'ok') { window.location.reload(); }
