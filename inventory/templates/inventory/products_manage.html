@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gérer les produits — Stock Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root, [data-theme="dark"]{
+  --bg:#0f0f0d; --surface:#1a1a17; --surface2:#222220;
+  --border:rgba(255,255,255,0.08); --text:#f0ede6; --muted:#8a887f;
+  --green:#4ade9a; --green-dim:rgba(74,222,154,0.15);
+  --red:#f87171; --red-dim:rgba(248,113,113,0.15); --amber:#f5a623; --blue:#60a5fa;
+  --input-bg:rgba(255,255,255,0.05);
+}
+[data-theme="light"]{
+  --bg:#faf9f6; --surface:#ffffff; --surface2:#f0eee8;
+  --border:rgba(0,0,0,0.10); --text:#1a1a17; --muted:#6b6a63;
+  --green:#1a9e6e; --green-dim:rgba(26,158,110,0.12);
+  --red:#c43b3a; --red-dim:rgba(196,59,58,0.10); --amber:#b87513; --blue:#2363c9;
+  --input-bg:rgba(0,0,0,0.03);
+}
+body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
+.brand{font-family:'DM Serif Display',serif;font-size:22px;}
+.userbar{display:flex;gap:14px;align-items:center;}
+.userbar a{color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;font-size:13px;}
+.container{padding:24px;max-width:1100px;margin:0 auto;}
+.page-title{font-family:'DM Serif Display',serif;font-size:28px;}
+.add-btn{background:var(--green);color:#0a0a08;padding:10px 18px;border-radius:10px;border:none;font-weight:600;cursor:pointer;font-size:14px;}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0;}
+.pf-btn{padding:8px 16px;border-radius:10px;border:0.5px solid var(--border);background:var(--surface);color:var(--muted);text-decoration:none;font-size:13px;font-weight:600;}
+.pf-btn:hover{color:var(--text);}
+.pf-btn.active{background:var(--text);color:var(--bg);border-color:var(--text);}
+.card{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;padding:20px;margin-bottom:14px;}
+.card-head{display:flex;justify-content:space-between;align-items:start;gap:12px;}
+.p-name{font-family:'DM Serif Display',serif;font-size:20px;}
+.p-code{color:var(--muted);font-size:12px;font-family:monospace;}
+.p-meta{color:var(--muted);font-size:12px;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.badge{padding:2px 8px;border-radius:20px;font-size:11px;border:0.5px solid var(--border);}
+.badge.summer{color:var(--amber);} .badge.winter{color:var(--blue);}
+.price-sell{color:var(--green);font-weight:600;}
+.btn-row{display:flex;gap:8px;}
+.btn-edit{background:transparent;border:0.5px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;}
+.btn-edit:hover{border-color:var(--text);}
+.btn-arch{background:transparent;border:0.5px solid var(--amber);color:var(--amber);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;}
+.variants-strip{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;border-top:0.5px solid var(--border);padding-top:14px;}
+.vchip{display:flex;flex-direction:column;align-items:center;gap:4px;width:74px;}
+.vthumb{width:64px;height:64px;border-radius:10px;object-fit:cover;background:var(--surface2);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--muted);text-align:center;}
+.vlabel{font-size:11px;text-align:center;line-height:1.2;}
+.vstock{font-size:10px;color:var(--muted);}
+.empty{text-align:center;padding:40px 20px;color:var(--muted);}
+/* modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:none;z-index:100;align-items:center;justify-content:center;padding:20px;}
+.modal-overlay.show{display:flex;}
+.modal{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;width:100%;max-width:720px;max-height:92vh;overflow-y:auto;}
+.modal-head{padding:18px 22px;border-bottom:0.5px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--surface);}
+.modal-title{font-family:'DM Serif Display',serif;font-size:22px;}
+.modal-close{background:transparent;border:none;color:var(--muted);font-size:22px;cursor:pointer;}
+.modal-body{padding:18px 22px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;}
+label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;}
+input,select,textarea{background:var(--surface2);border:0.5px solid var(--border);color:var(--text);padding:9px 12px;border-radius:6px;font-size:13px;font-family:inherit;}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green);}
+.cbox{display:flex;align-items:center;gap:8px;font-size:13px;text-transform:none;letter-spacing:0;color:var(--text);}
+.section-label{font-size:12px;font-weight:600;margin:6px 0 10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);}
+.variant-row{display:grid;grid-template-columns:90px 1fr 130px 44px;gap:8px;align-items:center;margin-bottom:8px;background:var(--surface2);padding:8px;border-radius:8px;}
+.variant-row input[type=text]{width:100%;}
+.v-preview{width:40px;height:40px;border-radius:6px;object-fit:cover;border:0.5px solid var(--border);display:none;}
+.filecell{display:flex;align-items:center;gap:6px;}
+.filecell input[type=file]{font-size:11px;width:100%;}
+.add-variant-btn{background:transparent;color:var(--green);border:0.5px dashed var(--green);padding:9px;border-radius:6px;cursor:pointer;font-size:12px;width:100%;margin-top:4px;}
+.btn-del-row{background:transparent;border:0.5px solid var(--red);color:var(--red);border-radius:6px;cursor:pointer;height:36px;}
+.modal-foot{padding:14px 22px;border-top:0.5px solid var(--border);display:flex;justify-content:flex-end;gap:8px;position:sticky;bottom:0;background:var(--surface);}
+.btn-save{background:var(--green);color:#0a0a08;border:none;padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer;}
+.btn-cancel{background:transparent;border:0.5px solid var(--border);color:var(--muted);padding:10px 18px;border-radius:8px;cursor:pointer;}
+.error{background:var(--red-dim);color:var(--red);padding:8px 12px;border-radius:6px;font-size:12px;margin-bottom:10px;display:none;}
+.hint{font-size:11px;color:var(--muted);margin-top:4px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">Gérer les produits</div>
+  <div class="userbar">
+    <a href="{% url 'products_list' %}">← Produits</a>
+    <a href="{% url 'offers_manage' %}">Offres</a>
+    <a href="{% url 'dashboard' %}">Dashboard</a>
+    <a href="{% url 'logout' %}">Déconnexion</a>
+  </div>
+</div>
+
+<div class="container">
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <div class="page-title">Produits</div>
+    <button class="add-btn" onclick="openCreate()">+ Nouveau produit</button>
+  </div>
+
+  <div class="filters">
+    <a href="?season=all{% if show_archived %}&archived=1{% endif %}" class="pf-btn {% if season_filter == 'all' %}active{% endif %}">Toutes saisons</a>
+    <a href="?season=summer{% if show_archived %}&archived=1{% endif %}" class="pf-btn {% if season_filter == 'summer' %}active{% endif %}">☀️ Été</a>
+    <a href="?season=winter{% if show_archived %}&archived=1{% endif %}" class="pf-btn {% if season_filter == 'winter' %}active{% endif %}">❄️ Hiver</a>
+    <a href="?season={{ season_filter }}{% if not show_archived %}&archived=1{% endif %}" class="pf-btn {% if show_archived %}active{% endif %}" style="margin-left:auto;">{% if show_archived %}✓ {% endif %}Voir archivés</a>
+  </div>
+
+  {% for p in products %}
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <div class="p-name">{{ p.name }} <span class="p-code">{{ p.code }}</span></div>
+        <div class="p-meta">
+          {% if p.category %}<span>{{ p.category }}</span>{% endif %}
+          <span class="badge {{ p.season }}">{% if p.season == 'summer' %}☀️ Été{% else %}❄️ Hiver{% endif %}</span>
+          <span>Achat {{ p.buy_price|floatformat:0 }} · <span class="price-sell">Vente {{ p.sell_price|floatformat:0 }} DT</span></span>
+          <span>Stock : {{ p.total_stock }}</span>
+          {% if p.parent_product %}<span>· version de {{ p.parent_product.name }}</span>{% endif %}
+          {% if p.archived %}<span style="color:var(--amber);">· ARCHIVÉ</span>{% endif %}
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-edit" data-id="{{ p.id }}" onclick="openEditFromButton(this)">Modifier</button>
+        <button class="btn-arch" onclick="archiveProduct({{ p.id }}, '{{ p.name|escapejs }}', {% if p.archived %}true{% else %}false{% endif %})">{% if p.archived %}Réactiver{% else %}Archiver{% endif %}</button>
+      </div>
+    </div>
+    {% if p.variants.all %}
+    <div class="variants-strip">
+      {% for v in p.variants.all %}
+      <div class="vchip">
+        {% if v.image %}<img class="vthumb" src="{{ v.image.url }}" alt="{{ v.color_label }}">{% else %}<div class="vthumb">sans<br>photo</div>{% endif %}
+        <div class="vlabel">{{ v.color_label }}</div>
+        <div class="vstock">{{ v.total_stock }} en stock</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div style="margin-top:12px;font-size:12px;color:var(--muted);">Aucune couleur. Clique « Modifier » pour en ajouter.</div>
+    {% endif %}
+  </div>
+  {% empty %}
+  <div class="empty">
+    <div style="margin-bottom:10px;">Aucun produit{% if not show_archived %} actif{% endif %}.</div>
+    <button class="add-btn" onclick="openCreate()">Créer le premier produit</button>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="prod-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-title" id="modal-title">Nouveau produit</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="error" id="modal-err"></div>
+      <div class="grid2">
+        <div class="field"><label>Nom *</label><input id="p-name" type="text" placeholder="ex: Pull Camo"></div>
+        <div class="field"><label>Code * (préfixe code-barres)</label><input id="p-code" type="text" placeholder="ex: PLC" maxlength="10" style="text-transform:uppercase;"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Catégorie</label><input id="p-category" type="text" placeholder="ex: Pull"></div>
+        <div class="field"><label>Saison</label>
+          <select id="p-season">
+            {% for val, lbl in season_choices %}<option value="{{ val }}">{{ lbl }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Prix d'achat (DT)</label><input id="p-buy" type="number" min="0" step="0.001" placeholder="0"></div>
+        <div class="field"><label>Prix de vente (DT)</label><input id="p-sell" type="number" min="0" step="0.001" placeholder="0"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Seuil d'alerte stock</label><input id="p-alert" type="number" min="0" step="1" value="5"></div>
+        <div class="field"><label>Version de (produit parent)</label>
+          <select id="p-parent">
+            <option value="">— Aucun (produit indépendant) —</option>
+            {% for pp in parents %}<option value="{{ pp.id }}">{{ pp.name }} ({{ pp.code }})</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="field"><label>Description</label><textarea id="p-desc" rows="2" placeholder="(optionnel)"></textarea></div>
+      <div class="field"><label class="cbox"><input type="checkbox" id="p-alert-off"> Désactiver les alertes de stock bas</label></div>
+
+      <div class="section-label">Couleurs / variantes</div>
+      <div id="variants-wrap"></div>
+      <button type="button" class="add-variant-btn" onclick="addVariantRow()">+ Ajouter une couleur</button>
+      <div class="hint">Le code couleur est court (ex: WHT, BLK). Les tailles s'ajoutent à la réception, pas ici.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-cancel" onclick="closeModal()">Annuler</button>
+      <button class="btn-save" id="btn-save" onclick="saveProduct()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const savedTheme = localStorage.getItem('theme');
+if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+let editingId = null;
+
+function csrfToken(){ return document.cookie.split('csrftoken=')[1]?.split(';')[0] || ''; }
+
+function variantRowHTML(v){
+  v = v || {};
+  return `
+    <div class="variant-row" data-vid="${v.id || ''}">
+      <input type="text" class="v-cname" placeholder="Code (WHT)" value="${(v.color_name||'').replace(/"/g,'&quot;')}" style="text-transform:uppercase;">
+      <input type="text" class="v-clabel" placeholder="Nom (Blanc)" value="${(v.color_label||'').replace(/"/g,'&quot;')}">
+      <div class="filecell">
+        <img class="v-preview" src="${v.image||''}" style="${v.image?'display:block':''}">
+        <input type="file" class="v-image" accept="image/*" onchange="onVarFile(this)">
+      </div>
+      <button type="button" class="btn-del-row" onclick="removeVariantRow(this)">×</button>
+    </div>`;
+}
+function addVariantRow(v){
+  document.getElementById('variants-wrap').insertAdjacentHTML('beforeend', variantRowHTML(v));
+}
+function onVarFile(input){
+  const f = input.files[0];
+  if(!f) return;
+  const img = input.parentElement.querySelector('.v-preview');
+  if(img){ img.src = URL.createObjectURL(f); img.style.display='block'; }
+}
+function removeVariantRow(btn){
+  const row = btn.closest('.variant-row');
+  if(row.dataset.vid){ row.dataset.removed='1'; row.style.display='none'; }
+  else { row.remove(); }
+}
+
+function openCreate(){
+  editingId = null;
+  document.getElementById('modal-title').textContent = 'Nouveau produit';
+  ['p-name','p-code','p-category','p-buy','p-sell','p-desc'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('p-alert').value = '5';
+  document.getElementById('p-season').value = 'summer';
+  document.getElementById('p-parent').value = '';
+  document.getElementById('p-alert-off').checked = false;
+  document.getElementById('variants-wrap').innerHTML = '';
+  addVariantRow();
+  document.getElementById('modal-err').style.display='none';
+  document.getElementById('prod-modal').classList.add('show');
+}
+
+async function openEditFromButton(btn){
+  const id = parseInt(btn.dataset.id); if(!id) return;
+  btn.disabled = true; const orig = btn.textContent; btn.textContent='...';
+  try{
+    const res = await fetch(`/api/products-manage/${id}/`);
+    const data = await res.json();
+    if(data.status!=='ok') throw new Error(data.message||'Erreur');
+    const p = data.product;
+    editingId = p.id;
+    document.getElementById('modal-title').textContent = 'Modifier le produit';
+    document.getElementById('p-name').value = p.name||'';
+    document.getElementById('p-code').value = p.code||'';
+    document.getElementById('p-category').value = p.category||'';
+    document.getElementById('p-season').value = p.season||'summer';
+    document.getElementById('p-buy').value = parseFloat(p.buy_price)||'';
+    document.getElementById('p-sell').value = parseFloat(p.sell_price)||'';
+    document.getElementById('p-alert').value = p.alert_threshold ?? 5;
+    document.getElementById('p-parent').value = p.parent_product_id || '';
+    document.getElementById('p-desc').value = p.description||'';
+    document.getElementById('p-alert-off').checked = !!p.alert_disabled;
+    const wrap = document.getElementById('variants-wrap'); wrap.innerHTML='';
+    (p.variants||[]).forEach(v=>addVariantRow(v));
+    if(!(p.variants||[]).length) addVariantRow();
+    document.getElementById('modal-err').style.display='none';
+    document.getElementById('prod-modal').classList.add('show');
+  }catch(e){ alert('Erreur de chargement : '+e.message); }
+  finally{ btn.disabled=false; btn.textContent=orig; }
+}
+
+function closeModal(){ document.getElementById('prod-modal').classList.remove('show'); }
+
+async function saveProduct(){
+  const err = document.getElementById('modal-err'); err.style.display='none';
+  const name = document.getElementById('p-name').value.trim();
+  const code = document.getElementById('p-code').value.trim().toUpperCase();
+  if(!name || !code){ err.textContent='Nom et code obligatoires.'; err.style.display='block'; return; }
+
+  const fd = new FormData();
+  fd.append('name', name);
+  fd.append('code', code);
+  fd.append('category', document.getElementById('p-category').value.trim());
+  fd.append('season', document.getElementById('p-season').value);
+  fd.append('buy_price', document.getElementById('p-buy').value || '0');
+  fd.append('sell_price', document.getElementById('p-sell').value || '0');
+  fd.append('alert_threshold', document.getElementById('p-alert').value || '5');
+  fd.append('alert_disabled', document.getElementById('p-alert-off').checked ? '1' : '0');
+  fd.append('parent_product_id', document.getElementById('p-parent').value || '');
+  fd.append('description', document.getElementById('p-desc').value.trim());
+
+  const metas = [];
+  document.querySelectorAll('#variants-wrap .variant-row').forEach(row=>{
+    if(row.dataset.removed==='1'){
+      if(row.dataset.vid) metas.push({id:parseInt(row.dataset.vid), remove:true});
+      return;
+    }
+    const cname = row.querySelector('.v-cname').value.trim();
+    const clabel = row.querySelector('.v-clabel').value.trim();
+    if(!cname && !row.dataset.vid) return; // skip empty new row
+    const meta = {color_name:cname, color_label:clabel};
+    if(row.dataset.vid) meta.id = parseInt(row.dataset.vid);
+    const idx = metas.length;
+    metas.push(meta);
+    const f = row.querySelector('.v-image').files[0];
+    if(f) fd.append('variant_image_'+idx, f);
+  });
+  fd.append('variants_meta', JSON.stringify(metas));
+
+  const url = editingId ? `/api/products-manage/${editingId}/edit/` : '/api/products-manage/';
+  const btn = document.getElementById('btn-save'); btn.disabled=true; btn.textContent='...';
+  try{
+    const res = await fetch(url, {method:'POST', headers:{'X-CSRFToken':csrfToken()}, body:fd});
+    const data = await res.json();
+    if(data.status==='ok'){ window.location.reload(); }
+    else{ err.textContent=data.message||'Erreur.'; err.style.display='block'; btn.disabled=false; btn.textContent='Enregistrer'; }
+  }catch(e){ err.textContent='Réseau : '+e.message; err.style.display='block'; btn.disabled=false; btn.textContent='Enregistrer'; }
+}
+
+async function archiveProduct(id, name, isArchived){
+  if(!confirm((isArchived?'Réactiver':'Archiver')+` le produit « ${name} » ?`)) return;
+  try{
+    const res = await fetch(`/api/products-manage/${id}/archive/`, {method:'POST', headers:{'X-CSRFToken':csrfToken()}});
+    const data = await res.json();
+    if(data.status==='ok') window.location.reload();
+    else alert(data.message||'Erreur');
+  }catch(e){ alert('Réseau : '+e.message); }
+}
+</script>
+
+</body>
+</html>

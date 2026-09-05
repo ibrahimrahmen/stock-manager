@@ -144,4 +144,11 @@ urlpatterns = [
     path("api/offers/", views.api_offer_create, name="api_offer_create"),
     path("api/offers/<int:pk>/edit/", views.api_offer_update, name="api_offer_update"),
     path("api/offers/<int:pk>/delete/", views.api_offer_delete, name="api_offer_delete"),
+
+    # V2 — Admin: manage products + colour variants
+    path("admin-products/", views.products_manage, name="products_manage"),
+    path("api/products-manage/", views.api_product_create, name="api_product_create"),
+    path("api/products-manage/<int:pk>/", views.api_product_manage_detail, name="api_product_manage_detail"),
+    path("api/products-manage/<int:pk>/edit/", views.api_product_update, name="api_product_update"),
+    path("api/products-manage/<int:pk>/archive/", views.api_product_archive, name="api_product_archive"),
 ]

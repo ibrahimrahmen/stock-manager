@@ -96,7 +96,7 @@
   <a href="{% url 'dashboard' %}">← Dashboard</a>
   <span class="nav-title">Produits</span>
   <div class="nav-right">
-    <a href="/admin/inventory/product/add/" class="add-btn">+ Nouveau produit</a>
+    <a href="{% url 'products_manage' %}" class="add-btn">+ Nouveau produit</a>
   </div>
 </nav>
 
@@ -190,7 +190,7 @@
   <div class="empty">
     <div class="empty-title">Aucun produit</div>
     <div class="empty-sub">Créez votre premier produit pour commencer</div>
-    <a href="/admin/inventory/product/add/" class="add-btn">+ Créer un produit</a>
+    <a href="{% url 'products_manage' %}" class="add-btn">+ Créer un produit</a>
   </div>
   {% endif %}
 </div>

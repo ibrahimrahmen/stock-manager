@@ -10364,6 +10364,202 @@ def api_offer_delete(request, pk):
     return JsonResponse({"status": "ok"})
 
 
+# ---------------------------------------------------------------------------
+# PRODUCTS MANAGER — a nicer UI over what the Django admin does for products:
+# create/edit a product and its colour variants (with photos). Sizes are per
+# unit (added at reception), so they are not part of the product definition.
+# ---------------------------------------------------------------------------
+@_admin_or_office
+def products_manage(request):
+    """Custom admin page to add/manage products + their colour variants."""
+    from .models import Product
+    season = request.GET.get("season", "all")
+    show_archived = request.GET.get("archived") == "1"
+    qs = Product.objects.prefetch_related("variants").order_by("name")
+    if not show_archived:
+        qs = qs.filter(archived=False)
+    if season in (Product.SEASON_SUMMER, Product.SEASON_WINTER):
+        qs = qs.filter(season=season)
+    return render(request, "inventory/products_manage.html", {
+        "products": qs,
+        "season_filter": season,
+        "show_archived": show_archived,
+        "season_choices": Product.SEASON_CHOICES,
+        "parents": Product.objects.filter(archived=False).order_by("name"),
+    })
+
+
+@_admin_or_office
+def api_product_manage_detail(request, pk):
+    """Product + variants for the edit modal."""
+    from .models import Product
+    try:
+        p = Product.objects.prefetch_related("variants").get(pk=pk)
+    except Product.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Produit introuvable."}, status=404)
+    return JsonResponse({"status": "ok", "product": {
+        "id": p.id, "name": p.name, "code": p.code, "category": p.category,
+        "description": p.description, "season": p.season,
+        "buy_price": str(p.buy_price), "sell_price": str(p.sell_price),
+        "alert_threshold": p.alert_threshold, "alert_disabled": p.alert_disabled,
+        "archived": p.archived, "parent_product_id": p.parent_product_id,
+        "variants": [{
+            "id": v.id, "color_name": v.color_name, "color_label": v.color_label,
+            "image": (v.image.url if v.image else ""), "stock": v.total_stock,
+        } for v in p.variants.all()],
+    }})
+
+
+def _dec(v):
+    from decimal import Decimal as _D
+    try:
+        return _D(str(v if v not in (None, "") else "0").replace(",", ".").strip())
+    except Exception:
+        return _D("0")
+
+
+def _save_product_variants(request, product):
+    """Create/update/remove colour variants from a multipart request. Metadata
+    comes as JSON in `variants_meta` (list of {id?, color_name, color_label,
+    remove?}); each row's photo (optional) is file `variant_image_<index>`."""
+    from .models import ProductVariant
+    import json as _json
+    try:
+        metas = _json.loads(request.POST.get("variants_meta") or "[]")
+    except Exception:
+        metas = []
+    for idx, m in enumerate(metas):
+        vid = m.get("id")
+        cname = (m.get("color_name") or "").strip().upper()
+        clabel = (m.get("color_label") or "").strip()
+        img = request.FILES.get(f"variant_image_{idx}")
+        if m.get("remove") and vid:
+            v = ProductVariant.objects.filter(pk=vid, product=product).first()
+            if v and v.total_stock == 0:
+                try:
+                    v.delete()
+                except Exception:
+                    pass
+            continue
+        if not cname:
+            continue
+        if vid:
+            v = ProductVariant.objects.filter(pk=vid, product=product).first()
+            if not v:
+                continue
+            v.color_name = cname
+            v.color_label = clabel or cname
+            if img:
+                v.image = img
+            v.save()
+        else:
+            v = ProductVariant.objects.filter(product=product, color_name=cname).first()
+            if v:
+                v.color_label = clabel or cname
+                if img:
+                    v.image = img
+                v.save()
+            else:
+                ProductVariant.objects.create(
+                    product=product, color_name=cname,
+                    color_label=clabel or cname, image=img)
+
+
+@csrf_exempt
+@require_POST
+@_admin_or_office
+def api_product_create(request):
+    from .models import Product, log_action, AuditLog
+    name = (request.POST.get("name") or "").strip()
+    code = (request.POST.get("code") or "").strip().upper()
+    if not name or not code:
+        return JsonResponse({"status": "error", "message": "Nom et code obligatoires."}, status=400)
+    if Product.objects.filter(code=code).exists():
+        return JsonResponse({"status": "error", "message": f"Le code « {code} » existe déjà."}, status=400)
+    parent_id = request.POST.get("parent_product_id") or ""
+    try:
+        with transaction.atomic():
+            p = Product.objects.create(
+                name=name, code=code,
+                category=(request.POST.get("category") or "").strip(),
+                description=(request.POST.get("description") or "").strip(),
+                season=(request.POST.get("season") or Product.SEASON_SUMMER),
+                buy_price=_dec(request.POST.get("buy_price")),
+                sell_price=_dec(request.POST.get("sell_price")),
+                alert_threshold=int(request.POST.get("alert_threshold") or 5),
+                alert_disabled=(request.POST.get("alert_disabled") == "1"),
+                parent_product_id=int(parent_id) if parent_id.isdigit() else None,
+            )
+            _save_product_variants(request, p)
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:200]}, status=400)
+    log_action(request.user, AuditLog.CREATE,
+               description=f"Produit créé : {name} ({code})", request=request,
+               target_model="Product", target_id=p.id)
+    return JsonResponse({"status": "ok", "id": p.id})
+
+
+@csrf_exempt
+@require_POST
+@_admin_or_office
+def api_product_update(request, pk):
+    from .models import Product, log_action, AuditLog
+    try:
+        p = Product.objects.get(pk=pk)
+    except Product.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Produit introuvable."}, status=404)
+    name = (request.POST.get("name") or "").strip()
+    code = (request.POST.get("code") or "").strip().upper()
+    if not name or not code:
+        return JsonResponse({"status": "error", "message": "Nom et code obligatoires."}, status=400)
+    if Product.objects.filter(code=code).exclude(pk=pk).exists():
+        return JsonResponse({"status": "error", "message": f"Le code « {code} » existe déjà."}, status=400)
+    parent_id = request.POST.get("parent_product_id") or ""
+    parent_pk = int(parent_id) if parent_id.isdigit() else None
+    if parent_pk == pk:
+        parent_pk = None
+    try:
+        with transaction.atomic():
+            p.name = name
+            p.code = code
+            p.category = (request.POST.get("category") or "").strip()
+            p.description = (request.POST.get("description") or "").strip()
+            p.season = (request.POST.get("season") or p.season)
+            p.buy_price = _dec(request.POST.get("buy_price"))
+            p.sell_price = _dec(request.POST.get("sell_price"))
+            p.alert_threshold = int(request.POST.get("alert_threshold") or 5)
+            p.alert_disabled = (request.POST.get("alert_disabled") == "1")
+            p.parent_product_id = parent_pk
+            p.save()
+            _save_product_variants(request, p)
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:200]}, status=400)
+    log_action(request.user, AuditLog.EDIT,
+               description=f"Produit modifié : {name} ({code})", request=request,
+               target_model="Product", target_id=p.id)
+    return JsonResponse({"status": "ok", "id": p.id})
+
+
+@csrf_exempt
+@require_POST
+@_admin_or_office
+def api_product_archive(request, pk):
+    """Toggle archived. Safer than delete (which the DB blocks once a product
+    has variants/units): archived products are hidden from lists but scanning
+    still works."""
+    from .models import Product, log_action, AuditLog
+    try:
+        p = Product.objects.get(pk=pk)
+    except Product.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Produit introuvable."}, status=404)
+    p.archived = not p.archived
+    p.save(update_fields=["archived"])
+    log_action(request.user, AuditLog.EDIT,
+               description=f"Produit {'archivé' if p.archived else 'réactivé'} : {p.name}",
+               request=request, target_model="Product", target_id=p.id)
+    return JsonResponse({"status": "ok", "archived": p.archived})
+
+
 @login_required(login_url="/login/")
 def order_view(request, pk):
     if not _orders_role_check(request):
