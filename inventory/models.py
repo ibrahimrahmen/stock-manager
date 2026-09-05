@@ -986,6 +986,33 @@ class OfferProduct(models.Model):
         return f"{self.quantity}× {self.product.name} (in offer {self.offer.name})"
 
 
+class OfferImage(models.Model):
+    """A photo of the OFFER itself (the set/ensemble), tied to a colour of the
+    offer. This is what Unifunl shows a customer who asks about the offer — the
+    ensemble worn together, per colour — NOT the individual products' photos."""
+    offer = models.ForeignKey(Offer, on_delete=models.CASCADE, related_name="images")
+    color_name = models.CharField(max_length=50, blank=True, default="",
+        help_text="Code couleur de l'ensemble, ex: WHT")
+    color_label = models.CharField(max_length=50, blank=True, default="",
+        help_text="Nom de la couleur affiché, ex: Blanc")
+    image = models.ImageField(upload_to="offers/")
+    sort = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort", "id"]
+
+    def __str__(self):
+        return f"{self.offer.name} — {self.color_label or self.color_name}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.image:
+            try:
+                _resize_image_in_place(self.image.path, max_size=1200, quality=80)
+            except Exception:
+                pass
+
+
 # ---------------------------------------------------------------------------
 # ADS — Meta/Facebook ad campaigns synced from the Google Sheet (n8n fills it).
 # Each ad links to ONE offer; an offer can have MANY ads. Spend is synced from

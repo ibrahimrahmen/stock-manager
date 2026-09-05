@@ -152,6 +152,13 @@ input:focus,select:focus{outline:none;border-color:var(--green);}
       </div>
 
       <div class="field">
+        <label>Photos de l'ensemble par couleur — ce que Unifunl montre au client</label>
+        <div id="of-images-wrap"></div>
+        <button type="button" class="add-product-btn" onclick="addOfferImageRow()">+ Ajouter une couleur (photo de l'ensemble)</button>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Une photo de l'ensemble complet par couleur (ex: Blanc, Noir). Unifunl montre CES photos au client, pas celles des produits séparés.</div>
+      </div>
+
+      <div class="field">
         <label>Pages où cette offre apparaît (prix par page optionnel)</label>
         <div class="checkbox-list">
           {% for p in sales_pages %}
@@ -212,6 +219,34 @@ function chooseOfferPhoto(variantId, url) {
   renderPhotoChoices();
 }
 
+// --- Ensemble photos per colour (what Unifunl shows) ---
+function offerImageRowHTML(oi){
+  oi = oi || {};
+  return `
+    <div class="offer-img-row" data-oid="${oi.id||''}" style="display:grid;grid-template-columns:90px 1fr 140px 40px;gap:8px;align-items:center;margin-bottom:8px;background:var(--surface2);padding:8px;border-radius:8px;">
+      <input type="text" class="oi-cname" placeholder="Code (WHT)" value="${(oi.color_name||'').replace(/"/g,'&quot;')}" style="text-transform:uppercase;">
+      <input type="text" class="oi-clabel" placeholder="Couleur (Blanc)" value="${(oi.color_label||'').replace(/"/g,'&quot;')}">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <img class="oi-preview" src="${oi.url||''}" style="width:40px;height:40px;border-radius:6px;object-fit:cover;border:0.5px solid var(--border);${oi.url?'':'display:none;'}">
+        <input type="file" class="oi-image" accept="image/*" onchange="offerRowImgPreview(this)" style="font-size:11px;width:100%;">
+      </div>
+      <button type="button" class="btn-del" onclick="removeOfferImageRow(this)" style="height:36px;">×</button>
+    </div>`;
+}
+function addOfferImageRow(oi){
+  document.getElementById('of-images-wrap').insertAdjacentHTML('beforeend', offerImageRowHTML(oi));
+}
+function offerRowImgPreview(input){
+  const f = input.files[0]; if(!f) return;
+  const img = input.parentElement.querySelector('.oi-preview');
+  if(img){ img.src = URL.createObjectURL(f); img.style.display = 'block'; }
+}
+function removeOfferImageRow(btn){
+  const row = btn.closest('.offer-img-row');
+  if(row.dataset.oid){ row.dataset.removed = '1'; row.style.display = 'none'; }
+  else { row.remove(); }
+}
+
 function csrfToken() { return document.cookie.split('csrftoken=')[1]?.split(';')[0] || ''; }
 
 function renderProductPicks() {
@@ -243,6 +278,7 @@ function openCreate() {
   document.getElementById('of-desc').value = '';
   document.getElementById('of-image').value = '';
   document.getElementById('of-img-preview').style.display = 'none';
+  document.getElementById('of-images-wrap').innerHTML = '';
   chosenVariantId = null;
   document.querySelectorAll('input[name="sp"]').forEach(c => c.checked = false);
   document.querySelectorAll('.page-price-input').forEach(i => { i.value = ''; i.style.display = 'none'; });
@@ -279,7 +315,7 @@ async function generateOfferDescription(){
   finally{ btn.disabled = false; btn.textContent = orig; }
 }
 
-function openEdit(id, name, price, active, pageIds, products, pagePrices, description, image) {
+function openEdit(id, name, price, active, pageIds, products, pagePrices, description, image, offerImages) {
   editingOfferId = id;
   document.getElementById('modal-title').textContent = 'Modifier l\'offre';
   document.getElementById('of-name').value = name;
@@ -302,6 +338,8 @@ function openEdit(id, name, price, active, pageIds, products, pagePrices, descri
   chosenVariantId = null;
   renderProductPicks();
   renderPhotoChoices();
+  const iw = document.getElementById('of-images-wrap'); iw.innerHTML = '';
+  (offerImages || []).forEach(oi => addOfferImageRow(oi));
   document.getElementById('modal-err').style.display = 'none';
   document.getElementById('offer-modal').classList.add('show');
 }
@@ -329,7 +367,8 @@ async function openEditFromButton(btn) {
       (offer.products || []).map(p => ({ product_id: p.product_id || p.product?.id, quantity: p.quantity })),
       offer.page_prices || {},
       offer.description || '',
-      offer.image || ''
+      offer.image || '',
+      offer.offer_images || []
     );
   } catch (e) {
     alert('Erreur lors du chargement de l\'offre : ' + e.message);
@@ -368,6 +407,21 @@ async function saveOffer() {
   const imgFile = document.getElementById('of-image').files[0];
   if (imgFile) fd.append('image', imgFile);
   else if (chosenVariantId) fd.append('chosen_variant_id', chosenVariantId);
+
+  // Ensemble photos per colour (what Unifunl shows the customer).
+  const oimetas = [];
+  document.querySelectorAll('#of-images-wrap .offer-img-row').forEach(row => {
+    if (row.dataset.removed === '1') { if (row.dataset.oid) oimetas.push({id:parseInt(row.dataset.oid), remove:true}); return; }
+    const cname = row.querySelector('.oi-cname').value.trim();
+    const clabel = row.querySelector('.oi-clabel').value.trim();
+    const f = row.querySelector('.oi-image').files[0];
+    if (!row.dataset.oid && !f) return;               // new empty row
+    const meta = {color_name:cname, color_label:clabel};
+    if (row.dataset.oid) meta.id = parseInt(row.dataset.oid);
+    const idx = oimetas.length; oimetas.push(meta);
+    if (f) fd.append('offer_image_' + idx, f);
+  });
+  fd.append('offer_images_meta', JSON.stringify(oimetas));
 
   const url = editingOfferId ? `/api/offers/${editingOfferId}/edit/` : '/api/offers/';
   const btn = document.getElementById('btn-save-offer');

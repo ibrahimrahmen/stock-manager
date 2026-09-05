@@ -106,16 +106,39 @@ def _offer_description(offer):
     return "\n\n".join(by_root.values())
 
 
+def _abs(u, request):
+    return request.build_absolute_uri(u) if request is not None else u
+
+
 def _offer_image_urls(offer, request, limit=10):
-    """The offer's own photo first (if set), then all colour-variant photos of
-    its products (deduped, capped)."""
+    """Images to send for the offer. If the offer has its OWN colour photos (the
+    ensemble worn together, per colour) we send ONLY those — that's what a
+    customer asking about the offer must see, not the individual products'
+    photos. Otherwise fall back to the offer cover + the products' colour photos.
+    """
     urls, seen = [], set()
+    own = list(offer.images.all())
+    if own:
+        for oi in own:
+            if not oi.image:
+                continue
+            try:
+                u = oi.image.url
+            except Exception:
+                continue
+            if u and u not in seen:
+                seen.add(u)
+                urls.append(_abs(u, request))
+                if len(urls) >= limit:
+                    break
+        return urls
+    # Legacy fallback: offer cover first, then the products' colour photos.
     try:
         if offer.image:
             try:
                 u = offer.image.url
                 seen.add(u)
-                urls.append(request.build_absolute_uri(u) if request is not None else u)
+                urls.append(_abs(u, request))
             except Exception:
                 pass
         for op in offer.products.all():
@@ -132,7 +155,7 @@ def _offer_image_urls(offer, request, limit=10):
                 if not u or u in seen:
                     continue
                 seen.add(u)
-                urls.append(request.build_absolute_uri(u) if request is not None else u)
+                urls.append(_abs(u, request))
                 if len(urls) >= limit:
                     return urls
     except Exception:
@@ -145,10 +168,34 @@ def _offer_updated_at(offer):
 
 
 def _offer_variants(offer, request, price):
-    """One Unifunl variant per distinct colour across the offer's products
-    (deduped by colour). The price is the offer price for every colour. Size is
-    still chosen in chat, so it's not a variant axis here. Falls back to a single
-    'default' variant when the offer's products have no colours."""
+    """One Unifunl variant per colour of the OFFER. If the offer has its own
+    colour photos (the ensemble per colour), use those — each variant carries the
+    ensemble photo for that colour. Otherwise fall back to the distinct colours of
+    the offer's products. Price is the offer price for every colour; size is
+    chosen in chat, not a variant axis."""
+    own = list(offer.images.all())
+    if own:
+        variants = []
+        for oi in own:
+            key = (oi.color_name or oi.color_label or "").strip().upper() or f"C{oi.id}"
+            img = None
+            if oi.image:
+                try:
+                    img = _abs(oi.image.url, request)
+                except Exception:
+                    img = None
+            variants.append({
+                "id": f"{offer.id}-{key}",
+                "sku": f"OFFER-{offer.id}-{key}",
+                "price": _money(price),
+                "compare_at_price": None,
+                "inventory_quantity": None,
+                "is_in_stock": True,
+                "options": {"Couleur": oi.color_label or oi.color_name or key},
+                "image": img,
+            })
+        return variants
+
     seen = {}
     for op in offer.products.all():
         p = op.product
@@ -281,7 +328,7 @@ def products_list(request):
     updated_after = (request.GET.get("updated_after") or "").strip()
 
     qs = (_barats_offers_qs()
-          .prefetch_related("products__product__variants").order_by("id"))
+          .prefetch_related("images", "products__product__variants").order_by("id"))
     if search:
         qs = qs.filter(name__icontains=search)
     if updated_after:
