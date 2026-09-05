@@ -208,6 +208,36 @@ def _offer_to_product(offer, request):
     }
 
 
+def _offer_page_names():
+    """Sales-page names whose offers are sent to Unifunl. Default: Barats only.
+    Override with UNIFUNL_OFFER_PAGES (comma-separated). Empty => all offers."""
+    raw = os.environ.get("UNIFUNL_OFFER_PAGES", "Barats,Barats.tn")
+    return [s.strip() for s in (raw or "").split(",") if s.strip()]
+
+
+def _barats_offers_qs():
+    """Active offers linked to the configured Barats page(s)."""
+    from django.db.models import Q
+    from .models import Offer
+    qs = Offer.objects.filter(is_active=True)
+    pages = _offer_page_names()
+    if pages:
+        q = Q()
+        for nm in pages:
+            q |= Q(sales_pages__name__iexact=nm)
+        qs = qs.filter(q).distinct()
+    return qs
+
+
+def _is_offer_sent(offer):
+    """True if this offer belongs to the Barats page(s) we send to Unifunl."""
+    pages = {p.lower() for p in _offer_page_names()}
+    if not pages:
+        return offer.is_active
+    names = {(sp.name or "").lower() for sp in offer.sales_pages.all()}
+    return offer.is_active and bool(pages & names)
+
+
 def _clamp_int(val, default, lo, hi):
     try:
         n = int(val)
@@ -250,7 +280,7 @@ def products_list(request):
     search = (request.GET.get("search") or "").strip()
     updated_after = (request.GET.get("updated_after") or "").strip()
 
-    qs = (Offer.objects.filter(is_active=True)
+    qs = (_barats_offers_qs()
           .prefetch_related("products__product__variants").order_by("id"))
     if search:
         qs = qs.filter(name__icontains=search)
@@ -296,7 +326,7 @@ def product_get(request, identifier):
             offer = Offer.objects.filter(pk=int(tail)).first()
     if offer is None:
         offer = Offer.objects.filter(name__iexact=ident).first()
-    if offer is None or not offer.is_active:
+    if offer is None or not _is_offer_sent(offer):
         return _err("product_not_found", "Produit introuvable.", 404)
     return JsonResponse({"product": _offer_to_product(offer, request),
                          "currency": _currency()})
