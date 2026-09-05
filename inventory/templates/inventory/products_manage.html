@@ -180,7 +180,14 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green);}
           </select>
         </div>
       </div>
-      <div class="field"><label>Description</label><textarea id="p-desc" rows="2" placeholder="(optionnel)"></textarea></div>
+      <div class="field">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <label>Description (pour reconnaissance IA)</label>
+          <button type="button" id="gen-desc-btn" onclick="generateDescription()" style="background:var(--green-dim);color:var(--green);border:0.5px solid var(--green);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;font-weight:600;">✨ Générer depuis la photo</button>
+        </div>
+        <textarea id="p-desc" rows="4" placeholder="Décris le produit — ou ajoute une photo de couleur et clique « Générer » pour l'écrire automatiquement."></textarea>
+        <div class="hint">L'IA lit la photo et rédige une description détaillée (couleurs, motif, coupe, détails) pour reconnaître le produit.</div>
+      </div>
       <div class="field"><label class="cbox"><input type="checkbox" id="p-alert-off"> Désactiver les alertes de stock bas</label></div>
 
       <div class="section-label">Couleurs / variantes</div>
@@ -319,6 +326,31 @@ async function saveProduct(){
     if(data.status==='ok'){ window.location.reload(); }
     else{ err.textContent=data.message||'Erreur.'; err.style.display='block'; btn.disabled=false; btn.textContent='Enregistrer'; }
   }catch(e){ err.textContent='Réseau : '+e.message; err.style.display='block'; btn.disabled=false; btn.textContent='Enregistrer'; }
+}
+
+async function generateDescription(){
+  const btn = document.getElementById('gen-desc-btn');
+  const fd = new FormData();
+  fd.append('name', document.getElementById('p-name').value.trim());
+  fd.append('category', document.getElementById('p-category').value.trim());
+  let hasImage = false;
+  for(const row of document.querySelectorAll('#variants-wrap .variant-row')){
+    if(row.dataset.removed === '1') continue;
+    const f = row.querySelector('.v-image').files[0];
+    if(f){ fd.append('image', f); hasImage = true; break; }
+  }
+  if(!hasImage){
+    if(editingId){ fd.append('product_id', editingId); }
+    else { alert('Ajoute d\'abord une photo de couleur, puis clique Générer.'); return; }
+  }
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = '✨ Génération…';
+  try{
+    const res = await fetch('/api/products-manage/generate-description/', {method:'POST', headers:{'X-CSRFToken':csrfToken()}, body:fd});
+    const data = await res.json();
+    if(data.status === 'ok'){ document.getElementById('p-desc').value = data.description; }
+    else alert(data.message || 'Erreur');
+  }catch(e){ alert('Réseau : '+e.message); }
+  finally{ btn.disabled = false; btn.textContent = orig; }
 }
 
 async function archiveProduct(id, name, isArchived){

@@ -151,4 +151,5 @@ urlpatterns = [
     path("api/products-manage/<int:pk>/", views.api_product_manage_detail, name="api_product_manage_detail"),
     path("api/products-manage/<int:pk>/edit/", views.api_product_update, name="api_product_update"),
     path("api/products-manage/<int:pk>/archive/", views.api_product_archive, name="api_product_archive"),
+    path("api/products-manage/generate-description/", views.api_product_generate_description, name="api_product_generate_description"),
 ]

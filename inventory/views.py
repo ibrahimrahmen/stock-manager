@@ -10560,6 +10560,73 @@ def api_product_archive(request, pk):
     return JsonResponse({"status": "ok", "archived": p.archived})
 
 
+@csrf_exempt
+@require_POST
+@_admin_or_office
+def api_product_generate_description(request):
+    """Generate a detailed, vision-based product description (for AI product
+    recognition) from a photo, using Claude vision. Accepts either an uploaded
+    `image` (a colour photo not yet saved) or a `product_id` (uses its stored
+    variant image). `name` / `category` are optional context hints."""
+    import os as _os
+    import tempfile
+    name = (request.POST.get("name") or "").strip()
+    category = (request.POST.get("category") or "").strip()
+
+    local_images = []
+    tmp_path = None
+    img = request.FILES.get("image")
+    if img:
+        suffix = _os.path.splitext(img.name)[1] or ".jpg"
+        fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+        with _os.fdopen(fd, "wb") as fh:
+            for chunk in img.chunks():
+                fh.write(chunk)
+        local_images = [tmp_path]
+    else:
+        pid = request.POST.get("product_id")
+        if pid:
+            from .models import ProductVariant
+            v = (ProductVariant.objects.filter(product_id=pid)
+                 .exclude(image="").exclude(image__isnull=True).first())
+            if v and v.image:
+                try:
+                    local_images = [v.image.path]
+                except Exception:
+                    local_images = []
+    if not local_images:
+        return JsonResponse({"status": "error",
+                             "message": "Ajoute d'abord une photo de couleur, puis génère."}, status=400)
+
+    ctx = []
+    if name:
+        ctx.append(f"Nom du produit : {name}")
+    if category:
+        ctx.append(f"Catégorie : {category}")
+    prompt = (
+        "Tu écris une description détaillée d'un article de vêtement pour un système "
+        "de reconnaissance par IA. À partir de la photo, décris de façon factuelle et "
+        "précise, en français : le type de vêtement, les couleurs, le motif/imprimé, "
+        "la coupe et le style, les détails visuels distinctifs (col, manches, poches, "
+        "capuche, boutons...), la matière apparente, et tout texte ou logo visible. "
+        "Objectif : qu'une IA puisse reconnaître ce produit à partir de la photo d'un "
+        "client. Écris 3 à 5 phrases, sans listes à puces.\n\n" + "\n".join(ctx)
+    )
+    try:
+        text = _claude_generate(prompt, max_tokens=400, temperature=0.3,
+                                local_images=local_images, max_images=1)
+    finally:
+        if tmp_path:
+            try:
+                _os.remove(tmp_path)
+            except Exception:
+                pass
+    if not text:
+        return JsonResponse({"status": "error",
+                             "message": "L'IA n'a pas répondu (clé API ou quota ?). Réessaie."}, status=502)
+    return JsonResponse({"status": "ok", "description": text.strip()})
+
+
 @login_required(login_url="/login/")
 def order_view(request, pk):
     if not _orders_role_check(request):
