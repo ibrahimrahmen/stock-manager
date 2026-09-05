@@ -3,13 +3,13 @@
 
 Unifunl (the AI chat agent) talks to THIS app as its commerce backend: it reads
 the catalog/currency from here and pushes orders here when it captures them.
-Exposed under /api/v1/ (see urls.py). Endpoints are discovered from Unifunl's
-verification step and added incrementally.
+Exposed under /api/v1/ (see urls.py).
 
 Auth: Unifunl sends the token you issued it, either as
 `Authorization: Bearer <token>` or `X-API-Key: <token>`. We check it against the
-UNIFUNL_INBOUND_TOKEN env var. (When that var is unset we allow requests, so the
-very first connectivity checks work before the token is configured.)
+UNIFUNL_INBOUND_TOKEN env var and REJECT anything else with 401. If that var is
+unset we fail closed (reject everything) — Unifunl's verification explicitly
+tests that a bad token is refused.
 """
 import json
 import os
@@ -19,32 +19,31 @@ from django.views.decorators.csrf import csrf_exempt
 
 
 def _check_auth(request):
-    """True if the request carries the token we issued Unifunl (or if no token
-    is configured yet)."""
+    """True only if the request carries the exact token we issued Unifunl.
+    Fails closed when no token is configured."""
     expected = (os.environ.get("UNIFUNL_INBOUND_TOKEN", "") or "").strip()
     if not expected:
-        return True  # not configured yet — don't block initial setup
+        return False
     auth = request.META.get("HTTP_AUTHORIZATION", "") or ""
-    if auth.lower().startswith("bearer "):
-        if auth[7:].strip() == expected:
-            return True
+    if auth.lower().startswith("bearer ") and auth[7:].strip() == expected:
+        return True
     xkey = (request.META.get("HTTP_X_API_KEY", "") or "").strip()
     if xkey and xkey == expected:
         return True
     return False
 
 
+def _unauthorized():
+    return JsonResponse({"error": "unauthorized"}, status=401)
+
+
 @csrf_exempt
 def ping(request):
-    """Store handshake hit by Unifunl's verification step. Must return the
-    store's spec_version, currency and capabilities (Unifunl reads currency +
-    features from here). Values are env-tunable so we can adjust without a code
-    change as we learn Unifunl's expected vocabulary:
-      UNIFUNL_SPEC_VERSION (default '1.0')
-      UNIFUNL_CURRENCY      (default 'TND')
-      UNIFUNL_CAPABILITIES  (comma-separated; default empty)
-    """
-    # Unifunl requires at least these three; they map to the endpoints below.
+    """Store handshake / health check. Must return spec_version, currency and
+    capabilities, and must enforce auth (a bad token → 401). Values are
+    env-tunable: UNIFUNL_SPEC_VERSION, UNIFUNL_CURRENCY, UNIFUNL_CAPABILITIES."""
+    if not _check_auth(request):
+        return _unauthorized()
     default_caps = "products.list,orders.create,orders.get"
     caps = [c.strip() for c in (os.environ.get("UNIFUNL_CAPABILITIES") or default_caps).split(",")
             if c.strip()]
@@ -56,16 +55,12 @@ def ping(request):
     })
 
 
-def _unauthorized():
-    return JsonResponse({"error": "unauthorized"}, status=401)
-
-
 @csrf_exempt
 def products_list(request):
-    """products.list — Unifunl reads the catalog here. Returns a paginated list
-    in the same envelope Unifunl uses elsewhere ({data, meta}). Starts empty;
-    real catalog is populated once the connection verifies and we confirm the
-    exact product/variant contract Unifunl expects."""
+    """products.list — Unifunl reads the catalog here. Contract: a top-level
+    `products` array and a `pagination` object. Supports `?updated_after=` for
+    incremental sync and `?page=` / `?page_size=`. Starts empty; the real
+    catalog is populated once the connection verifies."""
     if not _check_auth(request):
         return _unauthorized()
     try:
@@ -73,15 +68,20 @@ def products_list(request):
     except ValueError:
         page = 1
     try:
-        take = int(request.GET.get("take", "50") or "50")
+        page_size = int(request.GET.get("page_size", request.GET.get("take", "50")) or "50")
     except ValueError:
-        take = 50
-    data = []  # TODO: map real products once the contract is confirmed
+        page_size = 50
+
+    products = []  # TODO: map the real catalogue once the item contract is known
     return JsonResponse({
-        "data": data,
-        "meta": {
-            "page": page, "take": take, "itemCount": len(data),
-            "pageCount": 1, "hasPreviousPage": page > 1, "hasNextPage": False,
+        "products": products,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total": len(products),
+            "total_pages": 1,
+            "has_next": False,
+            "has_previous": page > 1,
         },
     })
 
