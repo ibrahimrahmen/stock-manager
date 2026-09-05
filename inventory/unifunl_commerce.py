@@ -35,6 +35,19 @@ def _check_auth(request):
 
 @csrf_exempt
 def ping(request):
-    """Health / connectivity check hit by Unifunl's verification step.
-    Returns 200 so Unifunl knows the backend is reachable."""
-    return JsonResponse({"status": "ok"})
+    """Store handshake hit by Unifunl's verification step. Must return the
+    store's spec_version, currency and capabilities (Unifunl reads currency +
+    features from here). Values are env-tunable so we can adjust without a code
+    change as we learn Unifunl's expected vocabulary:
+      UNIFUNL_SPEC_VERSION (default '1.0')
+      UNIFUNL_CURRENCY      (default 'TND')
+      UNIFUNL_CAPABILITIES  (comma-separated; default empty)
+    """
+    caps = [c.strip() for c in (os.environ.get("UNIFUNL_CAPABILITIES", "") or "").split(",")
+            if c.strip()]
+    return JsonResponse({
+        "status": "ok",
+        "spec_version": (os.environ.get("UNIFUNL_SPEC_VERSION", "") or "1.0"),
+        "currency": (os.environ.get("UNIFUNL_CURRENCY", "") or "TND"),
+        "capabilities": caps,
+    })
