@@ -40,15 +40,21 @@ def _check_auth(request):
 
 
 def _record_failed_auth(request):
-    """Store the token Unifunl presented on a rejected call, so the owner can
+    """Record HOW the caller authenticated on a rejected call, so the owner can
     read it (superuser-only) and configure UNIFUNL_INBOUND_TOKEN to match —
-    instead of guessing. Best-effort."""
+    instead of guessing. Captures the Authorization + X-API-Key values and the
+    names of any other auth-ish headers (in case Unifunl uses a custom one).
+    Best-effort; value is truncated to fit."""
     try:
         from .models import AppKeyValue
-        tok = _presented_token(request)
-        if tok:
-            AppKeyValue.objects.update_or_create(
-                key="unifunl_seen_auth", defaults={"value": tok[:250]})
+        authz = (request.META.get("HTTP_AUTHORIZATION", "") or "")[:120]
+        xkey = (request.META.get("HTTP_X_API_KEY", "") or "")[:120]
+        others = [k[5:] for k in request.META
+                  if k.startswith("HTTP_") and k not in ("HTTP_AUTHORIZATION", "HTTP_X_API_KEY")
+                  and any(s in k.lower() for s in ("token", "key", "auth", "sign"))]
+        val = f"Authorization={authz!r} X-API-Key={xkey!r} other_auth_headers={others}"
+        AppKeyValue.objects.update_or_create(
+            key="unifunl_seen_auth", defaults={"value": val[:250]})
     except Exception:
         pass
 
@@ -149,9 +155,9 @@ def debug_last_auth(request):
     row = AppKeyValue.objects.filter(key="unifunl_seen_auth").first()
     raw = (os.environ.get("UNIFUNL_INBOUND_TOKEN", "") or "")
     return JsonResponse({
-        "last_rejected_token": row.value if row else None,
+        "last_rejected_auth": row.value if row else None,
         "seen_at": row.updated_at.isoformat() if row else None,
         "configured_token_count": len([t for t in raw.split(",") if t.strip()]),
-        "hint": "Set UNIFUNL_INBOUND_TOKEN (Railway) to include last_rejected_token, "
-                "then re-run Vérification.",
+        "hint": "Run Vérification, reload this page, read last_rejected_auth to see "
+                "exactly how Unifunl authenticates, then set UNIFUNL_INBOUND_TOKEN to match.",
     })
