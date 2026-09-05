@@ -101,6 +101,23 @@ def _offer_image_url(offer, request):
     return ""
 
 
+def _offer_description(offer):
+    """Build the offer's description from its products' AI descriptions.
+    Collapses each SKU family (parent + V2/V3 versions) to a single entry so the
+    same physical item never appears twice — that's why parent/child products
+    don't create 'double products' in Unifunl."""
+    by_root = {}
+    for op in offer.products.all():
+        p = op.product
+        if not p:
+            continue
+        root = p.parent_product_id or p.id  # family root — dedups versions
+        d = (p.description or "").strip()
+        if d and root not in by_root:
+            by_root[root] = d
+    return "\n\n".join(by_root.values())
+
+
 def _offer_to_product(offer, request):
     """Map one Offer to a Unifunl product. Each product needs title, status,
     has_variants and at least one variant. Offers don't pin a variant (size is
@@ -124,7 +141,7 @@ def _offer_to_product(offer, request):
         "id": str(offer.id),
         "title": offer.name,
         "name": offer.name,
-        "description": "",
+        "description": _offer_description(offer),
         "status": "active",
         "currency": currency,
         "price": price,
@@ -154,7 +171,8 @@ def products_list(request):
         page_size = 100
     page_size = max(1, min(page_size, 250))
 
-    qs = Offer.objects.filter(is_active=True).order_by("id")
+    qs = (Offer.objects.filter(is_active=True)
+          .prefetch_related("products__product").order_by("id"))
     total_items = qs.count()
     start = (page - 1) * page_size
     offers = list(qs[start:start + page_size])
