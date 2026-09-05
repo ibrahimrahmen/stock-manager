@@ -117,6 +117,7 @@ def _offer_to_product(offer, request):
         "currency": currency,
         "available": True,
         "in_stock": True,
+        "is_in_stock": True,
         "images": images,
     }
     return {
