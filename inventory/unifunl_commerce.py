@@ -14,27 +14,52 @@ tests that a bad token is refused.
 import json
 import os
 
+from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 
-def _check_auth(request):
-    """True only if the request carries the exact token we issued Unifunl.
-    Fails closed when no token is configured."""
-    expected = (os.environ.get("UNIFUNL_INBOUND_TOKEN", "") or "").strip()
-    if not expected:
-        return False
+def _presented_token(request):
+    """The token the caller presented (Bearer or X-API-Key), or ''."""
     auth = request.META.get("HTTP_AUTHORIZATION", "") or ""
-    if auth.lower().startswith("bearer ") and auth[7:].strip() == expected:
-        return True
-    xkey = (request.META.get("HTTP_X_API_KEY", "") or "").strip()
-    if xkey and xkey == expected:
-        return True
-    return False
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    if auth.strip():
+        return auth.strip()  # some clients send the bare token
+    return (request.META.get("HTTP_X_API_KEY", "") or "").strip()
+
+
+def _check_auth(request):
+    """True if the presented token matches ANY token in UNIFUNL_INBOUND_TOKEN
+    (comma-separated list allowed). Fails closed when nothing is configured."""
+    raw = (os.environ.get("UNIFUNL_INBOUND_TOKEN", "") or "").strip()
+    valid = {t.strip() for t in raw.split(",") if t.strip()}
+    if not valid:
+        return False
+    return _presented_token(request) in valid
+
+
+def _record_failed_auth(request):
+    """Store the token Unifunl presented on a rejected call, so the owner can
+    read it (superuser-only) and configure UNIFUNL_INBOUND_TOKEN to match —
+    instead of guessing. Best-effort."""
+    try:
+        from .models import AppKeyValue
+        tok = _presented_token(request)
+        if tok:
+            AppKeyValue.objects.update_or_create(
+                key="unifunl_seen_auth", defaults={"value": tok[:250]})
+    except Exception:
+        pass
 
 
 def _unauthorized():
     return JsonResponse({"error": "unauthorized"}, status=401)
+
+
+def _reject(request):
+    _record_failed_auth(request)
+    return _unauthorized()
 
 
 @csrf_exempt
@@ -43,7 +68,7 @@ def ping(request):
     capabilities, and must enforce auth (a bad token → 401). Values are
     env-tunable: UNIFUNL_SPEC_VERSION, UNIFUNL_CURRENCY, UNIFUNL_CAPABILITIES."""
     if not _check_auth(request):
-        return _unauthorized()
+        return _reject(request)
     default_caps = "products.list,orders.create,orders.get"
     caps = [c.strip() for c in (os.environ.get("UNIFUNL_CAPABILITIES") or default_caps).split(",")
             if c.strip()]
@@ -62,7 +87,7 @@ def products_list(request):
     incremental sync and `?page=` / `?page_size=`. Starts empty; the real
     catalog is populated once the connection verifies."""
     if not _check_auth(request):
-        return _unauthorized()
+        return _reject(request)
     try:
         page = int(request.GET.get("page", "1") or "1")
     except ValueError:
@@ -92,7 +117,7 @@ def order_create(request):
     if request.method != "POST":
         return JsonResponse({"error": "method_not_allowed"}, status=405)
     if not _check_auth(request):
-        return _unauthorized()
+        return _reject(request)
     try:
         body = json.loads((request.body or b"{}").decode("utf-8"))
     except Exception:
@@ -109,5 +134,24 @@ def order_create(request):
 def order_get(request, order_id):
     """orders.get — Unifunl reads back an order we hold."""
     if not _check_auth(request):
-        return _unauthorized()
+        return _reject(request)
     return JsonResponse({"id": order_id, "status": "pending"})
+
+
+@login_required(login_url="/login/")
+def debug_last_auth(request):
+    """Superuser-only: show the token Unifunl last presented on a REJECTED call,
+    so the owner can set UNIFUNL_INBOUND_TOKEN to match exactly. Temporary setup
+    aid — remove once the connection is verified."""
+    if not request.user.is_superuser:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    from .models import AppKeyValue
+    row = AppKeyValue.objects.filter(key="unifunl_seen_auth").first()
+    raw = (os.environ.get("UNIFUNL_INBOUND_TOKEN", "") or "")
+    return JsonResponse({
+        "last_rejected_token": row.value if row else None,
+        "seen_at": row.updated_at.isoformat() if row else None,
+        "configured_token_count": len([t for t in raw.split(",") if t.strip()]),
+        "hint": "Set UNIFUNL_INBOUND_TOKEN (Railway) to include last_rejected_token, "
+                "then re-run Vérification.",
+    })
