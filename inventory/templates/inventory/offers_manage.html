@@ -139,6 +139,8 @@ input:focus,select:focus{outline:none;border-color:var(--green);}
           <img id="of-img-preview" src="" style="width:56px;height:56px;border-radius:8px;object-fit:cover;border:0.5px solid var(--border);display:none;">
           <input id="of-image" type="file" accept="image/*" onchange="offerImgPreview(this)" style="font-size:12px;">
         </div>
+        <div id="of-choose-hint" style="font-size:11px;color:var(--muted);margin-top:8px;display:none;">Ou choisis une photo parmi les produits de l'offre :</div>
+        <div id="of-photo-choices" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;"></div>
       </div>
 
       <div class="field">
@@ -180,8 +182,35 @@ input:focus,select:focus{outline:none;border-color:var(--green);}
 
 <script>
 const PRODUCTS = [{% for p in products %}{ id: {{ p.id }}, name: "{{ p.name|escapejs }}" },{% endfor %}];
+const PRODUCT_IMAGES = {{ product_images_json|safe }};  // {product_id: [{variant_id,url}]}
 let editingOfferId = null;
 let productPicks = [];
+let chosenVariantId = null;
+
+function renderPhotoChoices() {
+  const wrap = document.getElementById('of-photo-choices');
+  const hint = document.getElementById('of-choose-hint');
+  const seen = new Set();
+  let html = '';
+  productPicks.forEach(pp => {
+    const imgs = PRODUCT_IMAGES[pp.product_id] || [];
+    imgs.forEach(im => {
+      if (seen.has(im.url)) return; seen.add(im.url);
+      const sel = (chosenVariantId && String(chosenVariantId) === String(im.variant_id));
+      html += `<img src="${im.url}" title="Choisir cette photo" onclick="chooseOfferPhoto(${im.variant_id}, '${im.url}')" style="width:48px;height:48px;border-radius:8px;object-fit:cover;cursor:pointer;border:2px solid ${sel?'var(--green)':'var(--border)'};">`;
+    });
+  });
+  wrap.innerHTML = html;
+  hint.style.display = html ? 'block' : 'none';
+}
+
+function chooseOfferPhoto(variantId, url) {
+  chosenVariantId = variantId;
+  document.getElementById('of-image').value = '';       // clear any file upload
+  const prev = document.getElementById('of-img-preview');
+  prev.src = url; prev.style.display = 'block';
+  renderPhotoChoices();
+}
 
 function csrfToken() { return document.cookie.split('csrftoken=')[1]?.split(';')[0] || ''; }
 
@@ -189,16 +218,16 @@ function renderProductPicks() {
   const wrap = document.getElementById('products-pick');
   wrap.innerHTML = productPicks.map((pp, idx) => `
     <div class="product-pick-row">
-      <select onchange="productPicks[${idx}].product_id = parseInt(this.value)||null">
+      <select onchange="productPicks[${idx}].product_id = parseInt(this.value)||null; renderPhotoChoices();">
         <option value="">— Choisir un produit —</option>
         ${PRODUCTS.map(p => `<option value="${p.id}" ${pp.product_id == p.id ? 'selected' : ''}>${p.name}</option>`).join('')}
       </select>
       <input type="number" min="1" value="${pp.quantity}" onchange="productPicks[${idx}].quantity = Math.max(1, parseInt(this.value)||1)">
-      <button class="btn-del" onclick="productPicks.splice(${idx},1); renderProductPicks();" style="padding:6px 10px;">×</button>
+      <button class="btn-del" onclick="productPicks.splice(${idx},1); renderProductPicks(); renderPhotoChoices();" style="padding:6px 10px;">×</button>
     </div>
   `).join('');
 }
-function addProductPick() { productPicks.push({ product_id: null, quantity: 1 }); renderProductPicks(); }
+function addProductPick() { productPicks.push({ product_id: null, quantity: 1 }); renderProductPicks(); renderPhotoChoices(); }
 
 function togglePagePrice(pageId, checked) {
   const inp = document.getElementById('pp-' + pageId);
@@ -214,18 +243,22 @@ function openCreate() {
   document.getElementById('of-desc').value = '';
   document.getElementById('of-image').value = '';
   document.getElementById('of-img-preview').style.display = 'none';
+  chosenVariantId = null;
   document.querySelectorAll('input[name="sp"]').forEach(c => c.checked = false);
   document.querySelectorAll('.page-price-input').forEach(i => { i.value = ''; i.style.display = 'none'; });
   productPicks = [];
   renderProductPicks();
+  renderPhotoChoices();
   document.getElementById('modal-err').style.display = 'none';
   document.getElementById('offer-modal').classList.add('show');
 }
 
 function offerImgPreview(input){
   const f = input.files[0]; if(!f) return;
+  chosenVariantId = null;                 // a fresh upload wins over a chosen photo
   const img = document.getElementById('of-img-preview');
   img.src = URL.createObjectURL(f); img.style.display = 'block';
+  renderPhotoChoices();
 }
 
 async function generateOfferDescription(){
@@ -266,7 +299,9 @@ function openEdit(id, name, price, active, pageIds, products, pagePrices, descri
     i.value = (pp[pid] !== undefined && pp[pid] !== null) ? pp[pid] : '';
   });
   productPicks = products.map(p => ({ product_id: p.product_id, quantity: p.quantity }));
+  chosenVariantId = null;
   renderProductPicks();
+  renderPhotoChoices();
   document.getElementById('modal-err').style.display = 'none';
   document.getElementById('offer-modal').classList.add('show');
 }
@@ -332,6 +367,7 @@ async function saveOffer() {
   fd.append('products', JSON.stringify(products));
   const imgFile = document.getElementById('of-image').files[0];
   if (imgFile) fd.append('image', imgFile);
+  else if (chosenVariantId) fd.append('chosen_variant_id', chosenVariantId);
 
   const url = editingOfferId ? `/api/offers/${editingOfferId}/edit/` : '/api/offers/';
   const btn = document.getElementById('btn-save-offer');

@@ -10240,10 +10240,25 @@ def offers_manage(request):
             offers = offers.filter(sales_pages__id=int(page_filter)).distinct()
         except ValueError:
             pass
+    # Map product_id -> its variant photos, so the offer modal can offer
+    # "choose a photo from this offer's products" (up to 6 per product).
+    from .models import ProductVariant
+    product_images = {}
+    for v in (ProductVariant.objects.exclude(image="").exclude(image__isnull=True)
+              .select_related("product").order_by("product_id", "id")):
+        if v.product and v.product.archived:
+            continue
+        bucket = product_images.setdefault(v.product_id, [])
+        if len(bucket) < 6:
+            try:
+                bucket.append({"variant_id": v.id, "url": v.image.url})
+            except Exception:
+                pass
     return render(request, "inventory/offers_manage.html", {
         "offers": offers,
         "sales_pages": SalesPage.objects.filter(is_active=True),
         "products": Product.objects.filter(archived=False).order_by("name"),
+        "product_images_json": json.dumps(product_images),
         "page_filter": page_filter,
     })
 
@@ -10275,6 +10290,32 @@ def _parse_offer_request(request):
     return json.loads(request.body or "{}"), None
 
 
+def _apply_offer_chosen_photo(request, offer):
+    """If the user picked an existing product photo (chosen_variant_id) instead
+    of uploading a file, copy that image into the offer's own image so it is
+    independent of the variant afterwards."""
+    vid = (request.POST.get("chosen_variant_id") or "").strip()
+    if not vid:
+        return
+    from .models import ProductVariant
+    from django.core.files.base import ContentFile
+    import os as _os
+    v = ProductVariant.objects.filter(pk=vid).first()
+    if not v or not v.image:
+        return
+    try:
+        v.image.open("rb")
+        content = v.image.read()
+        offer.image.save(_os.path.basename(v.image.name), ContentFile(content), save=True)
+    except Exception:
+        pass
+    finally:
+        try:
+            v.image.close()
+        except Exception:
+            pass
+
+
 @csrf_exempt
 @require_POST
 @_admin_or_office
@@ -10302,6 +10343,8 @@ def api_offer_create(request):
         if image:
             offer.image = image
             offer.save()
+        else:
+            _apply_offer_chosen_photo(request, offer)
         if page_ids:
             offer.sales_pages.set(SalesPage.objects.filter(id__in=page_ids))
         from .models import OfferPagePrice
@@ -10358,6 +10401,8 @@ def api_offer_update(request, pk):
         if image:  # only replace the photo when a new one is uploaded
             offer.image = image
         offer.save()
+        if not image:  # or copy a chosen product photo, if one was picked
+            _apply_offer_chosen_photo(request, offer)
         if "sales_page_ids" in data:
             offer.sales_pages.set(SalesPage.objects.filter(id__in=data["sales_page_ids"]))
         if "page_prices" in data:
