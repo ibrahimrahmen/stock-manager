@@ -10574,26 +10574,27 @@ def api_product_generate_description(request):
     category = (request.POST.get("category") or "").strip()
 
     local_images = []
-    tmp_path = None
-    img = request.FILES.get("image")
-    if img:
-        suffix = _os.path.splitext(img.name)[1] or ".jpg"
-        fd, tmp_path = tempfile.mkstemp(suffix=suffix)
-        with _os.fdopen(fd, "wb") as fh:
-            for chunk in img.chunks():
-                fh.write(chunk)
-        local_images = [tmp_path]
+    tmp_paths = []
+    imgs = request.FILES.getlist("image")  # one per colour variant with a photo
+    if imgs:
+        for im in imgs[:4]:  # cap at 4 photos to control vision cost
+            suffix = _os.path.splitext(im.name)[1] or ".jpg"
+            fd, tp = tempfile.mkstemp(suffix=suffix)
+            with _os.fdopen(fd, "wb") as fh:
+                for chunk in im.chunks():
+                    fh.write(chunk)
+            tmp_paths.append(tp)
+        local_images = list(tmp_paths)
     else:
         pid = request.POST.get("product_id")
         if pid:
             from .models import ProductVariant
-            v = (ProductVariant.objects.filter(product_id=pid)
-                 .exclude(image="").exclude(image__isnull=True).first())
-            if v and v.image:
+            for v in (ProductVariant.objects.filter(product_id=pid)
+                      .exclude(image="").exclude(image__isnull=True)[:4]):
                 try:
-                    local_images = [v.image.path]
+                    local_images.append(v.image.path)
                 except Exception:
-                    local_images = []
+                    pass
     if not local_images:
         return JsonResponse({"status": "error",
                              "message": "Ajoute d'abord une photo de couleur, puis génère."}, status=400)
@@ -10603,22 +10604,28 @@ def api_product_generate_description(request):
         ctx.append(f"Nom du produit : {name}")
     if category:
         ctx.append(f"Catégorie : {category}")
+    multi = len(local_images) > 1
+    intro = ("Voici plusieurs photos du MÊME modèle de vêtement dans ses différentes "
+             "couleurs. " if multi else "Voici la photo d'un article de vêtement. ")
+    colours_line = ("Mentionne aussi les différentes couleurs disponibles que tu vois "
+                    "sur les photos. " if multi else "")
     prompt = (
         "Tu écris une description détaillée d'un article de vêtement pour un système "
-        "de reconnaissance par IA. À partir de la photo, décris de façon factuelle et "
-        "précise, en français : le type de vêtement, les couleurs, le motif/imprimé, "
-        "la coupe et le style, les détails visuels distinctifs (col, manches, poches, "
-        "capuche, boutons...), la matière apparente, et tout texte ou logo visible. "
+        "de reconnaissance par IA. " + intro +
+        "Décris de façon factuelle et précise, en français : le type de vêtement, "
+        "le motif/imprimé, la coupe et le style, les détails visuels distinctifs "
+        "(col, manches, poches, capuche, boutons...), la matière apparente, et tout "
+        "texte ou logo visible. " + colours_line +
         "Objectif : qu'une IA puisse reconnaître ce produit à partir de la photo d'un "
-        "client. Écris 3 à 5 phrases, sans listes à puces.\n\n" + "\n".join(ctx)
+        "client. Écris 3 à 6 phrases, sans listes à puces.\n\n" + "\n".join(ctx)
     )
     try:
-        text = _claude_generate(prompt, max_tokens=400, temperature=0.3,
-                                local_images=local_images, max_images=1)
+        text = _claude_generate(prompt, max_tokens=500, temperature=0.3,
+                                local_images=local_images, max_images=4)
     finally:
-        if tmp_path:
+        for tp in tmp_paths:
             try:
-                _os.remove(tmp_path)
+                _os.remove(tp)
             except Exception:
                 pass
     if not text:

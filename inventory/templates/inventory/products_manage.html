@@ -333,14 +333,14 @@ async function generateDescription(){
   const fd = new FormData();
   fd.append('name', document.getElementById('p-name').value.trim());
   fd.append('category', document.getElementById('p-category').value.trim());
-  let hasImage = false;
+  let nImages = 0;
   for(const row of document.querySelectorAll('#variants-wrap .variant-row')){
     if(row.dataset.removed === '1') continue;
     const f = row.querySelector('.v-image').files[0];
-    if(f){ fd.append('image', f); hasImage = true; break; }
+    if(f && nImages < 4){ fd.append('image', f); nImages++; }  // all colours
   }
-  if(!hasImage){
-    if(editingId){ fd.append('product_id', editingId); }
+  if(nImages === 0){
+    if(editingId){ fd.append('product_id', editingId); }  // uses saved variant photos
     else { alert('Ajoute d\'abord une photo de couleur, puis clique Générer.'); return; }
   }
   const orig = btn.textContent; btn.disabled = true; btn.textContent = '✨ Génération…';
