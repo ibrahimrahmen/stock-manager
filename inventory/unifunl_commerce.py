@@ -43,7 +43,9 @@ def ping(request):
       UNIFUNL_CURRENCY      (default 'TND')
       UNIFUNL_CAPABILITIES  (comma-separated; default empty)
     """
-    caps = [c.strip() for c in (os.environ.get("UNIFUNL_CAPABILITIES", "") or "").split(",")
+    # Unifunl requires at least these three; they map to the endpoints below.
+    default_caps = "products.list,orders.create,orders.get"
+    caps = [c.strip() for c in (os.environ.get("UNIFUNL_CAPABILITIES") or default_caps).split(",")
             if c.strip()]
     return JsonResponse({
         "status": "ok",
