@@ -10321,12 +10321,32 @@ def _apply_offer_chosen_photo(request, offer):
             pass
 
 
+def _variant_image_content(vid):
+    """Return (filename, bytes) for a ProductVariant's image, or None."""
+    from .models import ProductVariant
+    import os as _os
+    v = ProductVariant.objects.filter(pk=vid).first()
+    if not v or not v.image:
+        return None
+    try:
+        v.image.open("rb")
+        return (_os.path.basename(v.image.name), v.image.read())
+    except Exception:
+        return None
+    finally:
+        try:
+            v.image.close()
+        except Exception:
+            pass
+
+
 def _save_offer_images(request, offer):
     """Create/update/remove the offer's own colour photos (the ensemble per
     colour) from a multipart request. Metadata in offer_images_meta (JSON list
-    of {id?, color_name, color_label, remove?}); each row's photo is the file
-    offer_image_<index>."""
+    of {id?, color_name, color_label, remove?, chosen_variant_id?}); each row's
+    photo is the file offer_image_<index>, OR a chosen product photo copied in."""
     from .models import OfferImage
+    from django.core.files.base import ContentFile
     try:
         metas = json.loads(request.POST.get("offer_images_meta") or "[]")
     except Exception:
@@ -10335,10 +10355,13 @@ def _save_offer_images(request, offer):
         oid = m.get("id")
         cname = (m.get("color_name") or "").strip().upper()
         clabel = (m.get("color_label") or "").strip()
-        img = request.FILES.get(f"offer_image_{idx}")
         if m.get("remove") and oid:
             OfferImage.objects.filter(pk=oid, offer=offer).delete()
             continue
+        img = request.FILES.get(f"offer_image_{idx}")
+        content = None
+        if not img and m.get("chosen_variant_id"):
+            content = _variant_image_content(m.get("chosen_variant_id"))
         if oid:
             oi = OfferImage.objects.filter(pk=oid, offer=offer).first()
             if not oi:
@@ -10348,10 +10371,16 @@ def _save_offer_images(request, offer):
             oi.sort = idx
             if img:
                 oi.image = img
+            elif content:
+                oi.image.save(content[0], ContentFile(content[1]), save=False)
             oi.save()
-        elif img:  # a new colour row needs a photo
-            OfferImage.objects.create(offer=offer, color_name=cname,
-                                      color_label=clabel, image=img, sort=idx)
+        elif img or content:  # a new colour row needs a photo (upload or chosen)
+            oi = OfferImage(offer=offer, color_name=cname, color_label=clabel, sort=idx)
+            if img:
+                oi.image = img
+            else:
+                oi.image.save(content[0], ContentFile(content[1]), save=False)
+            oi.save()
 
 
 @csrf_exempt
