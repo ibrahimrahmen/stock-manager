@@ -1,8 +1,12 @@
 from django.urls import path
 from . import views
 from . import converty
+from . import unifunl_commerce
 
 urlpatterns = [
+    # --- Unifunl Commerce API (Unifunl "Connect your own store" backend) ---
+    path("api/v1/ping", unifunl_commerce.ping, name="unifunl_ping"),
+
     path("privacy/", views.privacy_policy, name="privacy_policy"),
     path("statistiques/commandes/", views.stats_commandes, name="stats_commandes"),
     path("statistiques/modeles/", views.stats_modeles, name="stats_modeles"),
