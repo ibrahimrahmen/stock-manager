@@ -1429,7 +1429,7 @@ class AppKeyValue(models.Model):
     one row per key, so it never grows. Currently used for the Unifunl
     heartbeat (key 'unifunl_last_ok')."""
     key = models.CharField(max_length=100, unique=True)
-    value = models.CharField(max_length=255, blank=True, default="")
+    value = models.TextField(blank=True, default="")
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):

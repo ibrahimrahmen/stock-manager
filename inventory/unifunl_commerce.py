@@ -181,12 +181,20 @@ def order_create(request):
         return JsonResponse({"error": "method_not_allowed"}, status=405)
     if not _check_auth(request):
         return _reject(request)
+    raw = (request.body or b"").decode("utf-8", "replace")
     try:
-        body = json.loads((request.body or b"{}").decode("utf-8"))
+        body = json.loads(raw or "{}")
     except Exception:
         body = {}
-    # TODO: create the order via the existing engine once the contract is
-    # confirmed. For now acknowledge receipt so verification can proceed.
+    # Capture the exact payload Unifunl pushes so we can wire real order
+    # creation to its real shape (temporary setup aid; superuser-readable).
+    try:
+        from .models import AppKeyValue
+        AppKeyValue.objects.update_or_create(
+            key="unifunl_last_order_payload", defaults={"value": raw[:20000]})
+    except Exception:
+        pass
+    # TODO: create the order via the existing engine once the shape is confirmed.
     return JsonResponse({
         "id": str(body.get("id") or body.get("orderNumber") or ""),
         "status": "received",
@@ -210,11 +218,12 @@ def debug_last_auth(request):
         return JsonResponse({"error": "forbidden"}, status=403)
     from .models import AppKeyValue
     row = AppKeyValue.objects.filter(key="unifunl_seen_auth").first()
+    order_row = AppKeyValue.objects.filter(key="unifunl_last_order_payload").first()
     raw = (os.environ.get("UNIFUNL_INBOUND_TOKEN", "") or "")
     return JsonResponse({
         "last_rejected_auth": row.value if row else None,
         "seen_at": row.updated_at.isoformat() if row else None,
         "configured_token_count": len([t for t in raw.split(",") if t.strip()]),
-        "hint": "Run Vérification, reload this page, read last_rejected_auth to see "
-                "exactly how Unifunl authenticates, then set UNIFUNL_INBOUND_TOKEN to match.",
+        "last_order_payload": order_row.value if order_row else None,
+        "last_order_at": order_row.updated_at.isoformat() if order_row else None,
     })
