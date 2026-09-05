@@ -407,47 +407,71 @@ class UnifunlSyncTest(TestCase):
 
 
 class UnifunlHealthFailoverTest(TestCase):
-    """Heartbeat drives failover: a fresh stamp = Unifunl alive (we stay
-    silent); stale/missing = take over. Stored in the DB (AppKeyValue) so it is
-    shared across workers/cron."""
+    """Failover is biased against double-replies: we take over ONLY on recent
+    positive evidence the Unifunl API is unreachable (a failed sync with no
+    success since). A merely stale/missing heartbeat does NOT fail over."""
 
-    def test_missing_heartbeat_is_unhealthy(self):
-        from inventory.models import AppKeyValue
-        AppKeyValue.objects.filter(key="unifunl_last_ok").delete()  # remove the seed
-        self.assertFalse(views._unifunl_healthy())
-
-    def test_fresh_heartbeat_is_healthy(self):
-        from inventory.models import AppKeyValue
-        AppKeyValue.objects.update_or_create(key="unifunl_last_ok",
-                                             defaults={"value": "ok"})
-        self.assertTrue(views._unifunl_healthy())
-
-    def test_stale_heartbeat_is_unhealthy(self):
+    def _stamp(self, key, minutes_ago=0):
         from inventory.models import AppKeyValue
         from django.utils import timezone
         from datetime import timedelta
-        AppKeyValue.objects.update_or_create(key="unifunl_last_ok",
-                                             defaults={"value": "ok"})
-        # Force the stamp to be 1h old (> 40 min threshold).
-        AppKeyValue.objects.filter(key="unifunl_last_ok").update(
-            updated_at=timezone.now() - timedelta(hours=1))
+        AppKeyValue.objects.update_or_create(key=key, defaults={"value": "x"})
+        if minutes_ago:
+            AppKeyValue.objects.filter(key=key).update(
+                updated_at=timezone.now() - timedelta(minutes=minutes_ago))
+
+    def _clear(self):
+        from inventory.models import AppKeyValue
+        AppKeyValue.objects.filter(
+            key__in=["unifunl_last_ok", "unifunl_last_err"]).delete()
+
+    def test_no_signals_stays_silent(self):
+        # Nothing recorded (e.g. cron never ran) -> do NOT fail over.
+        self._clear()
+        self.assertTrue(views._unifunl_healthy())
+
+    def test_stale_ok_without_error_stays_silent(self):
+        # This is the bug we fixed: stale heartbeat alone must NOT fail over.
+        self._clear()
+        self._stamp("unifunl_last_ok", minutes_ago=600)  # 10h old, no error
+        self.assertTrue(views._unifunl_healthy())
+
+    def test_recent_error_fails_over(self):
+        self._clear()
+        self._stamp("unifunl_last_ok", minutes_ago=600)  # old success
+        self._stamp("unifunl_last_err", minutes_ago=5)   # recent failure
         self.assertFalse(views._unifunl_healthy())
 
-    def test_sync_stamps_heartbeat(self):
+    def test_success_after_error_recovers(self):
+        self._clear()
+        self._stamp("unifunl_last_err", minutes_ago=10)
+        self._stamp("unifunl_last_ok", minutes_ago=1)    # succeeded since
+        self.assertTrue(views._unifunl_healthy())
+
+    def test_old_error_no_longer_fails_over(self):
+        self._clear()
+        self._stamp("unifunl_last_err", minutes_ago=600)  # error, but long ago
+        self.assertTrue(views._unifunl_healthy())
+
+    def test_api_failure_stamps_error(self):
         import os
+        from inventory.models import AppKeyValue
+        self._clear()
 
         def _fake_urlopen(req, timeout=None):
-            return _FakeResponse({"data": [], "meta": {"hasNextPage": False}})
+            raise OSError("connection refused")
 
         orig = urllib.request.urlopen
         urllib.request.urlopen = _fake_urlopen
         os.environ["UNIFUNL_API_KEY"] = "ufl_test"
         try:
-            views._sync_unifunl_orders(apply=True)
+            res = views._sync_unifunl_orders(apply=True)
         finally:
             urllib.request.urlopen = orig
             os.environ.pop("UNIFUNL_API_KEY", None)
-        self.assertTrue(views._unifunl_healthy())
+        self.assertEqual(res["status"], "error")
+        self.assertTrue(AppKeyValue.objects.filter(key="unifunl_last_err").exists())
+        self.assertFalse(views._unifunl_healthy())   # recent error -> failover
 
 
 class NavexNameCleanTest(TestCase):

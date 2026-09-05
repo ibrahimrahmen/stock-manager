@@ -5114,6 +5114,14 @@ def cron_navex_sync(request):
             )
         except Exception:
             pass
+        # Piggyback the Unifunl sync on this reliable hourly cron: it pulls new
+        # orders AND refreshes the Unifunl health signal (last_ok / last_err),
+        # so failover works even if the dedicated 15-min Unifunl cron isn't
+        # firing. Best-effort — never let it break the Navex response.
+        try:
+            _sync_unifunl_orders(apply=True)
+        except Exception:
+            pass
         return JsonResponse({"status": "ok", "attempted": n_attempted, "updated": n_updated})
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
@@ -5175,24 +5183,36 @@ def _unifunl_to_shopify_shaped(o):
 
 
 def _unifunl_healthy():
-    """True if the Unifunl API answered a sync recently (heartbeat fresh).
+    """Whether Unifunl should keep owning the page (our system stays silent).
 
-    The cron syncs Unifunl every 15 min and stamps `unifunl_last_ok` on each
-    success. If that stamp goes stale (API down / cron failing), Unifunl is
-    considered broken and our own DM automation takes over the page (failover).
-    Threshold defaults to 40 min (≈ 2-3 missed cron cycles) to avoid flapping on
-    a single transient failure; override with UNIFUNL_HEALTH_MAX_AGE_MIN.
-    A missing stamp counts as NOT healthy, so our system answers by default
-    until Unifunl proves itself alive."""
+    Biased AGAINST double-replies: we fail over (return False) ONLY when we have
+    RECENT positive evidence the Unifunl API is unreachable — a failed sync
+    within the window, with no successful sync since. A merely stale/missing
+    heartbeat (e.g. the cron didn't run) does NOT trigger failover, because that
+    is exactly what made our FAQ answer alongside a perfectly healthy Unifunl.
+
+    Each sync stamps `unifunl_last_ok` (API answered) or `unifunl_last_err` (API
+    unreachable). Window defaults to 60 min; override UNIFUNL_HEALTH_MAX_AGE_MIN.
+    """
     try:
         from .models import AppKeyValue
         from django.utils import timezone as _tzh
         from datetime import timedelta as _tdh
-        max_age = int(os.environ.get("UNIFUNL_HEALTH_MAX_AGE_MIN", "40") or "40")
-        row = AppKeyValue.objects.filter(key="unifunl_last_ok").first()
-        return bool(row) and (_tzh.now() - row.updated_at < _tdh(minutes=max_age))
+        max_age = int(os.environ.get("UNIFUNL_HEALTH_MAX_AGE_MIN", "60") or "60")
+        now = _tzh.now()
+        rows = {r.key: r.updated_at for r in AppKeyValue.objects.filter(
+            key__in=["unifunl_last_ok", "unifunl_last_err"])}
+        ok = rows.get("unifunl_last_ok")
+        err = rows.get("unifunl_last_err")
+        # Take over only if we recently FAILED to reach the API and have not
+        # succeeded since. Otherwise assume Unifunl is fine and stay silent.
+        if err is not None and (now - err) < _tdh(minutes=max_age):
+            if ok is None or ok < err:
+                return False
+        return True
     except Exception:
-        return False
+        # On any doubt, stay silent (never risk double-replying with Unifunl).
+        return True
 
 
 def _link_unifunl_conversation(order):
@@ -5273,6 +5293,14 @@ def _sync_unifunl_orders(apply=True, max_pages=30):
             with urllib.request.urlopen(req, timeout=30) as resp:
                 data = _json.load(resp)
         except Exception as e:
+            # Record the failure so failover can tell "API down" apart from
+            # "cron simply didn't run".
+            try:
+                from .models import AppKeyValue
+                AppKeyValue.objects.update_or_create(
+                    key="unifunl_last_err", defaults={"value": str(e)[:200]})
+            except Exception:
+                pass
             return {"status": "error", "message": f"API Unifunl: {str(e)[:200]}",
                     "created": created, "skipped": skipped, "errors": errors}
         # Heartbeat: the API answered, so Unifunl is alive. Stored in the DB
