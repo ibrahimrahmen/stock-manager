@@ -8081,6 +8081,7 @@ def api_order_refresh_conversation(request, pk):
                         "text": m.get("text", ""),
                         "images": m.get("images", []),
                         "kind": m.get("kind", ""),
+                        "ts": m.get("ts", ""),
                     })
     except Exception:
         structured = []
