@@ -1592,17 +1592,19 @@ def _conversation_deep_link(page_id, psid, platform="messenger"):
                     break
     except Exception:
         pass
-    # Prefer Meta's OWN canonical URL for the thread (the `link` field). Meta
-    # returns it as "the URL for the conversation", so it maps ids correctly on
-    # their side — more reliable than us reconstructing the Business Suite URL.
+    # Build the Business Suite deep link. The inbox thread id lives INSIDE the
+    # `link` path ("/<page>/inbox/<ID>/...") — that's what selected_item_id needs
+    # (the raw graph id "t_..." selects a phantom thread). The plain
+    # www.facebook.com link only redirects to the last conversation, so we do NOT
+    # use it. Fall back to the graph id only if we can't parse the link.
+    sel = ""
     if link_path:
         if link_path.startswith("http"):
             return link_path
-        return "https://www.facebook.com" + (
-            link_path if link_path.startswith("/") else "/" + link_path)
-    # No link: reconstruct the Business Suite deep link from the thread id.
-    sel = ""
-    if thread_id:
+        m = _re.search(r"/inbox/(\d+)", link_path)
+        if m:
+            sel = m.group(1)
+    if not sel and thread_id:
         sel = thread_id[2:] if thread_id.startswith("t_") else thread_id
     if sel:
         return (f"https://business.facebook.com/latest/inbox/all/"
