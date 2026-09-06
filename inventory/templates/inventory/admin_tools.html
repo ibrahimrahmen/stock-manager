@@ -181,6 +181,25 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     <div id="output-echoes" class="output"></div>
   </div>
 
+  <div class="section-title">RGPD — Suppression de données (demande Meta)</div>
+
+  <div class="tool-card">
+    <div class="tool-title">Supprimer les données d'utilisateurs (IDs Meta)</div>
+    <div class="tool-desc">
+      Colle les identifiants (PSID) fournis par Meta (un par ligne). Supprime
+      leur <strong>conversation</strong>, dissocie l'ID du client, et efface la
+      <strong>transcription</strong> enregistrée sur leurs commandes.
+      <strong>Les commandes elles-mêmes sont conservées.</strong><br>
+      <strong>Fais d'abord le Dry-run.</strong>
+    </div>
+    <textarea id="gdpr-ids" rows="5" placeholder="1338762931769528&#10;24044201901921988&#10;..." style="width:100%;background:var(--bg);border:0.5px solid var(--border);color:var(--text);border-radius:8px;padding:10px;font-family:monospace;font-size:12px;margin-bottom:10px;"></textarea>
+    <div class="tool-buttons">
+      <button class="btn" onclick="gdprRun(false, this)">🔍 Dry-run (compter)</button>
+      <button class="btn btn-warning" onclick="gdprRun(true, this)">🗑️ Supprimer les données</button>
+    </div>
+    <div id="output-gdpr" class="output"></div>
+  </div>
+
   <div class="section-title">Base de données — Nettoyage</div>
 
   <div class="tool-card">
@@ -234,6 +253,35 @@ async function runTool(toolName, btn, outputId) {
 function runToolWithConfirm(toolName, btn, outputId, confirmMsg) {
   if (!confirm(confirmMsg)) return;
   runTool(toolName, btn, outputId);
+}
+
+async function gdprRun(apply, btn) {
+  const out = document.getElementById('output-gdpr');
+  const ids = (document.getElementById('gdpr-ids').value || '').trim();
+  if (!ids) { out.className='output error'; out.textContent='Colle au moins un identifiant.'; return; }
+  if (apply && !confirm('Supprimer définitivement les conversations de ces IDs et effacer les transcriptions ? (les commandes sont conservées)')) return;
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳...';
+  out.className = 'output'; out.textContent = 'Traitement...';
+  try {
+    const res = await fetch('/api/admin-tools/delete-user-data/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+      body: JSON.stringify({ ids: ids, apply: apply }),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      out.className = 'output success';
+      out.textContent = JSON.stringify(data, null, 2);
+    } else {
+      out.className = 'output error';
+      out.textContent = '❌ ' + (data.message || 'Erreur');
+    }
+  } catch (e) {
+    out.className = 'output error';
+    out.textContent = '❌ Réseau : ' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = orig;
+  }
 }
 </script>
 </body>

@@ -123,6 +123,7 @@ urlpatterns = [
     # Admin tools (superuser only)
     path("admin-tools/", views.admin_tools, name="admin_tools"),
     path("api/admin-tools/run/<str:tool_name>/", views.api_admin_run_tool, name="api_admin_run_tool"),
+    path("api/admin-tools/delete-user-data/", views.api_delete_user_data, name="api_delete_user_data"),
     # Debug: inspect raw Navex etat response (superuser only)
     path("api/debug/navex-etat/", views.api_debug_navex_etat, name="api_debug_navex_etat"),
     # Shopify webhook: client passes order on barats.tn → auto-create v2 draft

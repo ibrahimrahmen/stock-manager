@@ -10069,6 +10069,71 @@ def api_admin_run_tool(request, tool_name):
         }, status=500)
 
 
+@csrf_exempt
+@require_POST
+def api_delete_user_data(request):
+    """Meta 'user data deletion request' handler (manual). Given a list of
+    Messenger/Instagram user IDs (PSIDs), remove their personal data: delete
+    their conversations, unlink the ID from the customer, and clear the saved
+    chat transcript on their orders. ORDERS THEMSELVES ARE KEPT (business data).
+    Superuser only. Body: {ids: [...] or newline/comma text, apply: bool}."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from django.db.models import Q
+    from .models import MessengerConversation, Customer, Order, log_action, AuditLog
+    try:
+        data = json.loads(request.body or "{}")
+    except Exception:
+        data = {}
+    raw = data.get("ids") or ""
+    if isinstance(raw, list):
+        ids = [str(x).strip() for x in raw if str(x).strip()]
+    else:
+        ids = [ln.strip() for ln in str(raw).replace(",", "\n").splitlines() if ln.strip()]
+    ids = list(dict.fromkeys(ids))  # de-dupe, keep order
+    if not ids:
+        return JsonResponse({"status": "error", "message": "Aucun identifiant fourni."}, status=400)
+    apply_changes = bool(data.get("apply"))
+
+    convs = MessengerConversation.objects.filter(sender_id__in=ids)
+    custs = Customer.objects.filter(customer_psid__in=ids)
+    conv_order_ids = set(convs.exclude(pending_order__isnull=True)
+                         .values_list("pending_order_id", flat=True))
+    cust_ids = list(custs.values_list("id", flat=True))
+    affected_orders = Order.objects.filter(
+        Q(id__in=conv_order_ids) | Q(customer_id__in=cust_ids)).exclude(conversation_text="")
+    n_conv = convs.count()
+    n_cust = custs.count()
+    n_orders = affected_orders.count()
+
+    if not apply_changes:
+        return JsonResponse({
+            "status": "ok", "dry_run": True, "ids": len(ids),
+            "conversations": n_conv, "customers": n_cust,
+            "orders_transcripts_to_clear": n_orders,
+            "note": "Aucune commande n'est supprimée. Relance avec Supprimer pour appliquer.",
+        })
+
+    # Apply: clear transcripts, unlink PSID, delete conversations. Keep orders.
+    affected_orders.update(conversation_text="", conversation_updated_at=None)
+    custs.update(customer_psid="")
+    deleted = n_conv
+    convs.delete()
+    try:
+        log_action(request.user, AuditLog.DELETE,
+                   description=(f"RGPD: suppression données Meta — {len(ids)} ID(s), "
+                               f"{deleted} conversation(s) supprimée(s), {n_cust} client(s) "
+                               f"dissocié(s), {n_orders} transcription(s) effacée(s). Commandes conservées."),
+                   request=request)
+    except Exception:
+        pass
+    return JsonResponse({
+        "status": "ok", "dry_run": False, "ids": len(ids),
+        "deleted_conversations": deleted, "unlinked_customers": n_cust,
+        "orders_cleared": n_orders,
+    })
+
+
 # ---- Regions / Delegations (cascaded dropdown) -----------------------------
 
 @login_required(login_url="/login/")
