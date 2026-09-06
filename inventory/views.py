@@ -1565,13 +1565,16 @@ def _conversation_deep_link(page_id, psid, platform="messenger"):
     import urllib.request as _ureq
     import urllib.parse as _uparse
     import json as _json
+    import re as _re
     is_ig = (platform or "").lower() == "instagram"
     plat = "instagram" if is_ig else "messenger"
     thread_type = "IG_MESSAGE" if is_ig else "FB_MESSAGE"
-    # Ask Graph for THIS customer's thread id (filter by user_id = PSID). The
-    # Business Suite inbox deep link needs the conversation/thread id in
-    # selected_item_id — NOT the raw PSID (which it ignores, landing on the last
-    # thread). We also grab `link` in case Meta hands us a ready absolute URL.
+    # Ask Graph for THIS customer's thread (filter by user_id = PSID). Note there
+    # are TWO different ids: the conversation graph id ("t_2035...") and the
+    # inbox thread id inside `link` ("/<page>/inbox/1171.../?..."). Business
+    # Suite's selected_item_id wants the INBOX id from `link`, NOT the graph id —
+    # passing the graph id selects a phantom thread that never loads.
+    link_path = ""
     thread_id = ""
     try:
         token = _messenger_page_token(page_id)
@@ -1583,24 +1586,29 @@ def _conversation_deep_link(page_id, psid, platform="messenger"):
             with _ureq.urlopen(url, timeout=6) as resp:
                 d = _json.loads(resp.read().decode("utf-8", "ignore"))
             for node in (d.get("data") or []):
-                link = node.get("link") or ""
-                if link.startswith("http"):
-                    return link  # Meta gave us a ready deep link.
+                link_path = node.get("link") or ""
                 thread_id = node.get("id") or ""
-                if thread_id:
+                if link_path or thread_id:
                     break
     except Exception:
         pass
-    if thread_id:
-        # Conversation id looks like "t_1234567890"; Business Suite wants the
-        # numeric part in selected_item_id.
+    # Prefer the inbox thread id parsed out of `link`.
+    sel = ""
+    if link_path:
+        if link_path.startswith("http"):
+            return link_path  # already an absolute deep link
+        m = _re.search(r"/inbox/(\d+)", link_path)
+        if m:
+            sel = m.group(1)
+    if not sel and thread_id:
         sel = thread_id[2:] if thread_id.startswith("t_") else thread_id
+    if sel:
         return (f"https://business.facebook.com/latest/inbox/all/"
                 f"?asset_id={page_id}&selected_item_id={_uparse.quote(sel, safe='')}"
                 f"&thread_type={thread_type}")
-    # No thread id (Graph failed / no open window): open the page inbox. We do
-    # NOT pass the PSID — it wouldn't select the thread and just opens the last
-    # one, which is misleading.
+    # Nothing resolved (Graph failed / no open window): open the page inbox. We
+    # do NOT pass the PSID — it wouldn't select the thread and just opens the
+    # last one, which is misleading.
     return (f"https://business.facebook.com/latest/inbox/all/?asset_id={page_id}")
 
 
