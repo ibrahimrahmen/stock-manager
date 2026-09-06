@@ -10044,6 +10044,8 @@ def api_admin_run_tool(request, tool_name):
         "purge_conversations_apply":        ("purge_old_conversations", ["--apply"]),
         "sync_unifunl_dryrun":              ("sync_unifunl", []),
         "sync_unifunl_apply":               ("sync_unifunl", ["--apply"]),
+        "enable_message_echoes_dryrun":     ("enable_message_echoes", []),
+        "enable_message_echoes_apply":      ("enable_message_echoes", ["--apply"]),
     }
     if tool_name not in ALLOWED:
         return JsonResponse({"status": "error", "message": f"Outil inconnu : {tool_name}"}, status=400)

@@ -163,6 +163,24 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     <div id="output-unifunl" class="output"></div>
   </div>
 
+  <div class="tool-card">
+    <div class="tool-title">Activer les échos de messages (conversation complète)</div>
+    <div class="tool-desc">
+      Abonne vos pages Messenger/Instagram au champ <strong>message_echoes</strong>
+      pour que Meta vous envoie AUSSI les réponses sortantes de la page (ex :
+      celles d'Unifunl) — ainsi votre système garde la <strong>conversation
+      complète</strong>, pas seulement les messages du client.<br>
+      <strong>Fais d'abord le Dry-run</strong> pour voir l'état actuel de chaque page.
+      <br><em>Note : le champ « message_echoes » doit aussi être coché dans le
+      tableau de bord Meta (App → Webhooks) pour que la livraison marche.</em>
+    </div>
+    <div class="tool-buttons">
+      <button class="btn" onclick="runTool('enable_message_echoes_dryrun', this, 'output-echoes')">🔍 Dry-run (état actuel)</button>
+      <button class="btn btn-primary" onclick="runToolWithConfirm('enable_message_echoes_apply', this, 'output-echoes', 'Abonner les pages à message_echoes ?')">🔔 Activer les échos</button>
+    </div>
+    <div id="output-echoes" class="output"></div>
+  </div>
+
   <div class="section-title">Base de données — Nettoyage</div>
 
   <div class="tool-card">
