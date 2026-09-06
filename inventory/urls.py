@@ -126,6 +126,8 @@ urlpatterns = [
     path("api/admin-tools/delete-user-data/", views.api_delete_user_data, name="api_delete_user_data"),
     # Debug: inspect raw Navex etat response (superuser only)
     path("api/debug/navex-etat/", views.api_debug_navex_etat, name="api_debug_navex_etat"),
+    # Debug: inspect Messenger conversation deep-link resolution (superuser only)
+    path("api/debug/conv-link/", views.api_debug_conv_link, name="api_debug_conv_link"),
     # Shopify webhook: client passes order on barats.tn → auto-create v2 draft
     path("api/shopify/webhook/orders/create/", views.api_shopify_webhook_order_created, name="api_shopify_webhook_order_created"),
     # Messenger DM webhook: receives messages + ad referral, stores conversation.

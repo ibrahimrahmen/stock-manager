@@ -8167,6 +8167,64 @@ def api_order_refresh_conversation(request, pk):
     })
 
 
+def api_debug_conv_link(request):
+    """Superuser diagnostic: for an order id (?order=) OR a page+psid
+    (?page=&psid=), show what the Meta Graph conversations lookup returns and
+    the deep link we build from it — so we can see whether the thread id is
+    resolved and whether the token/permission is the blocker. Read-only."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    import urllib.request as _ureq
+    import urllib.parse as _uparse
+    import json as _json
+    page_id = (request.GET.get("page") or "").strip()
+    psid = (request.GET.get("psid") or "").strip()
+    platform = (request.GET.get("platform") or "").strip()
+    order_id = (request.GET.get("order") or "").strip()
+    conv_info = {}
+    if order_id:
+        from .models import MessengerConversation
+        conv = (MessengerConversation.objects
+                .filter(pending_order_id=order_id).order_by("-id").first())
+        if conv:
+            page_id = page_id or (conv.page_id or "")
+            psid = psid or (conv.sender_id or "")
+            platform = platform or (conv.platform or "")
+            conv_info = {"conv_id": conv.id, "sender_name": conv.sender_name,
+                         "status": conv.status}
+    if not page_id or not psid:
+        return JsonResponse({"status": "error",
+                             "message": "Fournir ?order=<id> ou ?page=&psid="},
+                            status=400)
+    plat = "instagram" if (platform or "").lower() == "instagram" else "messenger"
+    token = _messenger_page_token(page_id)
+    graph = {"has_token": bool(token)}
+    if token:
+        url = (f"https://graph.facebook.com/v21.0/{page_id}/conversations"
+               f"?user_id={_uparse.quote(psid, safe='')}"
+               f"&platform={plat}&fields=id,link,updated_time,message_count"
+               f"&access_token={_uparse.quote(token, safe='')}")
+        try:
+            with _ureq.urlopen(url, timeout=8) as resp:
+                graph["body"] = _json.loads(resp.read().decode("utf-8", "ignore"))
+        except Exception as e:
+            body = ""
+            try:
+                if hasattr(e, "read"):
+                    body = e.read().decode("utf-8", "replace")[:500]
+            except Exception:
+                pass
+            graph["error"] = str(e)[:200]
+            graph["error_body"] = body
+    return JsonResponse({
+        "status": "ok",
+        "page_id": page_id, "psid": psid, "platform": plat,
+        "conv": conv_info,
+        "graph": graph,
+        "deep_link": _conversation_deep_link(page_id, psid, platform),
+    }, json_dumps_params={"indent": 2})
+
+
 # ---- Exchange: return items APIs --------------------------------------------
 
 @login_required(login_url="/login/")
