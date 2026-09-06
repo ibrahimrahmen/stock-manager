@@ -1573,7 +1573,15 @@ async function openConversation(ev, orderId) {
       const theme = CHAT_THEMES[platform] || CHAT_THEMES.messenger;
       header.style.display = 'flex';
       header.style.background = theme.grad;
-      header.innerHTML = theme.logo + '<span>' + theme.name + '</span>';
+      let openLink = '';
+      if (data.conversation_link) {
+        const openLabel = platform === 'instagram' ? 'Ouvrir sur Instagram' : 'Ouvrir dans Messenger';
+        openLink = '<a href="' + escapeHtml(data.conversation_link) + '" target="_blank" rel="noopener"'
+          + ' style="margin-left:auto;background:rgba(255,255,255,.22);color:#fff;text-decoration:none;'
+          + 'padding:5px 11px;border-radius:14px;font-size:12px;font-weight:600;white-space:nowrap;">↗ '
+          + openLabel + '</a>';
+      }
+      header.innerHTML = theme.logo + '<span>' + theme.name + '</span>' + openLink;
       let adBanner = '';
       if (data.ad_source && (data.ad_source.campaign || data.ad_source.ad_id)) {
         const label = data.ad_source.campaign || ('Pub ' + data.ad_source.ad_id);

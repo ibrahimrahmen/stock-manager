@@ -1552,6 +1552,47 @@ def _fetch_ad_text(ad_id):
     return text
 
 
+def _conversation_deep_link(page_id, psid, platform="messenger"):
+    """Best-effort URL that opens THIS customer's thread in the Meta inbox, so
+    staff can jump to the real Messenger/Instagram conversation and reply
+    natively. We ask Graph for the thread's own `link` (filtering conversations
+    by the customer's PSID); if that fails we fall back to the Business Suite
+    inbox deep link scoped to the page. Never raises."""
+    page_id = str(page_id or "").strip()
+    psid = str(psid or "").strip()
+    if not page_id or not psid:
+        return ""
+    plat = "instagram" if (platform or "").lower() == "instagram" else "messenger"
+    # Try the precise per-thread link via Graph.
+    try:
+        import urllib.request as _ureq
+        import urllib.parse as _uparse
+        import json as _json
+        token = _messenger_page_token(page_id)
+        if token:
+            url = (f"https://graph.facebook.com/v21.0/{page_id}/conversations"
+                   f"?user_id={_uparse.quote(psid, safe='')}"
+                   f"&platform={plat}&fields=link"
+                   f"&access_token={_uparse.quote(token, safe='')}")
+            with _ureq.urlopen(url, timeout=6) as resp:
+                d = _json.loads(resp.read().decode("utf-8", "ignore"))
+            link = ""
+            for node in (d.get("data") or []):
+                link = node.get("link") or ""
+                if link:
+                    break
+            if link:
+                if link.startswith("http"):
+                    return link
+                return "https://www.facebook.com" + (link if link.startswith("/") else "/" + link)
+    except Exception:
+        pass
+    # Fallback: open the page's Business Suite inbox, pre-selecting the thread by
+    # PSID (works most of the time; otherwise it opens the page inbox).
+    return (f"https://business.facebook.com/latest/inbox/all"
+            f"?asset_id={page_id}&mailbox_id={page_id}&selected_item_id={psid}")
+
+
 def _messenger_send_text(page_id, recipient_id, text, platform="messenger"):
     """Send a text message back to a user via the Meta Send API. Best-effort:
     returns True on success, False otherwise (never raises).
@@ -8062,11 +8103,17 @@ def api_order_refresh_conversation(request, pk):
     structured = []
     platform = ""
     ad_source = {}
+    conversation_link = ""
     try:
         from .models import MessengerConversation
         conv = MessengerConversation.objects.filter(pending_order_id=order.id).order_by("-id").first()
         if conv:
             platform = conv.platform or ""
+            try:
+                conversation_link = _conversation_deep_link(
+                    conv.page_id, conv.sender_id, platform)
+            except Exception:
+                conversation_link = ""
             if conv.source_ad_id or conv.source_campaign or conv.source_campaign_name:
                 ad_source = {
                     "ad_id": conv.source_ad_id or "",
@@ -8093,6 +8140,7 @@ def api_order_refresh_conversation(request, pk):
             "messages": structured,
             "platform": platform,
             "ad_source": ad_source,
+            "conversation_link": conversation_link,
             "updated_at": order.conversation_updated_at.strftime("%d/%m/%Y %H:%M") if order.conversation_updated_at else "",
         })
     if psid:
