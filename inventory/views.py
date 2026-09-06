@@ -8214,7 +8214,9 @@ def api_debug_conv_link(request):
     if token:
         url = (f"https://graph.facebook.com/v21.0/{page_id}/conversations"
                f"?user_id={_uparse.quote(psid, safe='')}"
-               f"&platform={plat}&fields=id,link,updated_time,message_count"
+               f"&platform={plat}"
+               f"&fields=id,link,updated_time,message_count,"
+               f"participants,senders"
                f"&access_token={_uparse.quote(token, safe='')}")
         try:
             with _ureq.urlopen(url, timeout=8) as resp:
