@@ -1602,7 +1602,15 @@ function renderOfferBlocks() {
 function offerLabel(offerId, useAll) {
   const list = useAll ? allOffers : offersForPage;
   const o = list.find(x => x.id == offerId) || offersForPage.find(x => x.id == offerId) || allOffers.find(x => x.id == offerId);
-  return o ? `${o.name} — ${o.bundle_price} DT` : '';
+  // Prefer the resolved price actually charged for THIS page (from offerCache,
+  // fetched with ?page=), so the label matches "Prix Articles". Fall back to the
+  // list price until the detail has loaded.
+  const cached = offerCache[offerId];
+  const name = (o && o.name) || (cached && cached.name) || '';
+  let price = (cached && cached.bundle_price != null) ? cached.bundle_price
+              : (o ? o.bundle_price : null);
+  if (!name || price == null) return o ? `${o.name} — ${o.bundle_price} DT` : '';
+  return `${name} — ${parseFloat(price).toFixed(0)} DT`;
 }
 
 function onOfferSearch(idx, q) {
@@ -1965,7 +1973,8 @@ async function editOrder(orderId) {
     for (const mo of modalOffers) {
       if (mo.offer_id && !offerCache[mo.offer_id]) {
         try {
-          const d = await fetchJson(`/api/offers/${mo.offer_id}/`);
+          const _pageQ = pickedPageId ? `?page=${encodeURIComponent(pickedPageId)}` : '';
+          const d = await fetchJson(`/api/offers/${mo.offer_id}/${_pageQ}`);
           if (d.status === 'ok') offerCache[mo.offer_id] = d.offer;
         } catch(_) {}
       }
