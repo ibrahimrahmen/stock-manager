@@ -8080,6 +8080,7 @@ def api_order_refresh_conversation(request, pk):
                         "from": m.get("from", "user"),
                         "text": m.get("text", ""),
                         "images": m.get("images", []),
+                        "kind": m.get("kind", ""),
                     })
     except Exception:
         structured = []
@@ -13038,6 +13039,37 @@ def api_messenger_webhook(request):
                         nm = _resolve_ad_campaign_name(conv.source_ad_id)
                         if nm:
                             conv.source_campaign_name = nm
+
+                    # Record the ad as the OPENING card of the transcript, so our
+                    # inbox shows "Réponse à une publicité : <titre>" with the ad
+                    # photo — the same context Meta shows — instead of the
+                    # conversation appearing to start mid-air. Meta only sends
+                    # ads_context_data on the referral, so we can't recover it
+                    # later; capture it here, once.
+                    try:
+                        _acd = referral.get("ads_context_data") or {}
+                        _title = (_acd.get("ad_title")
+                                  or conv.source_campaign_name
+                                  or conv.source_campaign or "").strip()
+                        _photo = (_acd.get("photo_url")
+                                  or _acd.get("video_url") or "").strip()
+                        _msgs = conv.messages or []
+                        _have = any(m.get("kind") == "ad_referral" for m in _msgs)
+                        if not _have and (_title or _photo):
+                            _label = ("Réponse à une publicité : %s" % _title
+                                      if _title else "Réponse à une publicité")
+                            _msgs.insert(0, {
+                                "from": "system",
+                                "kind": "ad_referral",
+                                "text": "📣 " + _label,
+                                "images": [_photo] if _photo else [],
+                                "ts": str(ev.get("timestamp") or ""),
+                                "mid": "",
+                                "ad_id": conv.source_ad_id or "",
+                            })
+                            conv.messages = _msgs
+                    except Exception:
+                        pass
 
                 # Instagram story attribution: if this is an Instagram convo with
                 # NO ad_id and no story origin yet, the customer may have replied

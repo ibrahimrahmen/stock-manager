@@ -1462,6 +1462,7 @@ function renderConversationBubbles(messages, text, platform) {
       me: (m.from !== 'user'),
       text: m.text || '',
       images: m.images || [],
+      kind: m.kind || '',
     }));
   } else if (text) {
     // Split on "Client:" / "Page:" labels, keeping the side.
@@ -1479,6 +1480,16 @@ function renderConversationBubbles(messages, text, platform) {
   return items.map(it => {
     const imgs = (it.images || []).map(u =>
       `<img src="${escapeHtml(u)}" style="max-width:180px;border-radius:12px;display:block;margin-top:4px;">`).join('');
+    // Ad-referral: the opening "replied to an ad" card. Centered, distinct, with
+    // the ad photo — the same context Meta shows at the top of the thread.
+    if (it.kind === 'ad_referral') {
+      const adImg = (it.images || []).map(u =>
+        `<img src="${escapeHtml(u)}" style="max-width:200px;border-radius:10px;display:block;margin:6px auto 0;">`).join('');
+      return `<div style="display:flex;justify-content:center;margin:10px 0;">
+        <div style="max-width:82%;padding:9px 13px;font-size:12.5px;line-height:1.4;text-align:center;background:linear-gradient(135deg,#1877f2,#0a5dc2);color:#fff;border-radius:14px;word-wrap:break-word;">
+          ${escapeHtml(it.text).replace(/\n/g,'<br>')}${adImg}
+        </div></div>`;
+    }
     const bubbleStyle = it.me
       ? `background:${CHAT_THEMES[platform] ? CHAT_THEMES[platform].bubbleMe : '#0084ff'};color:#fff;border-radius:16px 16px 4px 16px;`
       : `background:#2a2a2a;color:#eee;border-radius:16px 16px 16px 4px;`;
