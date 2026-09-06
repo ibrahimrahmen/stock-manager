@@ -1553,67 +1553,23 @@ def _fetch_ad_text(ad_id):
 
 
 def _conversation_deep_link(page_id, psid, platform="messenger"):
-    """Best-effort URL that opens THIS customer's thread in the Meta inbox, so
-    staff can jump to the real Messenger/Instagram conversation and reply
-    natively. We ask Graph for the thread's own `link` (filtering conversations
-    by the customer's PSID); if that fails we fall back to the Business Suite
-    inbox deep link scoped to the page. Never raises."""
+    """URL that opens the page's Meta Business Suite inbox for this channel.
+
+    IMPORTANT: we intentionally do NOT try to deep-link to the exact thread.
+    Meta Business Suite keys each conversation on the customer's REAL Facebook
+    user id (e.g. 100001558364406), which the Messaging/Graph API deliberately
+    never exposes — it only gives us the page-scoped PSID and the conversation's
+    own graph/inbox ids, none of which Business Suite accepts as
+    selected_item_id (they open a phantom thread and error). So the honest,
+    reliable behaviour is to open the correct inbox where the customer is
+    visible in the list (with name + photo) and staff click them in one step.
+    Never raises."""
     page_id = str(page_id or "").strip()
-    psid = str(psid or "").strip()
-    if not page_id or not psid:
+    if not page_id:
         return ""
-    import urllib.request as _ureq
-    import urllib.parse as _uparse
-    import json as _json
-    import re as _re
-    is_ig = (platform or "").lower() == "instagram"
-    plat = "instagram" if is_ig else "messenger"
-    thread_type = "IG_MESSAGE" if is_ig else "FB_MESSAGE"
-    # Ask Graph for THIS customer's thread (filter by user_id = PSID). Note there
-    # are TWO different ids: the conversation graph id ("t_2035...") and the
-    # inbox thread id inside `link` ("/<page>/inbox/1171.../?..."). Business
-    # Suite's selected_item_id wants the INBOX id from `link`, NOT the graph id —
-    # passing the graph id selects a phantom thread that never loads.
-    link_path = ""
-    thread_id = ""
-    try:
-        token = _messenger_page_token(page_id)
-        if token:
-            url = (f"https://graph.facebook.com/v21.0/{page_id}/conversations"
-                   f"?user_id={_uparse.quote(psid, safe='')}"
-                   f"&platform={plat}&fields=id,link"
-                   f"&access_token={_uparse.quote(token, safe='')}")
-            with _ureq.urlopen(url, timeout=6) as resp:
-                d = _json.loads(resp.read().decode("utf-8", "ignore"))
-            for node in (d.get("data") or []):
-                link_path = node.get("link") or ""
-                thread_id = node.get("id") or ""
-                if link_path or thread_id:
-                    break
-    except Exception:
-        pass
-    # Build the Business Suite deep link. The inbox thread id lives INSIDE the
-    # `link` path ("/<page>/inbox/<ID>/...") — that's what selected_item_id needs
-    # (the raw graph id "t_..." selects a phantom thread). The plain
-    # www.facebook.com link only redirects to the last conversation, so we do NOT
-    # use it. Fall back to the graph id only if we can't parse the link.
-    sel = ""
-    if link_path:
-        if link_path.startswith("http"):
-            return link_path
-        m = _re.search(r"/inbox/(\d+)", link_path)
-        if m:
-            sel = m.group(1)
-    if not sel and thread_id:
-        sel = thread_id[2:] if thread_id.startswith("t_") else thread_id
-    if sel:
-        return (f"https://business.facebook.com/latest/inbox/all/"
-                f"?asset_id={page_id}&selected_item_id={_uparse.quote(sel, safe='')}"
-                f"&thread_type={thread_type}")
-    # Nothing resolved (Graph failed / no open window): open the page inbox. We
-    # do NOT pass the PSID — it wouldn't select the thread and just opens the
-    # last one, which is misleading.
-    return (f"https://business.facebook.com/latest/inbox/all/?asset_id={page_id}")
+    # Both Messenger and Instagram conversations live in the same Business Suite
+    # inbox (separate tabs); opening it scoped to the page is reliable.
+    return f"https://business.facebook.com/latest/inbox/all/?asset_id={page_id}"
 
 
 def _messenger_send_text(page_id, recipient_id, text, platform="messenger"):
@@ -8177,66 +8133,6 @@ def api_order_refresh_conversation(request, pk):
         "conversation_text": "",
         "message": "Cette commande n'est pas liée à une conversation Messenger.",
     })
-
-
-def api_debug_conv_link(request):
-    """Superuser diagnostic: for an order id (?order=) OR a page+psid
-    (?page=&psid=), show what the Meta Graph conversations lookup returns and
-    the deep link we build from it — so we can see whether the thread id is
-    resolved and whether the token/permission is the blocker. Read-only."""
-    if not request.user.is_superuser:
-        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
-    import urllib.request as _ureq
-    import urllib.parse as _uparse
-    import json as _json
-    page_id = (request.GET.get("page") or "").strip()
-    psid = (request.GET.get("psid") or "").strip()
-    platform = (request.GET.get("platform") or "").strip()
-    order_id = (request.GET.get("order") or "").strip()
-    conv_info = {}
-    if order_id:
-        from .models import MessengerConversation
-        conv = (MessengerConversation.objects
-                .filter(pending_order_id=order_id).order_by("-id").first())
-        if conv:
-            page_id = page_id or (conv.page_id or "")
-            psid = psid or (conv.sender_id or "")
-            platform = platform or (conv.platform or "")
-            conv_info = {"conv_id": conv.id, "sender_name": conv.sender_name,
-                         "status": conv.status}
-    if not page_id or not psid:
-        return JsonResponse({"status": "error",
-                             "message": "Fournir ?order=<id> ou ?page=&psid="},
-                            status=400)
-    plat = "instagram" if (platform or "").lower() == "instagram" else "messenger"
-    token = _messenger_page_token(page_id)
-    graph = {"has_token": bool(token)}
-    if token:
-        url = (f"https://graph.facebook.com/v21.0/{page_id}/conversations"
-               f"?user_id={_uparse.quote(psid, safe='')}"
-               f"&platform={plat}"
-               f"&fields=id,link,updated_time,message_count,"
-               f"participants,senders"
-               f"&access_token={_uparse.quote(token, safe='')}")
-        try:
-            with _ureq.urlopen(url, timeout=8) as resp:
-                graph["body"] = _json.loads(resp.read().decode("utf-8", "ignore"))
-        except Exception as e:
-            body = ""
-            try:
-                if hasattr(e, "read"):
-                    body = e.read().decode("utf-8", "replace")[:500]
-            except Exception:
-                pass
-            graph["error"] = str(e)[:200]
-            graph["error_body"] = body
-    return JsonResponse({
-        "status": "ok",
-        "page_id": page_id, "psid": psid, "platform": plat,
-        "conv": conv_info,
-        "graph": graph,
-        "deep_link": _conversation_deep_link(page_id, psid, platform),
-    }, json_dumps_params={"indent": 2})
 
 
 # ---- Exchange: return items APIs --------------------------------------------

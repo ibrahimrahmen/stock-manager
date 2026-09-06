@@ -1575,11 +1575,15 @@ async function openConversation(ev, orderId) {
       header.style.background = theme.grad;
       let openLink = '';
       if (data.conversation_link) {
-        const openLabel = platform === 'instagram' ? 'Ouvrir sur Instagram' : 'Ouvrir dans Messenger';
+        // Meta doesn't expose the id its inbox needs to open a specific thread,
+        // so this opens the page inbox (right channel) where staff click the
+        // customer from the list. Tooltip explains it.
+        const chan = platform === 'instagram' ? 'Instagram' : 'Messenger';
         openLink = '<a href="' + escapeHtml(data.conversation_link) + '" target="_blank" rel="noopener"'
+          + ' title="Ouvre la boîte de réception ' + chan + ' — cliquez ensuite le client dans la liste"'
           + ' style="margin-left:auto;background:rgba(255,255,255,.22);color:#fff;text-decoration:none;'
           + 'padding:5px 11px;border-radius:14px;font-size:12px;font-weight:600;white-space:nowrap;">↗ '
-          + openLabel + '</a>';
+          + 'Boîte de réception ' + chan + '</a>';
       }
       header.innerHTML = theme.logo + '<span>' + theme.name + '</span>' + openLink;
       let adBanner = '';
