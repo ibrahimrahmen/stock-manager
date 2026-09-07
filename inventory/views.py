@@ -10110,6 +10110,34 @@ def api_admin_run_tool(request, tool_name):
         }, status=500)
 
 
+def _purge_user_data(ids, apply=True):
+    """Delete personal data for the given Messenger/Instagram PSIDs: delete
+    their conversations, unlink customer_psid, and clear order transcripts.
+    ORDERS THEMSELVES ARE KEPT (business data). Returns a dict of counts.
+    Shared by the manual admin tool and the Meta data-deletion callback."""
+    from django.db.models import Q
+    from .models import MessengerConversation, Customer, Order
+    ids = list(dict.fromkeys(
+        [str(x).strip() for x in (ids or []) if str(x).strip()]))
+    if not ids:
+        return {"ids": 0, "conversations": 0, "customers": 0, "orders": 0}
+    convs = MessengerConversation.objects.filter(sender_id__in=ids)
+    custs = Customer.objects.filter(customer_psid__in=ids)
+    conv_order_ids = set(convs.exclude(pending_order__isnull=True)
+                         .values_list("pending_order_id", flat=True))
+    cust_ids = list(custs.values_list("id", flat=True))
+    affected_orders = Order.objects.filter(
+        Q(id__in=conv_order_ids) | Q(customer_id__in=cust_ids)).exclude(conversation_text="")
+    counts = {"ids": len(ids), "conversations": convs.count(),
+              "customers": custs.count(), "orders": affected_orders.count()}
+    if apply:
+        # Clear transcripts, unlink PSID, delete conversations. Keep orders.
+        affected_orders.update(conversation_text="", conversation_updated_at=None)
+        custs.update(customer_psid="")
+        convs.delete()
+    return counts
+
+
 @csrf_exempt
 @require_POST
 def api_delete_user_data(request):
@@ -10120,8 +10148,7 @@ def api_delete_user_data(request):
     Superuser only. Body: {ids: [...] or newline/comma text, apply: bool}."""
     if not request.user.is_superuser:
         return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
-    from django.db.models import Q
-    from .models import MessengerConversation, Customer, Order, log_action, AuditLog
+    from .models import log_action, AuditLog
     try:
         data = json.loads(request.body or "{}")
     except Exception:
@@ -10136,43 +10163,116 @@ def api_delete_user_data(request):
         return JsonResponse({"status": "error", "message": "Aucun identifiant fourni."}, status=400)
     apply_changes = bool(data.get("apply"))
 
-    convs = MessengerConversation.objects.filter(sender_id__in=ids)
-    custs = Customer.objects.filter(customer_psid__in=ids)
-    conv_order_ids = set(convs.exclude(pending_order__isnull=True)
-                         .values_list("pending_order_id", flat=True))
-    cust_ids = list(custs.values_list("id", flat=True))
-    affected_orders = Order.objects.filter(
-        Q(id__in=conv_order_ids) | Q(customer_id__in=cust_ids)).exclude(conversation_text="")
-    n_conv = convs.count()
-    n_cust = custs.count()
-    n_orders = affected_orders.count()
+    c = _purge_user_data(ids, apply=apply_changes)
 
     if not apply_changes:
         return JsonResponse({
-            "status": "ok", "dry_run": True, "ids": len(ids),
-            "conversations": n_conv, "customers": n_cust,
-            "orders_transcripts_to_clear": n_orders,
+            "status": "ok", "dry_run": True, "ids": c["ids"],
+            "conversations": c["conversations"], "customers": c["customers"],
+            "orders_transcripts_to_clear": c["orders"],
             "note": "Aucune commande n'est supprimée. Relance avec Supprimer pour appliquer.",
         })
-
-    # Apply: clear transcripts, unlink PSID, delete conversations. Keep orders.
-    affected_orders.update(conversation_text="", conversation_updated_at=None)
-    custs.update(customer_psid="")
-    deleted = n_conv
-    convs.delete()
     try:
         log_action(request.user, AuditLog.DELETE,
-                   description=(f"RGPD: suppression données Meta — {len(ids)} ID(s), "
-                               f"{deleted} conversation(s) supprimée(s), {n_cust} client(s) "
-                               f"dissocié(s), {n_orders} transcription(s) effacée(s). Commandes conservées."),
+                   description=(f"RGPD: suppression données Meta — {c['ids']} ID(s), "
+                               f"{c['conversations']} conversation(s) supprimée(s), {c['customers']} client(s) "
+                               f"dissocié(s), {c['orders']} transcription(s) effacée(s). Commandes conservées."),
                    request=request)
     except Exception:
         pass
     return JsonResponse({
-        "status": "ok", "dry_run": False, "ids": len(ids),
-        "deleted_conversations": deleted, "unlinked_customers": n_cust,
-        "orders_cleared": n_orders,
+        "status": "ok", "dry_run": False, "ids": c["ids"],
+        "deleted_conversations": c["conversations"], "unlinked_customers": c["customers"],
+        "orders_cleared": c["orders"],
     })
+
+
+@csrf_exempt
+@require_POST
+def api_meta_data_deletion(request):
+    """Meta Data Deletion Callback (automatic). Meta POSTs a `signed_request`
+    identifying the user by their app-scoped id (PSID) when a user asks Meta to
+    delete their data. We verify the signature with the app secret, purge that
+    user's personal data (conversations, PSID link, transcripts — ORDERS KEPT),
+    and return the {url, confirmation_code} JSON Meta requires.
+
+    Set the callback URL to <site>/meta/data-deletion/ in the app's settings,
+    and the app secret in env META_APP_SECRET (falls back to MESSENGER_APP_SECRET
+    / FB_APP_SECRET)."""
+    import base64
+    import hmac
+    import hashlib
+    from .models import log_action, AuditLog
+
+    signed = request.POST.get("signed_request", "") or ""
+    secret = (os.environ.get("META_APP_SECRET")
+              or os.environ.get("MESSENGER_APP_SECRET")
+              or os.environ.get("FB_APP_SECRET") or "").strip()
+
+    def _b64d(s):
+        s = s + "=" * (-len(s) % 4)
+        return base64.urlsafe_b64decode(s.encode("utf-8"))
+
+    user_id = ""
+    if signed and secret and "." in signed:
+        try:
+            sig_b64, payload_b64 = signed.split(".", 1)
+            expected = hmac.new(secret.encode("utf-8"),
+                                payload_b64.encode("utf-8"),
+                                hashlib.sha256).digest()
+            if hmac.compare_digest(expected, _b64d(sig_b64)):
+                payload = json.loads(_b64d(payload_b64).decode("utf-8"))
+                user_id = str(payload.get("user_id") or "")
+        except Exception:
+            user_id = ""
+
+    # Fail closed: without a valid, verified signed_request we do nothing and
+    # tell Meta the request was bad (never delete on an unverified payload).
+    if not user_id:
+        return JsonResponse({"error": "invalid signed_request"}, status=400)
+
+    try:
+        _purge_user_data([user_id], apply=True)
+    except Exception:
+        pass
+
+    # Deterministic per-user confirmation code so Meta (or the user) can look up
+    # the request on the status page.
+    code = hashlib.sha256(
+        (user_id + "|barats-deletion").encode("utf-8")).hexdigest()[:20]
+    try:
+        log_action(None, AuditLog.DELETE,
+                   description=("RGPD (callback Meta): données supprimées pour 1 "
+                                f"utilisateur. Code {code}. Commandes conservées."))
+    except Exception:
+        pass
+
+    status_url = (request.build_absolute_uri("/meta/data-deletion-status/")
+                  + "?code=" + code)
+    return JsonResponse({"url": status_url, "confirmation_code": code})
+
+
+@csrf_exempt
+def meta_data_deletion_status(request):
+    """Public status page for a Meta data-deletion request (the URL returned by
+    the callback). Meta requires a reachable page confirming the deletion."""
+    code = (request.GET.get("code") or "").strip()[:64]
+    from django.utils.html import escape as _esc
+    html = (
+        "<!doctype html><html lang='fr'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>Suppression de données — Barats</title></head>"
+        "<body style='font-family:system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 16px;line-height:1.6;color:#222;'>"
+        "<h2>Suppression de données — Barats</h2>"
+        "<p>Votre demande de suppression de données a bien été traitée. "
+        "Les données personnelles associées à votre profil "
+        "Messenger/Instagram (conversations et identifiants) ont été "
+        "supprimées de notre système.</p>"
+        + (f"<p>Code de confirmation : <b>{_esc(code)}</b></p>" if code else "")
+        + "<p style='color:#666;font-size:14px;'>Pour toute question, contactez-nous "
+        "via notre page Barats.</p>"
+        "</body></html>")
+    return HttpResponse(html)
 
 
 # ---- Regions / Delegations (cascaded dropdown) -----------------------------

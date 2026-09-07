@@ -485,3 +485,76 @@ class NavexNameCleanTest(TestCase):
     def test_leaves_normal_names_untouched(self):
         self.assertEqual(views._navex_clean_text("Mohamed Ali"), "Mohamed Ali")
         self.assertEqual(views._navex_clean_text("أحمد"), "أحمد")
+
+
+class MetaDataDeletionCallbackTest(TestCase):
+    """The Meta Data Deletion Callback must: verify the signed_request with the
+    app secret, purge the user's personal data (conversation, PSID link,
+    transcript) while KEEPING the order, and reject unsigned/forged payloads."""
+
+    SECRET = "test_app_secret_123"
+    PSID = "9998887776665554"
+
+    def setUp(self):
+        import os
+        from django.test import Client
+        self.client = Client()
+        os.environ["META_APP_SECRET"] = self.SECRET
+        self.customer = Customer.objects.create(
+            phone="21222333", name="RGPD Client", customer_psid=self.PSID)
+        self.order = Order.objects.create(
+            customer=self.customer, status=Order.NON_CONFIRMEE, total=100,
+            conversation_text="Client: bonjour\nPage: ahla")
+        from inventory.models import MessengerConversation
+        self.conv = MessengerConversation.objects.create(
+            sender_id=self.PSID, page_id="179384998586489", platform="messenger",
+            pending_order=self.order, messages=[{"from": "user", "text": "hi"}])
+
+    def tearDown(self):
+        import os
+        os.environ.pop("META_APP_SECRET", None)
+
+    def _signed_request(self, user_id, secret):
+        import base64, hmac, hashlib
+        payload = {"user_id": user_id, "algorithm": "HMAC-SHA256",
+                   "issued_at": 1700000000}
+        pb = base64.urlsafe_b64encode(
+            json.dumps(payload).encode("utf-8")).rstrip(b"=").decode()
+        sig = hmac.new(secret.encode("utf-8"), pb.encode("utf-8"),
+                       hashlib.sha256).digest()
+        sb = base64.urlsafe_b64encode(sig).rstrip(b"=").decode()
+        return sb + "." + pb
+
+    def test_valid_signed_request_purges_but_keeps_order(self):
+        from inventory.models import MessengerConversation
+        sr = self._signed_request(self.PSID, self.SECRET)
+        resp = self.client.post("/meta/data-deletion/", {"signed_request": sr})
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertIn("url", body)
+        self.assertIn("confirmation_code", body)
+        self.assertTrue(body["confirmation_code"])
+        # Conversation deleted, PSID unlinked, transcript cleared — order kept.
+        self.assertFalse(
+            MessengerConversation.objects.filter(sender_id=self.PSID).exists())
+        self.customer.refresh_from_db()
+        self.order.refresh_from_db()
+        self.assertEqual(self.customer.customer_psid, "")
+        self.assertEqual(self.order.conversation_text, "")
+        self.assertTrue(Order.objects.filter(pk=self.order.pk).exists())
+
+    def test_forged_signature_rejected_and_data_kept(self):
+        from inventory.models import MessengerConversation
+        sr = self._signed_request(self.PSID, "wrong_secret")
+        resp = self.client.post("/meta/data-deletion/", {"signed_request": sr})
+        self.assertEqual(resp.status_code, 400)
+        # Nothing deleted.
+        self.assertTrue(
+            MessengerConversation.objects.filter(sender_id=self.PSID).exists())
+        self.customer.refresh_from_db()
+        self.assertEqual(self.customer.customer_psid, self.PSID)
+
+    def test_status_page_ok(self):
+        resp = self.client.get("/meta/data-deletion-status/?code=abc123")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"abc123", resp.content)
