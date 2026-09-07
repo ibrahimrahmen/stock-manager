@@ -8101,7 +8101,19 @@ def api_order_refresh_conversation(request, pk):
                     "ref": conv.source_ad_ref or "",
                 }
             if conv.messages:
+                # De-dupe outgoing (page) messages that appear twice: our own
+                # local copy AND Meta's message_echoes copy of the same text.
+                # Meta echoes arrive so fast they can be stored before OR after
+                # our local copy, so we can't rely on write-time order — collapse
+                # identical page texts here, keeping the first occurrence.
+                _seen_page = set()
                 for m in conv.messages:
+                    _is_page = m.get("from") == "page"
+                    _tn = " ".join((m.get("text") or "").split())
+                    if _is_page and _tn:
+                        if _tn in _seen_page:
+                            continue  # duplicate echo/local copy — skip
+                        _seen_page.add(_tn)
                     structured.append({
                         "from": m.get("from", "user"),
                         "text": m.get("text", ""),
