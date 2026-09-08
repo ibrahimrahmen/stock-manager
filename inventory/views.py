@@ -10252,6 +10252,64 @@ def api_meta_data_deletion(request):
     return JsonResponse({"url": status_url, "confirmation_code": code})
 
 
+def api_debug_token_health(request):
+    """Superuser diagnostic: test every token in MESSENGER_PAGE_TOKENS against
+    Meta directly (graph.facebook.com for Pages, graph.instagram.com for IG),
+    so we can see which tokens are actually valid / can send — the app-level
+    call_volume metric can't tell us this (page-token calls aren't counted).
+    Read-only; never mutates."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    import urllib.request as _ureq
+    import urllib.parse as _uparse
+    import json as _json
+
+    def _probe(host, tok):
+        url = (f"https://{host}/v21.0/me?fields=id,name,username"
+               f"&access_token={_uparse.quote(tok, safe='')}")
+        try:
+            with _ureq.urlopen(url, timeout=8) as r:
+                return _json.loads(r.read().decode("utf-8", "ignore")), ""
+        except Exception as e:
+            body = ""
+            try:
+                if hasattr(e, "read"):
+                    body = e.read().decode("utf-8", "replace")[:200]
+            except Exception:
+                pass
+            return None, f"{str(e)[:80]} {body}".strip()
+
+    raw = os.environ.get("MESSENGER_PAGE_TOKENS", "")
+    results = []
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair or ":" not in pair:
+            continue
+        pid, _, tok = pair.partition(":")
+        pid, tok = pid.strip(), tok.strip()
+        # Try Facebook host first, then Instagram.
+        data, fb_err = _probe("graph.facebook.com", tok)
+        if data is not None:
+            results.append({"id": pid, "valid": True, "platform": "facebook",
+                            "name": data.get("name") or data.get("username") or "",
+                            "me_id": data.get("id") or ""})
+            continue
+        data, ig_err = _probe("graph.instagram.com", tok)
+        if data is not None:
+            results.append({"id": pid, "valid": True, "platform": "instagram",
+                            "name": data.get("username") or data.get("name") or "",
+                            "me_id": data.get("id") or ""})
+            continue
+        results.append({"id": pid, "valid": False, "platform": "?",
+                        "fb_error": fb_err, "ig_error": ig_err})
+    return JsonResponse({
+        "status": "ok",
+        "configured": len(results),
+        "valid": sum(1 for r in results if r.get("valid")),
+        "tokens": results,
+    }, json_dumps_params={"indent": 2})
+
+
 @csrf_exempt
 def meta_data_deletion_status(request):
     """Public status page for a Meta data-deletion request (the URL returned by

@@ -129,6 +129,8 @@ urlpatterns = [
     path("meta/data-deletion-status/", views.meta_data_deletion_status, name="meta_data_deletion_status"),
     # Debug: inspect raw Navex etat response (superuser only)
     path("api/debug/navex-etat/", views.api_debug_navex_etat, name="api_debug_navex_etat"),
+    # Debug: test each Messenger/Instagram page token against Meta (superuser only)
+    path("api/debug/token-health/", views.api_debug_token_health, name="api_debug_token_health"),
     # Shopify webhook: client passes order on barats.tn → auto-create v2 draft
     path("api/shopify/webhook/orders/create/", views.api_shopify_webhook_order_created, name="api_shopify_webhook_order_created"),
     # Messenger DM webhook: receives messages + ad referral, stores conversation.
