@@ -1,0 +1,117 @@
+{% load static %}<!DOCTYPE html>
+<html lang="fr" data-theme="{{ user_theme|default:'dark' }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connexions Meta — Stock Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root, [data-theme="dark"] {
+  --bg:#0f0f0d; --surface:#1a1a17; --surface2:#222220;
+  --border:rgba(255,255,255,0.08); --text:#f0ede6; --muted:#8a887f;
+  --green:#4ade9a; --green-dim:rgba(74,222,154,0.15);
+  --amber:#f5a623; --red:#f87171; --blue:#60a5fa;
+}
+[data-theme="light"] {
+  --bg:#faf9f6; --surface:#ffffff; --surface2:#f0eee8;
+  --border:rgba(0,0,0,0.10); --text:#1a1a17; --muted:#6b6a63;
+  --green:#1a9e6e; --green-dim:rgba(26,158,110,0.12);
+  --amber:#b87513; --red:#c43b3a; --blue:#2363c9;
+}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',system-ui,sans-serif;
+  line-height:1.55;padding:24px;max-width:900px;margin:0 auto;}
+h1{font-family:'DM Serif Display',serif;font-size:26px;margin-bottom:4px;}
+.sub{color:var(--muted);font-size:14px;margin-bottom:22px;}
+.cards{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:26px;}
+.card{flex:1;min-width:240px;background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;padding:18px;}
+.card h2{font-size:16px;margin-bottom:6px;}
+.card p{color:var(--muted);font-size:13px;margin-bottom:14px;}
+.btn{display:inline-block;padding:10px 16px;border-radius:10px;font-weight:600;
+  font-size:14px;text-decoration:none;border:none;cursor:pointer;}
+.btn-fb{background:#1877f2;color:#fff;}
+.btn-ig{background:linear-gradient(135deg,#feda75,#d62976,#962fbf,#4f5bd5);color:#fff;}
+.btn[aria-disabled="true"]{opacity:.45;pointer-events:none;}
+.warn{color:var(--amber);font-size:12px;margin-top:8px;}
+table{width:100%;border-collapse:collapse;background:var(--surface);
+  border:1px solid var(--border);border-radius:12px;overflow:hidden;font-size:13px;}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border);}
+th{color:var(--muted);font-weight:600;background:var(--surface2);}
+tr:last-child td{border-bottom:none;}
+.pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;}
+.ok{background:var(--green-dim);color:var(--green);}
+.bad{background:rgba(248,113,113,.15);color:var(--red);}
+.msg{padding:10px 14px;border-radius:10px;margin-bottom:14px;font-size:14px;}
+.msg.success{background:var(--green-dim);color:var(--green);}
+.msg.error{background:rgba(248,113,113,.15);color:var(--red);}
+.plat{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+a.back{color:var(--blue);font-size:13px;text-decoration:none;}
+</style>
+</head>
+<body>
+  <a class="back" href="/admin-tools/">← Outils admin</a>
+  <h1>Connexions Meta</h1>
+  <div class="sub">Connectez vos pages Facebook et comptes Instagram en un clic.
+    Les jetons sont capturés, chiffrés et rafraîchis automatiquement — aucun réglage manuel.</div>
+
+  {% if messages %}
+    {% for m in messages %}
+      <div class="msg {{ m.tags }}">{{ m }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="cards">
+    <div class="card">
+      <div class="plat">Messenger</div>
+      <h2>Pages Facebook</h2>
+      <p>Connecte toutes vos pages et abonne leurs webhooks (messages, échos, référents publicitaires).</p>
+      {% if fb_ready %}
+        <a class="btn btn-fb" href="{% url 'oauth_facebook_start' %}">Connecter Facebook</a>
+      {% else %}
+        <a class="btn btn-fb" aria-disabled="true">Connecter Facebook</a>
+        <div class="warn">⚠️ Définir META_APP_ID et META_APP_SECRET dans Railway.</div>
+      {% endif %}
+    </div>
+    <div class="card">
+      <div class="plat">Instagram</div>
+      <h2>Comptes Instagram</h2>
+      <p>Connecte un compte Instagram Professionnel (jeton longue durée, rafraîchi tout seul).</p>
+      {% if ig_ready %}
+        <a class="btn btn-ig" href="{% url 'oauth_instagram_start' %}">Connecter Instagram</a>
+      {% else %}
+        <a class="btn btn-ig" aria-disabled="true">Connecter Instagram</a>
+        <div class="warn">⚠️ Définir IG_APP_ID/IG_APP_SECRET (ou META_APP_ID/SECRET) dans Railway.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <h2 style="font-size:15px;margin-bottom:10px;">Comptes connectés ({{ tokens|length }})</h2>
+  {% if tokens %}
+  <table>
+    <thead><tr>
+      <th>Compte</th><th>Plateforme</th><th>ID</th><th>État</th><th>Expire</th>
+    </tr></thead>
+    <tbody>
+    {% for t in tokens %}
+      <tr>
+        <td>{{ t.name|default:"—" }}</td>
+        <td>{{ t.get_platform_display }}</td>
+        <td style="color:var(--muted);">{{ t.account_id }}</td>
+        <td>
+          {% if t.is_active and not t.last_error %}
+            <span class="pill ok">actif</span>
+          {% else %}
+            <span class="pill bad" title="{{ t.last_error }}">problème</span>
+          {% endif %}
+        </td>
+        <td style="color:var(--muted);">{{ t.expires_at|default:"—" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p style="color:var(--muted);font-size:13px;">Aucun compte connecté pour l'instant.</p>
+  {% endif %}
+</body>
+</html>

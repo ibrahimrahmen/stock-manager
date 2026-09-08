@@ -133,6 +133,12 @@ urlpatterns = [
     path("api/debug/token-health/", views.api_debug_token_health, name="api_debug_token_health"),
     # Cron: import env tokens into the DB store + auto-refresh Instagram tokens.
     path("cron/refresh-tokens/", views.cron_refresh_tokens, name="cron_refresh_tokens"),
+    # Connect onboarding: one-click OAuth to capture Page/Instagram tokens.
+    path("connect/", views.connect_home, name="connect_home"),
+    path("connect/facebook/", views.oauth_facebook_start, name="oauth_facebook_start"),
+    path("connect/facebook/callback/", views.oauth_facebook_callback, name="oauth_facebook_callback"),
+    path("connect/instagram/", views.oauth_instagram_start, name="oauth_instagram_start"),
+    path("connect/instagram/callback/", views.oauth_instagram_callback, name="oauth_instagram_callback"),
     # Shopify webhook: client passes order on barats.tn → auto-create v2 draft
     path("api/shopify/webhook/orders/create/", views.api_shopify_webhook_order_created, name="api_shopify_webhook_order_created"),
     # Messenger DM webhook: receives messages + ad referral, stores conversation.

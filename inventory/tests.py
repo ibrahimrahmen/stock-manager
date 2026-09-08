@@ -656,3 +656,111 @@ class MetaTokenStoreTest(TestCase):
         t.refresh_from_db()
         self.assertEqual(t.get_token(), "new_ig")
         self.assertIsNotNone(t.expires_at)
+
+
+class MetaConnectOAuthTest(TestCase):
+    """Phase 2 OAuth onboarding: Facebook and Instagram callbacks exchange the
+    code, store tokens in MetaToken, and reject a mismatched CSRF state."""
+
+    def setUp(self):
+        import os
+        from django.contrib.auth.models import User
+        from django.test import Client
+        self.client = Client()
+        self.admin = User.objects.create_superuser("admin_oauth", "a@a.com", "pw")
+        self.client.force_login(self.admin)
+        os.environ["META_APP_ID"] = "APPID"
+        os.environ["META_APP_SECRET"] = "SECRET"
+
+    def tearDown(self):
+        import os
+        for k in ("META_APP_ID", "META_APP_SECRET", "IG_APP_ID", "IG_APP_SECRET"):
+            os.environ.pop(k, None)
+
+    def test_connect_home_renders(self):
+        resp = self.client.get("/connect/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Connexions Meta", resp.content)
+
+    def test_facebook_callback_stores_pages(self):
+        from inventory.models import MetaToken
+        session = self.client.session
+        session["fb_oauth_state"] = "STATE1"
+        session.save()
+
+        def fake_http(url, data=None, method=None):
+            if "oauth/access_token" in url and "fb_exchange_token" not in url and data is None:
+                return {"access_token": "short_user"}, ""
+            if "fb_exchange_token" in url:
+                return {"access_token": "long_user", "expires_in": 5184000}, ""
+            if "me/accounts" in url:
+                return {"data": [{"id": "PG1", "name": "Page One",
+                                  "access_token": "pgtok1"}]}, ""
+            if "subscribed_apps" in url:
+                return {"success": True}, ""
+            return {}, ""
+
+        orig = views._http_json
+        views._http_json = fake_http
+        try:
+            resp = self.client.get("/connect/facebook/callback/?code=abc&state=STATE1")
+        finally:
+            views._http_json = orig
+        self.assertEqual(resp.status_code, 302)
+        t = MetaToken.objects.get(account_id="PG1")
+        self.assertEqual(t.platform, "facebook")
+        self.assertEqual(t.get_token(), "pgtok1")
+        self.assertEqual(t.name, "Page One")
+
+    def test_facebook_callback_bad_state_rejected(self):
+        from inventory.models import MetaToken
+        session = self.client.session
+        session["fb_oauth_state"] = "RIGHT"
+        session.save()
+        orig = views._http_json
+        views._http_json = lambda *a, **k: ({}, "")
+        try:
+            resp = self.client.get("/connect/facebook/callback/?code=abc&state=WRONG")
+        finally:
+            views._http_json = orig
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(MetaToken.objects.count(), 0)
+
+    def test_instagram_callback_stores_account(self):
+        from inventory.models import MetaToken
+        session = self.client.session
+        session["ig_oauth_state"] = "IGS"
+        session.save()
+
+        def fake_http(url, data=None, method=None):
+            if "api.instagram.com/oauth/access_token" in url:
+                return {"access_token": "ig_short", "user_id": "IG1"}, ""
+            if "graph.instagram.com/access_token" in url:
+                return {"access_token": "ig_long", "expires_in": 5183944}, ""
+            if "graph.instagram.com/v21.0/me" in url:
+                return {"id": "IG1", "username": "barats"}, ""
+            if "subscribed_apps" in url:
+                return {"success": True}, ""
+            return {}, ""
+
+        orig = views._http_json
+        views._http_json = fake_http
+        try:
+            resp = self.client.get("/connect/instagram/callback/?code=xyz&state=IGS")
+        finally:
+            views._http_json = orig
+        self.assertEqual(resp.status_code, 302)
+        t = MetaToken.objects.get(account_id="IG1")
+        self.assertEqual(t.platform, "instagram")
+        self.assertEqual(t.get_token(), "ig_long")
+        self.assertEqual(t.name, "barats")
+        self.assertIsNotNone(t.expires_at)
+
+    def test_connect_requires_superuser(self):
+        from django.contrib.auth.models import User
+        from django.test import Client
+        User.objects.create_user("plain", "p@p.com", "pw")
+        c = Client()
+        c.force_login(User.objects.get(username="plain"))
+        resp = c.get("/connect/")
+        self.assertEqual(resp.status_code, 403)

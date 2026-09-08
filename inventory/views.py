@@ -10,6 +10,7 @@ from django.db import transaction
 from django.db.models import Count, Q
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
+from django.contrib import messages
 
 from .models import (
     Product, ProductVariant, ProductUnit,
@@ -504,6 +505,279 @@ def cron_refresh_tokens(request):
         })
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
+
+
+# ============================================================================
+# Phase 2 — "Connect Facebook / Instagram" OAuth onboarding.
+# Click-to-connect: the merchant logs in with Meta once, and we capture every
+# Page / Instagram token automatically, store them (encrypted, self-refreshing)
+# and subscribe the webhooks — no manual token pasting, ever. This is also the
+# multi-account onboarding a buyer of the app would use.
+#
+# One-time dashboard setup required (env + Valid OAuth Redirect URIs):
+#   META_APP_ID / META_APP_SECRET         — the Facebook app id + secret
+#   IG_APP_ID / IG_APP_SECRET (optional)  — the Instagram app id + secret
+#                                           (falls back to META_APP_ID/SECRET)
+#   Redirect URIs to whitelist:
+#     <site>/connect/facebook/callback/
+#     <site>/connect/instagram/callback/
+# ============================================================================
+
+_FB_OAUTH_SCOPES = ("pages_show_list,pages_messaging,pages_read_engagement,"
+                    "pages_manage_metadata,business_management")
+_IG_OAUTH_SCOPES = "instagram_business_basic,instagram_business_manage_messages"
+_FB_PAGE_WEBHOOK_FIELDS = ("messages,message_echoes,messaging_postbacks,"
+                           "messaging_referrals,messaging_optins,message_reads")
+_IG_WEBHOOK_FIELDS = "messages,messaging_postbacks,messaging_referral,messaging_seen"
+
+
+def _oauth_app_creds(platform):
+    """(app_id, app_secret) for the given platform, from env. Instagram falls
+    back to the Facebook app creds when IG-specific ones aren't set."""
+    if platform == "instagram":
+        aid = (os.environ.get("IG_APP_ID") or os.environ.get("META_APP_ID") or "").strip()
+        sec = (os.environ.get("IG_APP_SECRET") or os.environ.get("META_APP_SECRET")
+               or os.environ.get("MESSENGER_APP_SECRET") or "").strip()
+    else:
+        aid = (os.environ.get("META_APP_ID") or os.environ.get("FB_APP_ID") or "").strip()
+        sec = (os.environ.get("META_APP_SECRET") or os.environ.get("MESSENGER_APP_SECRET")
+               or os.environ.get("FB_APP_SECRET") or "").strip()
+    return aid, sec
+
+
+def _http_json(url, data=None, method=None):
+    """Small helper: GET (data=None) or POST (data=dict) returning parsed JSON.
+    Returns (json_or_None, error_str)."""
+    import urllib.request as _ureq
+    import urllib.parse as _uparse
+    import json as _json
+    try:
+        if data is not None:
+            body = _uparse.urlencode(data).encode("utf-8")
+            req = _ureq.Request(url, data=body, method=method or "POST")
+        else:
+            req = _ureq.Request(url, method=method or "GET")
+        with _ureq.urlopen(req, timeout=15) as r:
+            return _json.loads(r.read().decode("utf-8", "ignore")), ""
+    except Exception as e:
+        b = ""
+        try:
+            if hasattr(e, "read"):
+                b = e.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            pass
+        return None, f"{str(e)[:100]} {b}".strip()
+
+
+def _upsert_meta_token(account_id, platform, token, name="", expires_at=None):
+    """Insert or update a MetaToken with a fresh, authoritative token from OAuth
+    (unlike the env import, this DOES overwrite an existing token)."""
+    from .models import MetaToken
+    from django.utils import timezone as _tz
+    row = MetaToken.objects.filter(account_id=str(account_id)).first()
+    if not row:
+        row = MetaToken(account_id=str(account_id))
+    row.platform = platform
+    if name:
+        row.name = name
+    row.set_token(token)
+    row.expires_at = expires_at
+    row.last_refreshed_at = _tz.now()
+    row.last_checked_at = _tz.now()
+    row.last_error = ""
+    row.is_active = True
+    row.save()
+    return row
+
+
+def _subscribe_webhooks(host, account_id, token, fields):
+    """Subscribe an account to its webhook fields (idempotent). Best-effort."""
+    _http_json(
+        f"https://{host}/v21.0/{account_id}/subscribed_apps",
+        data={"subscribed_fields": fields, "access_token": token})
+
+
+@login_required(login_url="/login/")
+def connect_home(request):
+    """Onboarding page: shows connected accounts + their health, and the two
+    Connect buttons. Superuser only (connecting grants the app access to Meta
+    assets)."""
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Accès refusé.")
+    from .models import MetaToken
+    fb_id, fb_sec = _oauth_app_creds("facebook")
+    ig_id, ig_sec = _oauth_app_creds("instagram")
+    tokens = list(MetaToken.objects.order_by("platform", "name", "account_id"))
+    return render(request, "inventory/connect.html", {
+        "tokens": tokens,
+        "fb_ready": bool(fb_id and fb_sec),
+        "ig_ready": bool(ig_id and ig_sec),
+    })
+
+
+def _require_superuser_redirect(request):
+    if not request.user.is_authenticated:
+        return False
+    return request.user.is_superuser
+
+
+@login_required(login_url="/login/")
+def oauth_facebook_start(request):
+    """Redirect the admin to Facebook's OAuth dialog to connect Pages."""
+    import secrets
+    import urllib.parse as _uparse
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Accès refusé.")
+    app_id, _sec = _oauth_app_creds("facebook")
+    if not app_id:
+        messages.error(request, "META_APP_ID / META_APP_SECRET manquant.")
+        return redirect("connect_home")
+    state = secrets.token_urlsafe(24)
+    request.session["fb_oauth_state"] = state
+    redirect_uri = request.build_absolute_uri("/connect/facebook/callback/")
+    params = {
+        "client_id": app_id, "redirect_uri": redirect_uri, "state": state,
+        "response_type": "code", "scope": _FB_OAUTH_SCOPES,
+    }
+    return redirect("https://www.facebook.com/v21.0/dialog/oauth?"
+                    + _uparse.urlencode(params))
+
+
+@login_required(login_url="/login/")
+def oauth_facebook_callback(request):
+    """Facebook redirects here with a code. Exchange it, enumerate the user's
+    Pages, store each Page token (permanent) and subscribe its webhooks."""
+    import urllib.parse as _uparse
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Accès refusé.")
+    if request.GET.get("error"):
+        messages.error(request, "Connexion annulée : %s"
+                       % (request.GET.get("error_description") or request.GET.get("error")))
+        return redirect("connect_home")
+    if request.GET.get("state") != request.session.get("fb_oauth_state"):
+        messages.error(request, "État OAuth invalide (réessayez).")
+        return redirect("connect_home")
+    code = request.GET.get("code") or ""
+    app_id, app_secret = _oauth_app_creds("facebook")
+    redirect_uri = request.build_absolute_uri("/connect/facebook/callback/")
+
+    # code -> short-lived user token
+    d, err = _http_json(
+        "https://graph.facebook.com/v21.0/oauth/access_token?"
+        + _uparse.urlencode({"client_id": app_id, "redirect_uri": redirect_uri,
+                             "client_secret": app_secret, "code": code}))
+    if not d or not d.get("access_token"):
+        messages.error(request, "Échec de l'échange du code : %s" % err)
+        return redirect("connect_home")
+    short = d["access_token"]
+    # short -> long-lived user token
+    d2, _e = _http_json(
+        "https://graph.facebook.com/v21.0/oauth/access_token?"
+        + _uparse.urlencode({"grant_type": "fb_exchange_token",
+                             "client_id": app_id, "client_secret": app_secret,
+                             "fb_exchange_token": short}))
+    user_token = (d2 or {}).get("access_token") or short
+
+    # Enumerate Pages (page tokens derived from a long-lived user token are
+    # permanent). Follow pagination.
+    connected = 0
+    url = ("https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token"
+           "&limit=100&access_token=" + _uparse.quote(user_token, safe=""))
+    while url:
+        pd, perr = _http_json(url)
+        if not pd:
+            messages.error(request, "Échec de lecture des pages : %s" % perr)
+            break
+        for pg in pd.get("data", []):
+            pid = str(pg.get("id") or "")
+            ptok = pg.get("access_token") or ""
+            if not pid or not ptok:
+                continue
+            _upsert_meta_token(pid, "facebook", ptok, name=pg.get("name") or "")
+            _subscribe_webhooks("graph.facebook.com", pid, ptok,
+                                _FB_PAGE_WEBHOOK_FIELDS)
+            connected += 1
+        url = (pd.get("paging", {}) or {}).get("next")
+    request.session.pop("fb_oauth_state", None)
+    messages.success(request, "✅ %d page(s) Facebook connectée(s) et abonnée(s)."
+                     % connected)
+    return redirect("connect_home")
+
+
+@login_required(login_url="/login/")
+def oauth_instagram_start(request):
+    """Redirect the admin to Instagram's Business Login dialog."""
+    import secrets
+    import urllib.parse as _uparse
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Accès refusé.")
+    app_id, _sec = _oauth_app_creds("instagram")
+    if not app_id:
+        messages.error(request, "IG_APP_ID/SECRET (ou META_APP_ID/SECRET) manquant.")
+        return redirect("connect_home")
+    state = secrets.token_urlsafe(24)
+    request.session["ig_oauth_state"] = state
+    redirect_uri = request.build_absolute_uri("/connect/instagram/callback/")
+    params = {
+        "client_id": app_id, "redirect_uri": redirect_uri, "state": state,
+        "response_type": "code", "scope": _IG_OAUTH_SCOPES,
+    }
+    return redirect("https://www.instagram.com/oauth/authorize?"
+                    + _uparse.urlencode(params))
+
+
+@login_required(login_url="/login/")
+def oauth_instagram_callback(request):
+    """Instagram redirects here with a code. Exchange for a long-lived (60-day)
+    token, store it (the refresh cron keeps it alive) and subscribe webhooks."""
+    import urllib.parse as _uparse
+    from datetime import timedelta as _td
+    from django.utils import timezone as _tz
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Accès refusé.")
+    if request.GET.get("error"):
+        messages.error(request, "Connexion annulée : %s"
+                       % (request.GET.get("error_description") or request.GET.get("error")))
+        return redirect("connect_home")
+    if request.GET.get("state") != request.session.get("ig_oauth_state"):
+        messages.error(request, "État OAuth invalide (réessayez).")
+        return redirect("connect_home")
+    code = request.GET.get("code") or ""
+    app_id, app_secret = _oauth_app_creds("instagram")
+    redirect_uri = request.build_absolute_uri("/connect/instagram/callback/")
+
+    # code -> short-lived IG token (form POST)
+    d, err = _http_json("https://api.instagram.com/oauth/access_token", data={
+        "client_id": app_id, "client_secret": app_secret,
+        "grant_type": "authorization_code", "redirect_uri": redirect_uri,
+        "code": code})
+    if not d or not d.get("access_token"):
+        messages.error(request, "Échec de l'échange du code Instagram : %s" % err)
+        return redirect("connect_home")
+    short = d["access_token"]
+    # short -> long-lived (60-day) token
+    d2, _e = _http_json(
+        "https://graph.instagram.com/access_token?"
+        + _uparse.urlencode({"grant_type": "ig_exchange_token",
+                             "client_secret": app_secret, "access_token": short}))
+    long_tok = (d2 or {}).get("access_token") or short
+    expires_in = int((d2 or {}).get("expires_in") or 0)
+    expires_at = _tz.now() + _td(seconds=expires_in) if expires_in else None
+    # Identify the account.
+    me, _me_err = _http_json("https://graph.instagram.com/v21.0/me?fields=id,username"
+                             "&access_token=" + _uparse.quote(long_tok, safe=""))
+    ig_id = str((me or {}).get("id") or d.get("user_id") or "")
+    username = (me or {}).get("username") or ""
+    if not ig_id:
+        messages.error(request, "Impossible d'identifier le compte Instagram.")
+        return redirect("connect_home")
+    _upsert_meta_token(ig_id, "instagram", long_tok, name=username,
+                       expires_at=expires_at)
+    _subscribe_webhooks("graph.instagram.com", ig_id, long_tok, _IG_WEBHOOK_FIELDS)
+    request.session.pop("ig_oauth_state", None)
+    messages.success(request, "✅ Compte Instagram @%s connecté et abonné."
+                     % (username or ig_id))
+    return redirect("connect_home")
 
 
 # Auto-reply sent (once) when a customer messages — in Arabic, reassuring them
