@@ -16,3 +16,8 @@ command = "curl https://web-production-1391c5.up.railway.app/cron/navex-sync/"
 [[crons]]
 schedule = "*/15 6-22 * * *"
 command = "curl https://web-production-1391c5.up.railway.app/cron/unifunl-sync/"
+
+# Import env tokens into the DB store + auto-refresh Instagram tokens (daily).
+[[crons]]
+schedule = "30 3 * * *"
+command = "curl https://web-production-1391c5.up.railway.app/cron/refresh-tokens/"

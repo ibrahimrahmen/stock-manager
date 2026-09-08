@@ -558,3 +558,101 @@ class MetaDataDeletionCallbackTest(TestCase):
         resp = self.client.get("/meta/data-deletion-status/?code=abc123")
         self.assertEqual(resp.status_code, 200)
         self.assertIn(b"abc123", resp.content)
+
+
+class MetaTokenStoreTest(TestCase):
+    """Self-managing, encrypted token store: encryption round-trips, DB is
+    preferred over the env var, env import creates rows without clobbering
+    existing ones, and Instagram tokens auto-refresh."""
+
+    def test_encrypt_roundtrip_not_plaintext(self):
+        from inventory.models import encrypt_secret, decrypt_secret
+        enc = encrypt_secret("secrettoken123")
+        self.assertNotIn("secrettoken123", enc)  # stored encrypted
+        self.assertEqual(decrypt_secret(enc), "secrettoken123")
+
+    def test_db_token_preferred_over_env(self):
+        import os
+        from inventory.models import MetaToken
+        t = MetaToken.objects.create(account_id="PAGE1", platform="facebook")
+        t.set_token("db_token"); t.save()
+        os.environ["MESSENGER_PAGE_TOKENS"] = "PAGE1:env_token"
+        try:
+            self.assertEqual(views._messenger_page_token("PAGE1"), "db_token")
+        finally:
+            os.environ.pop("MESSENGER_PAGE_TOKENS", None)
+
+    def test_env_fallback_when_no_db_row(self):
+        import os
+        os.environ["MESSENGER_PAGE_TOKENS"] = "PAGE2:env_token2"
+        try:
+            self.assertEqual(views._messenger_page_token("PAGE2"), "env_token2")
+        finally:
+            os.environ.pop("MESSENGER_PAGE_TOKENS", None)
+
+    def test_import_env_creates_rows(self):
+        import os
+        from inventory.models import MetaToken
+        os.environ["MESSENGER_PAGE_TOKENS"] = "PAGEX:tokx,IGX:tokig"
+        orig = views._meta_probe_token
+
+        def fake_probe(tok):
+            if tok == "tokx":
+                return ("facebook", "Page X", "PAGEX", "")
+            if tok == "tokig":
+                return ("instagram", "ig_x", "IGX", "")
+            return ("", "", "", "err")
+
+        views._meta_probe_token = fake_probe
+        try:
+            created, skipped, failed = views._import_env_tokens()
+        finally:
+            views._meta_probe_token = orig
+            os.environ.pop("MESSENGER_PAGE_TOKENS", None)
+        self.assertEqual((created, failed), (2, 0))
+        ig = MetaToken.objects.get(account_id="IGX")
+        self.assertEqual(ig.platform, "instagram")
+        self.assertEqual(ig.get_token(), "tokig")
+
+    def test_import_does_not_overwrite_existing(self):
+        import os
+        from inventory.models import MetaToken
+        t = MetaToken.objects.create(account_id="PAGEY", platform="facebook")
+        t.set_token("keep_me"); t.save()
+        os.environ["MESSENGER_PAGE_TOKENS"] = "PAGEY:new_env"
+        orig = views._meta_probe_token
+        views._meta_probe_token = lambda tok: ("facebook", "Y", "PAGEY", "")
+        try:
+            created, skipped, failed = views._import_env_tokens()
+        finally:
+            views._meta_probe_token = orig
+            os.environ.pop("MESSENGER_PAGE_TOKENS", None)
+        self.assertEqual(skipped, 1)
+        t.refresh_from_db()
+        self.assertEqual(t.get_token(), "keep_me")
+
+    def test_refresh_ig_token(self):
+        import urllib.request
+        from inventory.models import MetaToken
+        t = MetaToken.objects.create(account_id="IGZ", platform="instagram",
+                                     expires_at=None)
+        t.set_token("old_ig"); t.save()
+
+        def fake_urlopen(url, *a, **k):
+            return _FakeResponse({"access_token": "new_ig",
+                                  "token_type": "bearer",
+                                  "expires_in": 5183944})
+
+        orig_open = urllib.request.urlopen
+        orig_probe = views._meta_probe_token
+        urllib.request.urlopen = fake_urlopen
+        views._meta_probe_token = lambda tok: ("instagram", "igz", "IGZ", "")
+        try:
+            summary = views._refresh_meta_tokens()
+        finally:
+            urllib.request.urlopen = orig_open
+            views._meta_probe_token = orig_probe
+        self.assertEqual(summary["refreshed"], 1)
+        t.refresh_from_db()
+        self.assertEqual(t.get_token(), "new_ig")
+        self.assertIsNotNone(t.expires_at)

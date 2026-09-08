@@ -1474,3 +1474,87 @@ class AppKeyValue(models.Model):
 
     def __str__(self):
         return f"{self.key}={self.value}"
+
+
+# --- Meta token store (self-managing, encrypted) ----------------------------
+import os as _os
+import base64 as _b64
+import hashlib as _hashlib
+
+
+def _token_fernet():
+    """A Fernet cipher derived from the Django SECRET_KEY, so encrypted tokens
+    need no extra env var. Returns None if cryptography isn't installed."""
+    try:
+        from cryptography.fernet import Fernet
+        from django.conf import settings
+        raw = (getattr(settings, "SECRET_KEY", "") or "").encode("utf-8")
+        key = _b64.urlsafe_b64encode(_hashlib.sha256(raw).digest())
+        return Fernet(key)
+    except Exception:
+        return None
+
+
+def encrypt_secret(plaintext):
+    """Encrypt a secret for storage. Prefixes the scheme so we can decrypt
+    correctly later. Falls back to a marked plaintext form if cryptography is
+    unavailable, so the app keeps working."""
+    if not plaintext:
+        return ""
+    f = _token_fernet()
+    if f is None:
+        return "plain:" + plaintext
+    return "fernet:" + f.encrypt(plaintext.encode("utf-8")).decode("ascii")
+
+
+def decrypt_secret(stored):
+    """Inverse of encrypt_secret. Handles fernet:, plain:, and legacy raw."""
+    if not stored:
+        return ""
+    if stored.startswith("plain:"):
+        return stored[6:]
+    if stored.startswith("fernet:"):
+        f = _token_fernet()
+        if f is None:
+            return ""
+        try:
+            return f.decrypt(stored[7:].encode("ascii")).decode("utf-8")
+        except Exception:
+            return ""
+    return stored  # legacy raw value
+
+
+class MetaToken(models.Model):
+    """Self-managing store for Meta (Facebook Page / Instagram) access tokens.
+
+    Tokens live here — encrypted — instead of a hand-edited env var, so they can
+    be refreshed automatically before they expire and the app can hold many
+    accounts (multi-tenant / sellable). `account_id` is the Facebook Page id or
+    the Instagram account id."""
+    FACEBOOK = "facebook"
+    INSTAGRAM = "instagram"
+    PLATFORM_CHOICES = [(FACEBOOK, "Facebook"), (INSTAGRAM, "Instagram")]
+
+    account_id = models.CharField(max_length=64, unique=True)
+    platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES,
+                                default=FACEBOOK)
+    name = models.CharField(max_length=200, blank=True, default="")
+    token_encrypted = models.TextField(blank=True, default="")
+    expires_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the token expires (IG ~60 days). Null = long-lived / non-expiring.")
+    last_refreshed_at = models.DateTimeField(null=True, blank=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=300, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def set_token(self, raw):
+        self.token_encrypted = encrypt_secret(raw or "")
+
+    def get_token(self):
+        return decrypt_secret(self.token_encrypted)
+
+    def __str__(self):
+        return f"{self.platform}:{self.account_id} ({self.name})"

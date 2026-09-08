@@ -327,18 +327,183 @@ def _fetch_ig_story_origin(page_id, sender_id):
 
 
 def _messenger_page_token(page_id):
-    """Page access token for sending replies. Tokens are stored in the env var
-    MESSENGER_PAGE_TOKENS as 'page_id:token,page_id:token,...' so they're never
-    hard-coded. Returns the token for the page, or '' if not configured."""
+    """Access token for sending replies to a Facebook Page or Instagram account.
+
+    Reads the self-managing DB store (MetaToken) FIRST — those tokens are kept
+    fresh by the refresh cron — and falls back to the MESSENGER_PAGE_TOKENS env
+    var ('id:token,id:token,...') for bootstrapping / any account not yet
+    imported. Returns '' if not configured."""
+    page_id = str(page_id)
+    # 1) DB store (preferred): encrypted, auto-refreshed.
+    try:
+        from .models import MetaToken
+        t = MetaToken.objects.filter(account_id=page_id, is_active=True).first()
+        if t:
+            tok = t.get_token()
+            if tok:
+                return tok
+    except Exception:
+        pass
+    # 2) Env var fallback (bootstrap).
     raw = os.environ.get("MESSENGER_PAGE_TOKENS", "")
     for pair in raw.split(","):
         pair = pair.strip()
         if not pair or ":" not in pair:
             continue
         pid, _, tok = pair.partition(":")
-        if pid.strip() == str(page_id):
+        if pid.strip() == page_id:
             return tok.strip()
     return ""
+
+
+def _meta_probe_token(token):
+    """Validate a token against Meta and identify it. Tries Facebook first, then
+    Instagram. Returns (platform, name, me_id, error). platform is "" on
+    failure."""
+    import urllib.request as _ureq
+    import urllib.parse as _uparse
+    import json as _json
+
+    def _hit(host):
+        url = (f"https://{host}/v21.0/me?fields=id,name,username"
+               f"&access_token={_uparse.quote(token, safe='')}")
+        try:
+            with _ureq.urlopen(url, timeout=8) as r:
+                return _json.loads(r.read().decode("utf-8", "ignore")), ""
+        except Exception as e:
+            body = ""
+            try:
+                if hasattr(e, "read"):
+                    body = e.read().decode("utf-8", "replace")[:160]
+            except Exception:
+                pass
+            return None, f"{str(e)[:70]} {body}".strip()
+
+    d, fb_err = _hit("graph.facebook.com")
+    if d is not None:
+        return ("facebook", d.get("name") or d.get("username") or "",
+                str(d.get("id") or ""), "")
+    d, ig_err = _hit("graph.instagram.com")
+    if d is not None:
+        return ("instagram", d.get("username") or d.get("name") or "",
+                str(d.get("id") or ""), "")
+    return ("", "", "", f"FB[{fb_err}] IG[{ig_err}]")
+
+
+def _import_env_tokens():
+    """One-time bootstrap: copy tokens from the MESSENGER_PAGE_TOKENS env var
+    into the MetaToken DB store. Only CREATES rows that don't exist yet — never
+    overwrites a DB token (which may already be fresher after a refresh).
+    Returns (created, skipped, failed)."""
+    from .models import MetaToken
+    from django.utils import timezone as _tz
+    raw = os.environ.get("MESSENGER_PAGE_TOKENS", "")
+    created = skipped = failed = 0
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair or ":" not in pair:
+            continue
+        pid, _, tok = pair.partition(":")
+        pid, tok = pid.strip(), tok.strip()
+        if not pid or not tok:
+            continue
+        if MetaToken.objects.filter(account_id=pid).exists():
+            skipped += 1
+            continue
+        platform, name, _mid, err = _meta_probe_token(tok)
+        row = MetaToken(account_id=pid,
+                        platform=platform or MetaToken.FACEBOOK,
+                        name=name, last_checked_at=_tz.now(),
+                        last_error=err, is_active=bool(platform))
+        row.set_token(tok)
+        row.save()
+        if platform:
+            created += 1
+        else:
+            failed += 1
+    return (created, skipped, failed)
+
+
+def _refresh_meta_tokens():
+    """Keep tokens alive. Instagram long-lived tokens expire (~60 days) and must
+    be refreshed via graph.instagram.com/refresh_access_token; Facebook Page
+    tokens derived from a long-lived user token don't expire. Refreshes IG
+    tokens whose expiry is unknown or within 7 days, re-checks every token's
+    validity, and records health. Returns a summary dict."""
+    import urllib.request as _ureq
+    import urllib.parse as _uparse
+    import json as _json
+    from datetime import timedelta as _td
+    from django.utils import timezone as _tz
+    from .models import MetaToken
+
+    now = _tz.now()
+    soon = now + _td(days=7)
+    refreshed = checked = errors = 0
+    for t in MetaToken.objects.filter(is_active=True):
+        tok = t.get_token()
+        if not tok:
+            continue
+        # Instagram: refresh if expiry unknown or approaching.
+        if t.platform == MetaToken.INSTAGRAM and (
+                t.expires_at is None or t.expires_at <= soon):
+            url = ("https://graph.instagram.com/refresh_access_token"
+                   "?grant_type=ig_refresh_token&access_token="
+                   + _uparse.quote(tok, safe=""))
+            try:
+                with _ureq.urlopen(url, timeout=10) as r:
+                    d = _json.loads(r.read().decode("utf-8", "ignore"))
+                new_tok = d.get("access_token") or ""
+                exp = int(d.get("expires_in") or 0)
+                if new_tok:
+                    t.set_token(new_tok)
+                    tok = new_tok
+                    if exp:
+                        t.expires_at = now + _td(seconds=exp)
+                    t.last_refreshed_at = now
+                    refreshed += 1
+            except Exception as e:
+                body = ""
+                try:
+                    if hasattr(e, "read"):
+                        body = e.read().decode("utf-8", "replace")[:160]
+                except Exception:
+                    pass
+                t.last_error = f"refresh: {str(e)[:80]} {body}".strip()[:300]
+                errors += 1
+        # Re-check validity (with the possibly-refreshed token).
+        platform, name, _mid, err = _meta_probe_token(tok)
+        t.last_checked_at = now
+        if platform:
+            t.last_error = ""
+            if name and not t.name:
+                t.name = name
+        else:
+            t.last_error = err[:300]
+            errors += 1
+        checked += 1
+        t.save()
+    return {"refreshed": refreshed, "checked": checked, "errors": errors}
+
+
+@csrf_exempt
+def cron_refresh_tokens(request):
+    """Cron endpoint: import any new env tokens into the DB store, then refresh
+    Instagram tokens before they expire and re-check health. Idempotent; safe to
+    run daily. Optional guard: if CRON_TOKEN is set, require ?token= to match."""
+    guard = os.environ.get("CRON_TOKEN", "").strip()
+    if guard and request.GET.get("token", "") != guard:
+        return JsonResponse({"status": "error", "message": "Forbidden"}, status=403)
+    try:
+        created, skipped, failed = _import_env_tokens()
+        summary = _refresh_meta_tokens()
+        return JsonResponse({
+            "status": "ok",
+            "imported": {"created": created, "skipped": skipped, "failed": failed},
+            "refresh": summary,
+        })
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
 
 
 # Auto-reply sent (once) when a customer messages — in Arabic, reassuring them
@@ -10279,28 +10444,50 @@ def api_debug_token_health(request):
                 pass
             return None, f"{str(e)[:80]} {body}".strip()
 
-    raw = os.environ.get("MESSENGER_PAGE_TOKENS", "")
-    results = []
-    for pair in raw.split(","):
+    # Build the set of accounts from BOTH the DB store and the env var, then
+    # test each account's EFFECTIVE token (_messenger_page_token = DB first,
+    # env fallback) so this reflects exactly what sending uses.
+    ids = []
+    src = {}
+    try:
+        from .models import MetaToken
+        for t in MetaToken.objects.all():
+            ids.append(t.account_id)
+            src[t.account_id] = "db"
+    except Exception:
+        pass
+    for pair in os.environ.get("MESSENGER_PAGE_TOKENS", "").split(","):
         pair = pair.strip()
         if not pair or ":" not in pair:
             continue
-        pid, _, tok = pair.partition(":")
-        pid, tok = pid.strip(), tok.strip()
-        # Try Facebook host first, then Instagram.
+        pid = pair.partition(":")[0].strip()
+        if pid and pid not in src:
+            ids.append(pid)
+            src[pid] = "env"
+
+    results = []
+    for pid in ids:
+        tok = _messenger_page_token(pid)
+        if not tok:
+            results.append({"id": pid, "valid": False, "platform": "?",
+                            "source": src.get(pid, "?"), "error": "no token"})
+            continue
         data, fb_err = _probe("graph.facebook.com", tok)
         if data is not None:
             results.append({"id": pid, "valid": True, "platform": "facebook",
+                            "source": src.get(pid, "?"),
                             "name": data.get("name") or data.get("username") or "",
                             "me_id": data.get("id") or ""})
             continue
         data, ig_err = _probe("graph.instagram.com", tok)
         if data is not None:
             results.append({"id": pid, "valid": True, "platform": "instagram",
+                            "source": src.get(pid, "?"),
                             "name": data.get("username") or data.get("name") or "",
                             "me_id": data.get("id") or ""})
             continue
         results.append({"id": pid, "valid": False, "platform": "?",
+                        "source": src.get(pid, "?"),
                         "fb_error": fb_err, "ig_error": ig_err})
     return JsonResponse({
         "status": "ok",

@@ -7,7 +7,7 @@ from .models import (
     SalesPage, Customer, AuditLog, UserProfile,
     Region, Order, OrderLine,
     Offer, OfferProduct, OrderOffer,
-    ExchangeReturnItem,
+    ExchangeReturnItem, MetaToken,
 )
 
 
@@ -232,3 +232,15 @@ class ExchangeReturnItemAdmin(admin.ModelAdmin):
     search_fields = ("exchange_order__id", "product_name_snapshot")
     autocomplete_fields = ("exchange_order", "variant")
     fields = ("exchange_order", "variant", "unit", "size", "product_name_snapshot", "status")
+
+
+@admin.register(MetaToken)
+class MetaTokenAdmin(admin.ModelAdmin):
+    # The raw token is never shown — only health/metadata.
+    list_display = ("account_id", "platform", "name", "is_active",
+                    "expires_at", "last_refreshed_at", "last_checked_at",
+                    "last_error")
+    list_filter = ("platform", "is_active")
+    search_fields = ("account_id", "name")
+    readonly_fields = ("token_encrypted", "last_refreshed_at", "last_checked_at",
+                       "created_at", "updated_at")
