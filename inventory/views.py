@@ -3954,12 +3954,14 @@ def bot_test_page(request):
     return render(request, "inventory/bot_test.html", {})
 
 
-@csrf_exempt
+@login_required(login_url="/login/")
 @require_POST
 def api_bot_test_reply(request):
     """Simulate a customer message and return the bot's reply. The simulated
     conversation lives in the request payload (no DB writes). Accepts optional
     base64 image (data URL) as the customer photo."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
     try:
         import json as _json
         data = _json.loads(request.body.decode("utf-8"))
