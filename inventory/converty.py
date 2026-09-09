@@ -9,6 +9,7 @@ tokens live in the ConvertyConnection model. Access tokens last 15 days and
 are refreshed proactively with a 5-minute buffer.
 """
 import os
+from .models import get_setting
 import json
 import secrets
 import urllib.parse
@@ -39,11 +40,11 @@ STATUS_MAP = {
 
 
 def _client_id():
-    return os.environ.get("CONVERTY_CLIENT_ID", "")
+    return get_setting("CONVERTY_CLIENT_ID", "")
 
 
 def _client_secret():
-    return os.environ.get("CONVERTY_CLIENT_SECRET", "")
+    return get_setting("CONVERTY_CLIENT_SECRET", "")
 
 
 def _redirect_uri(request):

@@ -12,6 +12,7 @@ Environment variables:
                      all other recipients are skipped. Use during testing.
 """
 import os
+from .models import get_setting
 import urllib.parse
 import urllib.request
 
@@ -44,11 +45,11 @@ def send_sms(phone, message):
     if test_number and mobile != test_number:
         return (False, f"skipped (test mode, not {test_number})")
 
-    if os.environ.get("SMS_ENABLED", "") != "1":
+    if get_setting("SMS_ENABLED", "") != "1":
         return (False, "SMS disabled (SMS_ENABLED != 1)")
 
-    key = os.environ.get("SMS_API_KEY", "")
-    sender = os.environ.get("SMS_SENDER", "Barats")
+    key = get_setting("SMS_API_KEY", "")
+    sender = get_setting("SMS_SENDER", "Barats")
     if not key:
         return (False, "no SMS_API_KEY configured")
 

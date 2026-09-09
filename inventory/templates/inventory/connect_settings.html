@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Réglages Meta — Stock Manager</title>
+<title>Configuration — Stock Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -18,55 +18,73 @@
   --green:#1a9e6e; --green-dim:rgba(26,158,110,0.12); --blue:#2363c9;
 }
 body{background:var(--bg);color:var(--text);font-family:'DM Sans',system-ui,sans-serif;
-  line-height:1.55;padding:24px;max-width:640px;margin:0 auto;}
-h1{font-family:'DM Serif Display',serif;font-size:24px;margin-bottom:4px;}
-.sub{color:var(--muted);font-size:14px;margin-bottom:22px;}
+  line-height:1.55;padding:24px;max-width:760px;margin:0 auto;}
+h1{font-family:'DM Serif Display',serif;font-size:26px;margin-bottom:4px;}
+.sub{color:var(--muted);font-size:14px;margin-bottom:20px;}
 a.back{color:var(--blue);font-size:13px;text-decoration:none;}
-.field{margin-bottom:16px;}
+.note{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:12px 14px;font-size:12.5px;color:var(--muted);margin-bottom:20px;}
+.section{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:16px 18px;margin-bottom:16px;}
+.section h2{font-size:15px;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+.field{margin-bottom:13px;}
 label{display:block;font-size:13px;font-weight:600;margin-bottom:5px;}
-.hint{font-size:11px;color:var(--muted);font-weight:400;}
-input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:9px;
-  background:var(--surface);color:var(--text);font-size:14px;outline:none;font-family:inherit;}
+input{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:9px;
+  background:var(--surface2);color:var(--text);font-size:14px;outline:none;font-family:inherit;}
 input:focus{border-color:var(--blue);}
+.hint{font-size:10.5px;color:var(--muted);font-weight:400;margin-top:3px;}
 .set{color:var(--green);font-size:11px;font-weight:600;}
-.btn{margin-top:8px;padding:11px 20px;border:none;border-radius:10px;background:var(--blue);
+.unset{color:var(--muted);font-size:11px;}
+.savebar{position:sticky;bottom:0;background:var(--bg);padding:14px 0;
+  border-top:1px solid var(--border);display:flex;gap:12px;align-items:center;}
+.btn{padding:11px 22px;border:none;border-radius:10px;background:var(--blue);
   color:#fff;font-weight:600;font-size:14px;cursor:pointer;}
 .msg{padding:10px 14px;border-radius:10px;margin-bottom:14px;font-size:14px;
   background:var(--green-dim);color:var(--green);}
-.note{background:var(--surface);border:1px solid var(--border);border-radius:10px;
-  padding:12px 14px;font-size:12.5px;color:var(--muted);margin-bottom:20px;}
 </style>
 </head>
 <body>
-  <a class="back" href="{% url 'connect_home' %}">← Connexions Meta</a>
-  <h1>Réglages Meta</h1>
-  <div class="sub">Configurez ici les identifiants de vos apps Meta — enregistrés
-    chiffrés dans l'application, sans toucher aux variables serveur.</div>
+  <a class="back" href="{% url 'connect_home' %}">← Connexions</a>
+  <a class="back" href="/admin-tools/" style="margin-left:14px;">Outils admin</a>
+  <h1>Configuration</h1>
+  <div class="sub">Toutes les clés, tokens et intégrations en un seul endroit — enregistrés chiffrés dans l'application.</div>
 
   {% if messages %}
     {% for m in messages %}<div class="msg">{{ m }}</div>{% endfor %}
   {% endif %}
 
   <div class="note">🔒 Les secrets sont chiffrés et ne sont jamais réaffichés.
-    Laissez un champ secret vide pour conserver la valeur actuelle.</div>
+    Laissez un champ secret vide pour conserver sa valeur actuelle. Les jetons
+    des pages/comptes se gèrent dans <a href="{% url 'connect_home' %}">Connexions</a>.</div>
 
   <form method="post">
     {% csrf_token %}
-    {% for f in fields %}
-      <div class="field">
-        <label>{{ f.label }}
-          {% if f.secret and f.is_set %}<span class="set">• défini</span>{% endif %}
-        </label>
-        {% if f.secret %}
-          <input type="password" name="{{ f.key }}" autocomplete="new-password"
-                 placeholder="{% if f.is_set %}•••••••• (laisser vide pour garder){% else %}coller la valeur{% endif %}">
-        {% else %}
-          <input type="text" name="{{ f.key }}" value="{{ f.value }}" autocomplete="off">
-        {% endif %}
-        <div class="hint">{{ f.key }}</div>
+    {% for s in sections %}
+      <div class="section">
+        <h2>{{ s.emoji }} {{ s.title }}</h2>
+        {% for f in s.rows %}
+          <div class="field">
+            <label>{{ f.label }}
+              {% if f.secret %}
+                {% if f.is_set %}<span class="set">• défini</span>{% else %}<span class="unset">• non défini</span>{% endif %}
+              {% endif %}
+            </label>
+            {% if f.secret %}
+              <input type="password" name="{{ f.key }}" autocomplete="new-password"
+                     placeholder="{% if f.is_set %}•••••••• (laisser vide pour garder){% else %}coller la valeur{% endif %}">
+            {% else %}
+              <input type="text" name="{{ f.key }}" value="{{ f.value }}" autocomplete="off"
+                     placeholder="—">
+            {% endif %}
+            <div class="hint">{{ f.key }}</div>
+          </div>
+        {% endfor %}
       </div>
     {% endfor %}
-    <button class="btn" type="submit">Enregistrer</button>
+    <div class="savebar">
+      <button class="btn" type="submit">Enregistrer la configuration</button>
+      <span class="hint">Prend effet immédiatement.</span>
+    </div>
   </form>
 </body>
 </html>

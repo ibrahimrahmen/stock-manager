@@ -15,6 +15,7 @@ separated list allowed). Fails closed with 401 when unset/wrong.
 """
 import json
 import os
+from .models import get_setting
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib.auth.decorators import login_required
@@ -64,7 +65,7 @@ def _presented_token(request):
 
 
 def _check_auth(request):
-    raw = (os.environ.get("UNIFUNL_INBOUND_TOKEN", "") or "").strip()
+    raw = (get_setting("UNIFUNL_INBOUND_TOKEN", "") or "").strip()
     valid = {t.strip() for t in raw.split(",") if t.strip()}
     if not valid:
         return False
@@ -258,7 +259,7 @@ def _offer_to_product(offer, request):
 def _offer_page_names():
     """Sales-page names whose offers are sent to Unifunl. Default: Barats only.
     Override with UNIFUNL_OFFER_PAGES (comma-separated). Empty => all offers."""
-    raw = os.environ.get("UNIFUNL_OFFER_PAGES", "Barats,Barats.tn")
+    raw = get_setting("UNIFUNL_OFFER_PAGES", "Barats,Barats.tn")
     return [s.strip() for s in (raw or "").split(",") if s.strip()]
 
 
@@ -597,7 +598,7 @@ def debug_last_auth(request):
     from .models import AppKeyValue
     row = AppKeyValue.objects.filter(key="unifunl_seen_auth").first()
     order_row = AppKeyValue.objects.filter(key="unifunl_last_order_payload").first()
-    raw = (os.environ.get("UNIFUNL_INBOUND_TOKEN", "") or "")
+    raw = (get_setting("UNIFUNL_INBOUND_TOKEN", "") or "")
     return JsonResponse({
         "last_rejected_auth": row.value if row else None,
         "seen_at": row.updated_at.isoformat() if row else None,

@@ -1524,6 +1524,45 @@ def decrypt_secret(stored):
     return stored  # legacy raw value
 
 
+# Keys whose values are secrets — stored ENCRYPTED and never shown back in UI.
+SETTING_SECRET_KEYS = {
+    "META_APP_SECRET", "IG_APP_SECRET", "MESSENGER_APP_SECRET", "FB_APP_SECRET",
+    "META_ACCESS_TOKEN", "META_AD_ACCOUNT_TOKENS", "MESSENGER_PAGE_TOKENS",
+    "MESSENGER_VERIFY_TOKEN", "UNIFUNL_API_KEY", "UNIFUNL_INBOUND_TOKEN",
+    "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "NAVEX_API_TOKEN", "SMS_API_KEY",
+    "CONVERTY_CLIENT_SECRET", "SHOPIFY_ADMIN_API_TOKEN", "SHOPIFY_CLIENT_SECRET",
+    "SHOPIFY_WEBHOOK_SECRET", "RESEND_API_KEY", "TELEGRAM_BOT_TOKEN",
+    "CALLMEBOT_APIKEY", "CRON_TOKEN", "DM_INTAKE_TOKEN", "MESSENGER_POLL_TOKEN",
+}
+
+
+def get_setting(key, default=""):
+    """Read an app config value: the in-app DB store (AppKeyValue 'cfg:<key>')
+    FIRST, then the environment variable, then default. Secret keys are stored
+    encrypted. Env fallback means behaviour is unchanged until a value is
+    explicitly set in the Configuration Center, so this is safe to wire in
+    everywhere. Never raises."""
+    try:
+        row = AppKeyValue.objects.filter(key="cfg:" + key).first()
+        if row and row.value:
+            v = decrypt_secret(row.value) if key in SETTING_SECRET_KEYS else row.value
+            if v:
+                return v.strip()
+    except Exception:
+        pass
+    return (_os.environ.get(key, default) or "").strip()
+
+
+def set_setting(key, value):
+    """Persist an app config value in the DB store (encrypting secret keys).
+    An empty value clears the stored override (falling back to env/default)."""
+    stored = ""
+    if value:
+        stored = encrypt_secret(value) if key in SETTING_SECRET_KEYS else value
+    AppKeyValue.objects.update_or_create(key="cfg:" + key,
+                                         defaults={"value": stored})
+
+
 class MetaToken(models.Model):
     """Self-managing store for Meta (Facebook Page / Instagram) access tokens.
 

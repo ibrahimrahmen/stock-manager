@@ -492,7 +492,7 @@ def cron_refresh_tokens(request):
     """Cron endpoint: import any new env tokens into the DB store, then refresh
     Instagram tokens before they expire and re-check health. Idempotent; safe to
     run daily. Optional guard: if CRON_TOKEN is set, require ?token= to match."""
-    guard = os.environ.get("CRON_TOKEN", "").strip()
+    guard = _cfg("CRON_TOKEN", "").strip()
     if guard and request.GET.get("token", "") != guard:
         return JsonResponse({"status": "error", "message": "Forbidden"}, status=403)
     try:
@@ -531,41 +531,73 @@ _FB_PAGE_WEBHOOK_FIELDS = ("messages,message_echoes,messaging_postbacks,"
 _IG_WEBHOOK_FIELDS = "messages,messaging_postbacks,messaging_referral,messaging_seen"
 
 
-# Config keys editable from the in-app Settings page. Secret keys are stored
-# encrypted in the DB; the raw value is never shown back.
-_CONFIG_FIELDS = [
-    ("META_APP_ID", "ID de l'app Facebook", False),
-    ("META_APP_SECRET", "Secret de l'app Facebook", True),
-    ("META_LOGIN_CONFIG_ID", "ID de configuration (Facebook Login for Business)", False),
-    ("IG_APP_ID", "ID de l'app Instagram", False),
-    ("IG_APP_SECRET", "Secret de l'app Instagram", True),
+# The Configuration Center, organized by integration. Each field is
+# (key, label, is_secret). Secret values are stored encrypted and never shown
+# back. Which keys are secret is authoritative in models.SETTING_SECRET_KEYS.
+_CONFIG_SECTIONS = [
+    ("Facebook / Messenger", "🔵", [
+        ("META_APP_ID", "ID de l'app Facebook", False),
+        ("META_APP_SECRET", "Secret de l'app Facebook", True),
+        ("META_LOGIN_CONFIG_ID", "Config ID (Facebook Login for Business)", False),
+        ("MESSENGER_VERIFY_TOKEN", "Token de vérification du webhook", True),
+        ("META_ACCESS_TOKEN", "Token d'accès Meta (pub / attribution)", True),
+    ]),
+    ("Instagram", "📸", [
+        ("IG_APP_ID", "ID de l'app Instagram", False),
+        ("IG_APP_SECRET", "Secret de l'app Instagram", True),
+    ]),
+    ("Meta Ads", "📣", [
+        ("META_AD_ACCOUNT_ID", "ID du compte publicitaire", False),
+        ("META_AD_ACCOUNT_TOKENS", "Tokens des comptes pub", True),
+    ]),
+    ("Unifunl (agent IA)", "🤖", [
+        ("UNIFUNL_API_KEY", "Clé API Unifunl (pull)", True),
+        ("UNIFUNL_INBOUND_TOKEN", "Token entrant Unifunl (Commerce API)", True),
+        ("UNIFUNL_OFFER_PAGES", "Pages dont les offres sont envoyées", False),
+    ]),
+    ("Intelligence artificielle", "✨", [
+        ("ANTHROPIC_API_KEY", "Clé API Claude (Anthropic)", True),
+        ("GEMINI_API_KEY", "Clé API Gemini", True),
+    ]),
+    ("Livraison (Navex)", "🚚", [
+        ("NAVEX_API_TOKEN", "Token API Navex", True),
+    ]),
+    ("SMS", "💬", [
+        ("SMS_API_KEY", "Clé API SMS", True),
+        ("SMS_SENDER", "Nom d'expéditeur SMS", False),
+        ("SMS_ENABLED", "SMS activé (1 = oui)", False),
+    ]),
+    ("Converty", "🛒", [
+        ("CONVERTY_CLIENT_ID", "Client ID Converty", False),
+        ("CONVERTY_CLIENT_SECRET", "Client secret Converty", True),
+    ]),
+    ("Shopify", "🟢", [
+        ("SHOPIFY_SHOP_DOMAIN", "Domaine de la boutique", False),
+        ("SHOPIFY_ADMIN_API_TOKEN", "Token Admin API", True),
+        ("SHOPIFY_WEBHOOK_SECRET", "Secret du webhook", True),
+    ]),
+    ("Notifications", "🔔", [
+        ("RESEND_API_KEY", "Clé API Resend (email)", True),
+        ("TELEGRAM_BOT_TOKEN", "Token du bot Telegram", True),
+        ("TELEGRAM_CHAT_ID", "Chat ID Telegram", False),
+    ]),
+    ("Système", "⚙️", [
+        ("CRON_TOKEN", "Token de protection des crons", True),
+    ]),
 ]
-_SECRET_CONFIG_KEYS = {k for k, _l, sec in _CONFIG_FIELDS if sec}
 
 
 def _cfg(key, default=""):
-    """Read a config value: the in-app DB store (AppKeyValue 'cfg:<key>') FIRST,
-    then the environment variable, then default. Secret keys are stored
-    encrypted. This lets everything be configured inside the app instead of
-    hand-edited env vars."""
-    try:
-        from .models import AppKeyValue, decrypt_secret
-        row = AppKeyValue.objects.filter(key="cfg:" + key).first()
-        if row and row.value:
-            v = decrypt_secret(row.value) if key in _SECRET_CONFIG_KEYS else row.value
-            if v:
-                return v.strip()
-    except Exception:
-        pass
-    return (os.environ.get(key, default) or "").strip()
+    """Read an app config value (DB store first, then env). Thin wrapper around
+    models.get_setting so the whole app shares one config source."""
+    from .models import get_setting
+    return get_setting(key, default)
 
 
 def _set_cfg(key, value):
-    """Persist a config value in the DB store (encrypting secret keys)."""
-    from .models import AppKeyValue, encrypt_secret
-    stored = encrypt_secret(value) if key in _SECRET_CONFIG_KEYS else (value or "")
-    AppKeyValue.objects.update_or_create(key="cfg:" + key,
-                                         defaults={"value": stored})
+    """Persist an app config value (encrypting secret keys)."""
+    from .models import set_setting
+    set_setting(key, value)
 
 
 def _oauth_app_creds(platform):
@@ -655,27 +687,33 @@ def connect_home(request):
 
 @login_required(login_url="/login/")
 def connect_settings(request):
-    """In-app config for the Meta/Instagram app credentials — stored encrypted
-    in the DB so nothing has to be pasted into Railway env vars. Superuser
-    only."""
+    """Configuration Center: every integration's tokens & settings in one
+    organized page — stored encrypted in the DB, no Railway env editing.
+    Superuser only."""
     if not request.user.is_superuser:
         return HttpResponseForbidden("Accès refusé.")
+    all_fields = [(k, s) for _t, _e, fields in _CONFIG_SECTIONS
+                  for (k, _l, s) in fields]
     if request.method == "POST":
-        for key, _label, is_secret in _CONFIG_FIELDS:
+        for key, is_secret in all_fields:
             val = (request.POST.get(key) or "").strip()
             if is_secret:
                 if val:  # only overwrite a secret when a new value is typed
                     _set_cfg(key, val)
             else:
                 _set_cfg(key, val)
-        messages.success(request, "✅ Réglages enregistrés.")
+        messages.success(request, "✅ Configuration enregistrée.")
         return redirect("connect_settings")
-    fields = []
-    for key, label, is_secret in _CONFIG_FIELDS:
-        cur = _cfg(key)
-        fields.append({"key": key, "label": label, "secret": is_secret,
-                       "value": "" if is_secret else cur, "is_set": bool(cur)})
-    return render(request, "inventory/connect_settings.html", {"fields": fields})
+    sections = []
+    for title, emoji, fields in _CONFIG_SECTIONS:
+        rows = []
+        for key, label, is_secret in fields:
+            cur = _cfg(key)
+            rows.append({"key": key, "label": label, "secret": is_secret,
+                         "value": "" if is_secret else cur, "is_set": bool(cur)})
+        sections.append({"title": title, "emoji": emoji, "rows": rows})
+    return render(request, "inventory/connect_settings.html",
+                  {"sections": sections})
 
 
 def _require_superuser_redirect(request):
@@ -1985,7 +2023,7 @@ def _resolve_ad_campaign_name(ad_id):
     import json as _json
     if not ad_id:
         return ""
-    token = os.environ.get("META_ACCESS_TOKEN", "").strip()
+    token = _cfg("META_ACCESS_TOKEN", "").strip()
     if not token:
         return ""
     url = (f"https://graph.facebook.com/v21.0/{ad_id}"
@@ -2007,7 +2045,7 @@ def _fetch_ad_text(ad_id):
     import json as _json
     if not ad_id:
         return ""
-    token = os.environ.get("META_ACCESS_TOKEN", "").strip()
+    token = _cfg("META_ACCESS_TOKEN", "").strip()
     if not token:
         return ""
     # Simple in-process cache so we don't refetch the same ad every message.
@@ -2250,7 +2288,7 @@ def _claude_web_search(prompt, max_tokens=1024):
     reserve it for the fallback path. Never raises; bails on 429."""
     import urllib.request as _ureq
     import json as _json
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    api_key = _cfg("ANTHROPIC_API_KEY", "").strip()
     if not api_key or not prompt:
         return None
     # Web search needs a capable model; Haiku may not support the tool well.
@@ -2319,7 +2357,7 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
     for large unchanging context like the full delegation list."""
     import urllib.request as _ureq
     import json as _json
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    api_key = _cfg("ANTHROPIC_API_KEY", "").strip()
     if not api_key or not prompt:
         if errbox is not None:
             errbox.append("ANTHROPIC_API_KEY manquant" if not api_key else "prompt vide")
@@ -2454,7 +2492,7 @@ def _gemini_generate(prompt, max_tokens=1024, temperature=0.0, model="gemini-2.5
     the old name so existing callers work unchanged. The `model` arg is ignored
     (Claude model is chosen via ANTHROPIC_MODEL). Falls back to Gemini only if
     ANTHROPIC_API_KEY is absent but GEMINI_API_KEY is present."""
-    if os.environ.get("ANTHROPIC_API_KEY", "").strip():
+    if _cfg("ANTHROPIC_API_KEY", "").strip():
         return _claude_generate(prompt, max_tokens=max_tokens, temperature=temperature)
     return _gemini_generate_legacy(prompt, max_tokens=max_tokens, temperature=temperature, model=model)
 
@@ -2466,7 +2504,7 @@ def _gemini_generate_legacy(prompt, max_tokens=1024, temperature=0.0, model="gem
     import urllib.request as _ureq
     import json as _json
     import time as _time
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = _cfg("GEMINI_API_KEY")
     if not api_key or not prompt:
         return None
     body = {
@@ -5225,7 +5263,7 @@ import resend as resend_client
 import socket as _socket
 
 # Configure Resend client from env (never hard-code the key)
-resend_client.api_key = os.environ.get("RESEND_API_KEY", "")
+resend_client.api_key = _cfg("RESEND_API_KEY", "")
 
 # Resend free plan only delivers to verified addresses.
 # Until a domain is verified, send everything to this single recipient.
@@ -5313,8 +5351,8 @@ def _send_telegram_photo(photo_path, caption, chat_id=None, token=None):
     """Send a local photo file with caption via Telegram. Best-effort; returns
     True/False. Sends to all configured chat ids."""
     import urllib.request, mimetypes, uuid, os as _os
-    token = token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat_ids = (chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")).split(",")
+    token = token or _cfg("TELEGRAM_BOT_TOKEN", "")
+    chat_ids = (chat_id or _cfg("TELEGRAM_CHAT_ID", "")).split(",")
     if not token or not photo_path or not _os.path.exists(photo_path):
         return False
     sent_any = False
@@ -5361,8 +5399,8 @@ def _send_telegram(message, chat_id=None, token=None):
     (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) unless passed explicitly. Best-effort:
     never raises, returns True/False. Supports multiple chat ids comma-separated."""
     import urllib.parse, urllib.request, json as _json
-    token = token or os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat_ids = (chat_id or os.environ.get("TELEGRAM_CHAT_ID", "")).split(",")
+    token = token or _cfg("TELEGRAM_BOT_TOKEN", "")
+    chat_ids = (chat_id or _cfg("TELEGRAM_CHAT_ID", "")).split(",")
     if not token:
         return False
     sent_any = False
@@ -5814,7 +5852,7 @@ def _sync_unifunl_orders(apply=True, max_pages=30):
     import json as _json
     from .models import Order, SalesPage
 
-    key = os.environ.get("UNIFUNL_API_KEY", "").strip()
+    key = _cfg("UNIFUNL_API_KEY", "").strip()
     if not key:
         return {"status": "error",
                 "message": "UNIFUNL_API_KEY manquant (variable d'environnement)."}
@@ -7705,8 +7743,8 @@ def _meta_fetch_spend_by_campaign(start_date, end_date):
     Env vars: META_ACCESS_TOKEN and META_AD_ACCOUNT_ID.
     """
     import urllib.request
-    token = os.environ.get("META_ACCESS_TOKEN", "").strip()
-    accounts_raw = os.environ.get("META_AD_ACCOUNT_ID", "").strip()
+    token = _cfg("META_ACCESS_TOKEN", "").strip()
+    accounts_raw = _cfg("META_AD_ACCOUNT_ID", "").strip()
     if not accounts_raw:
         return {}
     # META_AD_ACCOUNT_ID may be a single id or a comma-separated list of ids,
@@ -7717,7 +7755,7 @@ def _meta_fetch_spend_by_campaign(start_date, end_date):
     #   META_AD_ACCOUNT_TOKENS = "1465...:EAA...,1865...:EAB..."
     # Any account not listed here falls back to META_ACCESS_TOKEN.
     per_account = {}
-    for pair in os.environ.get("META_AD_ACCOUNT_TOKENS", "").split(","):
+    for pair in _cfg("META_AD_ACCOUNT_TOKENS", "").split(","):
         pair = pair.strip()
         if pair and ":" in pair:
             aid, _, tok = pair.partition(":")
@@ -7795,13 +7833,13 @@ def _meta_fetch_campaign_status():
     Returns {campaign_id: "ACTIVE"/"PAUSED"/"CAMPAIGN_PAUSED"/"DELETED"/...}.
     Uses the /campaigns endpoint (all campaigns, not just those with spend)."""
     import urllib.request
-    token = os.environ.get("META_ACCESS_TOKEN", "").strip()
-    accounts_raw = os.environ.get("META_AD_ACCOUNT_ID", "").strip()
+    token = _cfg("META_ACCESS_TOKEN", "").strip()
+    accounts_raw = _cfg("META_AD_ACCOUNT_ID", "").strip()
     if not accounts_raw:
         return {}
     account_ids = [a.strip() for a in accounts_raw.split(",") if a.strip()]
     per_account = {}
-    for pair in os.environ.get("META_AD_ACCOUNT_TOKENS", "").split(","):
+    for pair in _cfg("META_AD_ACCOUNT_TOKENS", "").split(","):
         pair = pair.strip()
         if pair and ":" in pair:
             aid, _, tok = pair.partition(":")
@@ -8909,7 +8947,7 @@ def api_shopify_webhook_order_created(request):
     )
 
     # 1. Verify HMAC signature
-    secret = os.environ.get("SHOPIFY_WEBHOOK_SECRET", "")
+    secret = _cfg("SHOPIFY_WEBHOOK_SECRET", "")
     received_hmac = request.headers.get("X-Shopify-Hmac-Sha256", "")
     if not secret:
         # If the env var isn't set, refuse the request — never accept unsigned data
@@ -9203,7 +9241,7 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
             "Si une partie est déjà en latin, garde-la telle quelle.\n\n"
             f"Texte : {text}"
         )
-        if os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        if _cfg("ANTHROPIC_API_KEY", "").strip():
             return _claude_generate(prompt, max_tokens=256, temperature=0.0)
         return _gemini_transliterate_legacy(text)
 
@@ -9212,7 +9250,7 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
         Returns the transliterated text, or None on failure (caller falls back).
         Supports both classic API keys (AIza...) and new-format ones (AQ...).
         """
-        api_key = os.environ.get("GEMINI_API_KEY")
+        api_key = _cfg("GEMINI_API_KEY")
         if not api_key or not text:
             return None
         import urllib.request as _ureq
@@ -10519,7 +10557,7 @@ def api_debug_navex_etat(request):
     if not bordereau:
         return JsonResponse({"status": "error", "message": "Bordereau requis."}, status=400)
     import urllib.request, urllib.parse
-    token = os.environ.get("NAVEX_API_TOKEN", "")
+    token = _cfg("NAVEX_API_TOKEN", "")
     if not token:
         return JsonResponse({"status": "error", "message": "Token manquant."}, status=500)
 
@@ -11949,7 +11987,7 @@ def _push_order_to_navex_internal(request, order):
     import urllib.request, urllib.parse
     from .models import Order, log_action, AuditLog
 
-    token = os.environ.get("NAVEX_API_TOKEN", "")
+    token = _cfg("NAVEX_API_TOKEN", "")
     if not token:
         return JsonResponse({"status": "error", "message": "NAVEX_API_TOKEN non configuré côté serveur."}, status=500)
 
@@ -12370,7 +12408,7 @@ def _navex_fetch_many(bordereaux):
     get the exchange return barcode for orders that are exchanges.
     """
     import urllib.request, urllib.parse
-    token = os.environ.get("NAVEX_API_TOKEN", "")
+    token = _cfg("NAVEX_API_TOKEN", "")
     if not token or not bordereaux:
         return False, {}, {"_error": "missing token or bordereaux"}
 
@@ -12728,7 +12766,7 @@ def _shopify_get_access_token():
     Cached for ~50 minutes in module-level dict to avoid re-fetching on every call.
     """
     import urllib.request, urllib.parse, urllib.error, time
-    domain = os.environ.get("SHOPIFY_SHOP_DOMAIN", "").strip()
+    domain = _cfg("SHOPIFY_SHOP_DOMAIN", "").strip()
     cid = os.environ.get("SHOPIFY_CLIENT_ID", "").strip()
     csecret = os.environ.get("SHOPIFY_CLIENT_SECRET", "").strip()
     if not (domain and cid and csecret):
@@ -12781,7 +12819,7 @@ def _shopify_cancel_order(shopify_order_id):
     Returns (ok: bool, response_data: dict|str).
     """
     import urllib.request, urllib.error
-    domain = os.environ.get("SHOPIFY_SHOP_DOMAIN", "").strip()
+    domain = _cfg("SHOPIFY_SHOP_DOMAIN", "").strip()
     if not domain:
         return False, {"_error": "SHOPIFY_SHOP_DOMAIN non configuré."}
     if not shopify_order_id:
@@ -12791,7 +12829,7 @@ def _shopify_cancel_order(shopify_order_id):
     token, err = _shopify_get_access_token()
     if not token:
         # Fallback: a directly-set token (custom apps héritées only)
-        token = os.environ.get("SHOPIFY_ADMIN_API_TOKEN", "").strip()
+        token = _cfg("SHOPIFY_ADMIN_API_TOKEN", "").strip()
     if not token:
         return False, {"_error": err or "Pas de token Shopify disponible."}
 
@@ -12840,7 +12878,7 @@ def _shopify_mark_paid(shopify_order_id, amount, currency="TND"):
     Returns (ok: bool, response_data: dict|str).
     """
     import urllib.request, urllib.error
-    domain = os.environ.get("SHOPIFY_SHOP_DOMAIN", "").strip()
+    domain = _cfg("SHOPIFY_SHOP_DOMAIN", "").strip()
     if not domain:
         return False, {"_error": "SHOPIFY_SHOP_DOMAIN non configuré."}
     if not shopify_order_id:
@@ -12848,7 +12886,7 @@ def _shopify_mark_paid(shopify_order_id, amount, currency="TND"):
 
     token, err = _shopify_get_access_token()
     if not token:
-        token = os.environ.get("SHOPIFY_ADMIN_API_TOKEN", "").strip()
+        token = _cfg("SHOPIFY_ADMIN_API_TOKEN", "").strip()
     if not token:
         return False, {"_error": err or "Pas de token Shopify disponible."}
 
@@ -12915,7 +12953,7 @@ def _navex_cancel_colis(bordereau):
         body: delete_code=<bordereau>
     """
     import urllib.request, urllib.parse
-    token = os.environ.get("NAVEX_API_TOKEN", "")
+    token = _cfg("NAVEX_API_TOKEN", "")
     if not token:
         return False, {"_error": "NAVEX_API_TOKEN non configuré côté serveur."}
     if not bordereau:
@@ -13025,13 +13063,13 @@ def _meta_fetch_spend(start_date, end_date):
     Returns empty dict on any error.
     """
     import urllib.request, urllib.parse, urllib.error
-    token = os.environ.get("META_ACCESS_TOKEN", "").strip()
-    accounts_raw = os.environ.get("META_AD_ACCOUNT_ID", "").strip()
+    token = _cfg("META_ACCESS_TOKEN", "").strip()
+    accounts_raw = _cfg("META_AD_ACCOUNT_ID", "").strip()
     if not accounts_raw:
         return {}
     account_ids = [a.strip() for a in accounts_raw.split(",") if a.strip()]
     per_account = {}
-    for pair in os.environ.get("META_AD_ACCOUNT_TOKENS", "").split(","):
+    for pair in _cfg("META_AD_ACCOUNT_TOKENS", "").split(","):
         pair = pair.strip()
         if pair and ":" in pair:
             aid, _, tok = pair.partition(":")
@@ -13162,8 +13200,8 @@ def ads_dashboard(request):
             "profit": r - s,
         })
 
-    has_token = bool(os.environ.get("META_ACCESS_TOKEN", "").strip())
-    has_account = bool(os.environ.get("META_AD_ACCOUNT_ID", "").strip())
+    has_token = bool(_cfg("META_ACCESS_TOKEN", "").strip())
+    has_account = bool(_cfg("META_AD_ACCOUNT_ID", "").strip())
 
     return render(request, "inventory/ads_dashboard.html", {
         "rows": rows,
@@ -13659,7 +13697,7 @@ def api_messenger_webhook(request):
     """
     # --- GET: Meta verification handshake ---
     if request.method == "GET":
-        verify_token = os.environ.get("MESSENGER_VERIFY_TOKEN", "")
+        verify_token = _cfg("MESSENGER_VERIFY_TOKEN", "")
         mode = request.GET.get("hub.mode")
         token = request.GET.get("hub.verify_token")
         challenge = request.GET.get("hub.challenge", "")

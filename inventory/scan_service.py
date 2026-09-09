@@ -17,6 +17,7 @@ from django.db import transaction
 from .models import (
     Product, ProductVariant, ProductUnit,
     ShippingOrder, OrderItem, StockMovement,
+    get_setting,
 )
 from .barcode_parser import parse_barcode, is_bordereau_barcode
 
@@ -35,7 +36,7 @@ def _get_navex_info(barcode: str):
         import urllib.request, urllib.parse
         navex_url = (
             f"https://app.navex.tn/api/rashop-etat-"
-            f"{os.environ.get('NAVEX_API_TOKEN', '')}/v1/post.php"
+            f"{get_setting('NAVEX_API_TOKEN', '')}/v1/post.php"
         )
         data = urllib.parse.urlencode({"getattente": "1"}).encode()
         req = urllib.request.Request(
