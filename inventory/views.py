@@ -637,8 +637,18 @@ def oauth_facebook_start(request):
     redirect_uri = request.build_absolute_uri("/connect/facebook/callback/")
     params = {
         "client_id": app_id, "redirect_uri": redirect_uri, "state": state,
-        "response_type": "code", "scope": _FB_OAUTH_SCOPES,
+        "response_type": "code",
     }
+    # "Facebook Login for Business" apps (most Business/messaging apps) require a
+    # Configuration ID instead of a scope list — plain scope makes the dialog
+    # fail to load. If META_LOGIN_CONFIG_ID is set we use it; otherwise we fall
+    # back to classic Facebook Login with scopes.
+    config_id = os.environ.get("META_LOGIN_CONFIG_ID", "").strip()
+    if config_id:
+        params["config_id"] = config_id
+        params["override_default_response_type"] = "true"
+    else:
+        params["scope"] = _FB_OAUTH_SCOPES
     return redirect("https://www.facebook.com/v21.0/dialog/oauth?"
                     + _uparse.urlencode(params))
 
