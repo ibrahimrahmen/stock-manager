@@ -2378,10 +2378,14 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
     import urllib.request as _ureq
     import json as _json
     api_key = _cfg("ANTHROPIC_API_KEY", "").strip()
-    if not api_key or not prompt:
-        if errbox is not None:
-            errbox.append("ANTHROPIC_API_KEY manquant" if not api_key else "prompt vide")
+    if not prompt:
         return None
+    if not api_key:
+        # No Claude key at all → use Gemini (text-only) directly.
+        if errbox is not None:
+            errbox.append("ANTHROPIC_API_KEY manquant — bascule Gemini")
+        return _gemini_generate_legacy(prompt, max_tokens=max_tokens,
+                                       temperature=temperature)
     model = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001").strip()
     # Build the message content. If images are supplied (Claude Vision), send
     # them as image blocks BEFORE the text so the model sees them in context.
@@ -2483,11 +2487,14 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
                 rd = _json.loads(resp.read().decode("utf-8"))
             blocks = rd.get("content") or []
             txt = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
-            return txt or None
+            if txt:
+                return txt
+            break  # Claude returned empty → fall back to Gemini below.
         except Exception as e:
             es = str(e)
             # HTTPError carries the API's JSON error body — capture it so callers
-            # can show the real reason (bad key, image too large, quota...).
+            # can show the real reason (bad key, image too large, quota,
+            # "credit balance too low"...).
             try:
                 if hasattr(e, "read"):
                     es = es + " | " + e.read().decode("utf-8", "replace")[:300]
@@ -2495,16 +2502,22 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
                 pass
             if errbox is not None:
                 errbox.append(es[:400])
-            # 429 = rate limit: don't retry (pins the worker); bail out.
+            # 429 = rate limit: don't retry (pins the worker); fall back.
             if "429" in es:
-                return None
+                break
             # Retry only transient server errors, briefly.
             if ("529" in es or "503" in es or "500" in es
                     or "timed out" in es.lower() or "502" in es) and retry < 2:
                 import time as _t; _t.sleep(1 + retry)
                 continue
-            return None
-    return None
+            break  # Any other Claude error (e.g. credits) → fall back.
+    # Claude unavailable/failed/empty → fall back to Gemini (text-only). This
+    # keeps the bot and all AI features working when Claude has no credits.
+    _fb = _gemini_generate_legacy(prompt, max_tokens=max_tokens,
+                                  temperature=temperature)
+    if _fb and errbox is not None:
+        errbox.append("→ bascule Gemini réussie")
+    return _fb
 
 
 def _gemini_generate(prompt, max_tokens=1024, temperature=0.0, model="gemini-2.5-flash-lite"):
