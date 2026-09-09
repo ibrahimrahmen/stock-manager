@@ -8633,7 +8633,7 @@ def api_reply_mode(request):
             data = json.loads(request.body.decode("utf-8") or "{}")
             sp = int(data.get("sales_page"))
             mode = (data.get("mode") or "").strip()
-            if mode not in ("", "off", "internal", "external"):
+            if mode not in ("", "off", "internal", "external", "capture"):
                 return JsonResponse({"status": "error", "message": "Mode invalide."}, status=400)
             if sp not in _REPLY_PAGES:
                 return JsonResponse({"status": "error", "message": "Page inconnue."}, status=400)
@@ -14124,6 +14124,7 @@ def api_messenger_webhook(request):
                 # pages you haven't configured.
                 _mode = _cfg("reply_mode:%s" % _sp_here, "")
                 _external_agent = False
+                _capture = False  # hybrid: stay silent but still extract the order
                 if _mode:
                     if _mode == "external":
                         # Unifunl owns it — but fail over to the internal bot if
@@ -14147,6 +14148,15 @@ def api_messenger_webhook(request):
                     elif _mode == "internal":
                         _external_agent = False
                         _bot_on = True
+                    elif _mode == "capture":
+                        # Hybrid: an external chatter (e.g. Meta's own AI /
+                        # Business Agent) does ALL the replying, so our system
+                        # stays silent — BUT we still read the conversation and
+                        # extract the order into the system. Silence like an
+                        # external agent, but keep extraction on (see below).
+                        _external_agent = True
+                        _bot_on = False
+                        _capture = True
                     else:  # "off"
                         _external_agent = False
                         _bot_on = False
@@ -14595,10 +14605,12 @@ def api_messenger_webhook(request):
                 # A2) FAQ handled earlier (before the bot) so it can gate the
                 # bot and avoid double replies.
 
-                # B) Auto-extract when the conversation looks complete — unless
-                # an external agent owns this page (it creates the order and we
-                # import it via its sync, so extracting here would duplicate it).
-                if not _external_agent:
+                # B) Auto-extract when the conversation looks complete. We skip
+                # this for a true external agent (Unifunl) that creates the order
+                # itself and syncs it to us — extracting here would duplicate it.
+                # BUT in "capture" (hybrid) mode, the external chatter (Meta AI)
+                # does NOT create orders in our system, so we DO extract.
+                if (not _external_agent) or _capture:
                     try:
                         _try_extract_and_create_pending(conv)
                     except Exception:

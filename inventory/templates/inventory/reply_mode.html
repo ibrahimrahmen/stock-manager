@@ -49,6 +49,7 @@ h1{font-family:'DM Serif Display',serif;font-size:30px;}
 .seg button.on[data-m="off"]{background:#8a887f;color:#111;}
 .seg button.on[data-m="internal"]{background:var(--blue);}
 .seg button.on[data-m="external"]{background:var(--purple);}
+.seg button.on[data-m="capture"]{background:var(--amber);color:#111;}
 .seg button.on[data-m=""]{background:var(--surface3);color:var(--text);}
 #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--green-dim);
   color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:12px;font-size:13px;
@@ -74,6 +75,7 @@ h1{font-family:'DM Serif Display',serif;font-size:30px;}
       <span><b>Désactivé</b> — personne ne répond automatiquement</span>
       <span><b>Bot interne</b> — votre système répond</span>
       <span><b>Unifunl</b> — l'agent IA externe répond</span>
+      <span><b>Meta AI + capture</b> — l'IA de Facebook répond, votre système reste silencieux mais <b>extrait la commande</b></span>
     </div>
 
     <div id="list">Chargement…</div>
@@ -81,8 +83,8 @@ h1{font-family:'DM Serif Display',serif;font-size:30px;}
   <div id="toast"></div>
 
 <script>
-var MODES = [["","Par défaut"],["off","Désactivé"],["internal","Bot interne"],["external","Unifunl"]];
-var LABEL = {"":"Par défaut","off":"Désactivé","internal":"Bot interne","external":"Unifunl"};
+var MODES = [["","Par défaut"],["off","Désactivé"],["internal","Bot interne"],["external","Unifunl"],["capture","Meta AI + capture"]];
+var LABEL = {"":"Par défaut","off":"Désactivé","internal":"Bot interne","external":"Unifunl","capture":"Meta AI + capture"};
 var CSRF = "{{ csrf_token }}";
 
 function toast(t){var e=document.getElementById('toast');e.textContent=t;e.classList.add('show');
