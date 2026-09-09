@@ -229,6 +229,15 @@
         <div class="subtitle">Consultation seule</div>
       </a>
 
+      {% if request.user.is_superuser %}
+      <!-- CONFIGURATION -->
+      <a href="{% url 'connect_settings' %}" class="bubble config" style="text-decoration:none;color:inherit;display:block;">
+        <div class="bubble-icon" style="background:rgba(91,157,255,0.15);">⚙️</div>
+        <h2>Configuration</h2>
+        <div class="subtitle">Clés, tokens &amp; intégrations</div>
+      </a>
+      {% endif %}
+
     </div>
   </div>
 </body>
