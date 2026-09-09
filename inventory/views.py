@@ -1003,6 +1003,27 @@ def _faq_answer(text, conv=None):
     return ""
 
 
+import re as _greet_re_mod
+_GREETING_RE = _greet_re_mod.compile(
+    r"(?i)\b(slm|slem|slam|salm|salam|salem|aslema|asslema|aslm|3aslema|3asslema|"
+    r"sbe7|sbah|bonjour|bjr|bonsoir|salut|coucou|hello|hola|hi|hey|hyy|"
+    r"ahla|ahlan|marhba|mar7ba|mar7ba)\b")
+_GREETING_AR = ("سلام", "السلام", "اهلا", "أهلا", "مرحبا", "صباح", "مساء",
+                "سلامة", "عسلامة", "أهلين", "اهلين")
+
+
+def _is_greeting(text):
+    """True if the message is a short greeting ('slm', 'aslema', 'bonjour',
+    'سلام'...). Kept conservative (short messages only) so it doesn't fire on
+    long messages that merely contain a greeting word."""
+    t = (text or "").strip().lower()
+    if not t or len(t) > 40 or len(t.split()) > 5:
+        return False
+    if any(a in t for a in _GREETING_AR):
+        return True
+    return bool(_GREETING_RE.search(t))
+
+
 # Tunisian day names (Mon=0 .. Sun=6) used in the delivery promise.
 _TN_DAYS = ["lethnin", "ethleth", "lerbaa", "lekhmis", "jom3a", "essebt", "le7ed"]
 
@@ -14456,7 +14477,8 @@ def api_messenger_webhook(request):
                 greeting_env = os.environ.get("MESSENGER_GREETING_ENABLED", "1")
                 _already_greeted_here = any(
                     m.get("greeting") for m in (conv.messages or []))
-                if (greeting_env == "1" and not _bot_on
+                if (greeting_env == "1"
+                        and (not _bot_on or _is_greeting(text))
                         and not _external_agent
                         and not is_echo
                         and (text or "").strip()

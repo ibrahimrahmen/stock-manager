@@ -855,3 +855,18 @@ class ReplyModeTest(TestCase):
         c = Client(); c.force_login(User.objects.get(username="rm_plain"))
         self.assertEqual(c.get("/api/reply-mode/").status_code, 403)
         self.assertEqual(c.get("/reponses-auto/").status_code, 403)
+
+
+class GreetingDetectTest(TestCase):
+    """_is_greeting matches short greetings but not questions/long messages."""
+
+    def test_greetings(self):
+        for s in ["slm", "Slm", "aslema", "3aslema", "bonjour", "salut",
+                  "ahla khouya", "سلام", "السلام عليكم"]:
+            self.assertTrue(views._is_greeting(s), s)
+
+    def test_non_greetings(self):
+        for s in ["9adech el prix", "chnowa el prix mte3 el veste",
+                  "n7el el colis", "wa9tech touselni",
+                  "3andi so2al 3al taille w el prix w el livraison bech ncommandi"]:
+            self.assertFalse(views._is_greeting(s), s)
