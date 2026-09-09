@@ -139,6 +139,8 @@ urlpatterns = [
     # Per-page auto-reply mode (off / internal bot / Unifunl), DB-backed.
     path("reponses-auto/", views.reply_mode_page, name="reply_mode_page"),
     path("api/reply-mode/", views.api_reply_mode, name="api_reply_mode"),
+    # Print-ready Barats catalogue (photos+desc) for Google Drive / Meta AI.
+    path("catalog/barats/", views.catalog_barats, name="catalog_barats"),
     # Bot test harness (superuser): run the real bot reply logic, no Meta.
     path("bot-test/", views.bot_test_page, name="bot_test_page"),
     path("api/bot-test-reply/", views.api_bot_test_reply, name="api_bot_test_reply"),

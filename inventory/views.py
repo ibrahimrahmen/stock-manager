@@ -8647,6 +8647,43 @@ def api_reply_mode(request):
 
 
 @login_required(login_url="/login/")
+def catalog_barats(request):
+    """Print-ready visual catalogue of the Barats / Barats.tn offers — photo,
+    name, price, colours, and description per product. Save it as PDF (Ctrl+P →
+    Save as PDF) and drop it in the Google Drive folder connected to Meta's AI,
+    so the AI answers from your real offers. Customer-facing fields only.
+    Superuser only."""
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Accès refusé.")
+    from . import unifunl_commerce as uc
+    items = []
+    for o in uc._barats_offers_qs().order_by("name"):
+        try:
+            prod = uc._offer_to_product(o, request)
+        except Exception:
+            continue
+        try:
+            price = int(round(float(o.price_for_page_name("Barats")
+                                   or o.bundle_price or 0)))
+        except Exception:
+            price = o.bundle_price or 0
+        colors = []
+        for v in prod.get("variants", []):
+            lbl = (v.get("options") or {}).get("Couleur", "")
+            if v.get("image") or lbl:
+                colors.append({"label": lbl, "image": v.get("image")})
+        items.append({
+            "name": prod.get("title") or o.name,
+            "price": price,
+            "description": prod.get("description") or "",
+            "images": prod.get("images") or [],
+            "colors": colors,
+        })
+    return render(request, "inventory/catalog_barats.html",
+                  {"items": items, "count": len(items)})
+
+
+@login_required(login_url="/login/")
 @csrf_exempt
 @require_POST
 def api_conversation_send_message(request, pk):
