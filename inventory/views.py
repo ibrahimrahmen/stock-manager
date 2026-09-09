@@ -704,16 +704,36 @@ def connect_settings(request):
                 _set_cfg(key, val)
         messages.success(request, "✅ Configuration enregistrée.")
         return redirect("connect_settings")
+    import re as _re
     sections = []
+    total_set = total_fields = 0
     for title, emoji, fields in _CONFIG_SECTIONS:
         rows = []
+        n_set = 0
         for key, label, is_secret in fields:
             cur = _cfg(key)
+            if cur:
+                n_set += 1
             rows.append({"key": key, "label": label, "secret": is_secret,
                          "value": "" if is_secret else cur, "is_set": bool(cur)})
-        sections.append({"title": title, "emoji": emoji, "rows": rows})
-    return render(request, "inventory/connect_settings.html",
-                  {"sections": sections})
+        n_total = len(rows)
+        total_set += n_set
+        total_fields += n_total
+        if n_set == 0:
+            status = "empty"      # à configurer
+        elif n_set == n_total:
+            status = "ok"         # complet
+        else:
+            status = "partial"    # partiel
+        slug = _re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+        sections.append({"title": title, "emoji": emoji, "rows": rows,
+                         "slug": slug, "n_set": n_set, "n_total": n_total,
+                         "status": status})
+    return render(request, "inventory/connect_settings.html", {
+        "sections": sections,
+        "total_set": total_set, "total_fields": total_fields,
+        "n_sections": len(sections),
+    })
 
 
 def _require_superuser_redirect(request):
