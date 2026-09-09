@@ -870,3 +870,26 @@ class GreetingDetectTest(TestCase):
                   "n7el el colis", "wa9tech touselni",
                   "3andi so2al 3al taille w el prix w el livraison bech ncommandi"]:
             self.assertFalse(views._is_greeting(s), s)
+
+
+class DriveSyncTest(TestCase):
+    """Drive sync fails cleanly without config and builds catalogue HTML."""
+
+    def test_sync_requires_config(self):
+        from inventory import gdrive_sync
+        res = gdrive_sync.sync_catalog_to_drive()
+        self.assertFalse(res["ok"])
+        self.assertIn("GOOGLE_DRIVE_FOLDER_ID", res["error"])
+
+    def test_build_html_ok(self):
+        from inventory import gdrive_sync
+        html, n = gdrive_sync.build_catalog_html()
+        self.assertIn("Catalogue Barats", html)
+        self.assertIsInstance(n, int)
+
+    def test_api_requires_superuser(self):
+        from django.contrib.auth.models import User
+        from django.test import Client
+        User.objects.create_user("ds_plain", "d@d.com", "pw")
+        c = Client(); c.force_login(User.objects.get(username="ds_plain"))
+        self.assertEqual(c.get("/api/drive-sync/").status_code, 403)

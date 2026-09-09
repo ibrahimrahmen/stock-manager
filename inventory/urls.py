@@ -141,6 +141,9 @@ urlpatterns = [
     path("api/reply-mode/", views.api_reply_mode, name="api_reply_mode"),
     # Print-ready Barats catalogue (photos+desc) for Google Drive / Meta AI.
     path("catalog/barats/", views.catalog_barats, name="catalog_barats"),
+    # Push the catalogue to Google Drive (button + cron).
+    path("api/drive-sync/", views.api_drive_sync, name="api_drive_sync"),
+    path("cron/drive-sync/", views.cron_drive_sync, name="cron_drive_sync"),
     # Bot test harness (superuser): run the real bot reply logic, no Meta.
     path("bot-test/", views.bot_test_page, name="bot_test_page"),
     path("api/bot-test-reply/", views.api_bot_test_reply, name="api_bot_test_reply"),

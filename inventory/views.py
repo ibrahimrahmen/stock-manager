@@ -581,6 +581,11 @@ _CONFIG_SECTIONS = [
         ("TELEGRAM_BOT_TOKEN", "Token du bot Telegram", True),
         ("TELEGRAM_CHAT_ID", "Chat ID Telegram", False),
     ]),
+    ("Google Drive (catalogue → Meta AI)", "🗂️", [
+        ("GOOGLE_SA_JSON", "Clé JSON du compte de service Google", True),
+        ("GOOGLE_DRIVE_FOLDER_ID", "ID du dossier Drive (partagé avec le compte de service)", False),
+        ("SITE_URL", "URL publique du site (liens images)", False),
+    ]),
     ("Système", "⚙️", [
         ("CRON_TOKEN", "Token de protection des crons", True),
     ]),
@@ -8681,6 +8686,32 @@ def catalog_barats(request):
         })
     return render(request, "inventory/catalog_barats.html",
                   {"items": items, "count": len(items)})
+
+
+@login_required(login_url="/login/")
+def api_drive_sync(request):
+    """Superuser: push the Barats catalogue to Google Drive now."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from . import gdrive_sync
+    res = gdrive_sync.sync_catalog_to_drive()
+    if res.get("ok"):
+        return JsonResponse({"status": "ok", "action": res.get("action"),
+                             "products": res.get("products"),
+                             "file_id": res.get("file_id")})
+    return JsonResponse({"status": "error", "message": res.get("error", "Échec")},
+                        status=400)
+
+
+@csrf_exempt
+def cron_drive_sync(request):
+    """Cron: refresh the Barats catalogue in Google Drive. Optional CRON_TOKEN."""
+    guard = _cfg("CRON_TOKEN", "")
+    if guard and request.GET.get("token", "") != guard:
+        return JsonResponse({"status": "error", "message": "Forbidden"}, status=403)
+    from . import gdrive_sync
+    res = gdrive_sync.sync_catalog_to_drive()
+    return JsonResponse({"status": "ok" if res.get("ok") else "error", **res})
 
 
 @login_required(login_url="/login/")

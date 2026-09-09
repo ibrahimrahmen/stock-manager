@@ -8,3 +8,5 @@ resend
 openpyxl==3.1.5
 qrcode
 cryptography
+google-api-python-client
+google-auth
