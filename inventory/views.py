@@ -8688,6 +8688,54 @@ def catalog_barats(request):
                   {"items": items, "count": len(items)})
 
 
+def _short_desc(d, cap=150):
+    """One-line, customer-facing summary from a (possibly verbose AI-vision)
+    description, capped to `cap` chars."""
+    import re as _re
+    d = _re.sub(r"\s+", " ", d or "").strip()
+    if not d:
+        return ""
+    m = _re.search(r"one[- ]?line summary\s*[:\-]?\s*(.*?)"
+                   r"(detailed visual description|photo\s*\d|$)", d, _re.I)
+    if m and len(m.group(1).strip()) > 3:
+        s = m.group(1).strip()
+    else:
+        s = _re.split(r"(?<=[.!])\s", d)[0]
+    s = s.strip(" .-–—:").strip()
+    if len(s) > cap:
+        s = s[:cap].strip() + "…"
+    return s
+
+
+@login_required(login_url="/login/")
+def catalog_barats_txt(request):
+    """Condensed Barats catalogue as a downloadable .txt kept UNDER 8000 chars
+    (Meta AI knowledge-base limit): one line per offer — name, price, short
+    description. Superuser."""
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Accès refusé.")
+    from . import gdrive_sync
+    items = gdrive_sync.build_catalog_items()
+
+    def _build(cap):
+        lines = []
+        for it in items:
+            d = _short_desc(it.get("description", ""), cap)
+            price = ("%s DT" % it["price"]) if it.get("price") else "—"
+            lines.append("• %s — %s%s" % (it["name"], price,
+                                          (" : " + d) if d else ""))
+        return "CATALOGUE BARATS\n\n" + "\n".join(lines)
+
+    cap = 150
+    txt = _build(cap)
+    while len(txt) > 7900 and cap > 40:
+        cap -= 15
+        txt = _build(cap)
+    resp = HttpResponse(txt, content_type="text/plain; charset=utf-8")
+    resp["Content-Disposition"] = 'attachment; filename="catalogue-barats.txt"'
+    return resp
+
+
 @login_required(login_url="/login/")
 def api_drive_sync(request):
     """Superuser: push the Barats catalogue to Google Drive now."""

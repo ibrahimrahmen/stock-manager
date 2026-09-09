@@ -141,6 +141,8 @@ urlpatterns = [
     path("api/reply-mode/", views.api_reply_mode, name="api_reply_mode"),
     # Print-ready Barats catalogue (photos+desc) for Google Drive / Meta AI.
     path("catalog/barats/", views.catalog_barats, name="catalog_barats"),
+    # Condensed text catalogue (<8000 chars) for Meta AI knowledge base.
+    path("catalog/barats.txt", views.catalog_barats_txt, name="catalog_barats_txt"),
     # Push the catalogue to Google Drive (button + cron).
     path("api/drive-sync/", views.api_drive_sync, name="api_drive_sync"),
     path("cron/drive-sync/", views.cron_drive_sync, name="cron_drive_sync"),
