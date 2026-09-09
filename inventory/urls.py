@@ -135,6 +135,7 @@ urlpatterns = [
     path("cron/refresh-tokens/", views.cron_refresh_tokens, name="cron_refresh_tokens"),
     # Connect onboarding: one-click OAuth to capture Page/Instagram tokens.
     path("connect/", views.connect_home, name="connect_home"),
+    path("connect/settings/", views.connect_settings, name="connect_settings"),
     path("connect/facebook/", views.oauth_facebook_start, name="oauth_facebook_start"),
     path("connect/facebook/callback/", views.oauth_facebook_callback, name="oauth_facebook_callback"),
     path("connect/instagram/", views.oauth_instagram_start, name="oauth_instagram_start"),

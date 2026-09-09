@@ -51,6 +51,7 @@ a.back{color:var(--blue);font-size:13px;text-decoration:none;}
 </head>
 <body>
   <a class="back" href="/admin-tools/">← Outils admin</a>
+  <a class="back" href="{% url 'connect_settings' %}" style="margin-left:14px;">⚙️ Réglages</a>
   <h1>Connexions Meta</h1>
   <div class="sub">Connectez vos pages Facebook et comptes Instagram en un clic.
     Les jetons sont capturés, chiffrés et rafraîchis automatiquement — aucun réglage manuel.</div>
@@ -70,7 +71,7 @@ a.back{color:var(--blue);font-size:13px;text-decoration:none;}
         <a class="btn btn-fb" href="{% url 'oauth_facebook_start' %}">Connecter Facebook</a>
       {% else %}
         <a class="btn btn-fb" aria-disabled="true">Connecter Facebook</a>
-        <div class="warn">⚠️ Définir META_APP_ID et META_APP_SECRET dans Railway.</div>
+        <div class="warn">⚠️ Renseigner l'ID et le secret de l'app Facebook dans <a href="{% url 'connect_settings' %}">Réglages</a>.</div>
       {% endif %}
     </div>
     <div class="card">
@@ -81,7 +82,7 @@ a.back{color:var(--blue);font-size:13px;text-decoration:none;}
         <a class="btn btn-ig" href="{% url 'oauth_instagram_start' %}">Connecter Instagram</a>
       {% else %}
         <a class="btn btn-ig" aria-disabled="true">Connecter Instagram</a>
-        <div class="warn">⚠️ Définir IG_APP_ID/IG_APP_SECRET (ou META_APP_ID/SECRET) dans Railway.</div>
+        <div class="warn">⚠️ Renseigner l'ID et le secret de l'app Instagram dans <a href="{% url 'connect_settings' %}">Réglages</a>.</div>
       {% endif %}
     </div>
   </div>

@@ -764,3 +764,57 @@ class MetaConnectOAuthTest(TestCase):
         c.force_login(User.objects.get(username="plain"))
         resp = c.get("/connect/")
         self.assertEqual(resp.status_code, 403)
+
+
+class MetaConfigStoreTest(TestCase):
+    """In-app encrypted config store: saved via the Settings page, read by _cfg,
+    secrets encrypted and not overwritten by a blank submit."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from django.test import Client
+        self.client = Client()
+        self.admin = User.objects.create_superuser("cfg_admin", "c@c.com", "pw")
+        self.client.force_login(self.admin)
+
+    def test_save_and_read_config(self):
+        from inventory.models import AppKeyValue
+        resp = self.client.post("/connect/settings/", {
+            "META_APP_ID": "111222333",
+            "META_APP_SECRET": "supersecretvalue",
+            "META_LOGIN_CONFIG_ID": "",
+            "IG_APP_ID": "",
+            "IG_APP_SECRET": "",
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(views._cfg("META_APP_ID"), "111222333")
+        self.assertEqual(views._cfg("META_APP_SECRET"), "supersecretvalue")
+        # Secret must be stored ENCRYPTED, not plaintext.
+        row = AppKeyValue.objects.get(key="cfg:META_APP_SECRET")
+        self.assertNotIn("supersecretvalue", row.value)
+
+    def test_blank_secret_keeps_existing(self):
+        views._set_cfg("META_APP_SECRET", "keepme")
+        # Re-save the form leaving the secret blank.
+        self.client.post("/connect/settings/", {
+            "META_APP_ID": "111", "META_APP_SECRET": "",
+            "META_LOGIN_CONFIG_ID": "", "IG_APP_ID": "", "IG_APP_SECRET": "",
+        })
+        self.assertEqual(views._cfg("META_APP_SECRET"), "keepme")
+
+    def test_db_config_overrides_env(self):
+        import os
+        os.environ["META_APP_ID"] = "ENVID"
+        try:
+            views._set_cfg("META_APP_ID", "DBID")
+            self.assertEqual(views._cfg("META_APP_ID"), "DBID")
+        finally:
+            os.environ.pop("META_APP_ID", None)
+
+    def test_settings_requires_superuser(self):
+        from django.contrib.auth.models import User
+        from django.test import Client
+        User.objects.create_user("plain2", "p2@p.com", "pw")
+        c = Client()
+        c.force_login(User.objects.get(username="plain2"))
+        self.assertEqual(c.get("/connect/settings/").status_code, 403)

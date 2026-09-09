@@ -531,17 +531,55 @@ _FB_PAGE_WEBHOOK_FIELDS = ("messages,message_echoes,messaging_postbacks,"
 _IG_WEBHOOK_FIELDS = "messages,messaging_postbacks,messaging_referral,messaging_seen"
 
 
+# Config keys editable from the in-app Settings page. Secret keys are stored
+# encrypted in the DB; the raw value is never shown back.
+_CONFIG_FIELDS = [
+    ("META_APP_ID", "ID de l'app Facebook", False),
+    ("META_APP_SECRET", "Secret de l'app Facebook", True),
+    ("META_LOGIN_CONFIG_ID", "ID de configuration (Facebook Login for Business)", False),
+    ("IG_APP_ID", "ID de l'app Instagram", False),
+    ("IG_APP_SECRET", "Secret de l'app Instagram", True),
+]
+_SECRET_CONFIG_KEYS = {k for k, _l, sec in _CONFIG_FIELDS if sec}
+
+
+def _cfg(key, default=""):
+    """Read a config value: the in-app DB store (AppKeyValue 'cfg:<key>') FIRST,
+    then the environment variable, then default. Secret keys are stored
+    encrypted. This lets everything be configured inside the app instead of
+    hand-edited env vars."""
+    try:
+        from .models import AppKeyValue, decrypt_secret
+        row = AppKeyValue.objects.filter(key="cfg:" + key).first()
+        if row and row.value:
+            v = decrypt_secret(row.value) if key in _SECRET_CONFIG_KEYS else row.value
+            if v:
+                return v.strip()
+    except Exception:
+        pass
+    return (os.environ.get(key, default) or "").strip()
+
+
+def _set_cfg(key, value):
+    """Persist a config value in the DB store (encrypting secret keys)."""
+    from .models import AppKeyValue, encrypt_secret
+    stored = encrypt_secret(value) if key in _SECRET_CONFIG_KEYS else (value or "")
+    AppKeyValue.objects.update_or_create(key="cfg:" + key,
+                                         defaults={"value": stored})
+
+
 def _oauth_app_creds(platform):
-    """(app_id, app_secret) for the given platform, from env. Instagram falls
-    back to the Facebook app creds when IG-specific ones aren't set."""
+    """(app_id, app_secret) for the given platform. Reads the in-app config
+    store first (then env). Instagram falls back to the Facebook app creds when
+    IG-specific ones aren't set."""
     if platform == "instagram":
-        aid = (os.environ.get("IG_APP_ID") or os.environ.get("META_APP_ID") or "").strip()
-        sec = (os.environ.get("IG_APP_SECRET") or os.environ.get("META_APP_SECRET")
-               or os.environ.get("MESSENGER_APP_SECRET") or "").strip()
+        aid = _cfg("IG_APP_ID") or _cfg("META_APP_ID")
+        sec = (_cfg("IG_APP_SECRET") or _cfg("META_APP_SECRET")
+               or _cfg("MESSENGER_APP_SECRET"))
     else:
-        aid = (os.environ.get("META_APP_ID") or os.environ.get("FB_APP_ID") or "").strip()
-        sec = (os.environ.get("META_APP_SECRET") or os.environ.get("MESSENGER_APP_SECRET")
-               or os.environ.get("FB_APP_SECRET") or "").strip()
+        aid = _cfg("META_APP_ID") or _cfg("FB_APP_ID")
+        sec = (_cfg("META_APP_SECRET") or _cfg("MESSENGER_APP_SECRET")
+               or _cfg("FB_APP_SECRET"))
     return aid, sec
 
 
@@ -615,6 +653,31 @@ def connect_home(request):
     })
 
 
+@login_required(login_url="/login/")
+def connect_settings(request):
+    """In-app config for the Meta/Instagram app credentials — stored encrypted
+    in the DB so nothing has to be pasted into Railway env vars. Superuser
+    only."""
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Accès refusé.")
+    if request.method == "POST":
+        for key, _label, is_secret in _CONFIG_FIELDS:
+            val = (request.POST.get(key) or "").strip()
+            if is_secret:
+                if val:  # only overwrite a secret when a new value is typed
+                    _set_cfg(key, val)
+            else:
+                _set_cfg(key, val)
+        messages.success(request, "✅ Réglages enregistrés.")
+        return redirect("connect_settings")
+    fields = []
+    for key, label, is_secret in _CONFIG_FIELDS:
+        cur = _cfg(key)
+        fields.append({"key": key, "label": label, "secret": is_secret,
+                       "value": "" if is_secret else cur, "is_set": bool(cur)})
+    return render(request, "inventory/connect_settings.html", {"fields": fields})
+
+
 def _require_superuser_redirect(request):
     if not request.user.is_authenticated:
         return False
@@ -643,7 +706,7 @@ def oauth_facebook_start(request):
     # Configuration ID instead of a scope list — plain scope makes the dialog
     # fail to load. If META_LOGIN_CONFIG_ID is set we use it; otherwise we fall
     # back to classic Facebook Login with scopes.
-    config_id = os.environ.get("META_LOGIN_CONFIG_ID", "").strip()
+    config_id = _cfg("META_LOGIN_CONFIG_ID")
     if config_id:
         params["config_id"] = config_id
         params["override_default_response_type"] = "true"
@@ -10654,9 +10717,8 @@ def api_meta_data_deletion(request):
     from .models import log_action, AuditLog
 
     signed = request.POST.get("signed_request", "") or ""
-    secret = (os.environ.get("META_APP_SECRET")
-              or os.environ.get("MESSENGER_APP_SECRET")
-              or os.environ.get("FB_APP_SECRET") or "").strip()
+    secret = (_cfg("META_APP_SECRET") or _cfg("MESSENGER_APP_SECRET")
+              or _cfg("FB_APP_SECRET"))
 
     def _b64d(s):
         s = s + "=" * (-len(s) % 4)
