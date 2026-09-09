@@ -136,6 +136,9 @@ urlpatterns = [
     # Connect onboarding: one-click OAuth to capture Page/Instagram tokens.
     path("connect/", views.connect_home, name="connect_home"),
     path("connect/settings/", views.connect_settings, name="connect_settings"),
+    # Per-page auto-reply mode (off / internal bot / Unifunl), DB-backed.
+    path("reponses-auto/", views.reply_mode_page, name="reply_mode_page"),
+    path("api/reply-mode/", views.api_reply_mode, name="api_reply_mode"),
     path("connect/facebook/", views.oauth_facebook_start, name="oauth_facebook_start"),
     path("connect/facebook/callback/", views.oauth_facebook_callback, name="oauth_facebook_callback"),
     path("connect/instagram/", views.oauth_instagram_start, name="oauth_instagram_start"),

@@ -818,3 +818,40 @@ class MetaConfigStoreTest(TestCase):
         c = Client()
         c.force_login(User.objects.get(username="plain2"))
         self.assertEqual(c.get("/connect/settings/").status_code, 403)
+
+
+class ReplyModeTest(TestCase):
+    """Per-page reply mode is superuser-only, stored in the DB config store,
+    and validated."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from django.test import Client
+        self.client = Client()
+        self.admin = User.objects.create_superuser("rm_admin", "r@r.com", "pw")
+        self.client.force_login(self.admin)
+
+    def test_set_and_get_mode(self):
+        r = self.client.post("/api/reply-mode/",
+                             data=json.dumps({"sales_page": 3, "mode": "internal"}),
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(views._cfg("reply_mode:3"), "internal")
+        # GET reflects it
+        g = self.client.get("/api/reply-mode/").json()
+        barats = [p for p in g["pages"] if p["sales_page"] == 3][0]
+        self.assertEqual(barats["mode"], "internal")
+
+    def test_invalid_mode_rejected(self):
+        r = self.client.post("/api/reply-mode/",
+                             data=json.dumps({"sales_page": 3, "mode": "bogus"}),
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_requires_superuser(self):
+        from django.contrib.auth.models import User
+        from django.test import Client
+        User.objects.create_user("rm_plain", "p@p.com", "pw")
+        c = Client(); c.force_login(User.objects.get(username="rm_plain"))
+        self.assertEqual(c.get("/api/reply-mode/").status_code, 403)
+        self.assertEqual(c.get("/reponses-auto/").status_code, 403)

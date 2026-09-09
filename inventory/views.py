@@ -8569,6 +8569,47 @@ def api_bot_toggle(request):
         return JsonResponse({"status": "error", "message": str(e)}, status=400)
 
 
+# Sales pages that have a Messenger/Instagram presence (id -> display name).
+_REPLY_PAGES = {
+    2: "Arrow SportsWear", 3: "Barats", 4: "Next Generation",
+    5: "Handsome Collection", 6: "PrimeFit", 10: "Traffic",
+}
+
+
+@login_required(login_url="/login/")
+def reply_mode_page(request):
+    """In-app panel to choose who auto-replies on each page: nobody, the
+    internal bot, or Unifunl. Superuser only."""
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Accès refusé.")
+    return render(request, "inventory/reply_mode.html", {})
+
+
+@login_required(login_url="/login/")
+def api_reply_mode(request):
+    """GET -> current per-page reply mode. POST {sales_page, mode} -> set it.
+    mode is '' (legacy/auto), 'off', 'internal' or 'external'. Stored in the DB
+    (shared across all workers), so it takes effect immediately everywhere."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body.decode("utf-8") or "{}")
+            sp = int(data.get("sales_page"))
+            mode = (data.get("mode") or "").strip()
+            if mode not in ("", "off", "internal", "external"):
+                return JsonResponse({"status": "error", "message": "Mode invalide."}, status=400)
+            if sp not in _REPLY_PAGES:
+                return JsonResponse({"status": "error", "message": "Page inconnue."}, status=400)
+            _set_cfg("reply_mode:%s" % sp, mode)
+        except Exception as e:
+            return JsonResponse({"status": "error", "message": str(e)[:150]}, status=400)
+    pages = [{"sales_page": sp, "name": nm,
+              "mode": _cfg("reply_mode:%s" % sp, "") or ""}
+             for sp, nm in sorted(_REPLY_PAGES.items(), key=lambda kv: kv[1])]
+    return JsonResponse({"status": "ok", "pages": pages})
+
+
 @login_required(login_url="/login/")
 @csrf_exempt
 @require_POST
@@ -14039,60 +14080,90 @@ def api_messenger_webhook(request):
                 # message the customer nor create duplicate orders. Controlled
                 # by env EXTERNAL_AGENT_PAGES="3,10" or a per-page cache flag
                 # (key external_agent_page:<id>) set from the UI.
+                # NEW (DB-backed, cross-worker): a per-page reply mode set from
+                # the in-app panel — "off" | "internal" | "external". It lives in
+                # the shared DB (via _cfg), so all gunicorn workers agree, unlike
+                # the old per-process cache. When a page has NO mode set, we fall
+                # back to the exact legacy env/cache logic so nothing changes for
+                # pages you haven't configured.
+                _mode = _cfg("reply_mode:%s" % _sp_here, "")
                 _external_agent = False
-                try:
-                    from django.core.cache import cache as _kc_ext
-                    _ext_flag = _kc_ext.get("external_agent_page:%s" % _sp_here)
-                    if _ext_flag is None:
-                        _ext_pages = os.environ.get("EXTERNAL_AGENT_PAGES", "").strip()
-                        if _ext_pages:
-                            _ext_allowed = {int(x) for x in _ext_pages.replace(" ", "").split(",") if x}
-                            _ext_flag = _sp_here in _ext_allowed
+                if _mode:
+                    if _mode == "external":
+                        # Unifunl owns it — but fail over to the internal bot if
+                        # Unifunl has gone silent, so customers still get answered.
+                        if _unifunl_healthy():
+                            _external_agent = True
+                            _bot_on = False
                         else:
-                            _ext_flag = False
-                    _external_agent = bool(_ext_flag)
-                except Exception:
-                    _external_agent = False
-
-                # FAILOVER: the page is normally handled by Unifunl, but if the
-                # Unifunl API has gone silent (heartbeat stale), take over so
-                # customers still get answered and their orders captured.
-                if _external_agent and not _unifunl_healthy():
-                    _external_agent = False
+                            _external_agent = False
+                            _bot_on = True
+                            try:
+                                from django.core.cache import cache as _fc
+                                if not _fc.get("unifunl_failover_logged"):
+                                    log_action(None, AuditLog.OTHER,
+                                               description="Unifunl injoignable — "
+                                               "bascule sur l'auto-réponse interne "
+                                               "(failover).")
+                                    _fc.set("unifunl_failover_logged", 1, 3600)
+                            except Exception:
+                                pass
+                    elif _mode == "internal":
+                        _external_agent = False
+                        _bot_on = True
+                    else:  # "off"
+                        _external_agent = False
+                        _bot_on = False
+                else:
+                    # ---- Legacy behaviour (unchanged) for unconfigured pages ----
                     try:
-                        from django.core.cache import cache as _fc
-                        if not _fc.get("unifunl_failover_logged"):
-                            log_action(None, AuditLog.OTHER,
-                                       description="Unifunl injoignable — bascule "
-                                       "sur l'auto-réponse interne (failover).")
-                            _fc.set("unifunl_failover_logged", 1, 3600)
+                        from django.core.cache import cache as _kc_ext
+                        _ext_flag = _kc_ext.get("external_agent_page:%s" % _sp_here)
+                        if _ext_flag is None:
+                            _ext_pages = os.environ.get("EXTERNAL_AGENT_PAGES", "").strip()
+                            if _ext_pages:
+                                _ext_allowed = {int(x) for x in _ext_pages.replace(" ", "").split(",") if x}
+                                _ext_flag = _sp_here in _ext_allowed
+                            else:
+                                _ext_flag = False
+                        _external_agent = bool(_ext_flag)
+                    except Exception:
+                        _external_agent = False
+
+                    # FAILOVER: normally Unifunl, but if it has gone silent, take
+                    # over so customers still get answered and orders captured.
+                    if _external_agent and not _unifunl_healthy():
+                        _external_agent = False
+                        try:
+                            from django.core.cache import cache as _fc
+                            if not _fc.get("unifunl_failover_logged"):
+                                log_action(None, AuditLog.OTHER,
+                                           description="Unifunl injoignable — bascule "
+                                           "sur l'auto-réponse interne (failover).")
+                                _fc.set("unifunl_failover_logged", 1, 3600)
+                        except Exception:
+                            pass
+
+                    # Per-page on/off flag (cache key autoreply_bot_page:<id>),
+                    # default OFF, env AUTOREPLY_BOT_PAGES as fallback default.
+                    try:
+                        from django.core.cache import cache as _kc
+                        _flag = _kc.get("autoreply_bot_page:%s" % _sp_here)
+                        if _flag is None:
+                            _env_pages = os.environ.get("AUTOREPLY_BOT_PAGES", "").strip()
+                            if _env_pages:
+                                _allowed = {int(x) for x in _env_pages.replace(" ", "").split(",") if x}
+                                _flag = _sp_here in _allowed
+                            else:
+                                _flag = False
+                        if not _flag:
+                            _bot_on = False
                     except Exception:
                         pass
 
-                # Per-page toggle from the UI panel. Each sales_page has its own
-                # on/off flag in the cache (key autoreply_bot_page:<id>), so you
-                # can run the bot on Traffic only, etc. Default OFF: a page must
-                # be explicitly switched on. An env AUTOREPLY_BOT_PAGES still
-                # works as a fallback default when no cache flag is set yet.
-                try:
-                    from django.core.cache import cache as _kc
-                    _flag = _kc.get("autoreply_bot_page:%s" % _sp_here)
-                    if _flag is None:
-                        # No UI choice yet → fall back to the env allow-list.
-                        _env_pages = os.environ.get("AUTOREPLY_BOT_PAGES", "").strip()
-                        if _env_pages:
-                            _allowed = {int(x) for x in _env_pages.replace(" ", "").split(",") if x}
-                            _flag = _sp_here in _allowed
-                        else:
-                            _flag = False
-                    if not _flag:
+                    # An external agent owning the page overrides everything.
+                    if _external_agent:
                         _bot_on = False
-                except Exception:
-                    pass
-
-                # An external agent owning the page overrides everything: no bot.
-                if _external_agent:
-                    _bot_on = False
 
                 # Test mode: if AUTOREPLY_BOT_TEST_SENDER is set, the bot ONLY
                 # replies to that one sender_id (your own account), so you can

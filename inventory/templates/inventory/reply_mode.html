@@ -1,0 +1,129 @@
+{% load static %}<!DOCTYPE html>
+<html lang="fr" data-theme="{{ user_theme|default:'dark' }}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Réponses automatiques — Stock Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root, [data-theme="dark"] {
+  --bg:#0e0e0c; --surface:#171714; --surface2:#201f1c; --surface3:#282723;
+  --border:rgba(255,255,255,0.09); --border2:rgba(255,255,255,0.14);
+  --text:#f2efe8; --muted:#918e84; --faint:#615f59;
+  --green:#4ade9a; --green-dim:rgba(74,222,154,0.16);
+  --amber:#f5b342; --amber-dim:rgba(245,179,66,0.16);
+  --blue:#5b9dff; --blue-dim:rgba(91,157,255,0.16);
+  --purple:#a78bfa; --purple-dim:rgba(167,139,250,0.16);
+  --shadow:0 8px 30px rgba(0,0,0,0.35);
+}
+[data-theme="light"]{
+  --bg:#f5f4ef; --surface:#fff; --surface2:#f6f5f0; --surface3:#eeece5;
+  --border:rgba(0,0,0,0.09); --border2:rgba(0,0,0,0.14);
+  --text:#1b1a17; --muted:#6c6a62; --faint:#a4a199;
+  --green:#159f6a; --green-dim:rgba(21,159,106,0.13);
+  --amber:#b3760f; --amber-dim:rgba(179,118,15,0.13);
+  --blue:#2765cc; --blue-dim:rgba(39,101,204,0.12);
+  --purple:#7c5cd6; --purple-dim:rgba(124,92,214,0.13);
+  --shadow:0 6px 24px rgba(0,0,0,0.08);
+}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',system-ui,sans-serif;line-height:1.5;}
+.topbar{display:flex;gap:16px;align-items:center;padding:14px 28px;border-bottom:1px solid var(--border);}
+.topbar a{color:var(--muted);font-size:13px;text-decoration:none;}.topbar a:hover{color:var(--text);}
+.wrap{max-width:820px;margin:0 auto;padding:26px 28px 60px;}
+h1{font-family:'DM Serif Display',serif;font-size:30px;}
+.sub{color:var(--muted);font-size:14px;margin-top:4px;margin-bottom:20px;max-width:640px;}
+.legend{display:flex;flex-wrap:wrap;gap:14px;background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:12px 16px;font-size:12.5px;color:var(--muted);margin-bottom:20px;}
+.legend b{color:var(--text);font-weight:600;}
+.row{background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);
+  padding:16px 18px;margin-bottom:12px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+.row .nm{flex:1;min-width:150px;}
+.row .nm h2{font-size:16px;font-weight:600;}
+.row .nm .cur{font-size:12px;color:var(--muted);margin-top:2px;}
+.seg{display:inline-flex;background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:3px;gap:2px;}
+.seg button{border:none;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;
+  padding:8px 13px;border-radius:8px;cursor:pointer;white-space:nowrap;transition:.12s;}
+.seg button:hover{color:var(--text);}
+.seg button.on{color:#fff;}
+.seg button.on[data-m="off"]{background:#8a887f;color:#111;}
+.seg button.on[data-m="internal"]{background:var(--blue);}
+.seg button.on[data-m="external"]{background:var(--purple);}
+.seg button.on[data-m=""]{background:var(--surface3);color:var(--text);}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--green-dim);
+  color:var(--green);border:1px solid var(--green);padding:10px 18px;border-radius:12px;font-size:13px;
+  font-weight:600;opacity:0;transition:.2s;pointer-events:none;}
+#toast.show{opacity:1;}
+.hint{background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber);border-radius:12px;
+  padding:12px 16px;font-size:13px;margin-bottom:18px;}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <a href="{% url 'connect_settings' %}">← Configuration</a>
+    <a href="{% url 'dashboard' %}">Dashboard</a>
+  </div>
+  <div class="wrap">
+    <h1>Réponses automatiques</h1>
+    <p class="sub">Choisissez qui répond automatiquement aux messages de chaque page. Effet immédiat, sur tous les serveurs.</p>
+
+    <div class="hint">⚠️ Si Unifunl ne répond plus sur une page, mettez-la sur <b>Bot interne</b> pour que vos clients soient répondus tout de suite.</div>
+
+    <div class="legend">
+      <span><b>Par défaut</b> — comportement actuel (réglages serveur)</span>
+      <span><b>Désactivé</b> — personne ne répond automatiquement</span>
+      <span><b>Bot interne</b> — votre système répond</span>
+      <span><b>Unifunl</b> — l'agent IA externe répond</span>
+    </div>
+
+    <div id="list">Chargement…</div>
+  </div>
+  <div id="toast"></div>
+
+<script>
+var MODES = [["","Par défaut"],["off","Désactivé"],["internal","Bot interne"],["external","Unifunl"]];
+var LABEL = {"":"Par défaut","off":"Désactivé","internal":"Bot interne","external":"Unifunl"};
+var CSRF = "{{ csrf_token }}";
+
+function toast(t){var e=document.getElementById('toast');e.textContent=t;e.classList.add('show');
+  setTimeout(function(){e.classList.remove('show');},1600);}
+
+function render(pages){
+  var h = pages.map(function(p){
+    var segs = MODES.map(function(m){
+      var on = (p.mode||"") === m[0] ? " on" : "";
+      return '<button type="button" class="'+on.trim()+'" data-m="'+m[0]+'" '+
+             'onclick="setMode('+p.sales_page+',\''+m[0]+'\',this)">'+m[1]+'</button>';
+    }).join("");
+    return '<div class="row" id="row-'+p.sales_page+'">'+
+      '<div class="nm"><h2>'+p.name+'</h2><div class="cur">Actuel : '+(LABEL[p.mode||""]||"Par défaut")+'</div></div>'+
+      '<div class="seg">'+segs+'</div></div>';
+  }).join("");
+  document.getElementById('list').innerHTML = h;
+}
+
+async function load(){
+  var r = await fetch("{% url 'api_reply_mode' %}");
+  var d = await r.json();
+  if(d.status==='ok') render(d.pages);
+  else document.getElementById('list').innerHTML = 'Erreur de chargement.';
+}
+
+async function setMode(sp, mode, btn){
+  var seg = btn.parentElement;
+  seg.querySelectorAll('button').forEach(function(b){b.classList.remove('on');});
+  btn.classList.add('on');
+  var cur = document.querySelector('#row-'+sp+' .cur');
+  try{
+    var r = await fetch("{% url 'api_reply_mode' %}", {method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body: JSON.stringify({sales_page:sp, mode:mode})});
+    var d = await r.json();
+    if(d.status==='ok'){ if(cur) cur.textContent='Actuel : '+LABEL[mode]; toast('✓ Enregistré'); }
+    else toast('⚠ '+(d.message||'Échec'));
+  }catch(e){ toast('⚠ Erreur réseau'); }
+}
+load();
+</script>
+</body>
+</html>
