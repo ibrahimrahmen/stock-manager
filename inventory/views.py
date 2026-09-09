@@ -10667,6 +10667,23 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
             pass
     order.recalc_total()
 
+    # 11b. Safety net: if NOTHING matched (the website product name doesn't match
+    # any offer/product in the system) but the payload carries a total, keep that
+    # total on the order so it isn't blank. The unmatched item's title is already
+    # in the notes ("ARTICLES NON RECONNUS"), so staff can see and link it.
+    try:
+        if (unmatched_items and not order.order_offers.exists()
+                and not order.lines.exists()):
+            _pt = (payload.get("total_price")
+                   or payload.get("current_total_price")
+                   or payload.get("total") or "")
+            _ptd = Decimal(str(_pt)) if str(_pt).strip() else Decimal("0")
+            if _ptd > 0:
+                order.total = _ptd
+                order.save(update_fields=["total"])
+    except Exception:
+        pass
+
     # 12. Audit log — put line_items first so they're not truncated.
     audit_extra = "LINE_ITEMS=" + str(line_items) + " | PAYLOAD=" + str(payload)
     log_action(
