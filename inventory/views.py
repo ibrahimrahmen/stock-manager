@@ -8511,6 +8511,81 @@ def diagnose_offer_web(request):
     return HttpResponse("\n".join(lines), content_type="text/plain; charset=utf-8")
 
 
+@login_required(login_url="/login/")
+@csrf_exempt
+def api_extract_conversation(request, pk):
+    """Superuser tool: force a Messenger/Instagram conversation to be extracted
+    into a pending order (status non_confirmée) using the normal, tested
+    extractor. Its main use: the customer sent their phone number as an IMAGE
+    (a screenshot), which the automatic text extractor can't read — staff read
+    the number off the photo and pass it here as `phone`, and we inject it as a
+    customer text line so extraction can proceed. POST {phone?: "51672948"}."""
+    import re as _re
+    from .models import MessengerConversation, Order
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    try:
+        conv = MessengerConversation.objects.get(pk=pk)
+    except MessengerConversation.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Conversation introuvable."}, status=404)
+
+    phone = ""
+    try:
+        if request.body:
+            phone = (json.loads(request.body.decode("utf-8")).get("phone") or "").strip()
+    except Exception:
+        phone = ""
+    phone = _re.sub(r"\D", "", phone)
+
+    # If a phone was supplied and none is present in the customer text yet, add
+    # it as a customer message so the normal extractor can see it.
+    if phone:
+        existing = " ".join(m.get("text", "") for m in (conv.messages or [])
+                            if m.get("from") == "user")
+        if not _extract_tn_phone(existing):
+            mm = conv.messages or []
+            mm.append({"from": "user", "text": phone, "ts": "", "mid": "",
+                       "manual_phone": True})
+            conv.messages = mm
+            conv.save(update_fields=["messages", "updated_at"])
+
+    # Run the normal, tested extraction. skip_gemini=True: deterministic only —
+    # don't spend a (possibly out-of-credit) AI call; product/region are matched
+    # from the chat text below.
+    try:
+        _try_extract_and_create_pending(conv, skip_gemini=True)
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:200]}, status=400)
+
+    conv.refresh_from_db()
+    oid = conv.pending_order_id
+    if not oid:
+        return JsonResponse({"status": "error",
+                             "message": "Aucune commande créée — téléphone introuvable. "
+                             "Renseignez le numéro dans le champ 'phone'."}, status=400)
+
+    # Best-effort: match the product from the chat text and resolve the region,
+    # so the pending order is as complete as possible for the confirmation team.
+    order = conv.pending_order
+    try:
+        _match_offers_from_text(order, conv)
+    except Exception:
+        pass
+    try:
+        _resolve_region_for_order(order, conv=conv, force=True)
+    except Exception:
+        pass
+
+    ostatus = ""
+    try:
+        ostatus = order.get_status_display()
+    except Exception:
+        ostatus = ""
+    return JsonResponse({"status": "ok", "order_id": oid, "order_status": ostatus,
+                         "conversation_status": conv.status,
+                         "phone_added": bool(phone)})
+
+
 # ---- DM order intake (called by n8n / Messenger pipeline) -------------------
 
 @csrf_exempt

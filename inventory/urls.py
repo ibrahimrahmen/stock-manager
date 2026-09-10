@@ -114,6 +114,7 @@ urlpatterns = [
     path("api/sales-orders/<int:pk>/refresh-conversation/", views.api_order_refresh_conversation, name="api_order_refresh_conversation"),
     path("api/sales-orders/<int:pk>/send-message/", views.api_conversation_send_message, name="api_conversation_send_message"),
     path("api/dm/create-order/", views.api_n8n_create_order_from_dm, name="api_n8n_create_order_from_dm"),
+    path("api/conversations/<int:pk>/extract/", views.api_extract_conversation, name="api_extract_conversation"),
     # Ads & offers: Meta spend per campaign linked to offers, cross-source revenue
     path("ads-offers/", views.ads_offers_dashboard, name="ads_offers_dashboard"),
     path("api/ads/<int:pk>/link-offer/", views.api_ad_link_offer, name="api_ad_link_offer"),
