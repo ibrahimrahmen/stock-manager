@@ -8,6 +8,7 @@ from .models import (
     Region, Order, OrderLine,
     Offer, OfferProduct, OrderOffer,
     ExchangeReturnItem, MetaToken,
+    MessengerConversation,
 )
 
 
@@ -150,6 +151,22 @@ class CustomerAdmin(admin.ModelAdmin):
     list_display = ("phone", "name", "created_at")
     search_fields = ("phone", "name")
     readonly_fields = ("created_at",)
+
+
+@admin.register(MessengerConversation)
+class MessengerConversationAdmin(admin.ModelAdmin):
+    """Read-only view of Messenger/Instagram conversations — lets us see exactly
+    which page_id and platform each conversation used (key for diagnosing why a
+    reply did or didn't go out)."""
+    list_display = ("updated_at", "platform", "page_id", "sender_name",
+                    "sender_id", "status", "auto_replied", "source_campaign")
+    list_filter = ("platform", "page_id", "status", "auto_replied")
+    search_fields = ("sender_name", "sender_id", "page_id", "source_campaign")
+    date_hierarchy = "updated_at"
+    ordering = ("-updated_at",)
+
+    def has_add_permission(self, request):
+        return False
 
 
 @admin.register(AuditLog)

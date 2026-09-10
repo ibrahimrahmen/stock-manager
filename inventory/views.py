@@ -2181,6 +2181,9 @@ def _messenger_send_text(page_id, recipient_id, text, platform="messenger"):
     import json as _json
     token = _messenger_page_token(page_id)
     if not token or not recipient_id or not text:
+        if not token:
+            _log_send_failure(page_id, platform,
+                              "aucun token configuré pour cette page/ce compte")
         return False
     host = ("graph.instagram.com" if platform == "instagram"
             else "graph.facebook.com")
@@ -2196,8 +2199,36 @@ def _messenger_send_text(page_id, recipient_id, text, platform="messenger"):
         req.add_header("Content-Type", "application/json")
         with _ureq.urlopen(req, timeout=10) as resp:
             return resp.status == 200
-    except Exception:
+    except Exception as e:
+        # A send that fails silently is how customers get ghosted. Record why
+        # (expired token, permission, etc.) so it's visible — throttled to once
+        # per hour per page so a burst can't flood the audit log.
+        _reason = ""
+        try:
+            if hasattr(e, "read"):
+                _reason = e.read().decode("utf-8", "replace")[:200]
+        except Exception:
+            pass
+        _log_send_failure(page_id, platform, _reason or str(e)[:120])
         return False
+
+
+def _log_send_failure(page_id, platform, reason):
+    """Best-effort, throttled log of a failed Meta send so silent failures
+    (e.g. an expired Instagram token) become visible instead of ghosting the
+    customer. Never raises."""
+    try:
+        from django.core.cache import cache as _fc
+        _key = "send_fail_logged:%s" % page_id
+        if _fc.get(_key):
+            return
+        _fc.set(_key, 1, 3600)
+        log_action(None, AuditLog.OTHER,
+                   description=("Envoi %s ÉCHOUÉ (page %s) — le client n'a PAS "
+                                "reçu de réponse. Cause: %s"
+                                % (platform, page_id, reason)))
+    except Exception:
+        pass
 
 
 def _messenger_send_carousel(page_id, recipient_id, cards, platform="messenger"):
