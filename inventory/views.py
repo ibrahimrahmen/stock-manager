@@ -327,6 +327,16 @@ def _fetch_ig_story_origin(page_id, sender_id):
     return None
 
 
+# Some Instagram accounts have TWO Meta ids: the old "Instagram Business
+# Account" id (17841…, linked to a Facebook page, used by the DM webhook) and
+# the newer "Instagram Login" id (from the Business Login OAuth). They are the
+# SAME real account. When the webhook delivers on the old id but only the new
+# id has a live token, we reply with the new id's token. Map: old id -> new id.
+IG_ID_ALIASES = {
+    "17841474699259489": "27678288761765194",  # @barats216
+}
+
+
 def _messenger_page_token(page_id):
     """Access token for sending replies to a Facebook Page or Instagram account.
 
@@ -343,6 +353,16 @@ def _messenger_page_token(page_id):
             tok = t.get_token()
             if tok:
                 return tok
+        # 1b) Same account under an alias id (e.g. an Instagram account whose
+        # DM webhook uses the old id but whose live token is stored under the
+        # new Instagram-Login id). Prefer this over a stale env token below.
+        _alias = IG_ID_ALIASES.get(page_id)
+        if _alias:
+            ta = MetaToken.objects.filter(account_id=_alias, is_active=True).first()
+            if ta:
+                tok = ta.get_token()
+                if tok:
+                    return tok
     except Exception:
         pass
     # 2) Env var fallback (bootstrap).
