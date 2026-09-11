@@ -1630,6 +1630,64 @@ def _capture_size_hint(order, conv):
     return ""
 
 
+def _ad_offer_for_conv(conv):
+    """The Offer this conversation's AD maps to (matched_ad first, else the
+    campaign name). Used for cascade step 1 (came-from-ad). None if unknown."""
+    try:
+        from .models import Offer
+        ad = getattr(conv, "matched_ad", None)
+        if ad:
+            if getattr(ad, "offer_id", None):
+                return ad.offer
+            o = ad.offers.first()
+            if o:
+                return o
+        camp = ((getattr(conv, "source_campaign_name", "") or "")
+                or (getattr(conv, "source_campaign", "") or "")).strip().lower()
+        if camp:
+            # Longest offer name that appears in the campaign wins (so
+            # "Ensemble WaveLine" beats "WaveLine").
+            best = None
+            for o in Offer.objects.filter(is_active=True):
+                nm = (o.name or "").strip().lower()
+                if nm and nm in camp:
+                    if best is None or len(nm) > len((best.name or "")):
+                        best = o
+            if best:
+                return best
+            pname = _match_named_product_from_campaign(camp)
+            if pname:
+                return Offer.objects.filter(name__iexact=pname).first()
+    except Exception:
+        pass
+    return None
+
+
+def _images_same_product(local_images, url_images, ad_image_url):
+    """STEP 1 vision check: is the customer's photo the SAME product as the ad
+    creative? Sends the AD image FIRST, then the customer photo(s), and asks
+    one yes/no. Returns (same_bool, confident_bool)."""
+    try:
+        urls = [u for u in ([ad_image_url] + list(url_images or [])) if u]
+        prompt = (
+            "La PREMIÈRE image est la publicité (le produit annoncé). "
+            "La/les image(s) suivante(s) sont la photo envoyée par le client. "
+            "Est-ce le MÊME produit (même type de vêtement, même motif, mêmes "
+            "couleurs) ? Réponds UNIQUEMENT par: 'oui,sur', 'oui,pasur', "
+            "'non,sur' ou 'non,pasur' (sur = certain, pasur = tu hésites).")
+        ans = _claude_generate(prompt, max_tokens=10, temperature=0.0,
+                               image_urls=urls or None,
+                               local_images=local_images or None, max_images=3)
+        ans = (ans or "").strip().lower()
+        if not ans:
+            return (False, False)
+        same = ans.startswith("oui")
+        confident = ("pasur" not in ans and "pas sur" not in ans)
+        return (same, confident)
+    except Exception:
+        return (False, False)
+
+
 def _capture_product_for_order(order, conv):
     """Entry point for the capture cascade. Does a CHEAP gate (config enabled,
     still a draft) and then runs the possibly-slow, vision-bearing work in a
@@ -1702,17 +1760,31 @@ def _capture_product_for_order_sync(order, conv):
         note_bits = []
 
         if local_imgs or img_urls:
-            od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
-            match = _match_product_by_image(local_imgs, img_urls, od)
-            if match and match.get("name"):
-                chosen_offer = (
-                    Offer.objects.filter(name__iexact=match["name"], is_active=True).first()
-                    or Offer.objects.filter(name__iexact=match["name"]).first())
-                confident = bool(match.get("confident"))
-            elif match and match.get("_not_product"):
-                note_bits.append("photo partagée non-produit — à identifier")
-            elif match and match.get("_no_candidate"):
-                note_bits.append("photo non reconnue dans le catalogue de la page")
+            # STEP 1 — came from an ad: FIRST compare the customer's "I want
+            # this" photo to the AD image itself. Same product -> it's the ad's
+            # product (one cheap comparison, most reliable).
+            ad_offer = _ad_offer_for_conv(conv)
+            if ad_offer:
+                ad_img = _fetch_ad_image((getattr(conv, "source_ad_id", "") or "").strip())
+                if ad_img:
+                    same, sconf = _images_same_product(local_imgs, img_urls, ad_img)
+                    if same and sconf:
+                        chosen_offer = ad_offer
+                        confident = True
+            # STEP 2 — photo differs from the ad (customer switched) OR no ad:
+            # narrow to the PAGE's own catalogue and visual-match within it.
+            if not chosen_offer:
+                od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
+                match = _match_product_by_image(local_imgs, img_urls, od)
+                if match and match.get("name"):
+                    chosen_offer = (
+                        Offer.objects.filter(name__iexact=match["name"], is_active=True).first()
+                        or Offer.objects.filter(name__iexact=match["name"]).first())
+                    confident = bool(match.get("confident"))
+                elif match and match.get("_not_product"):
+                    note_bits.append("photo partagée non-produit — à identifier")
+                elif match and match.get("_no_candidate"):
+                    note_bits.append("photo non reconnue dans le catalogue de la page")
         else:
             # No photo: the ad/campaign is only a HINT (customers switch away
             # from the ad's product — see #22271), never an auto-fill.
@@ -2504,6 +2576,59 @@ def _fetch_ad_text(ad_id):
         text = ""
     _AD_TEXT_CACHE[ad_id] = text
     return text
+
+
+def _fetch_ad_image(ad_id):
+    """Fetch the ad creative's IMAGE url — what the customer actually saw in the
+    ad. This is the ground truth for STEP 1 of the capture cascade: compare the
+    customer's 'I want this' photo to the ad image itself. '' on failure.
+    Best-effort, short timeout, cached."""
+    import urllib.request as _ureq
+    import json as _json
+    if not ad_id:
+        return ""
+    token = _cfg("META_ACCESS_TOKEN", "").strip()
+    if not token:
+        return ""
+    global _AD_IMAGE_CACHE
+    try:
+        _AD_IMAGE_CACHE
+    except NameError:
+        _AD_IMAGE_CACHE = {}
+    if ad_id in _AD_IMAGE_CACHE:
+        return _AD_IMAGE_CACHE[ad_id]
+    url = (f"https://graph.facebook.com/v21.0/{ad_id}"
+           f"?fields=creative{{image_url,thumbnail_url,object_story_spec,"
+           f"effective_object_story_id}}&access_token={token}")
+    img = ""
+    try:
+        with _ureq.urlopen(url, timeout=6) as resp:
+            d = _json.loads(resp.read().decode("utf-8"))
+        cr = d.get("creative", {}) or {}
+        img = cr.get("image_url") or cr.get("thumbnail_url") or ""
+        if not img:
+            oss = cr.get("object_story_spec", {}) or {}
+            ld = oss.get("link_data", {}) or {}
+            img = ld.get("picture") or ""
+            if not img:
+                # dynamic/carousel: first child's picture
+                for ch in (ld.get("child_attachments") or []):
+                    if ch.get("picture"):
+                        img = ch["picture"]
+                        break
+        if not img:
+            # fall back to the underlying post's full_picture
+            osid = cr.get("effective_object_story_id") or ""
+            if osid:
+                u2 = (f"https://graph.facebook.com/v21.0/{osid}"
+                      f"?fields=full_picture&access_token={token}")
+                with _ureq.urlopen(u2, timeout=6) as r2:
+                    d2 = _json.loads(r2.read().decode("utf-8"))
+                img = d2.get("full_picture") or ""
+    except Exception:
+        img = ""
+    _AD_IMAGE_CACHE[ad_id] = img
+    return img
 
 
 def _conversation_deep_link(page_id, psid, platform="messenger"):
