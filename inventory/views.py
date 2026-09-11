@@ -4624,6 +4624,66 @@ def api_debug_ai_health(request):
     return JsonResponse(out)
 
 
+@login_required(login_url="/login/")
+def api_debug_capture(request, pk):
+    """READ-ONLY: run the product-capture VISION cascade on ONE conversation and
+    return exactly what the AI sees and decides — WITHOUT writing anything to the
+    order. Superuser only. Lets us inspect 'what the API gets' for a given DM.
+    NOTE: makes up to ~3 Claude vision calls, so it can take 15-30s."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import MessengerConversation, SalesPage
+    conv = MessengerConversation.objects.filter(pk=pk).first()
+    if not conv:
+        return JsonResponse({"status": "error", "message": "Conversation introuvable."}, status=404)
+    out = {"status": "ok", "conv_id": conv.id, "page_id": conv.page_id,
+           "campaign": (getattr(conv, "source_campaign_name", "")
+                        or getattr(conv, "source_campaign", "") or ""),
+           "ad_id": (getattr(conv, "source_ad_id", "") or "")}
+    local_imgs, img_urls = _capture_images_for_conv(conv)
+    out["customer_images"] = {"urls": len(img_urls), "local": len(local_imgs)}
+    sp_id = MESSENGER_PAGE_TO_SALESPAGE.get(str(conv.page_id or ""), MESSENGER_DEFAULT_SALESPAGE)
+    page = SalesPage.objects.filter(pk=sp_id).first()
+    out["sales_page"] = page.name if page else str(sp_id)
+
+    # STEP 1 — compare the customer photo to the AD image.
+    ad_offer = _ad_offer_for_conv(conv)
+    out["ad_offer"] = ad_offer.name if ad_offer else None
+    ad_img = _fetch_ad_image((getattr(conv, "source_ad_id", "") or "").strip())
+    out["ad_image_found"] = bool(ad_img)
+    if ad_img and (local_imgs or img_urls):
+        same, sconf = _images_same_product(local_imgs, img_urls, ad_img)
+        out["step1_photo_vs_ad"] = {"same": same, "confident": sconf}
+    else:
+        out["step1_photo_vs_ad"] = None
+
+    # STEP 2 — page-scoped catalogue match.
+    if local_imgs or img_urls:
+        od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
+        out["page_offers_count"] = len(od)
+        match = _match_product_by_image(local_imgs, img_urls, od) or {}
+        out["step2_catalogue_match"] = {
+            "matched_name": match.get("name"),
+            "price": match.get("price"),
+            "confident": match.get("confident"),
+            "not_product": bool(match.get("_not_product")),
+            "no_candidate": bool(match.get("_no_candidate")),
+            "what_ai_sees_in_photo": (match.get("_seen") or "")[:600],
+        }
+    else:
+        out["step2_catalogue_match"] = None
+
+    # Size + extracted items (from text).
+    try:
+        data = conv.extracted or {}
+        sizes = [it.get("size") for it in (data.get("items") or []) if it.get("size")]
+        out["size_from_text"] = (sizes[0] if sizes else "")
+        out["extracted_items"] = data.get("items") or []
+    except Exception:
+        pass
+    return JsonResponse(out)
+
+
 def dashboard(request):
     # Determine viewing mode (which bubble was clicked).
     # Admins/superusers always see the full dashboard ("all").
