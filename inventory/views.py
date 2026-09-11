@@ -1181,6 +1181,12 @@ BOT_SYSTEM_PROMPT_AR = (
     "MA T5AYARCH mntej men 3andek.\n\n"
 
     "9A3IDA DED ETTEKRAR (MOHIMA BARCHA):\n"
+    "- KI EL 7ARIF YES2EL SO2AL 3AL MNTEJ (naw3 el 9mech, el taille kifeh, "
+    "el couleurs, chnowa fih...): JAWEB 3AL SO2EL BARKA b jomla wa7da. MA "
+    "TZIDCH 'ab3athelna taille w adresse w noumrou' fi kol reply — el 7arif "
+    "mazel yes2el, mazel ma 9allekch eli 7ab ya3mel commande. 9oll info el "
+    "commande MARRA barka, wa9t el 7arif ywerri eli 7ab yechri (mathal 9allek "
+    "'n7eb', 'na3mel commande', wala 3tak taille/adresse).\n"
     "- 3OMREK ma t3awed nafs el jomla eli 9oltha 9bal fel conversation. Kén "
     "3titou el prix wala 9oltlou 'ghodwa nkalmouk 3al confirmation', MA "
     "T3AWEDHA marra okhra.\n"
@@ -1883,21 +1889,31 @@ def _bot_reply(conv):
         product_details_context = ""
         try:
             if _identified_name:
-                for _o in _offers_data_for_conv(conv):
-                    if (_o.get("name") or "").strip().lower() == _identified_name.strip().lower():
-                        _d = (_o.get("desc") or "").strip()
-                        if _d:
-                            product_details_context = (
-                                "\n\nDETAILS MTE3 EL MNTEJ \"" + _identified_name
-                                + "\" — esta3melhom KI EL 7ARIF YES2EL 3AL "
-                                "9MECH/tissu, el coupe (large wala serré), chnowa "
-                                "fih (kadech de pièces), wala el couleurs. Jaweb b "
-                                "jomla wa7da besita bel tounsi men hedhi el "
-                                "ma3loumet, MA T9RACH el description kamel lel "
-                                "7arif w ma tekhtere3ch tfasil ma mawjoudech "
-                                "hne:\n\"\"\"\n" + _d[:1200] + "\n\"\"\""
-                            )
-                        break
+                # The rich description (fabric clues, cut, pieces, colours) lives
+                # on the OFFER itself; the per-product descriptions are often
+                # empty. Prefer offer.description, fall back to product descs.
+                from .models import Offer
+                _nm = _identified_name.strip()
+                _off = (Offer.objects.filter(name__iexact=_nm, is_active=True).first()
+                        or Offer.objects.filter(name__iexact=_nm).first())
+                _d = (getattr(_off, "description", "") or "").strip() if _off else ""
+                if not _d:
+                    for _o in _offers_data_for_conv(conv):
+                        if (_o.get("name") or "").strip().lower() == _nm.lower():
+                            _d = (_o.get("desc") or "").strip()
+                            break
+                if _d:
+                    product_details_context = (
+                        "\n\nDETAILS MTE3 EL MNTEJ \"" + _identified_name
+                        + "\" — esta3melhom KI EL 7ARIF YES2EL 3AL 9MECH/tissu, "
+                        "el coupe (large wala serré), chnowa fih (kadech de "
+                        "pièces), wala el couleurs. Jaweb b jomla wa7da besita "
+                        "bel tounsi men hedhi el ma3loumet. Ken el ma3louma eli "
+                        "sa2el 3liha (mathal naw3 el 9mech bel dhabt) MECH "
+                        "mawjouda hne, 9oll barka 'la7dha khouya w n2akedlek' — "
+                        "MA TEKHTERE3CH. MA T9RACH el description kamel lel "
+                        "7arif:\n\"\"\"\n" + _d[:1500] + "\n\"\"\""
+                    )
         except Exception:
             product_details_context = ""
 
