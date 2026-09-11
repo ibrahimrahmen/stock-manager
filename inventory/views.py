@@ -10956,6 +10956,15 @@ def _create_order_from_shopify_shaped_payload(payload, source="shopify", externa
             pass
     order.recalc_total()
 
+    # 11a. Consistency guardrail: if any OrderOffer ended up with no linked lines
+    # while matching pieces came in as loose lines, relink them so the FRONT
+    # article and the offer EDITOR always read the same products (front/back
+    # consistency). Conservative + value-safe — see Order.relink_loose_offer_lines.
+    try:
+        order.relink_loose_offer_lines(apply=True)
+    except Exception:
+        pass
+
     # 11b. Safety net: if NOTHING matched (the website product name doesn't match
     # any offer/product in the system) but the payload carries a total, keep that
     # total on the order so it isn't blank. The unmatched item's title is already
@@ -11098,6 +11107,8 @@ def api_admin_run_tool(request, tool_name):
         "fix_livree_orders_dryrun":         ("fix_livree_orders", []),
         "fix_livree_orders_apply":          ("fix_livree_orders", ["--apply"]),
         "recalc_order_totals":              ("recalc_order_totals", []),
+        "fix_order_offer_links_dryrun":     ("fix_order_offer_links", []),
+        "fix_order_offer_links_apply":      ("fix_order_offer_links", ["--apply"]),
         "flag_angry_orders_dryrun":         ("flag_angry_orders", []),
         "flag_angry_orders_apply":          ("flag_angry_orders", ["--apply"]),
         "backfill_shopify_dryrun":          ("backfill_shopify", []),

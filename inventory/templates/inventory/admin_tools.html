@@ -126,6 +126,25 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     <div id="output-recalc" class="output"></div>
   </div>
 
+  <div class="tool-card">
+    <div class="tool-title">Réparer les articles non reliés à leur offre (avant/arrière)</div>
+    <div class="tool-desc">
+      Répare les commandes où la liste d'articles (à l'avant) et l'éditeur d'offre
+      (à l'intérieur) <strong>ne montrent pas la même chose</strong> — les pièces
+      existent mais n'ont jamais été <strong>reliées à leur offre</strong>, donc la
+      couleur / taille apparaissent vides dans l'éditeur (ex : commande #22271).
+      Relie chaque pièce à son offre. <strong>Sûr</strong> : ne crée, ne supprime
+      et ne fusionne jamais un article en trop, ne réduit jamais le total, et ne
+      touche pas une commande verrouillée si le total changerait.<br>
+      <strong>Fais d'abord le Dry-run</strong> pour voir la liste.
+    </div>
+    <div class="tool-buttons">
+      <button class="btn" onclick="runTool('fix_order_offer_links_dryrun', this, 'output-links')">🔍 Dry-run (juste voir)</button>
+      <button class="btn btn-primary" onclick="runToolWithConfirm('fix_order_offer_links_apply', this, 'output-links', 'Relier les articles à leur offre sur les commandes concernées ?')">🔗 Relier les articles</button>
+    </div>
+    <div id="output-links" class="output"></div>
+  </div>
+
   <div class="section-title">Boutique Shopify (Barats.tn)</div>
 
   <div class="tool-card">

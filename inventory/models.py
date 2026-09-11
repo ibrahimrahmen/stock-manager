@@ -892,6 +892,108 @@ class Order(models.Model):
         # Show every article — no "+N" truncation.
         return ", ".join(parts)
 
+    def relink_loose_offer_lines(self, apply=True):
+        """SAFE repair for the front/back product mismatch (e.g. order #22271).
+
+        Symptom: an OrderOffer on this order has NO OrderLines linked to it
+        (the pieces' order_offer FK is NULL), so the FRONT article list shows the
+        loose product lines while the offer EDITOR — which reads
+        order.lines.filter(order_offer=oo) — shows the offer with zero products,
+        and colour/size look empty.
+
+        This reattaches the order's standalone lines to the OrderOffer they
+        belong to. It is deliberately conservative and can never lose data:
+          * only an OrderOffer that currently has ZERO lines is touched (clearly
+            broken — never one that already lists its pieces);
+          * only an OrderOffer with a real bundle_price (> 0) is filled, so
+            folding priced loose lines into it can't zero-out the order's value;
+          * only standalone lines whose product is in that offer's own product
+            list (OfferProduct) are claimed, one per defined product up to its
+            quantity — a genuine EXTRA item stays standalone and untouched;
+          * on a LOCKED order (confirmed / pushed to Navex / delivered) it only
+            applies when the total would NOT change (pure display fix); otherwise
+            it reports the order for manual review instead of altering finances;
+          * nothing is created or deleted — only the order_offer link is set.
+
+        Returns a dict {order_id, linked:[line ids], applied:bool,
+        skipped_locked:bool, old_total, new_total, detail}. With apply=False it
+        reports what WOULD change without saving.
+        """
+        from decimal import Decimal
+        result = {"order_id": self.id, "linked": [], "applied": False,
+                  "skipped_locked": False, "old_total": self.total,
+                  "new_total": self.total, "detail": ""}
+
+        loose = list(self.lines.filter(order_offer__isnull=True))
+        if not loose:
+            return result
+        broken_offers = [oo for oo in self.order_offers.all()
+                         if (oo.bundle_price or 0) > 0 and oo.lines.count() == 0]
+        if not broken_offers:
+            return result
+
+        claimed_ids = set()
+        plan = []  # (line, order_offer)
+        for oo in broken_offers:
+            if not oo.offer_id:
+                continue
+            try:
+                offer_products = list(oo.offer.products.all())  # OfferProduct rows
+            except Exception:
+                offer_products = []
+            if not offer_products:
+                continue
+            for op in offer_products:
+                need = op.quantity or 1
+                for line in loose:
+                    if line.id in claimed_ids:
+                        continue
+                    if line.product_id == op.product_id:
+                        plan.append((line, oo))
+                        claimed_ids.add(line.id)
+                        need -= 1
+                        if need <= 0:
+                            break
+        if not plan:
+            return result
+
+        result["linked"] = [l.id for l, _ in plan]
+        result["detail"] = "; ".join(
+            f"ligne #{l.id} ({l.product.name}) → offre «{oo.offer_name or oo.offer_id}»"
+            for l, oo in plan
+        )
+
+        # Project the total after relinking (claimed loose lines leave the
+        # standalone sum; the offer bundle already counts).
+        offers_sum = sum((oo.offer_total for oo in self.order_offers.all()), Decimal("0"))
+        remaining = [l for l in loose if l.id not in claimed_ids]
+        standalone_sum = sum((l.line_total for l in remaining), Decimal("0"))
+        if self.price_override is not None:
+            projected = self.price_override
+        elif self.exchange_of_id:
+            projected = max(Decimal("0"), (self.delivery_fee or 0) - (self.discount or 0))
+        else:
+            projected = max(Decimal("0"),
+                            offers_sum + standalone_sum + (self.delivery_fee or 0) - (self.discount or 0))
+        result["new_total"] = projected
+
+        LOCKED = {self.CONFIRMEE, self.EN_COURS, self.AU_MAGASIN, self.RETURNING,
+                  self.RETURNED, self.LIVREE, self.PAYEE, self.SUPPRIME_NAVEX}
+        is_locked = self.status in LOCKED or bool(self.bordereau_barcode)
+        if is_locked and projected != self.total:
+            result["skipped_locked"] = True
+            return result
+
+        if apply:
+            for line, oo in plan:
+                line.order_offer = oo
+                line.save(update_fields=["order_offer"])
+            self.recalc_total()
+            self.refresh_from_db()
+            result["new_total"] = self.total
+            result["applied"] = True
+        return result
+
 
 class OrderLine(models.Model):
     """One product line inside an Order. Stores price as snapshot."""
