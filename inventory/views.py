@@ -1599,7 +1599,7 @@ def _bot_reply(conv):
             import re as _r
             return len(_r.findall(r"\d+\s*dt", low)) >= 3
 
-        for m in msgs[-12:]:
+        for m in msgs[-20:]:
             who = "Client" if m.get("from") == "user" else "Vendeur"
             t = (m.get("text") or "").strip()
             has_img = bool(m.get("images"))
@@ -14689,11 +14689,12 @@ def api_messenger_webhook(request):
                                 from .models import MessengerConversation as _MC
                                 import time as _time
                                 # Debounce: the customer often fires several
-                                # messages in a row. Wait a moment, then only the
+                                # messages in a row. Wait 20s, then only the
                                 # thread for the LAST customer message proceeds;
                                 # the earlier ones bail out. This gives ONE reply
-                                # covering everything they typed.
-                                _time.sleep(6)
+                                # covering everything they typed — after they've
+                                # finished, not mid-typing.
+                                _time.sleep(20)
                                 _c = _MC.objects.filter(pk=conv_id).first()
                                 if not _c:
                                     return
