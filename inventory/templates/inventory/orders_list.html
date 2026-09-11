@@ -242,6 +242,12 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
 .modal-validate{background:var(--green);color:#0a0a08;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:500;font-size:13px;}
 .error-box{background:var(--red-dim);color:var(--red);padding:8px 12px;border-radius:6px;font-size:12px;margin:8px 0;}
 .empty{text-align:center;padding:40px 20px;color:var(--muted);}
+/* Auto-capture product-confidence markers (next to Articles) */
+.cap-flag{display:inline-flex;vertical-align:middle;margin-left:6px;line-height:0;}
+.cap-flag.cap-warn{cursor:pointer;}
+.cap-note-pop{position:absolute;z-index:10000;max-width:220px;background:#2a2a26;color:#fff;
+  border:0.5px solid var(--border);border-radius:8px;padding:8px 11px;font-size:12px;
+  box-shadow:0 8px 24px rgba(0,0,0,0.4);display:none;}
 </style>
 </head>
 <body>
@@ -372,7 +378,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
             <div>{{ o.region.name|default:"" }}{% if o.ville %} · {{ o.ville }}{% endif %}</div>
             {% if o.address %}<div class="muted" style="font-size:11px;">{{ o.address|truncatechars:50 }}</div>{% endif %}
           </td>
-          <td class="muted">{{ o.article_summary }}</td>
+          <td class="muted">{{ o.article_summary }}{% if o.capture_product_confidence %}{% if o.capture_product_note %}<span class="cap-flag cap-warn" data-note="{{ o.capture_product_note|escape }}" onclick="capNote(this)" title="Produit incertain — cliquez"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.6l6.6 12.2H1.4z" fill="#f5a623"/><rect x="7.2" y="6" width="1.6" height="4.2" rx="0.8" fill="#0a0a08"/><circle cx="8" cy="12" r="0.95" fill="#0a0a08"/></svg></span>{% else %}<span class="cap-flag cap-ok" title="Produit confirmé automatiquement d'après la photo"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="8" fill="#1a9e6e"/><path d="M4.4 8.3l2.1 2.1 5-5.2" stroke="#fff" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>{% endif %}{% endif %}</td>
           <td style="text-align:right;font-weight:500;">{% if o.amount_collected is not None %}<span title="Montant encaissé (Navex)">{{ o.amount_collected|floatformat:0 }} DT</span>{% if o.amount_collected != o.total %}<div class="muted" style="font-size:10px;font-weight:400;" title="Total commande">({{ o.total|floatformat:0 }})</div>{% endif %}{% else %}{{ o.total|floatformat:0 }} DT{% endif %}</td>
           <td>
             {% if o.status == 'annulee' %}
@@ -2656,6 +2662,22 @@ async function runSearch(q) {
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="10" style="padding:30px;text-align:center;color:var(--red);">Erreur : ${e.message}</td></tr>`;
   }
+}
+// Click the ⚠️ capture flag → show its note ("ensemble ou pull ?") in a small popover.
+function capNote(el){
+  var note=el.getAttribute('data-note')||'';
+  var pop=document.getElementById('cap-note-pop');
+  if(!pop){pop=document.createElement('div');pop.id='cap-note-pop';pop.className='cap-note-pop';document.body.appendChild(pop);}
+  pop.textContent=note;
+  var r=el.getBoundingClientRect();
+  pop.style.left=(r.left+window.scrollX)+'px';
+  pop.style.top=(r.bottom+window.scrollY+6)+'px';
+  pop.style.display='block';
+  setTimeout(function(){
+    document.addEventListener('click',function h(e){
+      if(!el.contains(e.target)){pop.style.display='none';document.removeEventListener('click',h);}
+    });
+  },0);
 }
 </script>
 
