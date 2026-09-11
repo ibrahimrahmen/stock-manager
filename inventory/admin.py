@@ -219,6 +219,15 @@ class OrderAdmin(admin.ModelAdmin):
     inlines = [OrderLineInline]
     date_hierarchy = "created_at"
 
+    def save_related(self, request, form, formsets, change):
+        # Recompute the cached total after the lines are saved, so editing an
+        # order in the admin never leaves a stale total (respects price_override).
+        super().save_related(request, form, formsets, change)
+        try:
+            form.instance.recalc_total()
+        except Exception:
+            pass
+
 
 # --- V2 Phase 4-b: Offers ---
 class OfferProductInline(admin.TabularInline):
@@ -240,6 +249,24 @@ class OfferAdmin(admin.ModelAdmin):
 class OrderOfferAdmin(admin.ModelAdmin):
     list_display = ("id", "order", "offer_name", "quantity", "bundle_price")
     search_fields = ("order__id", "offer_name")
+
+    def save_model(self, request, obj, form, change):
+        # Changing an order's offer must recompute the parent order's total.
+        super().save_model(request, obj, form, change)
+        try:
+            if obj.order_id:
+                obj.order.recalc_total()
+        except Exception:
+            pass
+
+    def delete_model(self, request, obj):
+        order = obj.order if obj.order_id else None
+        super().delete_model(request, obj)
+        try:
+            if order:
+                order.recalc_total()
+        except Exception:
+            pass
 
 
 @admin.register(ExchangeReturnItem)
