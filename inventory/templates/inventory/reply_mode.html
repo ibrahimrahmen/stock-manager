@@ -57,6 +57,13 @@ h1{font-family:'DM Serif Display',serif;font-size:30px;}
 #toast.show{opacity:1;}
 .hint{background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber);border-radius:12px;
   padding:12px 16px;font-size:13px;margin-bottom:18px;}
+.cap{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:11px;
+  border:1px solid var(--border);background:var(--surface2);cursor:pointer;font-size:12.5px;
+  font-weight:600;color:var(--muted);white-space:nowrap;transition:.12s;}
+.cap:hover{color:var(--text);}
+.cap .dot{width:9px;height:9px;border-radius:50%;background:var(--faint);transition:.12s;}
+.cap.on{background:var(--green-dim);color:var(--green);border-color:var(--green);}
+.cap.on .dot{background:var(--green);}
 </style>
 </head>
 <body>
@@ -76,6 +83,7 @@ h1{font-family:'DM Serif Display',serif;font-size:30px;}
       <span><b>Bot interne</b> — votre système répond</span>
       <span><b>Unifunl</b> — l'agent IA externe répond</span>
       <span><b>Meta AI + capture</b> — l'IA de Facebook répond, votre système reste silencieux mais <b>extrait la commande</b></span>
+      <span><b>Capture IA produit</b> — identifie le produit depuis la photo du client (photo → catalogue de la page → couleur/taille). Remplit seulement si sûr (≥70%), sinon laisse un ⚠️. Désactivé par défaut.</span>
     </div>
 
     <div id="list">Chargement…</div>
@@ -97,9 +105,13 @@ function render(pages){
       return '<button type="button" class="'+on.trim()+'" data-m="'+m[0]+'" '+
              'onclick="setMode('+p.sales_page+',\''+m[0]+'\',this)">'+m[1]+'</button>';
     }).join("");
+    var capOn = p.capture_ai ? " on" : "";
+    var cap = '<button type="button" class="cap'+capOn+'" id="cap-'+p.sales_page+'" '+
+      'title="Capture IA : identifie le produit depuis la photo du client (photo → catalogue de la page → couleur). Rempli seulement si sûr (≥70%), sinon ⚠️." '+
+      'onclick="setCapture('+p.sales_page+',this)"><span class="dot"></span>Capture IA produit</button>';
     return '<div class="row" id="row-'+p.sales_page+'">'+
       '<div class="nm"><h2>'+p.name+'</h2><div class="cur">Actuel : '+(LABEL[p.mode||""]||"Par défaut")+'</div></div>'+
-      '<div class="seg">'+segs+'</div></div>';
+      '<div class="seg">'+segs+'</div>'+cap+'</div>';
   }).join("");
   document.getElementById('list').innerHTML = h;
 }
@@ -124,6 +136,19 @@ async function setMode(sp, mode, btn){
     if(d.status==='ok'){ if(cur) cur.textContent='Actuel : '+LABEL[mode]; toast('✓ Enregistré'); }
     else toast('⚠ '+(d.message||'Échec'));
   }catch(e){ toast('⚠ Erreur réseau'); }
+}
+
+async function setCapture(sp, btn){
+  var willOn = !btn.classList.contains('on');
+  btn.classList.toggle('on', willOn);
+  try{
+    var r = await fetch("{% url 'api_reply_mode' %}", {method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},
+      body: JSON.stringify({sales_page:sp, capture_ai: willOn ? 'on':'off'})});
+    var d = await r.json();
+    if(d.status==='ok'){ toast(willOn ? '✓ Capture IA activée' : '✓ Capture IA désactivée'); }
+    else { btn.classList.toggle('on', !willOn); toast('⚠ '+(d.message||'Échec')); }
+  }catch(e){ btn.classList.toggle('on', !willOn); toast('⚠ Erreur réseau'); }
 }
 load();
 </script>

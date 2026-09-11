@@ -1504,6 +1504,281 @@ def _match_named_product_from_campaign(campaign):
     return ""
 
 
+# ---------------------------------------------------------------------------
+# BUILD A — AI PRODUCT-CAPTURE CASCADE (gated, off by default)
+# When a DM order is created and the page has AI capture enabled, identify the
+# product from the customer's photo the same way a human would: match the photo
+# to the PAGE's catalogue (a small slice), resolve colour from the variant, and
+# read size from the text. Fill only when confident (>=70%); otherwise leave the
+# product empty and write a ⚠️ note so staff pick it. Never guesses blindly.
+# See memory: photo-order-capture-cascade.
+# ---------------------------------------------------------------------------
+def _capture_images_for_conv(conv):
+    """Collect up to 3 recent customer image URLs + any injected local test
+    image for the capture cascade. Mirrors _bot_reply's image collection."""
+    urls, local = [], []
+    try:
+        lp = getattr(conv, "_test_local_image", "")
+        if lp:
+            local = [lp]
+        for m in reversed(conv.messages or []):
+            if m.get("from") == "user" and m.get("images"):
+                urls = [u for u in (m.get("images") or []) if u and u != "local"][:3]
+                if urls:
+                    break
+    except Exception:
+        pass
+    return local, urls
+
+
+def _capture_page_offers_data(sales_page, limit=60):
+    """Page-scoped version of _offers_data_for_conv: only offers that belong to
+    THIS sales page (the cascade's step-2 narrowing), same tops-first shaping."""
+    out = []
+    try:
+        from .models import Offer
+        qs = Offer.objects.filter(is_active=True)
+        if sales_page is not None:
+            qs = qs.filter(sales_pages=sales_page)
+        for o in qs.distinct()[:limit]:
+            try:
+                price = o.price_for_page(sales_page) if sales_page else o.bundle_price
+            except Exception:
+                price = o.bundle_price
+            _tops, _bottoms = [], []
+            for op in o.products.all():
+                prod = getattr(op, "product", None)
+                if not prod:
+                    continue
+                d = (getattr(prod, "description", "") or "").strip()
+                if not d:
+                    continue
+                _nm = (getattr(prod, "name", "") or "").lower()
+                if any(w in _nm for w in ("pant", "short", "jogging", "bas")):
+                    _bottoms.append(d)
+                else:
+                    _tops.append(d)
+            descs = _tops + [b[:80] for b in _bottoms]
+            out.append({"name": o.name, "price": _fmt_price(price),
+                        "desc": " ; ".join(descs)})
+    except Exception:
+        pass
+    return out
+
+
+def _capture_variant_by_image(product, local_images, url_images):
+    """Resolve a product's colour VARIANT from the customer's photo.
+      * 0 variants -> (None, False)
+      * 1 variant  -> (that one, True)   [single-colour shortcut, no vision call]
+      * many       -> ask Claude to match the photo's colour to the labels.
+    Returns (variant_or_None, confident_bool). Colour labels can lie visually,
+    so we still send the photo and let vision decide; flag uncertain when unsure.
+    """
+    try:
+        variants = list(product.variants.all())
+        if not variants:
+            return (None, False)
+        if len(variants) == 1:
+            return (variants[0], True)
+        if not (local_images or url_images):
+            return (None, False)
+        labels = "\n".join(
+            f"{i+1}. {(v.color_label or v.color_name or '?')}"
+            for i, v in enumerate(variants))
+        prompt = (
+            "Regarde la photo du vêtement. Voici les couleurs disponibles:\n"
+            + labels + "\n\nQuel numéro correspond à la couleur sur la photo ? "
+            "Réponds UNIQUEMENT par le numéro, une virgule, puis 'sur' si tu es "
+            "certain ou 'pasur' si tu hésites (ex: '2,sur'). Si aucune ne "
+            "correspond, réponds '0'.")
+        ans = _claude_generate(prompt, max_tokens=10, temperature=0.0,
+                               image_urls=url_images or None,
+                               local_images=local_images or None, max_images=1)
+        ans = (ans or "").strip().lower()
+        import re as _re
+        m = _re.search(r"\d+", ans)
+        if not m:
+            return (None, False)
+        idx = int(m.group())
+        if idx <= 0 or idx > len(variants):
+            return (None, False)
+        confident = ("pasur" not in ans and "pas sur" not in ans)
+        return (variants[idx - 1], confident)
+    except Exception:
+        return (None, False)
+
+
+def _capture_size_hint(order, conv):
+    """Best-effort size from the extraction result or the conversation text."""
+    try:
+        data = getattr(conv, "extracted", None) or {}
+        for it in (data.get("items") or []):
+            s = (it.get("size") or "").strip()
+            if s:
+                return s[:10]
+    except Exception:
+        pass
+    try:
+        import re as _re
+        text = " ".join(m.get("text", "") for m in (conv.messages or [])
+                        if m.get("from") == "user").lower()
+        m = _re.search(r"\b(xxxl|xxl|3xl|2xl|xl|s|m|l|3[0-9]|4[0-9]|5[0-9])\b", text)
+        if m:
+            return m.group(1).upper()[:10]
+    except Exception:
+        pass
+    return ""
+
+
+def _capture_product_for_order(order, conv):
+    """Entry point for the capture cascade. Does a CHEAP gate (config enabled,
+    still a draft) and then runs the possibly-slow, vision-bearing work in a
+    BACKGROUND THREAD, so it never blocks the Meta webhook (which times out
+    ~20s). The worker re-fetches fresh order/conv objects for thread safety."""
+    try:
+        if not order or not conv:
+            return
+        if order.status != order.NON_CONFIRMEE or order.bordereau_barcode:
+            return
+        if _cfg("capture_ai:%s" % order.sales_page_id, "") != "on":
+            return
+        lp = getattr(conv, "_test_local_image", "")
+        import threading as _thr
+        _thr.Thread(target=_capture_worker,
+                    args=(order.id, conv.id, lp), daemon=True).start()
+    except Exception:
+        pass
+
+
+def _capture_worker(order_id, conv_id, local_image=""):
+    """Background worker: re-fetch the order + conversation and run the cascade."""
+    from .models import Order, MessengerConversation
+    try:
+        order = Order.objects.filter(pk=order_id).first()
+        conv = MessengerConversation.objects.filter(pk=conv_id).first()
+        if not order or not conv:
+            return
+        if local_image:
+            conv._test_local_image = local_image
+        _capture_product_for_order_sync(order, conv)
+    except Exception:
+        pass
+
+
+def _capture_product_for_order_sync(order, conv):
+    """AI product-capture cascade. GATED + off by default.
+
+    Runs only when: the order's sales page has AI capture enabled
+    (_cfg('capture_ai:<sp>')=='on'), the order is still an editable draft with
+    NO product yet, and it has a phone. Identifies the product from the
+    customer's photo via a page-scoped visual match, resolves colour (variant)
+    and size, and writes the offer + linked lines + capture_product_confidence
+    + note. Below 70% confidence it does NOT fill the product — only the ⚠️
+    note, so staff pick it. Never raises. Returns a short dict for logging.
+    """
+    res = {"order_id": getattr(order, "id", None), "action": "skip", "reason": ""}
+    try:
+        from .models import Offer, OrderOffer, OrderLine, SalesPage
+        if (not order or order.status != order.NON_CONFIRMEE
+                or order.bordereau_barcode):
+            res["reason"] = "not-draft"
+            return res
+        sp_id = order.sales_page_id
+        if _cfg("capture_ai:%s" % sp_id, "") != "on":
+            res["reason"] = "disabled"
+            return res
+        if not (order.customer and (order.customer.phone or "").strip()):
+            res["reason"] = "no-phone"
+            return res
+        if order.order_offers.exists() or order.lines.exists():
+            res["reason"] = "already-has-product"
+            return res
+
+        page = SalesPage.objects.filter(pk=sp_id).first()
+        local_imgs, img_urls = _capture_images_for_conv(conv)
+
+        chosen_offer = None
+        confident = False
+        note_bits = []
+
+        if local_imgs or img_urls:
+            od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
+            match = _match_product_by_image(local_imgs, img_urls, od)
+            if match and match.get("name"):
+                chosen_offer = (
+                    Offer.objects.filter(name__iexact=match["name"], is_active=True).first()
+                    or Offer.objects.filter(name__iexact=match["name"]).first())
+                confident = bool(match.get("confident"))
+            elif match and match.get("_not_product"):
+                note_bits.append("photo partagée non-produit — à identifier")
+            elif match and match.get("_no_candidate"):
+                note_bits.append("photo non reconnue dans le catalogue de la page")
+        else:
+            # No photo: the ad/campaign is only a HINT (customers switch away
+            # from the ad's product — see #22271), never an auto-fill.
+            camp = ((getattr(conv, "source_campaign_name", "") or "")
+                    or (getattr(conv, "source_campaign", "") or "")).strip()
+            if camp:
+                note_bits.append(("venu de la pub «%s» — confirmer le produit"
+                                  % camp)[:120])
+            else:
+                note_bits.append("pas de photo — produit à identifier")
+
+        # Confidence gate: only FILL on a confident photo match.
+        if not chosen_offer or not confident:
+            if chosen_offer and not confident:
+                note = ("produit incertain: peut-être «%s» — à confirmer"
+                        % chosen_offer.name)
+            else:
+                note = "; ".join([b for b in note_bits if b]) or "produit à identifier"
+            order.capture_product_confidence = 40
+            order.capture_product_note = note[:200]
+            order.save(update_fields=["capture_product_confidence",
+                                      "capture_product_note", "updated_at"])
+            res["action"] = "flagged"
+            res["reason"] = note[:80]
+            return res
+
+        # Confident: create the offer + its linked lines, resolving colour + size.
+        size_hint = _capture_size_hint(order, conv)
+        try:
+            price = (chosen_offer.price_for_page(page) if page
+                     else chosen_offer.bundle_price)
+        except Exception:
+            price = chosen_offer.bundle_price
+        colour_uncertain = False
+        with transaction.atomic():
+            oo = OrderOffer.objects.create(
+                order=order, offer=chosen_offer, offer_name=chosen_offer.name,
+                bundle_price=price, quantity=1)
+            for op in chosen_offer.products.all():
+                variant, vconf = _capture_variant_by_image(
+                    op.product, local_imgs, img_urls)
+                if variant is None or not vconf:
+                    colour_uncertain = True
+                OrderLine.objects.create(
+                    order=order, order_offer=oo, product=op.product,
+                    variant=variant, size=size_hint,
+                    quantity=op.quantity or 1, unit_price=0)
+            order.recalc_total()
+
+        if colour_uncertain:
+            order.capture_product_confidence = 75
+            order.capture_product_note = (
+                "couleur à confirmer (%s)" % chosen_offer.name)[:200]
+        else:
+            order.capture_product_confidence = 90
+            order.capture_product_note = ""
+        order.save(update_fields=["capture_product_confidence",
+                                  "capture_product_note", "updated_at"])
+        res["action"] = "filled"
+        res["reason"] = chosen_offer.name
+        return res
+    except Exception as e:
+        res["reason"] = "err:%s" % (str(e)[:60])
+        return res
+
+
 def _bot_reply(conv):
     """Generate a short Tunisian-Arabic bot reply to the latest customer
     message, using the conversation so far. Returns the reply text or None.
@@ -8878,16 +9153,24 @@ def api_reply_mode(request):
         try:
             data = json.loads(request.body.decode("utf-8") or "{}")
             sp = int(data.get("sales_page"))
-            mode = (data.get("mode") or "").strip()
-            if mode not in ("", "off", "internal", "external", "capture"):
-                return JsonResponse({"status": "error", "message": "Mode invalide."}, status=400)
             if sp not in _REPLY_PAGES:
                 return JsonResponse({"status": "error", "message": "Page inconnue."}, status=400)
-            _set_cfg("reply_mode:%s" % sp, mode)
+            # Either set the reply mode, or toggle the AI product-capture flag,
+            # depending on which key the payload carries.
+            if "capture_ai" in data:
+                cap = "on" if (str(data.get("capture_ai")).strip().lower()
+                               in ("on", "1", "true", "yes")) else "off"
+                _set_cfg("capture_ai:%s" % sp, cap)
+            else:
+                mode = (data.get("mode") or "").strip()
+                if mode not in ("", "off", "internal", "external", "capture"):
+                    return JsonResponse({"status": "error", "message": "Mode invalide."}, status=400)
+                _set_cfg("reply_mode:%s" % sp, mode)
         except Exception as e:
             return JsonResponse({"status": "error", "message": str(e)[:150]}, status=400)
     pages = [{"sales_page": sp, "name": nm,
-              "mode": _cfg("reply_mode:%s" % sp, "") or ""}
+              "mode": _cfg("reply_mode:%s" % sp, "") or "",
+              "capture_ai": (_cfg("capture_ai:%s" % sp, "") == "on")}
              for sp, nm in sorted(_REPLY_PAGES.items(), key=lambda kv: kv[1])]
     return JsonResponse({"status": "ok", "pages": pages})
 
@@ -16064,6 +16347,12 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
                 _fill_color_size_from_text(order, conv)
             except Exception:
                 pass
+            # AI product-capture cascade (gated + off by default; no-op unless
+            # the page has capture_ai enabled and the order has no product yet).
+            try:
+                _capture_product_for_order(order, conv)
+            except Exception:
+                pass
             conv.save(update_fields=["extracted", "matched_ad", "updated_at"])
             return
 
@@ -16144,6 +16433,12 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
                 pass
             try:
                 _fill_color_size_from_text(order, conv)
+            except Exception:
+                pass
+            # AI product-capture cascade (gated + off by default; no-op unless
+            # the page has capture_ai enabled and the order has no product yet).
+            try:
+                _capture_product_for_order(order, conv)
             except Exception:
                 pass
     except Exception:
