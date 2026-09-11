@@ -4113,6 +4113,42 @@ def api_bot_test_reply(request):
         return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
 
 
+@login_required(login_url="/login/")
+def api_debug_ai_health(request):
+    """Tiny, isolated Claude health check — one trivial generation, NO catalog
+    context, NO images — so it tells you cleanly whether your Anthropic key +
+    credits work, without the heavy bot path. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    import time as _t
+    key_set = bool(_cfg("ANTHROPIC_API_KEY", "").strip())
+    model = (_cfg("ANTHROPIC_MODEL", "")
+             or os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")).strip()
+    errbox = []
+    t0 = _t.time()
+    try:
+        reply = _claude_generate("Réponds uniquement par le mot: OK",
+                                 max_tokens=20, temperature=0.0, errbox=errbox)
+    except Exception as e:
+        reply = None
+        errbox.append("exception: %s" % str(e)[:200])
+    ms = int((_t.time() - t0) * 1000)
+    # If Claude answered, errbox is empty and we got text. A Gemini fallback
+    # leaves a "bascule Gemini" note in errbox.
+    used_claude = key_set and not any("Gemini" in e for e in errbox)
+    ok = bool(reply) and used_claude
+    return JsonResponse({
+        "status": "ok",
+        "claude_working": ok,
+        "key_configured": key_set,
+        "model": model,
+        "reply_sample": (reply or "")[:120],
+        "elapsed_ms": ms,
+        "provider": "claude" if used_claude and reply else ("gemini_fallback" if reply else "none"),
+        "errors": errbox,
+    })
+
+
 def dashboard(request):
     # Determine viewing mode (which bubble was clicked).
     # Admins/superusers always see the full dashboard ("all").
