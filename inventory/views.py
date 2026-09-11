@@ -577,6 +577,7 @@ _CONFIG_SECTIONS = [
     ]),
     ("Intelligence artificielle", "✨", [
         ("ANTHROPIC_API_KEY", "Clé API Claude (Anthropic)", True),
+        ("ANTHROPIC_MODEL", "Modèle Claude (déf. claude-haiku-4-5-20251001 — le moins cher)", False),
         ("GEMINI_API_KEY", "Clé API Gemini", True),
     ]),
     ("Livraison (Navex)", "🚚", [
@@ -2463,7 +2464,10 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
             errbox.append("ANTHROPIC_API_KEY manquant — bascule Gemini")
         return _gemini_generate_legacy(prompt, max_tokens=max_tokens,
                                        temperature=temperature)
-    model = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001").strip()
+    # Model comes from the in-app config (Configuration → IA), falling back to
+    # the env var, then to the cheapest model (Haiku). All in-app, no Railway.
+    model = (_cfg("ANTHROPIC_MODEL", "")
+             or os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")).strip()
     # Build the message content. If images are supplied (Claude Vision), send
     # them as image blocks BEFORE the text so the model sees them in context.
     # Meta CDN URLs (fbcdn.net) are blocked for Claude by robots.txt, so we
