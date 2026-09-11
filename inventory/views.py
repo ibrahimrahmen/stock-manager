@@ -1656,6 +1656,12 @@ def _bot_reply(conv):
         except Exception:
             gender_hint = ""
 
+        # Name of the product identified for THIS conversation (from the ad, a
+        # photo match, or a product the customer named). Used to pull that one
+        # offer's description so the bot can answer detail questions (fabric,
+        # cut, what's included) — cheaply, one description, not the whole catalog.
+        _identified_name = ""
+
         # If the conversation came from a specific ad, fetch that ad's text —
         # it usually contains the product name and price, so the bot can answer
         # price questions accurately instead of asking for a photo.
@@ -1677,6 +1683,8 @@ def _bot_reply(conv):
                     _prod_name = _match_named_product_from_campaign(_camp)
                 except Exception:
                     _prod_name = ""
+                if _prod_name:
+                    _identified_name = _prod_name
                 if _ad_lines:
                     ad_context = (
                         "\n\nMA3LOUMET EL PUB: el 7arif jé mel pub hedhi w "
@@ -1775,6 +1783,7 @@ def _bot_reply(conv):
                     # Full-name match (old behaviour).
                     if len(_nm_n) >= 5 and _nm_n in _utxt_n:
                         _named_product = True
+                        _identified_name = _nm
                         break
                     # Distinctive-word match: any word of the product name that
                     # is >=4 chars, not a generic clothing word, and appears in
@@ -1784,6 +1793,7 @@ def _bot_reply(conv):
                               if len(w) >= 4 and w not in _stop]
                     if any(w in _utxt_n for w in _words):
                         _named_product = True
+                        _identified_name = _nm
                         break
             if _cat and (_has_photo or _from_ad or _named_product):
                 catalog_context = (
@@ -1824,6 +1834,7 @@ def _bot_reply(conv):
                 _res = _match_product_by_image(local_imgs, img_urls, _od)
                 if _res and _res.get("name"):
                     if _res.get("confident", True):
+                        _identified_name = _res["name"]
                         match_hint = (
                             "\n\n(EL MNTEJ ELI FEL TASWIRA t3aref b da9a: '"
                             + _res["name"] + "' b " + str(_res["price"]) + " DT. "
@@ -1865,6 +1876,31 @@ def _bot_reply(conv):
         except Exception:
             delay_context = ""
 
+        # Product DETAILS (fabric, cut, what's included, colours): when we've
+        # identified the product, pull ITS description so the bot can answer
+        # detail questions like "chneya naw3 el 9mech" — one description, not the
+        # whole catalogue, so it stays cheap.
+        product_details_context = ""
+        try:
+            if _identified_name:
+                for _o in _offers_data_for_conv(conv):
+                    if (_o.get("name") or "").strip().lower() == _identified_name.strip().lower():
+                        _d = (_o.get("desc") or "").strip()
+                        if _d:
+                            product_details_context = (
+                                "\n\nDETAILS MTE3 EL MNTEJ \"" + _identified_name
+                                + "\" — esta3melhom KI EL 7ARIF YES2EL 3AL "
+                                "9MECH/tissu, el coupe (large wala serré), chnowa "
+                                "fih (kadech de pièces), wala el couleurs. Jaweb b "
+                                "jomla wa7da besita bel tounsi men hedhi el "
+                                "ma3loumet, MA T9RACH el description kamel lel "
+                                "7arif w ma tekhtere3ch tfasil ma mawjoudech "
+                                "hne:\n\"\"\"\n" + _d[:1200] + "\n\"\"\""
+                            )
+                        break
+        except Exception:
+            product_details_context = ""
+
         prompt = (
             BOT_SYSTEM_PROMPT_AR
             + gender_hint
@@ -1882,6 +1918,7 @@ def _bot_reply(conv):
             # "Ensemble 3pcs NK 99 DT" because the catalogue was in context.
             + ("" if (_matched or ad_context) else catalog_context)
             + delay_context
+            + product_details_context
             + match_hint
             + ("\n\nMOHIM BARCHA: enti 3ATIT EL PRIX mte3 el mntej fi hedhi "
                "el conversation men 9bal. MA T9OULCH abadan 'la7dha w nab3athlek "
