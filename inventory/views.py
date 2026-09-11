@@ -4121,32 +4121,45 @@ def api_debug_ai_health(request):
     if not request.user.is_superuser:
         return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
     import time as _t
-    key_set = bool(_cfg("ANTHROPIC_API_KEY", "").strip())
+    import urllib.request as _ureq
+    import json as _json
+    key = _cfg("ANTHROPIC_API_KEY", "").strip()
     model = (_cfg("ANTHROPIC_MODEL", "")
              or os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")).strip()
-    errbox = []
+    out = {"status": "ok", "key_configured": bool(key),
+           "key_prefix": (key[:7] + "…") if key else "", "model": model}
+    if not key:
+        out.update({"claude_working": False, "http": None,
+                    "error": "Aucune clé Claude enregistrée dans Configuration → IA."})
+        return JsonResponse(out)
+    # ONE direct call, short timeout, NO retries, NO Gemini fallback — so we get
+    # the real Anthropic answer fast (200 / 401 bad key / 400 credit / timeout).
+    body = _json.dumps({"model": model, "max_tokens": 10,
+                        "messages": [{"role": "user", "content": "Say OK"}]}).encode()
+    req = _ureq.Request("https://api.anthropic.com/v1/messages", data=body, method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("x-api-key", key)
+    req.add_header("anthropic-version", "2023-06-01")
     t0 = _t.time()
     try:
-        reply = _claude_generate("Réponds uniquement par le mot: OK",
-                                 max_tokens=20, temperature=0.0, errbox=errbox)
+        with _ureq.urlopen(req, timeout=12) as resp:
+            rd = _json.loads(resp.read().decode("utf-8"))
+        txt = "".join(b.get("text", "") for b in (rd.get("content") or [])
+                      if b.get("type") == "text").strip()
+        out.update({"claude_working": True, "http": 200,
+                    "reply_sample": txt[:80], "elapsed_ms": int((_t.time() - t0) * 1000)})
     except Exception as e:
-        reply = None
-        errbox.append("exception: %s" % str(e)[:200])
-    ms = int((_t.time() - t0) * 1000)
-    # If Claude answered, errbox is empty and we got text. A Gemini fallback
-    # leaves a "bascule Gemini" note in errbox.
-    used_claude = key_set and not any("Gemini" in e for e in errbox)
-    ok = bool(reply) and used_claude
-    return JsonResponse({
-        "status": "ok",
-        "claude_working": ok,
-        "key_configured": key_set,
-        "model": model,
-        "reply_sample": (reply or "")[:120],
-        "elapsed_ms": ms,
-        "provider": "claude" if used_claude and reply else ("gemini_fallback" if reply else "none"),
-        "errors": errbox,
-    })
+        code = getattr(e, "code", None)
+        detail = ""
+        try:
+            if hasattr(e, "read"):
+                detail = e.read().decode("utf-8", "replace")[:400]
+        except Exception:
+            pass
+        out.update({"claude_working": False, "http": code,
+                    "error": (str(e)[:150] + (" | " + detail if detail else "")),
+                    "elapsed_ms": int((_t.time() - t0) * 1000)})
+    return JsonResponse(out)
 
 
 def dashboard(request):
