@@ -205,8 +205,12 @@ class RegionAdmin(admin.ModelAdmin):
 class OrderLineInline(admin.TabularInline):
     model = OrderLine
     extra = 0
-    fields = ("product", "variant", "size", "quantity", "unit_price")
-    autocomplete_fields = ("product", "variant")
+    # order_offer ties a line to its offer. The app's own order form sets it;
+    # the automated intake sometimes doesn't, which leaves the editor's colour/
+    # size empty. Exposing it here lets us link a line to its offer so the front
+    # (article) and the inside (offer editor) read the same data.
+    fields = ("order_offer", "product", "variant", "size", "quantity", "unit_price")
+    autocomplete_fields = ("product", "variant", "order_offer")
 
 
 @admin.register(Order)
