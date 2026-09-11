@@ -652,6 +652,18 @@ class Order(models.Model):
     # will not recompute it — keeps "notre total" matching what Navex collects.
     price_override = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
 
+    # --- AI capture confidence (photo → product match) ---
+    # How sure the auto-capture was about the PRODUCT it picked from the
+    # customer's photo, 0-100. NULL = not auto-captured (e.g. every existing/
+    # manual order) → the UI shows NO marker, so old orders are unaffected.
+    # >=70 with no ambiguity → green ✓ ; >=70 but ambiguous → yellow ⚠️ (see
+    # capture_product_note). <70 → the capture leaves the product empty for a
+    # human, so this stays NULL there too.
+    capture_product_confidence = models.PositiveSmallIntegerField(null=True, blank=True)
+    # Short note shown in the ⚠️ popup when the product is filled but ambiguous
+    # (e.g. "ensemble ou pull ?"). Empty when there's nothing to flag.
+    capture_product_note = models.CharField(max_length=200, blank=True, default="")
+
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default=NON_CONFIRMEE)
     cancel_reason = models.CharField(max_length=30, choices=CANCEL_REASON_CHOICES, blank=True, default="",
         help_text="Raison de l'annulation (client / changement / rupture stock)")
