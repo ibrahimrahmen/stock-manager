@@ -1908,11 +1908,16 @@ def _bot_reply(conv):
                         + "\" — esta3melhom KI EL 7ARIF YES2EL 3AL 9MECH/tissu, "
                         "el coupe (large wala serré), chnowa fih (kadech de "
                         "pièces), wala el couleurs. Jaweb b jomla wa7da besita "
-                        "bel tounsi men hedhi el ma3loumet. Ken el ma3louma eli "
-                        "sa2el 3liha (mathal naw3 el 9mech bel dhabt) MECH "
-                        "mawjouda hne, 9oll barka 'la7dha khouya w n2akedlek' — "
-                        "MA TEKHTERE3CH. MA T9RACH el description kamel lel "
-                        "7arif:\n\"\"\"\n" + _d[:1500] + "\n\"\"\""
+                        "bel tounsi men hedhi el ma3loumet. MOHIM: el description "
+                        "maktouba bel anglais/français — MA T3AWEDCH el kelmet "
+                        "anglais lel 7arif (mathal 'performance', 'breathable', "
+                        "'dri-fit', 'mesh'). Fasarhom bel tounsi besit (mathal "
+                        "'9mech riadhi khfif yet5alla el hwa yfout w ma "
+                        "yt3arre9ch barcha'). Ken el ma3louma eli sa2el 3liha "
+                        "(mathal naw3 el 9mech bel dhabt) MECH mawjouda hne, 9oll "
+                        "barka 'la7dha khouya w n2akedlek' — MA TEKHTERE3CH. MA "
+                        "T9RACH el description kamel lel 7arif:\n\"\"\"\n"
+                        + _d[:1500] + "\n\"\"\""
                     )
         except Exception:
             product_details_context = ""
@@ -1937,10 +1942,13 @@ def _bot_reply(conv):
             + product_details_context
             + match_hint
             + ("\n\nMOHIM BARCHA: enti 3ATIT EL PRIX mte3 el mntej fi hedhi "
-               "el conversation men 9bal. MA T9OULCH abadan 'la7dha w nab3athlek "
-               "el prix' wala 'nchouf el prix' — el 7arif ya3ref el prix. Ken "
-               "yes2el 3al prix marra okhra, 3awedlou el prix eli 3titou, ma "
-               "t9oulou-ch nab3athlek." if _already_priced else "")
+               "el conversation men 9bal. Ken el 7arif yes2el 3al prix marra "
+               "okhra (7atta ken 9allek 'stanna', 'ma9otlich b9adeh', "
+               "'b9adeh'...), 3AWEDLOU EL PRIX BEL DHABT b jomla wadhla (mathal "
+               "'el " + (_identified_name or "mntej") + " b [PRIX] DT w "
+               "livraison 7 DT khouya'). 3OMREK ma t9oll 'la7dha', 'nstanaw', "
+               "'nab3athlek el prix' wala 'nchouf' 3al prix — el prix mawjoud, "
+               "3awedou barka." if _already_priced else "")
             + ("\n\nMOHIM: el 7arif yekteb bel 3arbi wala 7ab el 3arbi. JAWBOU "
                "BEL 3ARBI (script arabe, mouch latin). Nafs el ma3na, nafs el "
                "ma3loumet (prix, taille, livraison), ama bel 7ourouf el "
