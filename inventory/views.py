@@ -579,6 +579,7 @@ _CONFIG_SECTIONS = [
         ("ANTHROPIC_API_KEY", "Clé API Claude (Anthropic)", True),
         ("ANTHROPIC_MODEL", "Modèle Claude (déf. claude-haiku-4-5-20251001 — le moins cher)", False),
         ("GEMINI_API_KEY", "Clé API Gemini", True),
+        ("AUTOREPLY_BOT_TEST_SENDER", "Mode test : le bot ne répond QU'À ces IDs (votre compte). Vide = tous les clients. Plusieurs séparés par une virgule.", False),
     ]),
     ("Livraison (Navex)", "🚚", [
         ("NAVEX_API_TOKEN", "Token API Navex", True),
@@ -14525,11 +14526,17 @@ def api_messenger_webhook(request):
 
                 # Test mode: if AUTOREPLY_BOT_TEST_SENDER is set, the bot ONLY
                 # replies to that one sender_id (your own account), so you can
-                # safely try it live without answering real customers.
-                _bot_test_sender = os.environ.get("AUTOREPLY_BOT_TEST_SENDER", "").strip()
-                _is_test = bool(_bot_test_sender) and (str(sender_id) == _bot_test_sender)
-                if _bot_test_sender:
+                # safely try it live without answering real customers. Read from
+                # the in-app config first (Configuration → IA), env as fallback —
+                # so it's managed entirely in the app, no Railway. Accepts several
+                # ids separated by commas (e.g. your Messenger + Instagram id).
+                _bot_test_sender = (_cfg("AUTOREPLY_BOT_TEST_SENDER", "")
+                                    or os.environ.get("AUTOREPLY_BOT_TEST_SENDER", "")).strip()
+                _test_ids = {x.strip() for x in _bot_test_sender.replace(" ", "").split(",") if x.strip()}
+                _is_test = bool(_test_ids) and (str(sender_id) in _test_ids)
+                if _test_ids:
                     _bot_on = _bot_on and _is_test
+                _bot_test_sender = "1" if _test_ids else ""  # keep downstream truthiness
                 # In test mode we relax the gates (reply even if a phone is
                 # present or the conversation isn't NEW) so you can iterate. For
                 # real customers, keep the safe gates: no phone yet, not already
