@@ -14868,8 +14868,12 @@ def api_messenger_webhook(request):
                 greeting_env = os.environ.get("MESSENGER_GREETING_ENABLED", "1")
                 _already_greeted_here = any(
                     m.get("greeting") for m in (conv.messages or []))
+                # When the AI bot is ON, let IT handle greetings too (with the
+                # 20s debounce), so we never fire a SEPARATE instant canned
+                # greeting mid-conversation. The deterministic greeting is only
+                # for pages where the bot is OFF.
                 if (greeting_env == "1"
-                        and (not _bot_on or _is_greeting(text))
+                        and not _bot_on
                         and not _external_agent
                         and not is_echo
                         and (text or "").strip()
