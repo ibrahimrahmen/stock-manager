@@ -51,11 +51,15 @@ class Command(BaseCommand):
         self.stdout.write(
             f"Scanning {total} candidate order(s) (empty OrderOffer + loose lines)…")
 
-        seen = planned = applied = skipped_locked = 0
+        seen = planned = applied = skipped_locked = review = 0
         for order in qs.iterator():
             res = order.relink_loose_offer_lines(apply=apply_changes)
             if not res.get("linked"):
-                continue  # nothing safely claimable on this order
+                # Nothing safely claimable — surface it for a human instead of hiding it.
+                if res.get("review"):
+                    review += 1
+                    self.stdout.write(f"  #{order.id}: À VÉRIFIER — {res['review']}")
+                continue
             seen += 1
             if res.get("skipped_locked"):
                 skipped_locked += 1
@@ -83,12 +87,13 @@ class Command(BaseCommand):
                 break
 
         self.stdout.write("")
+        review_note = (f" {review} à vérifier manuellement." if review else "")
         if apply_changes:
             self.stdout.write(self.style.SUCCESS(
                 f"Terminé. {applied} commande(s) reliée(s), "
-                f"{skipped_locked} ignorée(s) (verrouillées)."))
+                f"{skipped_locked} ignorée(s) (verrouillées).{review_note}"))
         else:
             self.stdout.write(self.style.WARNING(
                 f"Simulation : {planned} commande(s) seraient reliées, "
-                f"{skipped_locked} ignorée(s) (verrouillées). "
+                f"{skipped_locked} ignorée(s) (verrouillées).{review_note} "
                 f"Relancez avec --apply pour appliquer."))

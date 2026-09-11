@@ -922,13 +922,35 @@ class Order(models.Model):
         from decimal import Decimal
         result = {"order_id": self.id, "linked": [], "applied": False,
                   "skipped_locked": False, "old_total": self.total,
-                  "new_total": self.total, "detail": ""}
+                  "new_total": self.total, "detail": "", "review": ""}
 
         loose = list(self.lines.filter(order_offer__isnull=True))
+        empty_offers = [oo for oo in self.order_offers.all() if oo.lines.count() == 0]
+        if empty_offers and not result["review"]:
+            # Describe why an empty offer can't be auto-repaired, so the tool can
+            # surface it for a human instead of hiding it.
+            reasons = []
+            for oo in empty_offers:
+                label = oo.offer_name or (f"#{oo.offer_id}" if oo.offer_id else "?")
+                if not oo.offer_id:
+                    reasons.append(f"offre «{label}» sans lien offre")
+                elif (oo.bundle_price or 0) <= 0:
+                    reasons.append(f"offre «{label}» sans prix")
+                else:
+                    try:
+                        n_products = oo.offer.products.count()
+                    except Exception:
+                        n_products = 0
+                    if n_products == 0:
+                        reasons.append(f"offre «{label}» sans produits définis")
+                    elif not loose:
+                        reasons.append(f"offre «{label}» vide et aucune ligne libre")
+                    else:
+                        reasons.append(f"offre «{label}» vide (lignes libres ne correspondent pas)")
+            result["review"] = "; ".join(reasons)
         if not loose:
             return result
-        broken_offers = [oo for oo in self.order_offers.all()
-                         if (oo.bundle_price or 0) > 0 and oo.lines.count() == 0]
+        broken_offers = [oo for oo in empty_offers if (oo.bundle_price or 0) > 0]
         if not broken_offers:
             return result
 
