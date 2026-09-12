@@ -1762,47 +1762,65 @@ def _capture_product_for_order_sync(order, conv):
 
         page = SalesPage.objects.filter(pk=sp_id).first()
         local_imgs, img_urls = _capture_images_for_conv(conv)
+        has_customer_photo = bool(local_imgs or img_urls)
+
+        # The AD / publication image the customer replied to (the referral). When
+        # the customer sent NO photo of their own, this IS the product they
+        # pointed at (e.g. #22285: a blue Pull Vintage), so we match on it too.
+        ad_img = _fetch_ad_image((getattr(conv, "source_ad_id", "") or "").strip())
+        referral_urls = []
+        try:
+            for m in (conv.messages or []):
+                for u in (m.get("images") or []):
+                    if u and u != "local" and u not in referral_urls:
+                        referral_urls.append(u)
+        except Exception:
+            pass
+
+        # Images to visually match product + colour against: the customer's own
+        # photo if any, otherwise the ad/referral image.
+        if has_customer_photo:
+            match_local, match_urls = local_imgs, img_urls
+        else:
+            match_local = []
+            match_urls = [u for u in ([ad_img] + referral_urls) if u][:2]
 
         chosen_offer = None
         confident = False
         note_bits = []
 
-        if local_imgs or img_urls:
-            # STEP 1 — came from an ad: FIRST compare the customer's "I want
-            # this" photo to the AD image itself. Same product -> it's the ad's
-            # product (one cheap comparison, most reliable).
+        # STEP 1 — only with the customer's OWN photo: compare it to the ad
+        # image; same product -> it's the ad's offer (cheap, decisive).
+        if has_customer_photo:
             ad_offer = _ad_offer_for_conv(conv)
-            if ad_offer:
-                ad_img = _fetch_ad_image((getattr(conv, "source_ad_id", "") or "").strip())
-                if ad_img:
-                    same, sconf = _images_same_product(local_imgs, img_urls, ad_img)
-                    if same and sconf:
-                        chosen_offer = ad_offer
-                        confident = True
-            # STEP 2 — photo differs from the ad (customer switched) OR no ad:
-            # narrow to the PAGE's own catalogue and visual-match within it.
-            if not chosen_offer:
-                od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
-                match = _match_product_by_image(local_imgs, img_urls, od)
-                if match and match.get("name"):
-                    chosen_offer = (
-                        Offer.objects.filter(name__iexact=match["name"], is_active=True).first()
-                        or Offer.objects.filter(name__iexact=match["name"]).first())
-                    confident = bool(match.get("confident"))
-                elif match and match.get("_not_product"):
-                    note_bits.append("photo partagée non-produit — à identifier")
-                elif match and match.get("_no_candidate"):
-                    note_bits.append("photo non reconnue dans le catalogue de la page")
-        else:
-            # No photo: the ad/campaign is only a HINT (customers switch away
-            # from the ad's product — see #22271), never an auto-fill.
+            if ad_offer and ad_img:
+                same, sconf = _images_same_product(local_imgs, img_urls, ad_img)
+                if same and sconf:
+                    chosen_offer = ad_offer
+                    confident = True
+
+        # STEP 2 — match the product image (the customer's, or the referral when
+        # they only replied to the ad) within the PAGE's own catalogue.
+        if not chosen_offer and (match_local or match_urls):
+            od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
+            match = _match_product_by_image(match_local, match_urls, od)
+            if match and match.get("name"):
+                chosen_offer = (
+                    Offer.objects.filter(name__iexact=match["name"], is_active=True).first()
+                    or Offer.objects.filter(name__iexact=match["name"]).first())
+                confident = bool(match.get("confident"))
+            elif match and match.get("_not_product"):
+                note_bits.append("image partagée non-produit — à identifier")
+            elif match and match.get("_no_candidate"):
+                note_bits.append("image non reconnue dans le catalogue de la page")
+
+        if not (match_local or match_urls):
+            # Truly nothing to look at (no photo, no ad/referral image).
             camp = ((getattr(conv, "source_campaign_name", "") or "")
                     or (getattr(conv, "source_campaign", "") or "")).strip()
-            if camp:
-                note_bits.append(("venu de la pub «%s» — confirmer le produit"
-                                  % camp)[:120])
-            else:
-                note_bits.append("pas de photo — produit à identifier")
+            note_bits.append(
+                (("venu de la pub «%s» — confirmer le produit" % camp)[:120])
+                if camp else "pas de photo — produit à identifier")
 
         # Confidence gate: only FILL on a confident photo match.
         if not chosen_offer or not confident:
@@ -1833,7 +1851,7 @@ def _capture_product_for_order_sync(order, conv):
                 bundle_price=price, quantity=1)
             for op in chosen_offer.products.all():
                 variant, vconf = _capture_variant_by_image(
-                    op.product, local_imgs, img_urls)
+                    op.product, match_local, match_urls)
                 if variant is None or not vconf:
                     colour_uncertain = True
                 OrderLine.objects.create(
@@ -4665,18 +4683,36 @@ def api_debug_capture(request, pk):
     else:
         out["step1_photo_vs_ad"] = None
 
-    # STEP 2 — page-scoped catalogue match.
+    # Referral images (from the conversation messages) + which image set the
+    # cascade would actually match on.
+    referral_urls = []
+    try:
+        for m in (conv.messages or []):
+            for u in (m.get("images") or []):
+                if u and u != "local" and u not in referral_urls:
+                    referral_urls.append(u)
+    except Exception:
+        pass
+    out["referral_images"] = len(referral_urls)
     if local_imgs or img_urls:
+        match_local, match_urls, out["matched_on"] = local_imgs, img_urls, "customer_photo"
+    else:
+        match_local = []
+        match_urls = [u for u in ([ad_img] + referral_urls) if u][:2]
+        out["matched_on"] = "referral_image" if match_urls else "none"
+
+    # STEP 2 — page-scoped catalogue match on the chosen image set.
+    if match_local or match_urls:
         od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
         out["page_offers_count"] = len(od)
-        match = _match_product_by_image(local_imgs, img_urls, od) or {}
+        match = _match_product_by_image(match_local, match_urls, od) or {}
         out["step2_catalogue_match"] = {
             "matched_name": match.get("name"),
             "price": match.get("price"),
             "confident": match.get("confident"),
             "not_product": bool(match.get("_not_product")),
             "no_candidate": bool(match.get("_no_candidate")),
-            "what_ai_sees_in_photo": (match.get("_seen") or "")[:600],
+            "what_ai_sees_in_image": (match.get("_seen") or "")[:600],
         }
     else:
         out["step2_catalogue_match"] = None
