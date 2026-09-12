@@ -1728,13 +1728,18 @@ def _resolve_ad_line_offer(conv, page, local_images, url_images):
              if len(w) >= 4 and w not in _generic]
     if not words:
         return (None, False, "")
-    qs = Offer.objects.filter(is_active=True)
-    if page:
-        qs = qs.filter(sales_pages=page)
-    cands = [o for o in qs.distinct()
-             if any(w in (o.name or "").lower() for w in words)]
-    if not cands:
+    # The AD defines the line, so search ALL active offers by the line word — an
+    # ensemble variant may not be attached to this page even though the ad sells
+    # it (e.g. Ensemble Vintage runs on a Next Generation ad but is only page-
+    # assigned to Barats). Prefer page-assigned offers, but never miss the line.
+    all_line = [o for o in Offer.objects.filter(is_active=True).distinct()
+                if any(w in (o.name or "").lower() for w in words)]
+    if not all_line:
         return (None, False, "")
+    _onpage_ids = {o.id for o in all_line
+                   if page and o.sales_pages.filter(pk=page.pk).exists()}
+    # Page-assigned offers first, so [0] prefers them within pull / ensemble.
+    cands = sorted(all_line, key=lambda o: 0 if o.id in _onpage_ids else 1)
     if len(cands) == 1:
         return (cands[0], True, "")
 
