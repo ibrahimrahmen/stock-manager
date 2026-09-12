@@ -4825,6 +4825,18 @@ def api_debug_capture(request, pk):
     else:
         out["step2_catalogue_match"] = None
 
+    # Ad-line resolution (the came-from-ad path: stay on the ad's line + pick
+    # single vs ensemble).
+    try:
+        _o, _c, _n = _resolve_ad_line_offer(conv, page, match_local, match_urls)
+        out["ad_line_decision"] = {
+            "offer": _o.name if _o else None,
+            "confident": _c, "note": _n,
+            "pieces_in_image": _count_pieces_in_image(match_local, match_urls),
+        }
+    except Exception as e:
+        out["ad_line_decision"] = {"error": str(e)[:100]}
+
     # Size + extracted items (from text).
     try:
         data = conv.extracted or {}
