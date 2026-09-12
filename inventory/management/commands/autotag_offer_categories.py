@@ -14,12 +14,15 @@ from inventory.models import Offer
 # Ordered most-specific first. The first category whose keyword appears in the
 # offer name (lowercased) wins.
 RULES = [
-    ("ensemble",   ["ensemble", "tenue", "3pcs", "2pcs", "3 pcs", "2 pcs", "pack", "survet", "survêt"]),
+    ("ensemble",   ["ensemble", "tenue", "3pcs", "2pcs", "3 pcs", "2 pcs",
+                    "3p ", "2p ", "3 pieces", "2 pieces", "pack", "survet", "survêt"]),
     ("hoodie",     ["hoodie", "capuche", "sweat a capuche", "sweat à capuche"]),
-    ("veste",      ["veste", "bombers", "bomber", "manteau", "gilet", "jacket", "cuir", "doudoune"]),
+    # Shoes BEFORE veste: "Claquette Cuir" must be claquette, not veste ("cuir").
     ("claquette",  ["claquette", "sandale", "slide"]),
-    ("espadrille", ["espadrille", "chaussure", "sneaker", "basket", "shoe", "running"]),
-    ("pantalon",   ["pantalon", "pants", "jogging", "short", "cargo", "jean", "bas "]),
+    ("espadrille", ["espadrille", "chaussure", "sneaker", "basket", "shoe",
+                    "running", "air max", "air force"]),
+    ("veste",      ["veste", "bombers", "bomber", "manteau", "gilet", "jacket", "cuir", "doudoune"]),
+    ("pantalon",   ["pantalon", "pants", "jogging", "short", "cargo", "jean"]),
     ("sport",      ["sport", "training", "maillot", "jersey", "legging"]),
     ("pull",       ["pull", "polo", "t-shirt", "tshirt", "t shirt", "tee", "chemise", "sweat", "top", "haut"]),
 ]
