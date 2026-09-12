@@ -1791,6 +1791,102 @@ def _resolve_ad_line_offer(conv, page, local_images, url_images):
     return (pick, False, "pull ou ensemble à confirmer")
 
 
+def _identify_offer_for_conv(conv, page=None):
+    """SHARED product identification used by BOTH the reply bot and the capture
+    cascade. Runs the same cascade: compare the customer's photo to the ad image
+    (fetched, or the shared-ad image in the chat) -> if it's the ad's product,
+    resolve on the ad's own line (pull vs ensemble); otherwise visual-match
+    within the PAGE's own catalogue. No DB writes.
+
+    Returns a dict (drop-in for the bot's old _match_product_by_image result):
+      {name, price, confident, _seen, offer, note, match_local, match_urls}
+      or {"_not_product": True} / {"_no_candidate": True, "_seen": ...} / None.
+    """
+    from .models import Offer, SalesPage
+    if page is None:
+        sp_id = MESSENGER_PAGE_TO_SALESPAGE.get(
+            str(getattr(conv, "page_id", "") or ""), MESSENGER_DEFAULT_SALESPAGE)
+        page = SalesPage.objects.filter(pk=sp_id).first()
+
+    local_imgs, img_urls = _capture_images_for_conv(conv)
+    has_customer_photo = bool(local_imgs or img_urls)
+
+    ad_img = _fetch_ad_image((getattr(conv, "source_ad_id", "") or "").strip())
+    all_user_imgs = []
+    try:
+        for m in (conv.messages or []):
+            if m.get("from") == "user":
+                for u in (m.get("images") or []):
+                    if u and u != "local" and u not in all_user_imgs:
+                        all_user_imgs.append(u)
+    except Exception:
+        pass
+    shared_ad_img = ""
+    if not ad_img and len(all_user_imgs) >= 2:
+        shared_ad_img = all_user_imgs[0]
+    effective_ad_img = ad_img or shared_ad_img
+
+    if has_customer_photo:
+        match_local, match_urls = local_imgs, img_urls
+    else:
+        match_local = []
+        match_urls = [u for u in ([effective_ad_img] + all_user_imgs) if u][:2]
+
+    out = {"name": None, "price": None, "confident": False, "_seen": "",
+           "offer": None, "note": "", "match_local": match_local,
+           "match_urls": match_urls}
+
+    # STEP 1 — is the product image the AD's product?
+    is_ad_product = False
+    if has_customer_photo:
+        if effective_ad_img and effective_ad_img not in list(img_urls or []):
+            same, sconf = _images_same_product(local_imgs, img_urls, effective_ad_img)
+            is_ad_product = bool(same and sconf)
+    elif match_urls:
+        is_ad_product = True
+
+    chosen_offer = None
+    confident = False
+    if is_ad_product:
+        _o, _c, _n = _resolve_ad_line_offer(conv, page, match_local, match_urls)
+        if _o:
+            chosen_offer, confident = _o, _c
+            if _n:
+                out["note"] = _n
+        else:
+            _ao = _ad_offer_for_conv(conv)
+            if _ao:
+                chosen_offer, confident = _ao, (not has_customer_photo)
+
+    # STEP 2 — page-scoped catalogue match.
+    if not chosen_offer and (match_local or match_urls):
+        od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
+        match = _match_product_by_image(match_local, match_urls, od) or {}
+        out["_seen"] = match.get("_seen", "") or ""
+        if match.get("name"):
+            chosen_offer = (
+                Offer.objects.filter(name__iexact=match["name"], is_active=True).first()
+                or Offer.objects.filter(name__iexact=match["name"]).first())
+            confident = bool(match.get("confident"))
+        elif match.get("_not_product"):
+            return {"_not_product": True}
+        elif match.get("_no_candidate"):
+            return {"_no_candidate": True, "_seen": match.get("_seen", "")}
+
+    if not chosen_offer:
+        return out  # nothing identified (name stays None)
+
+    out["offer"] = chosen_offer
+    out["name"] = chosen_offer.name
+    try:
+        _price = chosen_offer.price_for_page(page) if page else chosen_offer.bundle_price
+    except Exception:
+        _price = chosen_offer.bundle_price
+    out["price"] = _fmt_price(_price)
+    out["confident"] = confident
+    return out
+
+
 def _capture_product_for_order(order, conv):
     """Entry point for the capture cascade. Does a CHEAP gate (config enabled,
     still a draft) and then runs the possibly-slow, vision-bearing work in a
@@ -1864,88 +1960,20 @@ def _capture_product_for_order_sync(order, conv):
             return res
 
         page = SalesPage.objects.filter(pk=sp_id).first()
-        local_imgs, img_urls = _capture_images_for_conv(conv)
-        has_customer_photo = bool(local_imgs or img_urls)
-
-        # The AD image to compare the customer's photo against. Two sources:
-        #   * _fetch_ad_image via source_ad_id (Click-to-Messenger ads); OR
-        #   * when the customer SHARED the ad post (ad_ref 'media:shared', no
-        #     ad_id) the ad arrives as an image IN the chat. With two user
-        #     images the FIRST is the shared ad and the LAST is the customer's
-        #     own photo — so we can still "compare the photo to the ad".
-        ad_img = _fetch_ad_image((getattr(conv, "source_ad_id", "") or "").strip())
-        all_user_imgs = []
-        try:
-            for m in (conv.messages or []):
-                if m.get("from") == "user":
-                    for u in (m.get("images") or []):
-                        if u and u != "local" and u not in all_user_imgs:
-                            all_user_imgs.append(u)
-        except Exception:
-            pass
-        shared_ad_img = ""
-        if not ad_img and len(all_user_imgs) >= 2:
-            shared_ad_img = all_user_imgs[0]      # the shared ad post
-        effective_ad_img = ad_img or shared_ad_img
-        referral_urls = list(all_user_imgs)
-
-        # Images to visually match product + colour against: the customer's own
-        # photo if any, otherwise the ad/referral image.
-        if has_customer_photo:
-            match_local, match_urls = local_imgs, img_urls
-        else:
-            match_local = []
-            match_urls = [u for u in ([effective_ad_img] + referral_urls) if u][:2]
-
-        chosen_offer = None
-        confident = False
+        # Shared identification (compare photo to ad -> ad line, else catalogue).
+        ident = _identify_offer_for_conv(conv, page)
+        chosen_offer = ident.get("offer")
+        confident = bool(ident.get("confident"))
+        match_local = ident.get("match_local") or []
+        match_urls = ident.get("match_urls") or []
         note_bits = []
-
-        # STEP 1 — is the product image the AD's product? Compare the customer's
-        # photo to the ad image (fetched, OR the shared-ad image in the chat).
-        #   * same -> it's the ad's product;
-        #   * different -> the customer switched -> fall to the catalogue;
-        #   * referral only (no upload) -> the image IS the ad by definition.
-        # Skip the compare when the only "ad" image would be the customer's photo.
-        is_ad_product = False
-        if has_customer_photo:
-            if effective_ad_img and effective_ad_img not in list(img_urls or []):
-                same, sconf = _images_same_product(local_imgs, img_urls, effective_ad_img)
-                is_ad_product = bool(same and sconf)
-        elif match_urls:
-            is_ad_product = True
-
-        if is_ad_product:
-            # Resolve within the AD'S OWN line (campaign word keeps us on e.g.
-            # "Vintage", not a look-alike), and pick single vs ensemble by the
-            # number of pieces in the image + the customer's wording.
-            _o, _c, _n = _resolve_ad_line_offer(conv, page, match_local, match_urls)
-            if _o:
-                chosen_offer, confident = _o, _c
-                if _n:
-                    note_bits.append(_n)
-            else:
-                _ao = _ad_offer_for_conv(conv)
-                if _ao:
-                    chosen_offer, confident = _ao, (not has_customer_photo)
-
-        # STEP 2 — the customer's photo ISN'T the ad (they switched), or the ad
-        # line couldn't be resolved: visual-match within the PAGE's catalogue.
-        if not chosen_offer and (match_local or match_urls):
-            od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
-            match = _match_product_by_image(match_local, match_urls, od)
-            if match and match.get("name"):
-                chosen_offer = (
-                    Offer.objects.filter(name__iexact=match["name"], is_active=True).first()
-                    or Offer.objects.filter(name__iexact=match["name"]).first())
-                confident = bool(match.get("confident"))
-            elif match and match.get("_not_product"):
-                note_bits.append("image partagée non-produit — à identifier")
-            elif match and match.get("_no_candidate"):
-                note_bits.append("image non reconnue dans le catalogue de la page")
-
-        if not (match_local or match_urls):
-            # Truly nothing to look at (no photo, no ad/referral image).
+        if ident.get("_not_product"):
+            note_bits.append("image partagée non-produit — à identifier")
+        elif ident.get("_no_candidate"):
+            note_bits.append("image non reconnue dans le catalogue de la page")
+        elif ident.get("note"):
+            note_bits.append(ident["note"])
+        elif not chosen_offer and not (match_local or match_urls):
             camp = ((getattr(conv, "source_campaign_name", "") or "")
                     or (getattr(conv, "source_campaign", "") or "")).strip()
             note_bits.append(
@@ -2339,8 +2367,9 @@ def _bot_reply(conv):
         _matched = False
         try:
             if img_urls or local_imgs:
-                _od = _offers_data_for_conv(conv)
-                _res = _match_product_by_image(local_imgs, img_urls, _od)
+                # Same smart identification the capture cascade uses: compare the
+                # photo to the ad, resolve on the ad's line, else page catalogue.
+                _res = _identify_offer_for_conv(conv)
                 if _res and _res.get("name"):
                     if _res.get("confident", True):
                         _identified_name = _res["name"]
