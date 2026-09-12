@@ -1954,8 +1954,9 @@ def _identify_offer_for_conv(conv, page=None, persist=False):
     # CATEGORY (page -> saison -> catégorie -> match visuel), each applied only
     # when the page actually has offers tagged that way (so it's safe when not).
     if not chosen_offer and (match_local or match_urls):
-        od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
+        od_full = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
         cls = _classify_photo(match_local, match_urls)
+        od = list(od_full)
         if cls.get("season"):
             s = [o for o in od if (o.get("season") or "") == cls["season"]]
             if s:
@@ -1965,6 +1966,15 @@ def _identify_offer_for_conv(conv, page=None, persist=False):
             if c:
                 od = c
         match = _match_product_by_image(match_local, match_urls, od) or {}
+        # Safety net: if narrowing found NO confident product, retry on the FULL
+        # page catalogue — the season/category may have been misjudged and thrown
+        # away the right offer (e.g. a Casa ensemble shown as a single 'gilet'
+        # classified as 'veste', which dropped every ensemble). Never let a bad
+        # category guess hide the real product.
+        if len(od) < len(od_full) and (not match.get("name") or not match.get("confident")):
+            _m2 = _match_product_by_image(match_local, match_urls, od_full) or {}
+            if _m2.get("name") and (_m2.get("confident") or not match.get("name")):
+                match = _m2
         out["_seen"] = match.get("_seen", "") or ""
         if match.get("name"):
             chosen_offer = (
