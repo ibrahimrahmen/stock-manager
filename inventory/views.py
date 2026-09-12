@@ -1437,7 +1437,7 @@ def _match_product_by_image(local_images, url_images, offers_data):
             "Sois précis sur le motif car c'est ce qui distingue les "
             "produits similaires. Juste la description."
         )
-        seen = _claude_generate(seen_prompt, max_tokens=130, temperature=0.1,
+        seen = _claude_generate(seen_prompt, max_tokens=130, temperature=0.0,
                                 image_urls=url_images or None,
                                 local_images=local_images or None,
                                 max_images=1)
@@ -2460,17 +2460,20 @@ def _bot_reply(conv):
         _matched = False
         try:
             if img_urls or local_imgs:
+                # A PHOTO means the customer is pointing at a specific item — not
+                # the ad anymore. Drop the ad grounding entirely so the bot never
+                # falls back to the ad's product/price when the photo doesn't
+                # match it (change of mind). If the photo can't be identified
+                # confidently, the bot must DEFER, not name the ad.
+                ad_context = ""
+                _ad_locked = False
+                _identified_name = ""
                 # Same smart identification the capture cascade uses: compare the
                 # photo to the ad, resolve on the ad's line, else page catalogue.
                 _res = _identify_offer_for_conv(conv)
                 if _res and _res.get("name"):
                     if _res.get("confident", True):
                         _identified_name = _res["name"]
-                        # A confident PHOTO overrides the ad the customer arrived
-                        # from (change of mind): drop the ad grounding so the
-                        # prompt doesn't push the ad's product/price instead.
-                        ad_context = ""
-                        _ad_locked = False
                         match_hint = (
                             "\n\n(EL MNTEJ ELI FEL TASWIRA t3aref b da9a: '"
                             + _res["name"] + "' b " + str(_res["price"]) + " DT. "
