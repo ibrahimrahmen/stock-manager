@@ -1855,18 +1855,27 @@ def _capture_product_for_order_sync(order, conv):
         local_imgs, img_urls = _capture_images_for_conv(conv)
         has_customer_photo = bool(local_imgs or img_urls)
 
-        # The AD / publication image the customer replied to (the referral). When
-        # the customer sent NO photo of their own, this IS the product they
-        # pointed at (e.g. #22285: a blue Pull Vintage), so we match on it too.
+        # The AD image to compare the customer's photo against. Two sources:
+        #   * _fetch_ad_image via source_ad_id (Click-to-Messenger ads); OR
+        #   * when the customer SHARED the ad post (ad_ref 'media:shared', no
+        #     ad_id) the ad arrives as an image IN the chat. With two user
+        #     images the FIRST is the shared ad and the LAST is the customer's
+        #     own photo — so we can still "compare the photo to the ad".
         ad_img = _fetch_ad_image((getattr(conv, "source_ad_id", "") or "").strip())
-        referral_urls = []
+        all_user_imgs = []
         try:
             for m in (conv.messages or []):
-                for u in (m.get("images") or []):
-                    if u and u != "local" and u not in referral_urls:
-                        referral_urls.append(u)
+                if m.get("from") == "user":
+                    for u in (m.get("images") or []):
+                        if u and u != "local" and u not in all_user_imgs:
+                            all_user_imgs.append(u)
         except Exception:
             pass
+        shared_ad_img = ""
+        if not ad_img and len(all_user_imgs) >= 2:
+            shared_ad_img = all_user_imgs[0]      # the shared ad post
+        effective_ad_img = ad_img or shared_ad_img
+        referral_urls = list(all_user_imgs)
 
         # Images to visually match product + colour against: the customer's own
         # photo if any, otherwise the ad/referral image.
@@ -1874,20 +1883,22 @@ def _capture_product_for_order_sync(order, conv):
             match_local, match_urls = local_imgs, img_urls
         else:
             match_local = []
-            match_urls = [u for u in ([ad_img] + referral_urls) if u][:2]
+            match_urls = [u for u in ([effective_ad_img] + referral_urls) if u][:2]
 
         chosen_offer = None
         confident = False
         note_bits = []
 
-        # STEP 1 — is the product image the AD's product?
-        #   * customer's own photo -> compare it to the ad image;
-        #   * referral only (no upload) -> the image they replied with IS the ad,
-        #     so it's the ad's product by definition.
+        # STEP 1 — is the product image the AD's product? Compare the customer's
+        # photo to the ad image (fetched, OR the shared-ad image in the chat).
+        #   * same -> it's the ad's product;
+        #   * different -> the customer switched -> fall to the catalogue;
+        #   * referral only (no upload) -> the image IS the ad by definition.
+        # Skip the compare when the only "ad" image would be the customer's photo.
         is_ad_product = False
         if has_customer_photo:
-            if ad_img:
-                same, sconf = _images_same_product(local_imgs, img_urls, ad_img)
+            if effective_ad_img and effective_ad_img not in list(img_urls or []):
+                same, sconf = _images_same_product(local_imgs, img_urls, effective_ad_img)
                 is_ad_product = bool(same and sconf)
         elif match_urls:
             is_ad_product = True
@@ -4790,8 +4801,21 @@ def api_debug_capture(request, pk):
         out["ad_text_full"] = (_fetch_ad_text((getattr(conv, "source_ad_id", "") or "").strip()) or "")[:1000]
     except Exception:
         out["ad_text_full"] = ""
-    if ad_img and (local_imgs or img_urls):
-        same, sconf = _images_same_product(local_imgs, img_urls, ad_img)
+    # Shared-ad image fallback: when there's no ad_id but the customer shared
+    # the ad (2+ user images), the FIRST is the ad and the LAST their own photo.
+    _all_user = []
+    try:
+        for m in (conv.messages or []):
+            if m.get("from") == "user":
+                for u in (m.get("images") or []):
+                    if u and u != "local" and u not in _all_user:
+                        _all_user.append(u)
+    except Exception:
+        pass
+    effective_ad_img = ad_img or ("" if len(_all_user) < 2 else _all_user[0])
+    out["shared_ad_image"] = bool(not ad_img and effective_ad_img)
+    if effective_ad_img and (local_imgs or img_urls) and effective_ad_img not in list(img_urls or []):
+        same, sconf = _images_same_product(local_imgs, img_urls, effective_ad_img)
         out["step1_photo_vs_ad"] = {"same": same, "confident": sconf}
     else:
         out["step1_photo_vs_ad"] = None
