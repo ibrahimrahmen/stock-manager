@@ -2466,10 +2466,16 @@ def _bot_reply(conv):
                 if _res and _res.get("name"):
                     if _res.get("confident", True):
                         _identified_name = _res["name"]
+                        # A confident PHOTO overrides the ad the customer arrived
+                        # from (change of mind): drop the ad grounding so the
+                        # prompt doesn't push the ad's product/price instead.
+                        ad_context = ""
+                        _ad_locked = False
                         match_hint = (
                             "\n\n(EL MNTEJ ELI FEL TASWIRA t3aref b da9a: '"
                             + _res["name"] + "' b " + str(_res["price"]) + " DT. "
-                            "HEDHA HOWA EL MNTEJ EL SA7I7 — esta3mel HEDHA EL ESM "
+                            "HEDHA HOWA EL MNTEJ EL SA7I7 (el 7arif ba3ath taswira, "
+                            "esta3mel EL TASWIRA mch el pub) — esta3mel HEDHA EL ESM "
                             "w HEDHA EL THAMAN barka, MA TBADELCH b mntej akhor.)")
                     else:
                         match_hint = (
