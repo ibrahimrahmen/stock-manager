@@ -2246,6 +2246,8 @@ def _bot_reply(conv):
         # offer's description so the bot can answer detail questions (fabric,
         # cut, what's included) — cheaply, one description, not the whole catalog.
         _identified_name = ""
+        _ad_locked = False   # True once the ad's own offer is identified — a
+        # stray word in the chat must NOT then override it with another product.
 
         # If the conversation came from a specific ad, fetch that ad's text —
         # it usually contains the product name and price, so the bot can answer
@@ -2278,6 +2280,8 @@ def _bot_reply(conv):
                     _prod_name = ""
                 if _prod_name:
                     _identified_name = _prod_name
+                    if _ao:                 # came from a resolvable ad offer
+                        _ad_locked = True
                 if _ad_lines:
                     ad_context = (
                         "\n\nMA3LOUMET EL PUB: el 7arif jé mel pub hedhi w "
@@ -2356,7 +2360,7 @@ def _bot_reply(conv):
                 (m.get("text") or "") for m in (conv.messages or [])
                 if m.get("from") == "user").lower()
             _named_product = False
-            if _cat and _user_txt:
+            if _cat and _user_txt and not _ad_locked:
                 # Normalise so orthographic variants match: jordan==jordon,
                 # accents dropped, etc.
                 def _norm(s):
