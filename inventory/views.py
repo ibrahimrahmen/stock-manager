@@ -2263,9 +2263,17 @@ def _bot_reply(conv):
                 # (e.g. "Traffic | Jordan" -> match catalogue "Tenue Jordan").
                 _prod_name = ""
                 try:
-                    _camp = (getattr(conv, "source_campaign_name", "")
-                             or getattr(conv, "source_campaign", "") or "")
-                    _prod_name = _match_named_product_from_campaign(_camp)
+                    # Prefer the ad's actual OFFER (e.g. campaign "Ensemble
+                    # WaveLine pants" -> offer "Ensemble WaveLine"), which is far
+                    # more reliable than matching loose campaign words (where
+                    # "pants" could wrongly hit "Pants ICY Maze").
+                    _ao = _ad_offer_for_conv(conv)
+                    if _ao:
+                        _prod_name = _ao.name
+                    if not _prod_name:
+                        _camp = (getattr(conv, "source_campaign_name", "")
+                                 or getattr(conv, "source_campaign", "") or "")
+                        _prod_name = _match_named_product_from_campaign(_camp)
                 except Exception:
                     _prod_name = ""
                 if _prod_name:
