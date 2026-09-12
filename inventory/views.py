@@ -4677,6 +4677,12 @@ def api_debug_capture(request, pk):
     out["ad_offer"] = ad_offer.name if ad_offer else None
     ad_img = _fetch_ad_image((getattr(conv, "source_ad_id", "") or "").strip())
     out["ad_image_found"] = bool(ad_img)
+    # FULL publication text (not just the truncated campaign snippet) — this is
+    # what distinguishes e.g. "Prix Pull 49" from "Prix Ensemble 89".
+    try:
+        out["ad_text_full"] = (_fetch_ad_text((getattr(conv, "source_ad_id", "") or "").strip()) or "")[:1000]
+    except Exception:
+        out["ad_text_full"] = ""
     if ad_img and (local_imgs or img_urls):
         same, sconf = _images_same_product(local_imgs, img_urls, ad_img)
         out["step1_photo_vs_ad"] = {"same": same, "confident": sconf}
