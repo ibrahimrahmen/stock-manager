@@ -1545,6 +1545,14 @@ class MessengerConversation(models.Model):
     matched_ad      = models.ForeignKey("Ad", on_delete=models.SET_NULL,
         null=True, blank=True, related_name="conversations")
 
+    # AI-identified product for this chat: resolved ONCE (page→season→category→
+    # match, or the ad), stored here, and reused so every reply stays grounded
+    # on the same offer instead of re-guessing from the (possibly messy) history.
+    # Re-identified only when a NEW photo arrives (identified_sig changes).
+    identified_offer = models.CharField(max_length=120, blank=True, default="")
+    identified_sig   = models.CharField(max_length=300, blank=True, default="",
+        help_text="Signature of the image(s) the offer was identified from.")
+
     # Gemini extraction result (raw JSON) + the pending order it produced.
     extracted       = models.JSONField(null=True, blank=True)
     pending_order   = models.ForeignKey("Order", on_delete=models.SET_NULL,

@@ -1861,7 +1861,7 @@ def _resolve_ad_line_offer(conv, page, local_images, url_images):
     return (pick, False, "pull ou ensemble à confirmer")
 
 
-def _identify_offer_for_conv(conv, page=None):
+def _identify_offer_for_conv(conv, page=None, persist=False):
     """SHARED product identification used by BOTH the reply bot and the capture
     cascade. Runs the same cascade: compare the customer's photo to the ad image
     (fetched, or the shared-ad image in the chat) -> if it's the ad's product,
@@ -1901,6 +1901,28 @@ def _identify_offer_for_conv(conv, page=None):
     else:
         match_local = []
         match_urls = [u for u in ([effective_ad_img] + all_user_imgs) if u][:2]
+
+    # Signature of the image(s) we'd match on. If we already identified this
+    # exact image set before, reuse the stored offer — identify ONCE, stay
+    # grounded, no re-vision (and no flip-flopping across calls).
+    _sig = "|".join(list(match_urls) + ([("L%d" % len(match_local))] if match_local else []))
+    try:
+        _stored = (getattr(conv, "identified_offer", "") or "").strip()
+        _stored_sig = (getattr(conv, "identified_sig", "") or "").strip()
+        if _stored and _sig and _stored_sig == _sig:
+            _o = (Offer.objects.filter(name__iexact=_stored, is_active=True).first()
+                  or Offer.objects.filter(name__iexact=_stored).first())
+            if _o:
+                try:
+                    _pr = _o.price_for_page(page) if page else _o.bundle_price
+                except Exception:
+                    _pr = _o.bundle_price
+                return {"name": _o.name, "price": _fmt_price(_pr),
+                        "confident": True, "_seen": "", "offer": _o,
+                        "note": "", "match_local": match_local,
+                        "match_urls": match_urls, "_from_store": True}
+    except Exception:
+        pass
 
     out = {"name": None, "price": None, "confident": False, "_seen": "",
            "offer": None, "note": "", "match_local": match_local,
@@ -1965,6 +1987,14 @@ def _identify_offer_for_conv(conv, page=None):
         _price = chosen_offer.bundle_price
     out["price"] = _fmt_price(_price)
     out["confident"] = confident
+    # Store a CONFIDENT identification so later replies reuse it (identify once).
+    if persist and confident and chosen_offer and _sig:
+        try:
+            conv.identified_offer = chosen_offer.name
+            conv.identified_sig = _sig
+            conv.save(update_fields=["identified_offer", "identified_sig", "updated_at"])
+        except Exception:
+            pass
     return out
 
 
@@ -2470,7 +2500,9 @@ def _bot_reply(conv):
                 _identified_name = ""
                 # Same smart identification the capture cascade uses: compare the
                 # photo to the ad, resolve on the ad's line, else page catalogue.
-                _res = _identify_offer_for_conv(conv)
+                # persist=True: a confident match is STORED on the conversation
+                # and reused on later replies (identify once, stay grounded).
+                _res = _identify_offer_for_conv(conv, persist=True)
                 if _res and _res.get("name"):
                     if _res.get("confident", True):
                         _identified_name = _res["name"]
