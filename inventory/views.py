@@ -1700,6 +1700,14 @@ def _capture_product_for_order(order, conv):
             return
         if _cfg("capture_ai:%s" % order.sales_page_id, "") != "on":
             return
+        # Lock so two near-simultaneous webhooks can't both spawn a capture for
+        # the same order (which could create duplicate offers).
+        try:
+            from django.core.cache import cache as _cc
+            if not _cc.add("capture_lock:%s" % order.id, 1, 180):
+                return
+        except Exception:
+            pass
         lp = getattr(conv, "_test_local_image", "")
         import threading as _thr
         _thr.Thread(target=_capture_worker,
@@ -16080,6 +16088,14 @@ def _match_offers_from_text(order, conv):
     or product NAME and add matches to the order. Works even when Gemini is
     down/empty. Catches loose mentions like 'pull camo' → offer 'Pull Camo'."""
     from .models import Offer, Product, OrderOffer, OrderLine
+    # On pages where the AI photo-capture is enabled, that cascade is the single
+    # source of truth for the product — this loose text matcher must NOT run
+    # first and pre-empt it with a weaker guess.
+    try:
+        if _cfg("capture_ai:%s" % order.sales_page_id, "") == "on":
+            return
+    except Exception:
+        pass
     # Staff asked for DM orders to carry only the customer details (name,
     # phone, address); products are picked by the team. Set
     # DM_AUTOFILL_OFFERS=1 to re-enable automatic offer matching.
@@ -16126,6 +16142,13 @@ def _add_extracted_items_to_order(order, data):
     order, skipping items already present. Matches each product name against
     active offers first, then products. Best-effort; staff finalize."""
     from .models import Offer, Product, OrderOffer, OrderLine
+    # On AI-capture pages, the photo cascade owns the product — don't let this
+    # text matcher fill a weaker guess first (which would block the cascade).
+    try:
+        if _cfg("capture_ai:%s" % order.sales_page_id, "") == "on":
+            return
+    except Exception:
+        pass
     # Same switch as _match_offers_from_text: no auto product/offer filling on
     # DM orders unless DM_AUTOFILL_OFFERS=1.
     if os.environ.get("DM_AUTOFILL_OFFERS", "0") != "1":
