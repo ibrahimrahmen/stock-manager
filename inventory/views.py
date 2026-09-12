@@ -5055,11 +5055,25 @@ def api_debug_bot_reply(request, pk):
     conv = MessengerConversation.objects.filter(pk=pk).first()
     if not conv:
         return JsonResponse({"status": "error", "message": "Conversation introuvable."}, status=404)
+    diag = {}
+    try:
+        # Replicate the bot's own image collection to see what it would use.
+        _iu = []
+        for m in reversed(conv.messages or []):
+            if m.get("from") == "user" and m.get("images"):
+                _iu = [u for u in (m.get("images") or []) if u and u != "local"][:3]
+                break
+        diag["bot_img_count"] = len(_iu)
+        _r = _identify_offer_for_conv(conv) or {}
+        diag["identify"] = {"name": _r.get("name"), "confident": _r.get("confident"),
+                            "no_candidate": _r.get("_not_product") or _r.get("_no_candidate")}
+    except Exception as e:
+        diag["diag_err"] = str(e)[:120]
     try:
         rep = _bot_reply(conv)
-        return JsonResponse({"status": "ok", "reply": (rep or "(vide/SKIP)")})
+        return JsonResponse({"status": "ok", "reply": (rep or "(vide/SKIP)"), "diag": diag})
     except Exception as e:
-        return JsonResponse({"status": "error", "message": str(e)[:300]})
+        return JsonResponse({"status": "error", "message": str(e)[:300], "diag": diag})
 
 
 def dashboard(request):
