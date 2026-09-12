@@ -242,8 +242,8 @@ class OfferProductInline(admin.TabularInline):
 
 @admin.register(Offer)
 class OfferAdmin(admin.ModelAdmin):
-    list_display = ("name", "category", "bundle_price", "is_active", "created_at")
-    list_filter = ("is_active", "category", "sales_pages")
+    list_display = ("name", "season", "category", "bundle_price", "is_active", "created_at")
+    list_filter = ("is_active", "season", "category", "sales_pages")
     search_fields = ("name",)
     filter_horizontal = ("sales_pages",)
     inlines = [OfferProductInline]

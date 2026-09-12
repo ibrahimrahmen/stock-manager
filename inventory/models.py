@@ -1062,7 +1062,14 @@ class Offer(models.Model):
         ("claquette", "Claquette"),
         ("sport", "Sport"),
     ]
+    SEASON_CHOICES = [
+        ("summer", "Été"),
+        ("winter", "Hiver"),
+    ]
     name = models.CharField(max_length=120, unique=True)
+    season = models.CharField(
+        max_length=10, choices=SEASON_CHOICES, blank=True, default="",
+        help_text="Saison — l'IA cherche d'abord par saison, puis par catégorie.")
     category = models.CharField(
         max_length=20, choices=CATEGORY_CHOICES, blank=True, default="",
         help_text="Type de produit — aide l'IA à retrouver le bon article.")

@@ -45,33 +45,59 @@ class Command(BaseCommand):
             help="Actually set categories. Without this flag, only lists guesses.",
         )
 
+    def _guess_season(self, offer):
+        """Season from the offer's products (they carry it). Majority wins."""
+        seasons = []
+        try:
+            for op in offer.products.all():
+                s = getattr(op.product, "season", "") or ""
+                if s:
+                    seasons.append(s)
+        except Exception:
+            pass
+        if not seasons:
+            # fall back to a hint in the name
+            n = (offer.name or "").lower()
+            if "hiver" in n or "winter" in n:
+                return "winter"
+            if "summer" in n or "ete" in n or "été" in n:
+                return "summer"
+            return ""
+        # majority
+        return max(set(seasons), key=seasons.count)
+
     def handle(self, *args, **opts):
         apply_changes = opts.get("apply", False)
         offers = Offer.objects.all().order_by("name")
-        set_count = 0
-        blank_left = 0
-        already = 0
+        cat_set = seas_set = blank_left = 0
         for o in offers:
-            if (o.category or "").strip():
-                already += 1
-                continue
-            cat = _guess_category(o.name)
-            if not cat:
+            changed = []
+            if not (o.category or "").strip():
+                cat = _guess_category(o.name)
+                if cat:
+                    o.category = cat
+                    changed.append("category")
+                    cat_set += 1
+            if not (o.season or "").strip():
+                seas = self._guess_season(o)
+                if seas:
+                    o.season = seas
+                    changed.append("season")
+                    seas_set += 1
+            if changed:
+                self.stdout.write(
+                    f"  {'SET' if apply_changes else 'a definir'}: {o.name} -> "
+                    f"{o.season or '?'} / {o.category or '?'}")
+                if apply_changes:
+                    o.save(update_fields=changed + ["updated_at"])
+            elif not (o.category or "").strip():
                 blank_left += 1
-                self.stdout.write(f"  ? {o.name} -- pas de categorie devinee (a faire a la main)")
-                continue
-            set_count += 1
-            self.stdout.write(f"  {'SET' if apply_changes else 'a definir'}: {o.name} -> {cat}")
-            if apply_changes:
-                o.category = cat
-                o.save(update_fields=["category"])
+                self.stdout.write(f"  ? {o.name} -- categorie non devinee (a faire a la main)")
 
         self.stdout.write("")
+        msg = (f"{cat_set} categorie(s) + {seas_set} saison(s) definies, "
+               f"{blank_left} categorie(s) a faire a la main.")
         if apply_changes:
-            self.stdout.write(self.style.SUCCESS(
-                f"Termine. {set_count} categorie(s) definie(s), {already} deja tague(s), "
-                f"{blank_left} a faire a la main."))
+            self.stdout.write(self.style.SUCCESS("Termine. " + msg))
         else:
-            self.stdout.write(self.style.WARNING(
-                f"Simulation: {set_count} seraient definies, {already} deja tagues, "
-                f"{blank_left} non devinees. Relancez avec --apply."))
+            self.stdout.write(self.style.WARNING("Simulation: " + msg + " Relancez avec --apply."))

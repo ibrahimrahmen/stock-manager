@@ -1367,6 +1367,7 @@ def _offers_data_for_conv(conv, limit=60):
             descs = _tops + [b[:80] for b in _bottoms]
             out.append({"name": o.name, "price": _fmt_price(price),
                         "desc": " ; ".join(descs),
+                        "season": (getattr(o, "season", "") or ""),
                         "category": (getattr(o, "category", "") or "")})
     except Exception:
         pass
@@ -1562,36 +1563,44 @@ def _capture_page_offers_data(sales_page, limit=60):
             descs = _tops + [b[:80] for b in _bottoms]
             out.append({"name": o.name, "price": _fmt_price(price),
                         "desc": " ; ".join(descs),
+                        "season": (getattr(o, "season", "") or ""),
                         "category": (getattr(o, "category", "") or "")})
     except Exception:
         pass
     return out
 
 
-def _classify_photo_category(local_images, url_images):
-    """One cheap vision call: classify the garment into an Offer category
-    (pull/pantalon/veste/hoodie/ensemble/espadrille/claquette/sport). Returns the
-    category key, or '' if unclear. Used to narrow catalogue matching to the
-    right product type before the visual pick."""
+def _classify_photo(local_images, url_images):
+    """One cheap vision call that returns BOTH the season and the category of the
+    garment, so we can narrow the catalogue season -> category before the visual
+    pick. Returns {"season": 'summer'|'winter'|'', "category": '<cat>'|''}."""
+    out = {"season": "", "category": ""}
     if not (local_images or url_images):
-        return ""
+        return out
     try:
         prompt = (
-            "Classe l'article principal de cette photo dans UNE catégorie, "
-            "réponds UNIQUEMENT par le mot exact:\n"
-            "pull (haut/sweat/t-shirt/polo), pantalon (bas seul), veste "
-            "(veste/manteau/bombers), hoodie (à capuche), ensemble (haut + bas "
-            "ensemble), espadrille (chaussures), claquette (sandales), sport. "
-            "Si vraiment pas clair, réponds 'x'.")
-        ans = _claude_generate(prompt, max_tokens=6, temperature=0.0,
+            "Regarde l'article principal. Réponds sur UNE ligne au format "
+            "'saison,categorie' avec ces valeurs exactes:\n"
+            "SAISON: summer (léger: t-shirt/polo/short/été) ou winter "
+            "(chaud: pull épais/veste/manteau/hoodie/hiver). Si pas clair: x.\n"
+            "CATEGORIE: pull, pantalon, veste, hoodie, ensemble, espadrille, "
+            "claquette, sport. Si pas clair: x.\n"
+            "Exemple: 'summer,pull' ou 'winter,veste'.")
+        ans = _claude_generate(prompt, max_tokens=10, temperature=0.0,
                                image_urls=url_images or None,
                                local_images=local_images or None, max_images=1)
-        ans = (ans or "").strip().lower().strip(" .!\"'")
-        valid = {"pull", "pantalon", "veste", "hoodie", "ensemble",
-                 "espadrille", "claquette", "sport"}
-        return ans if ans in valid else ""
+        ans = (ans or "").strip().lower()
+        parts = [p.strip(" .!\"'") for p in ans.split(",")]
+        seasons = {"summer", "winter"}
+        cats = {"pull", "pantalon", "veste", "hoodie", "ensemble",
+                "espadrille", "claquette", "sport"}
+        if len(parts) >= 1 and parts[0] in seasons:
+            out["season"] = parts[0]
+        if len(parts) >= 2 and parts[1] in cats:
+            out["category"] = parts[1]
+        return out
     except Exception:
-        return ""
+        return out
 
 
 def _capture_variant_by_image(product, local_images, url_images):
@@ -1886,15 +1895,20 @@ def _identify_offer_for_conv(conv, page=None):
             if _ao:
                 chosen_offer, confident = _ao, (not has_customer_photo)
 
-    # STEP 2 — page-scoped catalogue match, narrowed by the photo's CATEGORY
-    # (pull/pantalon/veste/…) when offers on this page are tagged with it.
+    # STEP 2 — page-scoped catalogue match, narrowed by the photo's SEASON then
+    # CATEGORY (page -> saison -> catégorie -> match visuel), each applied only
+    # when the page actually has offers tagged that way (so it's safe when not).
     if not chosen_offer and (match_local or match_urls):
         od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
-        cat = _classify_photo_category(match_local, match_urls)
-        if cat:
-            narrowed = [o for o in od if (o.get("category") or "") == cat]
-            if narrowed:      # only narrow when the page actually has that category
-                od = narrowed
+        cls = _classify_photo(match_local, match_urls)
+        if cls.get("season"):
+            s = [o for o in od if (o.get("season") or "") == cls["season"]]
+            if s:
+                od = s
+        if cls.get("category"):
+            c = [o for o in od if (o.get("category") or "") == cls["category"]]
+            if c:
+                od = c
         match = _match_product_by_image(match_local, match_urls, od) or {}
         out["_seen"] = match.get("_seen", "") or ""
         if match.get("name"):
@@ -8023,6 +8037,7 @@ def api_offer_detail(request, offer_id):
         "status": "ok",
         "offer": {
             "id": offer.id, "name": offer.name,
+            "season": offer.season or "",
             "category": offer.category or "",
             "bundle_price": str(resolved_price),
             "default_price": str(offer.bundle_price),
@@ -12372,6 +12387,7 @@ def _parse_offer_request(request):
             "bundle_price": request.POST.get("bundle_price", "0"),
             "is_active": request.POST.get("is_active", "1") in ("1", "true", "True", "on"),
             "category": request.POST.get("category", ""),
+            "season": request.POST.get("season", ""),
             "description": request.POST.get("description", ""),
             "sales_page_ids": _js("sales_page_ids", []),
             "page_prices": _js("page_prices", {}),
@@ -12491,10 +12507,13 @@ def api_offer_create(request):
     _cat = (data.get("category") or "").strip().lower()
     if _cat not in dict(Offer.CATEGORY_CHOICES):
         _cat = ""
+    _seas = (data.get("season") or "").strip().lower()
+    if _seas not in dict(Offer.SEASON_CHOICES):
+        _seas = ""
     with transaction.atomic():
         offer = Offer.objects.create(
             name=name, bundle_price=bundle_price,
-            category=_cat,
+            category=_cat, season=_seas,
             is_active=bool(data.get("is_active", True)),
             description=(data.get("description") or "").strip())
         if image:
@@ -12557,6 +12576,9 @@ def api_offer_update(request, pk):
         if "category" in data:
             _cat = (data.get("category") or "").strip().lower()
             offer.category = _cat if _cat in dict(Offer.CATEGORY_CHOICES) else ""
+        if "season" in data:
+            _seas = (data.get("season") or "").strip().lower()
+            offer.season = _seas if _seas in dict(Offer.SEASON_CHOICES) else ""
         if "description" in data:
             offer.description = (data.get("description") or "").strip()
         if image:  # only replace the photo when a new one is uploaded
