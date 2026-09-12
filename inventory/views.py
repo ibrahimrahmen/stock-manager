@@ -1688,6 +1688,92 @@ def _images_same_product(local_images, url_images, ad_image_url):
         return (False, False)
 
 
+def _count_pieces_in_image(local_images, url_images):
+    """Ask vision how many DISTINCT garment pieces the image shows (a top alone
+    = 1, a top + trousers = 2). Used to choose a single-piece offer vs an
+    ensemble. Returns an int (0 = unknown)."""
+    if not (local_images or url_images):
+        return 0
+    try:
+        ans = _claude_generate(
+            "Combien de pièces de vêtement DIFFÉRENTES sont montrées sur cette "
+            "image ? (un haut seul = 1 ; un haut + un pantalon/short = 2 ; "
+            "3 pièces = 3). Réponds UNIQUEMENT par un chiffre.",
+            max_tokens=5, temperature=0.0,
+            image_urls=url_images or None, local_images=local_images or None,
+            max_images=1)
+        import re as _re
+        m = _re.search(r"\d+", ans or "")
+        return int(m.group()) if m else 0
+    except Exception:
+        return 0
+
+
+def _resolve_ad_line_offer(conv, page, local_images, url_images):
+    """The customer came from an ad (referral). Pick the offer from the AD'S OWN
+    product line — the campaign word keeps us on the right line (e.g. 'Vintage',
+    not a look-alike like 'Blueline') — and choose the single-piece vs ensemble
+    variant by how many pieces the image shows + the customer's wording + the
+    full ad text. Returns (offer_or_None, confident_bool, note_str)."""
+    import re as _re
+    from .models import Offer
+    camp = ((getattr(conv, "source_campaign_name", "") or "")
+            or (getattr(conv, "source_campaign", "") or "")).lower()
+    _generic = {"next", "generation", "traffic", "barats", "arrow", "handsome",
+                "primefit", "publicite", "publicité", "publication", "nouvelle",
+                "prix", "pull", "ensemble", "tenue", "pack", "group", "groupe",
+                "image", "ventes", "vente", "collection", "sportswear", "story",
+                "reel", "post", "promo", "offre"}
+    words = [w for w in _re.split(r"[^a-z0-9]+", camp)
+             if len(w) >= 4 and w not in _generic]
+    if not words:
+        return (None, False, "")
+    qs = Offer.objects.filter(is_active=True)
+    if page:
+        qs = qs.filter(sales_pages=page)
+    cands = [o for o in qs.distinct()
+             if any(w in (o.name or "").lower() for w in words)]
+    if not cands:
+        return (None, False, "")
+    if len(cands) == 1:
+        return (cands[0], True, "")
+
+    # Several offers in this line (e.g. "Pull Vintage" + "Ensemble Vintage").
+    def _is_ensemble(o):
+        nm = (o.name or "").lower()
+        if any(k in nm for k in ("ensemble", "tenue", "pack", "3pcs", "2pcs", "pcs")):
+            return True
+        try:
+            return o.products.count() > 1
+        except Exception:
+            return False
+    ensembles = [o for o in cands if _is_ensemble(o)]
+    singles = [o for o in cands if not _is_ensemble(o)]
+
+    utext = " ".join(m.get("text", "") for m in (conv.messages or [])
+                     if m.get("from") == "user").lower()
+    wants_ensemble = any(k in utext for k in (
+        "hadhoum", "hadhouma", "hedhouma", "les deux", "el zouz", "zouz",
+        "ensemble", "2 pièces", "2 pieces", "kaml"))
+    wants_single = any(k in utext for k in (
+        "ken el pull", "pull barka", "juste le pull", "seulement le pull",
+        "ken pull", "pull seul"))
+    pieces = _count_pieces_in_image(local_images, url_images)
+
+    if wants_single and singles:
+        return (singles[0], True, "")
+    if wants_ensemble and ensembles:
+        return (ensembles[0], True, "")
+    if pieces >= 2 and ensembles:
+        return (ensembles[0], True, "")
+    if pieces == 1 and singles:
+        return (singles[0], True, "")
+    # Ambiguous — best guess but flag for a human.
+    pick = (ensembles[0] if (pieces >= 2 and ensembles) else
+            (singles[0] if singles else (ensembles[0] if ensembles else cands[0])))
+    return (pick, False, "pull ou ensemble à confirmer")
+
+
 def _capture_product_for_order(order, conv):
     """Entry point for the capture cascade. Does a CHEAP gate (config enabled,
     still a draft) and then runs the possibly-slow, vision-bearing work in a
@@ -1789,18 +1875,34 @@ def _capture_product_for_order_sync(order, conv):
         confident = False
         note_bits = []
 
-        # STEP 1 — only with the customer's OWN photo: compare it to the ad
-        # image; same product -> it's the ad's offer (cheap, decisive).
+        # STEP 1 — is the product image the AD's product?
+        #   * customer's own photo -> compare it to the ad image;
+        #   * referral only (no upload) -> the image they replied with IS the ad,
+        #     so it's the ad's product by definition.
+        is_ad_product = False
         if has_customer_photo:
-            ad_offer = _ad_offer_for_conv(conv)
-            if ad_offer and ad_img:
+            if ad_img:
                 same, sconf = _images_same_product(local_imgs, img_urls, ad_img)
-                if same and sconf:
-                    chosen_offer = ad_offer
-                    confident = True
+                is_ad_product = bool(same and sconf)
+        elif match_urls:
+            is_ad_product = True
 
-        # STEP 2 — match the product image (the customer's, or the referral when
-        # they only replied to the ad) within the PAGE's own catalogue.
+        if is_ad_product:
+            # Resolve within the AD'S OWN line (campaign word keeps us on e.g.
+            # "Vintage", not a look-alike), and pick single vs ensemble by the
+            # number of pieces in the image + the customer's wording.
+            _o, _c, _n = _resolve_ad_line_offer(conv, page, match_local, match_urls)
+            if _o:
+                chosen_offer, confident = _o, _c
+                if _n:
+                    note_bits.append(_n)
+            else:
+                _ao = _ad_offer_for_conv(conv)
+                if _ao:
+                    chosen_offer, confident = _ao, (not has_customer_photo)
+
+        # STEP 2 — the customer's photo ISN'T the ad (they switched), or the ad
+        # line couldn't be resolved: visual-match within the PAGE's catalogue.
         if not chosen_offer and (match_local or match_urls):
             od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
             match = _match_product_by_image(match_local, match_urls, od)
