@@ -1608,14 +1608,26 @@ def _capture_variant_by_image(product, local_images, url_images):
         return (None, False)
 
 
+def _size_to_number(s):
+    """This system stores sizes as NUMBERS: 1=S(/XS), 2=M, 3=L, 4=XL, 5=XXL(+).
+    Convert a letter size to its number; leave an already-numeric size as-is."""
+    s = (s or "").strip().upper()
+    if not s:
+        return ""
+    mapping = {"XS": "1", "S": "1", "M": "2", "L": "3", "XL": "4",
+               "XXL": "5", "2XL": "5", "XXXL": "5", "3XL": "5", "4XL": "5"}
+    return mapping.get(s, s)
+
+
 def _capture_size_hint(order, conv):
-    """Best-effort size from the extraction result or the conversation text."""
+    """Best-effort size from the extraction result or the conversation text,
+    returned in the system's NUMERIC form (1..5) — never the raw letter."""
     try:
         data = getattr(conv, "extracted", None) or {}
         for it in (data.get("items") or []):
             s = (it.get("size") or "").strip()
             if s:
-                return s[:10]
+                return _size_to_number(s)[:10]
     except Exception:
         pass
     try:
@@ -1624,7 +1636,7 @@ def _capture_size_hint(order, conv):
                         if m.get("from") == "user").lower()
         m = _re.search(r"\b(xxxl|xxl|3xl|2xl|xl|s|m|l|3[0-9]|4[0-9]|5[0-9])\b", text)
         if m:
-            return m.group(1).upper()[:10]
+            return _size_to_number(m.group(1).upper())[:10]
     except Exception:
         pass
     return ""
