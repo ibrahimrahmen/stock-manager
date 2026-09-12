@@ -11845,6 +11845,8 @@ def api_admin_run_tool(request, tool_name):
         "recalc_order_totals":              ("recalc_order_totals", []),
         "fix_order_offer_links_dryrun":     ("fix_order_offer_links", []),
         "fix_order_offer_links_apply":      ("fix_order_offer_links", ["--apply"]),
+        "autotag_offer_categories_dryrun":  ("autotag_offer_categories", []),
+        "autotag_offer_categories_apply":   ("autotag_offer_categories", ["--apply"]),
         "flag_angry_orders_dryrun":         ("flag_angry_orders", []),
         "flag_angry_orders_apply":          ("flag_angry_orders", ["--apply"]),
         "backfill_shopify_dryrun":          ("backfill_shopify", []),

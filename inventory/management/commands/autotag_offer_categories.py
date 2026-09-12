@@ -1,0 +1,74 @@
+"""Auto-tag each Offer's category from keywords in its name.
+
+Only fills offers whose category is still blank (never overwrites a category a
+human already set). A first pass — staff can correct any it gets wrong.
+
+Usage:
+    python manage.py autotag_offer_categories            # dry-run (lists only)
+    python manage.py autotag_offer_categories --apply    # actually set them
+"""
+from django.core.management.base import BaseCommand
+from inventory.models import Offer
+
+
+# Ordered most-specific first. The first category whose keyword appears in the
+# offer name (lowercased) wins.
+RULES = [
+    ("ensemble",   ["ensemble", "tenue", "3pcs", "2pcs", "3 pcs", "2 pcs", "pack", "survet", "survêt"]),
+    ("hoodie",     ["hoodie", "capuche", "sweat a capuche", "sweat à capuche"]),
+    ("veste",      ["veste", "bombers", "bomber", "manteau", "gilet", "jacket", "cuir", "doudoune"]),
+    ("claquette",  ["claquette", "sandale", "slide"]),
+    ("espadrille", ["espadrille", "chaussure", "sneaker", "basket", "shoe", "running"]),
+    ("pantalon",   ["pantalon", "pants", "jogging", "short", "cargo", "jean", "bas "]),
+    ("sport",      ["sport", "training", "maillot", "jersey", "legging"]),
+    ("pull",       ["pull", "polo", "t-shirt", "tshirt", "t shirt", "tee", "chemise", "sweat", "top", "haut"]),
+]
+
+
+def _guess_category(name):
+    n = (name or "").lower()
+    for cat, kws in RULES:
+        if any(k in n for k in kws):
+            return cat
+    return ""
+
+
+class Command(BaseCommand):
+    help = "Set Offer.category from the offer name (only where blank)."
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--apply", action="store_true",
+            help="Actually set categories. Without this flag, only lists guesses.",
+        )
+
+    def handle(self, *args, **opts):
+        apply_changes = opts.get("apply", False)
+        offers = Offer.objects.all().order_by("name")
+        set_count = 0
+        blank_left = 0
+        already = 0
+        for o in offers:
+            if (o.category or "").strip():
+                already += 1
+                continue
+            cat = _guess_category(o.name)
+            if not cat:
+                blank_left += 1
+                self.stdout.write(f"  ? {o.name} -- pas de categorie devinee (a faire a la main)")
+                continue
+            set_count += 1
+            self.stdout.write(f"  {'SET' if apply_changes else 'a definir'}: {o.name} -> {cat}")
+            if apply_changes:
+                o.category = cat
+                o.save(update_fields=["category"])
+
+        self.stdout.write("")
+        if apply_changes:
+            self.stdout.write(self.style.SUCCESS(
+                f"Termine. {set_count} categorie(s) definie(s), {already} deja tague(s), "
+                f"{blank_left} a faire a la main."))
+        else:
+            self.stdout.write(self.style.WARNING(
+                f"Simulation: {set_count} seraient definies, {already} deja tagues, "
+                f"{blank_left} non devinees. Relancez avec --apply."))
