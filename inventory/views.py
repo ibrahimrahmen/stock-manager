@@ -1365,8 +1365,12 @@ def _offers_data_for_conv(conv, limit=60):
                 else:
                     _tops.append(d)
             descs = _tops + [b[:80] for b in _bottoms]
+            # The OFFER's own description (the rich one staff write) is the best
+            # ground truth for matching — put it first, then the product descs.
+            _offer_desc = (getattr(o, "description", "") or "").strip()
+            _full = ((_offer_desc + " ; ") if _offer_desc else "") + " ; ".join(descs)
             out.append({"name": o.name, "price": _fmt_price(price),
-                        "desc": " ; ".join(descs),
+                        "desc": _full.strip(" ;"),
                         "season": (getattr(o, "season", "") or ""),
                         "category": (getattr(o, "category", "") or "")})
     except Exception:
@@ -1561,8 +1565,12 @@ def _capture_page_offers_data(sales_page, limit=60):
                 else:
                     _tops.append(d)
             descs = _tops + [b[:80] for b in _bottoms]
+            # The OFFER's own description (the rich one staff write) is the best
+            # ground truth for matching — put it first, then the product descs.
+            _offer_desc = (getattr(o, "description", "") or "").strip()
+            _full = ((_offer_desc + " ; ") if _offer_desc else "") + " ; ".join(descs)
             out.append({"name": o.name, "price": _fmt_price(price),
-                        "desc": " ; ".join(descs),
+                        "desc": _full.strip(" ;"),
                         "season": (getattr(o, "season", "") or ""),
                         "category": (getattr(o, "category", "") or "")})
     except Exception:
