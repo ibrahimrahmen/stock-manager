@@ -1419,23 +1419,27 @@ def _match_product_by_image(local_images, url_images, offers_data):
         # ask both questions in a single call: reply "NON" if it isn't a
         # garment, otherwise reply directly with the description. This removes
         # one whole photo-bearing call per incoming image.
+        # NOTE: describe in ENGLISH — the catalogue offer descriptions are
+        # written in English, so an English description keyword-matches them
+        # (a French description of a pink Casa set never matched the English
+        # 'pink ... jacquard' offer text).
         seen_prompt = (
-            "Regarde l'image. D'ABORD: est-ce une photo d'un VÊTEMENT à vendre "
-            "(habit, ensemble, pull, short, chaussures) ? Si ce n'est PAS un "
-            "vêtement clair (personne connue, meme, capture d'écran, logo de "
-            "marque célèbre sans vêtement clair), réponds UNIQUEMENT le mot "
-            "'NON' et rien d'autre.\n"
-            "Si OUI, n'écris pas 'OUI' — décris directement ce vêtement "
-            "précisément en français (2 phrases max). "
-            "OBLIGATOIRE: (1) type exact (ensemble polo+pantalon, pull, "
-            "gilet sans manches, short...), (2) TOUTES les couleurs, "
-            "(3) logo/marque visible (Nike, Zara, FC Barcelone, Jordan...), "
-            "(4) le MOTIF EXACT et sa forme: distingue bien rayures "
-            "HORIZONTALES vs VERTICALES, motif géométrique/jacquard "
-            "(grecques, diamants, carrés), camouflage, uni. (5) type de "
-            "col (polo, rond, montant) et manches (courtes/longues). "
-            "Sois précis sur le motif car c'est ce qui distingue les "
-            "produits similaires. Juste la description."
+            "Look at the image. FIRST: is it a photo of a GARMENT for sale "
+            "(outfit, set, sweater, shorts, shoes)? If it is NOT a clear "
+            "garment (a celebrity, a meme, a screenshot, a brand logo with no "
+            "clear garment), reply ONLY the word 'NON' and nothing else.\n"
+            "If YES, do not write 'YES' — describe the garment precisely IN "
+            "ENGLISH (2 sentences max). MANDATORY: (1) exact type (two-piece "
+            "set polo+trousers, sweater/pull, sleeveless vest/gilet, shorts, "
+            "shirt...), (2) ALL the colours (use plain English colour words: "
+            "pink, black, white, cream, blue, green...), (3) any visible "
+            "logo/brand (Nike, Zara, FC Barcelone, Jordan, Ralph, Casa...), "
+            "(4) the EXACT pattern and its shape: distinguish HORIZONTAL vs "
+            "VERTICAL stripes, geometric/jacquard (greek key, diamonds, "
+            "squares), camouflage, plain, ribbed/knit, crochet, (5) collar "
+            "type (polo, crew, high) and sleeves (short/long). Be precise "
+            "about the pattern — it is what distinguishes similar products. "
+            "Just the description."
         )
         seen = _claude_generate(seen_prompt, max_tokens=130, temperature=0.0,
                                 image_urls=url_images or None,
