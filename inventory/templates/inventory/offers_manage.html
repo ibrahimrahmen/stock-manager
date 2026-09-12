@@ -95,6 +95,7 @@ input:focus,select:focus{outline:none;border-color:var(--green);}
         <div>
         <div class="offer-name">{{ offer.name }} <span class="offer-price">— {{ offer.bundle_price|floatformat:0 }} DT</span></div>
         <div class="offer-meta">
+          {% if offer.category %}<span style="display:inline-block;background:var(--green-dim,rgba(74,222,154,0.16));color:var(--green,#159f6a);border:0.5px solid var(--green,#159f6a);border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;margin-right:6px;">{{ offer.get_category_display }}</span>{% else %}<span style="display:inline-block;background:rgba(245,166,35,0.12);color:var(--amber,#b3760f);border:0.5px solid var(--amber,#b3760f);border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;margin-right:6px;">sans catégorie</span>{% endif %}
           Pages : {% for p in offer.sales_pages.all %}<span>{{ p.name }}{% if not forloop.last %}, {% endif %}</span>{% empty %}<em>aucune page</em>{% endfor %}
           {% if not offer.is_active %}· <span style="color:var(--amber);">INACTIVE</span>{% endif %}
         </div>
@@ -132,6 +133,19 @@ input:focus,select:focus{outline:none;border-color:var(--green);}
       <div class="error" id="modal-err"></div>
       <div class="field"><label>Nom *</label><input id="of-name" type="text" placeholder="ex: Tenue Camo"></div>
       <div class="field"><label>Prix par défaut *</label><input id="of-price" type="number" min="0" step="0.001" placeholder="96"><div style="font-size:11px;color:var(--muted);margin-top:4px;">Utilisé si une page n'a pas de prix spécifique.</div></div>
+      <div class="field"><label>Catégorie (aide l'IA à retrouver le produit)</label>
+        <select id="of-category" style="background:var(--surface2);border:0.5px solid var(--border);color:var(--text);padding:9px 12px;border-radius:6px;font-size:13px;font-family:inherit;width:100%;">
+          <option value="">— (aucune)</option>
+          <option value="pull">Pull</option>
+          <option value="pantalon">Pantalon</option>
+          <option value="veste">Veste</option>
+          <option value="hoodie">Hoodie</option>
+          <option value="ensemble">Ensemble</option>
+          <option value="espadrille">Espadrille</option>
+          <option value="claquette">Claquette</option>
+          <option value="sport">Sport</option>
+        </select>
+      </div>
 
       <div class="field">
         <label>Photo de l'offre</label>
@@ -301,6 +315,7 @@ function openCreate() {
   document.getElementById('of-name').value = '';
   document.getElementById('of-price').value = '';
   document.getElementById('of-active').checked = true;
+  document.getElementById('of-category').value = '';
   document.getElementById('of-desc').value = '';
   document.getElementById('of-image').value = '';
   document.getElementById('of-img-preview').style.display = 'none';
@@ -341,12 +356,13 @@ async function generateOfferDescription(){
   finally{ btn.disabled = false; btn.textContent = orig; }
 }
 
-function openEdit(id, name, price, active, pageIds, products, pagePrices, description, image, offerImages) {
+function openEdit(id, name, price, active, pageIds, products, pagePrices, description, image, offerImages, category) {
   editingOfferId = id;
   document.getElementById('modal-title').textContent = 'Modifier l\'offre';
   document.getElementById('of-name').value = name;
   document.getElementById('of-price').value = price;
   document.getElementById('of-active').checked = active;
+  document.getElementById('of-category').value = category || '';
   document.getElementById('of-desc').value = description || '';
   document.getElementById('of-image').value = '';
   const prev = document.getElementById('of-img-preview');
@@ -394,7 +410,8 @@ async function openEditFromButton(btn) {
       offer.page_prices || {},
       offer.description || '',
       offer.image || '',
-      offer.offer_images || []
+      offer.offer_images || [],
+      offer.category || ''
     );
   } catch (e) {
     alert('Erreur lors du chargement de l\'offre : ' + e.message);
@@ -426,6 +443,7 @@ async function saveOffer() {
   fd.append('name', name);
   fd.append('bundle_price', price);
   fd.append('is_active', document.getElementById('of-active').checked ? '1' : '0');
+  fd.append('category', document.getElementById('of-category').value || '');
   fd.append('description', document.getElementById('of-desc').value.trim());
   fd.append('sales_page_ids', JSON.stringify(sp));
   fd.append('page_prices', JSON.stringify(page_prices));

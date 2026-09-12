@@ -8023,6 +8023,7 @@ def api_offer_detail(request, offer_id):
         "status": "ok",
         "offer": {
             "id": offer.id, "name": offer.name,
+            "category": offer.category or "",
             "bundle_price": str(resolved_price),
             "default_price": str(offer.bundle_price),
             "is_active": offer.is_active,
@@ -12370,6 +12371,7 @@ def _parse_offer_request(request):
             "name": request.POST.get("name", ""),
             "bundle_price": request.POST.get("bundle_price", "0"),
             "is_active": request.POST.get("is_active", "1") in ("1", "true", "True", "on"),
+            "category": request.POST.get("category", ""),
             "description": request.POST.get("description", ""),
             "sales_page_ids": _js("sales_page_ids", []),
             "page_prices": _js("page_prices", {}),
@@ -12486,9 +12488,13 @@ def api_offer_create(request):
     page_prices = data.get("page_prices") or {}  # {page_id: price}
     products_data = data.get("products") or []  # list of {product_id, quantity}
 
+    _cat = (data.get("category") or "").strip().lower()
+    if _cat not in dict(Offer.CATEGORY_CHOICES):
+        _cat = ""
     with transaction.atomic():
         offer = Offer.objects.create(
             name=name, bundle_price=bundle_price,
+            category=_cat,
             is_active=bool(data.get("is_active", True)),
             description=(data.get("description") or "").strip())
         if image:
@@ -12548,6 +12554,9 @@ def api_offer_update(request, pk):
             offer.bundle_price = Decimal(str(data["bundle_price"]))
         if "is_active" in data:
             offer.is_active = bool(data["is_active"])
+        if "category" in data:
+            _cat = (data.get("category") or "").strip().lower()
+            offer.category = _cat if _cat in dict(Offer.CATEGORY_CHOICES) else ""
         if "description" in data:
             offer.description = (data.get("description") or "").strip()
         if image:  # only replace the photo when a new one is uploaded
