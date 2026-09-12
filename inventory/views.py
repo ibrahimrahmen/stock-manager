@@ -2915,6 +2915,33 @@ def _messenger_send_text(page_id, recipient_id, text, platform="messenger"):
         return False
 
 
+def _messenger_send_action(page_id, recipient_id, action="typing_on",
+                           platform="messenger"):
+    """Send a sender_action (typing_on / typing_off / mark_seen) so the customer
+    sees the '…' typing bubble while the bot prepares its reply. Best-effort,
+    never raises. Meta shows typing_on for ~20s or until the next message."""
+    import urllib.request as _ureq
+    import json as _json
+    token = _messenger_page_token(page_id)
+    if not token or not recipient_id:
+        return False
+    host = ("graph.instagram.com" if platform == "instagram"
+            else "graph.facebook.com")
+    url = (f"https://{host}/v21.0/me/messages?access_token="
+           + _ureq.quote(token, safe=""))
+    body = _json.dumps({
+        "recipient": {"id": str(recipient_id)},
+        "sender_action": action,
+    }).encode("utf-8")
+    try:
+        req = _ureq.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", "application/json")
+        with _ureq.urlopen(req, timeout=8) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
 def _log_send_failure(page_id, platform, reason):
     """Best-effort, throttled log of a failed Meta send so silent failures
     (e.g. an expired Instagram token) become visible instead of ghosting the
@@ -15531,6 +15558,12 @@ def api_messenger_webhook(request):
                                         return
                                 except Exception:
                                     pass
+                                # We're committed to replying — show "…" typing now
+                                # so the customer sees activity during the waits below.
+                                try:
+                                    _messenger_send_action(pg, sn, "typing_on", plat)
+                                except Exception:
+                                    pass
                                 # Wait for the ad referral: the "replied to an ad"
                                 # referral (which carries source_ad_id) sometimes
                                 # arrives in a SEPARATE webhook event, a beat after
@@ -15581,6 +15614,12 @@ def api_messenger_webhook(request):
                                 # about the shared product.
                                 try:
                                     _c.refresh_from_db()
+                                except Exception:
+                                    pass
+                                # Show the "…" typing bubble while we generate the
+                                # reply (Vision + Claude take a few seconds).
+                                try:
+                                    _messenger_send_action(pg, sn, "typing_on", plat)
                                 except Exception:
                                     pass
                                 _rep = _bot_reply(_c)
