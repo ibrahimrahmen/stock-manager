@@ -1052,7 +1052,20 @@ class OrderLine(models.Model):
 # When picked in an order, the worker chooses variant + size per product.
 # ---------------------------------------------------------------------------
 class Offer(models.Model):
+    CATEGORY_CHOICES = [
+        ("pull", "Pull"),
+        ("pantalon", "Pantalon"),
+        ("veste", "Veste"),
+        ("hoodie", "Hoodie"),
+        ("ensemble", "Ensemble"),
+        ("espadrille", "Espadrille"),
+        ("claquette", "Claquette"),
+        ("sport", "Sport"),
+    ]
     name = models.CharField(max_length=120, unique=True)
+    category = models.CharField(
+        max_length=20, choices=CATEGORY_CHOICES, blank=True, default="",
+        help_text="Type de produit — aide l'IA à retrouver le bon article.")
     bundle_price = models.DecimalField(max_digits=10, decimal_places=3, default=0)
     is_active = models.BooleanField(default=True)
     description = models.TextField(blank=True, default="",
