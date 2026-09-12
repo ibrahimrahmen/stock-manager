@@ -1366,7 +1366,8 @@ def _offers_data_for_conv(conv, limit=60):
                     _tops.append(d)
             descs = _tops + [b[:80] for b in _bottoms]
             out.append({"name": o.name, "price": _fmt_price(price),
-                        "desc": " ; ".join(descs)})
+                        "desc": " ; ".join(descs),
+                        "category": (getattr(o, "category", "") or "")})
     except Exception:
         pass
     return out
@@ -1560,10 +1561,37 @@ def _capture_page_offers_data(sales_page, limit=60):
                     _tops.append(d)
             descs = _tops + [b[:80] for b in _bottoms]
             out.append({"name": o.name, "price": _fmt_price(price),
-                        "desc": " ; ".join(descs)})
+                        "desc": " ; ".join(descs),
+                        "category": (getattr(o, "category", "") or "")})
     except Exception:
         pass
     return out
+
+
+def _classify_photo_category(local_images, url_images):
+    """One cheap vision call: classify the garment into an Offer category
+    (pull/pantalon/veste/hoodie/ensemble/espadrille/claquette/sport). Returns the
+    category key, or '' if unclear. Used to narrow catalogue matching to the
+    right product type before the visual pick."""
+    if not (local_images or url_images):
+        return ""
+    try:
+        prompt = (
+            "Classe l'article principal de cette photo dans UNE catégorie, "
+            "réponds UNIQUEMENT par le mot exact:\n"
+            "pull (haut/sweat/t-shirt/polo), pantalon (bas seul), veste "
+            "(veste/manteau/bombers), hoodie (à capuche), ensemble (haut + bas "
+            "ensemble), espadrille (chaussures), claquette (sandales), sport. "
+            "Si vraiment pas clair, réponds 'x'.")
+        ans = _claude_generate(prompt, max_tokens=6, temperature=0.0,
+                               image_urls=url_images or None,
+                               local_images=local_images or None, max_images=1)
+        ans = (ans or "").strip().lower().strip(" .!\"'")
+        valid = {"pull", "pantalon", "veste", "hoodie", "ensemble",
+                 "espadrille", "claquette", "sport"}
+        return ans if ans in valid else ""
+    except Exception:
+        return ""
 
 
 def _capture_variant_by_image(product, local_images, url_images):
@@ -1858,9 +1886,15 @@ def _identify_offer_for_conv(conv, page=None):
             if _ao:
                 chosen_offer, confident = _ao, (not has_customer_photo)
 
-    # STEP 2 — page-scoped catalogue match.
+    # STEP 2 — page-scoped catalogue match, narrowed by the photo's CATEGORY
+    # (pull/pantalon/veste/…) when offers on this page are tagged with it.
     if not chosen_offer and (match_local or match_urls):
         od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
+        cat = _classify_photo_category(match_local, match_urls)
+        if cat:
+            narrowed = [o for o in od if (o.get("category") or "") == cat]
+            if narrowed:      # only narrow when the page actually has that category
+                od = narrowed
         match = _match_product_by_image(match_local, match_urls, od) or {}
         out["_seen"] = match.get("_seen", "") or ""
         if match.get("name"):
