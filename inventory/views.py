@@ -5038,6 +5038,24 @@ def api_debug_capture(request, pk):
     return JsonResponse(out)
 
 
+@login_required(login_url="/login/")
+def api_debug_bot_reply(request, pk):
+    """READ-ONLY: generate what the bot WOULD reply for this conversation right
+    now — does NOT send anything. Superuser only. Lets us see the live reply
+    without waiting for a new incoming message."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import MessengerConversation
+    conv = MessengerConversation.objects.filter(pk=pk).first()
+    if not conv:
+        return JsonResponse({"status": "error", "message": "Conversation introuvable."}, status=404)
+    try:
+        rep = _bot_reply(conv)
+        return JsonResponse({"status": "ok", "reply": (rep or "(vide/SKIP)")})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:300]})
+
+
 def dashboard(request):
     # Determine viewing mode (which bubble was clicked).
     # Admins/superusers always see the full dashboard ("all").
