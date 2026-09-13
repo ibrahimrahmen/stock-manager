@@ -1455,7 +1455,7 @@ def _match_product_by_image(local_images, url_images, offers_data):
         seen = _claude_generate(seen_prompt, max_tokens=130, temperature=0.0,
                                 image_urls=url_images or None,
                                 local_images=local_images or None,
-                                max_images=1)
+                                max_images=1, model=_vision_model())
         seen = (seen or "").strip()
         # A bare "NON" means: not a garment photo. Only treat a SHORT reply as
         # the gate rejection, so a real description that happens to contain the
@@ -1529,7 +1529,7 @@ def _match_product_by_image(local_images, url_images, offers_data):
         pick = _claude_generate(pick_prompt2, max_tokens=12, temperature=0.0,
                                 image_urls=url_images or None,
                                 local_images=local_images or None,
-                                max_images=1)
+                                max_images=1, model=_vision_model())
         pick = (pick or "").strip().lower()
         m = _re.search(r"\d+", pick)
         if not m:
@@ -1663,7 +1663,8 @@ def _classify_photo(local_images, url_images):
             "Exemple: 'summer,pull' ou 'winter,veste' ou 'x,x'.")
         ans = _claude_generate(prompt, max_tokens=10, temperature=0.0,
                                image_urls=url_images or None,
-                               local_images=local_images or None, max_images=1)
+                               local_images=local_images or None, max_images=1,
+                               model=_vision_model())
         ans = (ans or "").strip().lower()
         parts = [p.strip(" .!\"'") for p in ans.split(",")]
         seasons = {"summer", "winter"}
@@ -3391,7 +3392,19 @@ def _downscale_for_vision(raw, max_edge=1024, quality=80):
         return None
 
 
-def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None, image_urls=None, local_images=None, max_images=3, errbox=None, system=None):
+def _vision_model():
+    """Model for the photo-identification steps (describe + pick + classify).
+    Defaults to the same model as everything else (Haiku, cheap), but can be set
+    to a STRONGER model via config ANTHROPIC_VISION_MODEL so hard look-alike
+    photo calls (e.g. two very similar 'Casa' sets) are decided by a better
+    model, while normal text replies stay on the cheap model. Cost rises only on
+    the few photo calls, not on every message."""
+    return (_cfg("ANTHROPIC_VISION_MODEL", "")
+            or _cfg("ANTHROPIC_MODEL", "")
+            or os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")).strip()
+
+
+def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None, image_urls=None, local_images=None, max_images=3, errbox=None, system=None, model=None):
     """Call the Anthropic Claude API. Returns response text or None on failure.
     Replaces Gemini for DM order extraction and transliteration. Uses
     ANTHROPIC_API_KEY. On rate limit (429) it bails out immediately so a worker
@@ -3411,9 +3424,11 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
             errbox.append("ANTHROPIC_API_KEY manquant — bascule Gemini")
         return _gemini_generate_legacy(prompt, max_tokens=max_tokens,
                                        temperature=temperature)
-    # Model comes from the in-app config (Configuration → IA), falling back to
-    # the env var, then to the cheapest model (Haiku). All in-app, no Railway.
-    model = (_cfg("ANTHROPIC_MODEL", "")
+    # Model: an explicit per-call override wins (used to put a stronger model on
+    # the photo steps); otherwise the in-app config (Configuration → IA), then
+    # the env var, then the cheapest model (Haiku). All in-app, no Railway.
+    model = (model
+             or _cfg("ANTHROPIC_MODEL", "")
              or os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")).strip()
     # Build the message content. If images are supplied (Claude Vision), send
     # them as image blocks BEFORE the text so the model sees them in context.
