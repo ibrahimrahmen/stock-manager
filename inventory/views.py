@@ -1839,7 +1839,14 @@ def _capture_size_hint(order, conv):
         import re as _re
         text = " ".join(m.get("text", "") for m in (conv.messages or [])
                         if m.get("from") == "user").lower()
-        m = _re.search(r"\b(xxxl|xxl|3xl|2xl|xl|s|m|l|3[0-9]|4[0-9]|5[0-9])\b", text)
+        # Prefer an explicit "taille X" so we NEVER grab a stray number from an
+        # address or a time (bug: 'klm 7:30' matched '30' as a size). This
+        # system stores sizes 1..5 only, so waist numbers (30-59) are not valid
+        # sizes and must not be matched.
+        m = _re.search(r"taille\s*:?\s*(xxxl|xxl|3xl|2xl|xl|xs|s|m|l|[1-5])\b", text)
+        if not m:
+            # standalone letter size as a whole word (S/M/L/XL/XXL), no numbers
+            m = _re.search(r"\b(xxxl|xxl|3xl|2xl|xl|xs|s|m|l)\b", text)
         if m:
             return _size_to_number(m.group(1).upper())[:10]
     except Exception:
