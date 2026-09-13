@@ -2205,8 +2205,12 @@ def _bot_reply(conv):
         # confuses a customer who already knows the price (and may have ordered).
         _already_priced = False
         try:
+            # Stateless mode answers each message fresh, so there is no "we
+            # already told them the price" memory — leave it False.
+            _stateless_now = str(_cfg("bot_stateless", "1")).strip() not in (
+                "0", "off", "false", "")
             import re as _rp
-            for _m in msgs:
+            for _m in ([] if _stateless_now else msgs):
                 if _m.get("from") == "page":
                     _t = (_m.get("text") or "")
                     # a real price looks like "59dt", "79 DT", "99 dinar"
@@ -2275,7 +2279,30 @@ def _bot_reply(conv):
             import re as _r
             return len(_r.findall(r"\d+\s*dt", low)) >= 3
 
-        for m in msgs[-20:]:
+        # STATELESS MODE (owner's choice): answer each message FRESH, with no
+        # conversation history. This kills the "Cap Classic 29 DT" echo, where
+        # the model repeated a product/price out of its OWN earlier (often
+        # wrong) replies sitting in the transcript. When on, the context is only
+        # the CURRENT customer turn — the trailing client messages since the
+        # last bot reply — so nothing old can leak. The product/price still come
+        # from the FRESH identification (match_hint), not from history. Trade-off
+        # the owner accepted: the bot won't remember a product/phone/address
+        # given in earlier messages. Reversible via config (set to "0").
+        # Default ON ("1") per the owner's decision.
+        _context_msgs = msgs[-20:]
+        try:
+            if str(_cfg("bot_stateless", "1")).strip() not in ("0", "off", "false", ""):
+                _turn = []
+                for _m in reversed(msgs):
+                    if _m.get("from") == "user":
+                        _turn.append(_m)
+                    else:
+                        break
+                _context_msgs = list(reversed(_turn)) or msgs[-1:]
+        except Exception:
+            _context_msgs = msgs[-20:]
+
+        for m in _context_msgs:
             who = "Client" if m.get("from") == "user" else "Vendeur"
             t = (m.get("text") or "").strip()
             has_img = bool(m.get("images"))
