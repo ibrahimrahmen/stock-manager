@@ -5053,6 +5053,80 @@ def api_debug_ai_health(request):
 
 
 @login_required(login_url="/login/")
+def api_debug_catalogue_health(request):
+    """READ-ONLY, NO vision calls (free): explain WHY photo-matching fails.
+
+    Decisive fact from the code: _match_product_by_image compares the customer's
+    photo to each offer's TEXT description only — it never looks at the offer's
+    own photo. So a correct match is IMPOSSIBLE when the description is empty,
+    and UNRELIABLE when two similar offers share almost the same words. This
+    reports, per sales page: how many active offers have a real description, the
+    exact list that have NONE (unmatchable), and 'twins' (offers in the same
+    season+category whose descriptions overlap so much text can't separate them).
+    Optional ?sales_page=<id> to scope to one page."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import Offer, SalesPage
+    import re as _re
+    sp_id = request.GET.get("sales_page")
+    pages = ([SalesPage.objects.filter(pk=sp_id).first()] if sp_id
+             else list(SalesPage.objects.all()))
+
+    def _toks(t):
+        t = (t or "").lower()
+        return set(w for w in _re.findall(r"[a-zàâçéèêëîïôûùüÿ]+", t) if len(w) >= 4)
+
+    out = {"status": "ok",
+           "matcher_uses": "offer.description TEXT only (NOT the offer photo)",
+           "pages": []}
+    for page in pages:
+        if not page:
+            continue
+        offers = list(Offer.objects.filter(is_active=True, sales_pages=page).distinct())
+        no_desc, short_desc, with_img = [], [], 0
+        for o in offers:
+            d = (o.description or "").strip()
+            has_img = bool(o.image) or o.images.exists()
+            if has_img:
+                with_img += 1
+            if not d:
+                no_desc.append(o.name)
+            elif len(d) < 40:
+                short_desc.append(o.name)
+        # 'twins': same (season, category) group with 2+ offers → the narrowing
+        # can't separate them, so it comes down to description text.
+        groups = {}
+        for o in offers:
+            groups.setdefault((o.season or "?", o.category or "?"), []).append(o)
+        twins = []
+        for key, grp in groups.items():
+            if len(grp) < 2:
+                continue
+            for i in range(len(grp)):
+                for j in range(i + 1, len(grp)):
+                    a, b = grp[i], grp[j]
+                    ta, tb = _toks(a.description), _toks(b.description)
+                    share = (len(ta & tb) / max(1, min(len(ta), len(tb)))) if (ta and tb) else 0.0
+                    if share >= 0.5 or not ta or not tb:
+                        twins.append({"season": key[0], "category": key[1],
+                                      "a": a.name, "b": b.name,
+                                      "word_overlap": round(share, 2),
+                                      "a_has_desc": bool(ta), "b_has_desc": bool(tb)})
+        out["pages"].append({
+            "page": page.name,
+            "active_offers": len(offers),
+            "with_real_description": len(offers) - len(no_desc),
+            "WITHOUT_description_UNMATCHABLE": len(no_desc),
+            "very_short_description": len(short_desc),
+            "with_a_photo": with_img,
+            "offers_without_description": sorted(no_desc),
+            "offers_very_short": sorted(short_desc),
+            "ambiguous_twins": twins,
+        })
+    return JsonResponse(out)
+
+
+@login_required(login_url="/login/")
 def api_debug_capture(request, pk):
     """READ-ONLY: run the product-capture VISION cascade on ONE conversation and
     return exactly what the AI sees and decides — WITHOUT writing anything to the
