@@ -2567,6 +2567,23 @@ def _bot_reply(conv):
             match_hint = ""
             _matched = False
 
+        # SAFETY NET — the source of "jacket storm gray": a photo was sent but
+        # identification came back inconclusive (no confident name AND none of
+        # the explicit defer flags fired, or it threw). Without this, _matched
+        # stays False, so the FULL catalogue goes back into context AND the raw
+        # photo is handed to the final model with no defer instruction — and it
+        # invents a product name from its own colour impression ("storm gray"
+        # is not a product, it is the model describing a grey jacket). NEVER let
+        # that happen: if there is a photo and we don't have a confident name,
+        # force the defer, drop the catalogue, and drop the photo from the final
+        # call.
+        if (img_urls or local_imgs) and not _identified_name and not match_hint:
+            match_hint = (
+                "\n\n(MECH MET2AKED mel mntej eli fel taswira. MA TSEMMICH esm "
+                "wala prix. 9oll lel 7arif barka: 'La7dha khouya w nab3athlek "
+                "el prix')")
+            _matched = True
+
         # Give the bot the SAME delivery promise the auto-reply uses, so it
         # never invents a delay when the customer asks when it arrives.
         try:
