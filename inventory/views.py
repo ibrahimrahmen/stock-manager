@@ -2055,13 +2055,14 @@ def _identify_offer_for_conv(conv, page=None, persist=False):
                 return {"name": _o.name, "price": _fmt_price(_pr),
                         "confident": True, "_seen": "", "offer": _o,
                         "note": "", "match_local": match_local,
-                        "match_urls": match_urls, "_from_store": True}
+                        "match_urls": match_urls, "_from_store": True,
+                        "_has_customer_photo": has_customer_photo}
     except Exception:
         pass
 
     out = {"name": None, "price": None, "confident": False, "_seen": "",
            "offer": None, "note": "", "match_local": match_local,
-           "match_urls": match_urls}
+           "match_urls": match_urls, "_has_customer_photo": has_customer_photo}
 
     # STEP 1 — is the product image the AD's product?
     is_ad_product = False
@@ -2292,6 +2293,12 @@ def _capture_product_for_order_sync(order, conv):
                      else chosen_offer.bundle_price)
         except Exception:
             price = chosen_offer.bundle_price
+        # When the customer sent NO photo (they came from an ad and we only have
+        # the ad image), the colour is NOT the customer's choice — the ad image
+        # is just one of the colourways the set is sold in. So for a multi-colour
+        # piece we must NOT claim a confident colour: keep the ad-image best
+        # guess so staff see the likely one, but flag "couleur à confirmer".
+        _has_photo = bool(ident.get("_has_customer_photo"))
         colour_uncertain = False
         with transaction.atomic():
             oo = OrderOffer.objects.create(
@@ -2300,6 +2307,14 @@ def _capture_product_for_order_sync(order, conv):
             for op in chosen_offer.products.all():
                 variant, vconf = _capture_variant_by_image(
                     op.product, match_local, match_urls)
+                _nvar = 0
+                try:
+                    _nvar = op.product.variants.count()
+                except Exception:
+                    _nvar = 0
+                # No customer photo + more than one colour -> colour unknown.
+                if (not _has_photo) and _nvar > 1:
+                    vconf = False
                 if variant is None or not vconf:
                     colour_uncertain = True
                 OrderLine.objects.create(
