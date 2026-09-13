@@ -2057,9 +2057,17 @@ def _identify_offer_for_conv(conv, page=None, persist=False):
                 od = c
         match = _match_product_by_image(match_local, match_urls, od) or {}
         # Retry WITHIN the season (drop only the category narrowing) if the
-        # category guess may have hidden the right offer. Stays in-season.
+        # category guess may have hidden the right offer. Stays in-season. BUT if
+        # the photo is a SINGLE garment (category is a single type, not an
+        # ensemble), never fall back to multi-piece ENSEMBLE offers — a lone
+        # sweater must not match "Ensemble 3pcs NK". If nothing single-type
+        # matches in-season, defer.
         if len(od) < len(od_season) and (not match.get("name") or not match.get("confident")):
-            _m2 = _match_product_by_image(match_local, match_urls, od_season) or {}
+            _retry = od_season
+            _cat = cls.get("category") or ""
+            if _cat and _cat != "ensemble":
+                _retry = [o for o in od_season if (o.get("category") or "") != "ensemble"]
+            _m2 = _match_product_by_image(match_local, match_urls, _retry) or {}
             if _m2.get("name") and (_m2.get("confident") or not match.get("name")):
                 match = _m2
         out["_seen"] = match.get("_seen", "") or ""
@@ -5379,7 +5387,11 @@ def api_debug_capture(request, pk):
                 od = c
         match = _match_product_by_image(match_local, match_urls, od) or {}
         if len(od) < len(od_season) and (not match.get("name") or not match.get("confident")):
-            _m2 = _match_product_by_image(match_local, match_urls, od_season) or {}
+            _retry = od_season
+            _cat = cls.get("category") or ""
+            if _cat and _cat != "ensemble":
+                _retry = [o for o in od_season if (o.get("category") or "") != "ensemble"]
+            _m2 = _match_product_by_image(match_local, match_urls, _retry) or {}
             if _m2.get("name") and (_m2.get("confident") or not match.get("name")):
                 match = _m2
         out["photo_season_category"] = {"season": cls.get("season") or "?",
