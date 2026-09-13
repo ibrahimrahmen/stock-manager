@@ -2584,6 +2584,16 @@ def _bot_reply(conv):
                 "el prix')")
             _matched = True
 
+        # Are we in a DEFER state? A photo was sent but we do NOT have a
+        # confident name for it (not-confident / no-candidate / not-a-product /
+        # the safety net above). In that state the bot must ask/defer, and the
+        # "you already gave the price, ALWAYS repeat it, never say la7dha" rule
+        # below MUST be suppressed — otherwise it overrides the defer and digs a
+        # stale price out of the transcript, which on a polluted thread means
+        # repeating the bot's OWN earlier hallucination ("Cap Classic Navy
+        # 29 DT" for a pink Casa photo). The defer always wins over an old price.
+        _deferring = bool(_matched and not _identified_name)
+
         # Give the bot the SAME delivery promise the auto-reply uses, so it
         # never invents a delay when the customer asks when it arrives.
         try:
@@ -2659,7 +2669,7 @@ def _bot_reply(conv):
                "'el " + (_identified_name or "mntej") + " b [PRIX] DT w "
                "livraison 7 DT khouya'). 3OMREK ma t9oll 'la7dha', 'nstanaw', "
                "'nab3athlek el prix' wala 'nchouf' 3al prix — el prix mawjoud, "
-               "3awedou barka." if _already_priced else "")
+               "3awedou barka." if (_already_priced and not _deferring) else "")
             + ("\n\nMOHIM: el 7arif yekteb bel 3arbi wala 7ab el 3arbi. JAWBOU "
                "BEL 3ARBI (script arabe, mouch latin). Nafs el ma3na, nafs el "
                "ma3loumet (prix, taille, livraison), ama bel 7ourouf el "
