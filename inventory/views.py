@@ -1970,21 +1970,17 @@ def _identify_offer_for_conv(conv, page=None, persist=False):
 
     chosen_offer = None
     confident = False
-    if is_ad_product:
-        _o, _c, _n = _resolve_ad_line_offer(conv, page, match_local, match_urls)
-        if _o:
-            chosen_offer, confident = _o, _c
-            if _n:
-                out["note"] = _n
-        else:
-            _ao = _ad_offer_for_conv(conv)
-            if _ao:
-                chosen_offer, confident = _ao, (not has_customer_photo)
 
-    # STEP 2 — page-scoped catalogue match, narrowed by the photo's SEASON then
-    # CATEGORY (page -> saison -> catégorie -> match visuel), each applied only
-    # when the page actually has offers tagged that way (so it's safe when not).
-    if not chosen_offer and (match_local or match_urls):
+    # CATALOGUE MATCH — page -> saison -> catégorie -> match visuel. Run it FIRST
+    # whenever there's an image, because the customer's PHOTO is the ground
+    # truth. (Previously the ad path ran first and short-circuited this: a
+    # customer who came from the WaveLine ad but sent a CASA-WHITE photo got
+    # "WaveLine" because step1 falsely said photo==ad and the catalogue match
+    # never ran. The photo and the ad had nothing in common.)
+    match = {}
+    cat_offer = None
+    cat_conf = False
+    if (match_local or match_urls):
         od_full = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
         cls = _classify_photo(match_local, match_urls)
         od = list(od_full)
@@ -1998,20 +1994,43 @@ def _identify_offer_for_conv(conv, page=None, persist=False):
                 od = c
         match = _match_product_by_image(match_local, match_urls, od) or {}
         # Safety net: if narrowing found NO confident product, retry on the FULL
-        # page catalogue — the season/category may have been misjudged and thrown
-        # away the right offer (e.g. a Casa ensemble shown as a single 'gilet'
-        # classified as 'veste', which dropped every ensemble). Never let a bad
-        # category guess hide the real product.
+        # page catalogue — the season/category may have been misjudged.
         if len(od) < len(od_full) and (not match.get("name") or not match.get("confident")):
             _m2 = _match_product_by_image(match_local, match_urls, od_full) or {}
             if _m2.get("name") and (_m2.get("confident") or not match.get("name")):
                 match = _m2
         out["_seen"] = match.get("_seen", "") or ""
         if match.get("name"):
-            chosen_offer = (
+            cat_offer = (
                 Offer.objects.filter(name__iexact=match["name"], is_active=True).first()
                 or Offer.objects.filter(name__iexact=match["name"]).first())
-            confident = bool(match.get("confident"))
+            cat_conf = bool(match.get("confident"))
+
+    # PRIORITY 1 — a CONFIDENT catalogue match on a real customer photo wins,
+    # even if step1 thought the photo matched the ad (step1 gives false 'same'
+    # on look-alikes). The photo is the truth.
+    if has_customer_photo and cat_offer and cat_conf:
+        chosen_offer, confident = cat_offer, True
+
+    # PRIORITY 2 — no customer photo: use the ad the customer came from
+    # (referral / shared-ad image only). The ad NEVER overrides a customer photo.
+    if not chosen_offer and is_ad_product and not has_customer_photo:
+        _o, _c, _n = _resolve_ad_line_offer(conv, page, match_local, match_urls)
+        if _o:
+            chosen_offer, confident = _o, _c
+            if _n:
+                out["note"] = _n
+        else:
+            _ao = _ad_offer_for_conv(conv)
+            if _ao:
+                chosen_offer, confident = _ao, True
+
+    # PRIORITY 3 — otherwise use the catalogue result as-is. For a customer photo
+    # that wasn't confidently matched this carries confident=False, so the bot
+    # DEFERS ("la7dha…") instead of falling back to the ad's product.
+    if not chosen_offer:
+        if cat_offer:
+            chosen_offer, confident = cat_offer, cat_conf
         elif match.get("_not_product"):
             return {"_not_product": True}
         elif match.get("_no_candidate"):
