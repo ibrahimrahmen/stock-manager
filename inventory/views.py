@@ -1470,25 +1470,36 @@ def _match_product_by_image(local_images, url_images, offers_data):
         for od in offers_data:
             ot = _tokens(od.get("desc", "")) | _tokens(od.get("name", ""))
             overlap = len(seen_tok & ot)
-            if overlap:
-                scored.append((overlap, od))
+            scored.append((overlap, od))
+        # Rank best keyword guesses FIRST, but NEVER silently drop the rest.
+        # The old code kept only offers that shared a word with the vision text
+        # and returned "no candidate" when none did — that is exactly why Casa
+        # Rose failed: the vision words ("jacquard/geometric") shared no token
+        # with the offer text, so Premium Casa was dropped before anyone looked
+        # at the photo. Now the model gets the ACTUAL photo (below) and decides
+        # visually, so we pass it a broad slice ordered by keyword relevance.
         scored.sort(key=lambda x: -x[0])
-        candidates = [od for _, od in scored[:10]]
+        candidates = [od for _, od in scored[:20]]
         if not candidates:
-            # nothing shares keywords — let the bot escalate to the team
             return {"_seen": seen, "_no_candidate": True}
 
-        # --- Step 2: pick the best among the short candidate list ---
+        # --- Step 2: show the ACTUAL photo + candidates, pick VISUALLY ---
+        # This is the crux. Before, the photo was thrown away after step 1 and
+        # the pick was made on text only (a game of telephone). Now the real
+        # image is attached to the pick call, so the model compares the picture
+        # to the candidate descriptions the way a human (or Claude in chat)
+        # would — not by counting shared words.
         clist = "\n".join(
             f"{i+1}. {c['name']} : {c['price']} DT — {c.get('desc','')[:180]}"
             for i, c in enumerate(candidates))
         pick_prompt = (
-            "Un client a envoyé une photo d'un vêtement. Voici ce qu'on y voit:\n"
+            "Regarde la PHOTO ci-jointe (c'est ce que le client a envoyé). "
+            "Description de secours de la photo:\n"
             + seen + "\n\nVoici les produits candidats du catalogue:\n" + clist
-            + "\n\nQuel numéro correspond le mieux ? Compare surtout: le "
-            "TYPE (ensemble/pull/gilet), le MOTIF EXACT (rayures "
-            "horizontales vs verticales, géométrique/grecques/diamants, "
-            "camouflage), et les couleurs. Le motif est le critère "
+            + "\n\nQuel numéro correspond le mieux à la PHOTO ? Compare "
+            "surtout: le TYPE (ensemble/pull/gilet), le MOTIF EXACT (rayures "
+            "horizontales vs verticales, géométrique/grecques/diamants/"
+            "jacquard, camouflage), et les couleurs. Le motif est le critère "
             "décisif entre produits similaires. Réponds UNIQUEMENT par le "
             "numéro (ex: 3). Si aucun ne correspond vraiment, réponds 0."
         )
@@ -1496,7 +1507,10 @@ def _match_product_by_image(local_images, url_images, offers_data):
             + "\n\nFormat: le numéro, une virgule, puis 'sur' si tu es "
             "certain (motif+type+couleurs identiques) ou 'pasur' si plusieurs "
             "candidats se ressemblent et tu hésites. Ex: '3,sur' ou '5,pasur'.")
-        pick = _claude_generate(pick_prompt2, max_tokens=12, temperature=0.0)
+        pick = _claude_generate(pick_prompt2, max_tokens=12, temperature=0.0,
+                                image_urls=url_images or None,
+                                local_images=local_images or None,
+                                max_images=1)
         pick = (pick or "").strip().lower()
         m = _re.search(r"\d+", pick)
         if not m:
