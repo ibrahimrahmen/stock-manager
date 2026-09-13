@@ -5140,6 +5140,43 @@ def api_debug_catalogue_health(request):
 
 
 @login_required(login_url="/login/")
+def api_debug_self_match(request):
+    """READ-ONLY test: feed an offer's OWN catalogue photo to the matcher and see
+    if it identifies itself — and does NOT pick a look-alike twin. Proves whether
+    two similar offers (e.g. Pull Vintage vs Pull WaveLine) are separable now
+    that full descriptions are read. ?offer_ids=21,12 &sales_page=3.
+    ~2 vision calls per offer. A controlled stand-in for a real customer photo."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import Offer, SalesPage
+    ids = [x.strip() for x in (request.GET.get("offer_ids", "") or "").split(",") if x.strip()]
+    sp_id = request.GET.get("sales_page") or "3"
+    page = SalesPage.objects.filter(pk=sp_id).first()
+    od = _capture_page_offers_data(page) if page else _offers_data_for_conv(None)
+    results = []
+    for oid in ids:
+        o = Offer.objects.filter(pk=oid).first()
+        if not o:
+            results.append({"offer_id": oid, "error": "not found"})
+            continue
+        photos = _offer_desc_photos(o, cap=1)
+        if not photos:
+            results.append({"offer": o.name, "error": "no photo to test with"})
+            continue
+        m = _match_product_by_image(photos, [], od) or {}
+        matched = (m.get("name") or "")
+        results.append({
+            "offer": o.name,
+            "matched": matched or None,
+            "confident": m.get("confident"),
+            "CORRECT": matched.strip().lower() == o.name.strip().lower(),
+            "what_ai_sees": (m.get("_seen") or "")[:400],
+        })
+    return JsonResponse({"status": "ok", "page": page.name if page else None,
+                         "candidates_read": len(od), "results": results})
+
+
+@login_required(login_url="/login/")
 def api_debug_capture(request, pk):
     """READ-ONLY: run the product-capture VISION cascade on ONE conversation and
     return exactly what the AI sees and decides — WITHOUT writing anything to the

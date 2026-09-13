@@ -119,6 +119,7 @@ urlpatterns = [
     path("api/conversations/<int:pk>/bot-reply-debug/", views.api_debug_bot_reply, name="api_debug_bot_reply"),
     path("api/debug/ai-health/", views.api_debug_ai_health, name="api_debug_ai_health"),
     path("api/debug/catalogue-health/", views.api_debug_catalogue_health, name="api_debug_catalogue_health"),
+    path("api/debug/self-match/", views.api_debug_self_match, name="api_debug_self_match"),
     # Ads & offers: Meta spend per campaign linked to offers, cross-source revenue
     path("ads-offers/", views.ads_offers_dashboard, name="ads_offers_dashboard"),
     path("api/ads/<int:pk>/link-offer/", views.api_ad_link_offer, name="api_ad_link_offer"),
