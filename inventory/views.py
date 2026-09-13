@@ -2039,20 +2039,27 @@ def _identify_offer_for_conv(conv, page=None, persist=False):
     if (match_local or match_urls):
         od_full = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
         cls = _classify_photo(match_local, match_urls)
-        od = list(od_full)
+        # SEASON is a hard filter (reliable: thick/long-sleeve=winter,
+        # light/short-sleeve=summer). CATEGORY is soft (often misjudged — a
+        # sleeveless gilet read as 'veste', a set read as 'pull'). So we narrow
+        # by season, then by category, but any retry stays WITHIN the season —
+        # never cross to the full catalogue, or a winter photo falls back to a
+        # summer product (Pull Camo/Vintage) when it has no winter match.
+        od_season = list(od_full)
         if cls.get("season"):
-            s = [o for o in od if (o.get("season") or "") == cls["season"]]
+            s = [o for o in od_full if (o.get("season") or "") == cls["season"]]
             if s:
-                od = s
+                od_season = s
+        od = list(od_season)
         if cls.get("category"):
             c = [o for o in od if (o.get("category") or "") == cls["category"]]
             if c:
                 od = c
         match = _match_product_by_image(match_local, match_urls, od) or {}
-        # Safety net: if narrowing found NO confident product, retry on the FULL
-        # page catalogue — the season/category may have been misjudged.
-        if len(od) < len(od_full) and (not match.get("name") or not match.get("confident")):
-            _m2 = _match_product_by_image(match_local, match_urls, od_full) or {}
+        # Retry WITHIN the season (drop only the category narrowing) if the
+        # category guess may have hidden the right offer. Stays in-season.
+        if len(od) < len(od_season) and (not match.get("name") or not match.get("confident")):
+            _m2 = _match_product_by_image(match_local, match_urls, od_season) or {}
             if _m2.get("name") and (_m2.get("confident") or not match.get("name")):
                 match = _m2
         out["_seen"] = match.get("_seen", "") or ""
@@ -5354,11 +5361,29 @@ def api_debug_capture(request, pk):
         match_urls = [u for u in ([ad_img] + referral_urls) if u][:2]
         out["matched_on"] = "referral_image" if match_urls else "none"
 
-    # STEP 2 — page-scoped catalogue match on the chosen image set.
+    # STEP 2 — page-scoped catalogue match, MIRRORING the real _identify flow:
+    # narrow by season (hard) then category (soft), retry within season only.
     if match_local or match_urls:
-        od = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
-        out["page_offers_count"] = len(od)
+        od_full = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
+        out["page_offers_count"] = len(od_full)
+        cls = _classify_photo(match_local, match_urls)
+        od_season = list(od_full)
+        if cls.get("season"):
+            s = [o for o in od_full if (o.get("season") or "") == cls["season"]]
+            if s:
+                od_season = s
+        od = list(od_season)
+        if cls.get("category"):
+            c = [o for o in od if (o.get("category") or "") == cls["category"]]
+            if c:
+                od = c
         match = _match_product_by_image(match_local, match_urls, od) or {}
+        if len(od) < len(od_season) and (not match.get("name") or not match.get("confident")):
+            _m2 = _match_product_by_image(match_local, match_urls, od_season) or {}
+            if _m2.get("name") and (_m2.get("confident") or not match.get("name")):
+                match = _m2
+        out["photo_season_category"] = {"season": cls.get("season") or "?",
+                                        "category": cls.get("category") or "?"}
         out["step2_catalogue_match"] = {
             "matched_name": match.get("name"),
             "price": match.get("price"),
