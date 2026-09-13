@@ -1727,9 +1727,13 @@ def _capture_variant_by_image(product, local_images, url_images):
     """Resolve a product's colour VARIANT from the customer's photo.
       * 0 variants -> (None, False)
       * 1 variant  -> (that one, True)   [single-colour shortcut, no vision call]
-      * many       -> ask Claude to match the photo's colour to the labels.
-    Returns (variant_or_None, confident_bool). Colour labels can lie visually,
-    so we still send the photo and let vision decide; flag uncertain when unsure.
+      * many       -> PHOTO-TO-PHOTO: compare the customer's photo to each
+                      variant's OWN photo. Colour LABELS lie on inverted
+                      colorways (a black&white sweater is both 'WHITE' and
+                      'BLACK'); only the actual images separate 'white base /
+                      black pattern' from 'black base / white pattern'. Falls
+                      back to the label method only when variants have no photo.
+    Returns (variant_or_None, confident_bool).
     """
     try:
         variants = list(product.variants.all())
@@ -1739,6 +1743,50 @@ def _capture_variant_by_image(product, local_images, url_images):
             return (variants[0], True)
         if not (local_images or url_images):
             return (None, False)
+        import re as _re
+
+        # --- Preferred: photo-to-photo against variant images ---
+        var_imgs, labeled = [], []
+        for v in variants:
+            p = None
+            try:
+                if getattr(v, "image", None):
+                    p = v.image.path
+            except Exception:
+                p = None
+            if p:
+                var_imgs.append(p)
+                labeled.append(v)
+        if len(labeled) >= 2:
+            order_txt = "\n".join(
+                f"{i+1}. {(v.color_label or v.color_name or '?')}"
+                for i, v in enumerate(labeled))
+            prompt = (
+                "La PREMIÈRE image est le vêtement du CLIENT. Les images "
+                "SUIVANTES sont les coloris du catalogue, dans cet ordre:\n"
+                + order_txt + "\n\nRegarde surtout la COULEUR DE FOND (base) vs "
+                "la couleur du MOTIF. Attention aux coloris INVERSÉS: 'fond "
+                "blanc à motifs noirs' n'est PAS 'fond noir à motifs blancs'. "
+                "Quelle image de catalogue a EXACTEMENT le même coloris que le "
+                "vêtement du client ? Réponds UNIQUEMENT par le numéro, une "
+                "virgule, puis 'sur' ou 'pasur' (ex: '2,sur'). Si aucune, '0'.")
+            cust_urls = [u for u in (url_images or []) if u][:1]
+            cust_local = [] if cust_urls else [p for p in (local_images or []) if p][:1]
+            gen_local = cust_local + var_imgs
+            ans = _claude_generate(
+                prompt, max_tokens=10, temperature=0.0,
+                image_urls=cust_urls or None, local_images=gen_local or None,
+                max_images=1 + len(var_imgs), model=_vision_model())
+            ans = (ans or "").strip().lower()
+            m = _re.search(r"\d+", ans)
+            if m:
+                idx = int(m.group())
+                if 1 <= idx <= len(labeled):
+                    confident = ("pasur" not in ans and "pas sur" not in ans)
+                    return (labeled[idx - 1], confident)
+            # fall through to label method if the photo pick failed
+
+        # --- Fallback: match by colour label (only if no variant photos) ---
         labels = "\n".join(
             f"{i+1}. {(v.color_label or v.color_name or '?')}"
             for i, v in enumerate(variants))
@@ -1750,9 +1798,9 @@ def _capture_variant_by_image(product, local_images, url_images):
             "correspond, réponds '0'.")
         ans = _claude_generate(prompt, max_tokens=10, temperature=0.0,
                                image_urls=url_images or None,
-                               local_images=local_images or None, max_images=1)
+                               local_images=local_images or None, max_images=1,
+                               model=_vision_model())
         ans = (ans or "").strip().lower()
-        import re as _re
         m = _re.search(r"\d+", ans)
         if not m:
             return (None, False)
