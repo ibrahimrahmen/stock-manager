@@ -1414,12 +1414,42 @@ def _offers_data_for_conv(conv, limit=60):
     return out
 
 
+def _vision_model_strong():
+    """The STRONGER model to escalate to when the cheap model isn't confident on
+    a photo. Configurable via ANTHROPIC_VISION_STRONG_MODEL; defaults to Sonnet.
+    Escalation is skipped automatically when this equals the base vision model."""
+    return (_cfg("ANTHROPIC_VISION_STRONG_MODEL", "") or "claude-sonnet-5").strip()
+
+
 def _match_product_by_image(local_images, url_images, offers_data):
+    """Haiku-first, escalate-to-Sonnet-on-failure wrapper. Runs the cheap model;
+    only if it is NOT confident (or found no candidate) does it re-run the match
+    with the stronger model — so you pay for the strong model ONLY on the hard
+    look-alike photos (e.g. the two Casa sets), not on every photo."""
+    base = _match_product_by_image_once(local_images, url_images, offers_data)
+    try:
+        strong = _vision_model_strong()
+        if strong and strong != _vision_model():
+            b = base or {}
+            needs = ((not b.get("name")) or (not b.get("confident"))) and not b.get("_not_product")
+            if needs:
+                s = _match_product_by_image_once(
+                    local_images, url_images, offers_data, model=strong)
+                if s and s.get("name") and (s.get("confident") or not b.get("name")):
+                    return s
+    except Exception:
+        pass
+    return base
+
+
+def _match_product_by_image_once(local_images, url_images, offers_data, model=None):
     """Two-step visual match. Step 1: Claude describes the photo (type, colors,
     logo, pattern). Step 2: we preselect offers whose stored description shares
     keywords, then ask Claude to pick the best among that short list. Returns a
     dict {name, price} or None. Much more reliable than showing all 43 offers
-    at once. offers_data = [{'name','price','desc'}]."""
+    at once. offers_data = [{'name','price','desc'}]. model overrides the vision
+    model (used by the wrapper to escalate to a stronger model on failure)."""
+    _mdl = model or _vision_model()
     try:
         # --- Step 0: is this actually a clothing product photo at all? ---
         # Customers on Instagram sometimes share random content (a celebrity
@@ -1455,7 +1485,7 @@ def _match_product_by_image(local_images, url_images, offers_data):
         seen = _claude_generate(seen_prompt, max_tokens=130, temperature=0.0,
                                 image_urls=url_images or None,
                                 local_images=local_images or None,
-                                max_images=1, model=_vision_model())
+                                max_images=1, model=_mdl)
         seen = (seen or "").strip()
         # A bare "NON" means: not a garment photo. Only treat a SHORT reply as
         # the gate rejection, so a real description that happens to contain the
@@ -1529,7 +1559,7 @@ def _match_product_by_image(local_images, url_images, offers_data):
         pick = _claude_generate(pick_prompt2, max_tokens=12, temperature=0.0,
                                 image_urls=url_images or None,
                                 local_images=local_images or None,
-                                max_images=1, model=_vision_model())
+                                max_images=1, model=_mdl)
         pick = (pick or "").strip().lower()
         m = _re.search(r"\d+", pick)
         if not m:
