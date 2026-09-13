@@ -1479,7 +1479,11 @@ def _match_product_by_image(local_images, url_images, offers_data):
         # at the photo. Now the model gets the ACTUAL photo (below) and decides
         # visually, so we pass it a broad slice ordered by keyword relevance.
         scored.sort(key=lambda x: -x[0])
-        candidates = [od for _, od in scored[:20]]
+        # Text is cheap, so keep a WIDE slice — effectively the whole narrowed
+        # catalogue — ordered by keyword relevance. The model gets the photo and
+        # every candidate's FULL description and decides; we never drop a real
+        # offer just because its words didn't overlap the vision text.
+        candidates = [od for _, od in scored[:40]]
         if not candidates:
             return {"_seen": seen, "_no_candidate": True}
 
@@ -1489,8 +1493,12 @@ def _match_product_by_image(local_images, url_images, offers_data):
         # image is attached to the pick call, so the model compares the picture
         # to the candidate descriptions the way a human (or Claude in chat)
         # would — not by counting shared words.
+        # Read each offer's description IN FULL (owner's rule) — not a 180-char
+        # snippet — so distinctive details (pattern, logo placement, pieces)
+        # actually reach the model. Capped high only to guard against a
+        # pathologically long entry; real descriptions are 3-6 sentences.
         clist = "\n".join(
-            f"{i+1}. {c['name']} : {c['price']} DT — {c.get('desc','')[:180]}"
+            f"{i+1}. {c['name']} : {c['price']} DT — {(c.get('desc','') or '')[:1200]}"
             for i, c in enumerate(candidates))
         pick_prompt = (
             "Regarde la PHOTO ci-jointe (c'est ce que le client a envoyé). "
@@ -1636,7 +1644,12 @@ def _classify_photo(local_images, url_images):
             "(chaud: pull épais/veste/manteau/hoodie/hiver). Si pas clair: x.\n"
             "CATEGORIE: pull, pantalon, veste, hoodie, ensemble, espadrille, "
             "claquette, sport. Si pas clair: x.\n"
-            "Exemple: 'summer,pull' ou 'winter,veste'.")
+            "IMPORTANT: si c'est un GROS PLAN ou une PARTIE d'un vêtement "
+            "(zoom sur un motif/tissu/logo) et que la saison ou la catégorie "
+            "n'est PAS évidente, réponds 'x' pour ce champ — ne devine pas. "
+            "Mieux vaut 'x,x' (on lira tout le catalogue) qu'une mauvaise "
+            "réduction qui cache le bon article.\n"
+            "Exemple: 'summer,pull' ou 'winter,veste' ou 'x,x'.")
         ans = _claude_generate(prompt, max_tokens=10, temperature=0.0,
                                image_urls=url_images or None,
                                local_images=local_images or None, max_images=1)
@@ -13206,6 +13219,88 @@ def api_product_generate_description(request):
         return JsonResponse({"status": "error",
                              "message": f"L'IA n'a pas répondu : {detail}"}, status=502)
     return JsonResponse({"status": "ok", "description": text.strip()})
+
+
+def _offer_desc_photos(offer, cap=4):
+    """All local photo paths for an offer, best-for-matching first: the per-colour
+    OfferImage photos (the ensemble worn together), then the offer's main image,
+    then the products' variant photos as a fallback. Capped to control vision
+    cost. Used to write a distinctive description FROM the photos."""
+    paths = []
+    try:
+        for oi in offer.images.all():
+            if oi.image:
+                try:
+                    paths.append(oi.image.path)
+                except Exception:
+                    pass
+            if len(paths) >= cap:
+                break
+    except Exception:
+        pass
+    if getattr(offer, "image", None) and len(paths) < cap:
+        try:
+            paths.append(offer.image.path)
+        except Exception:
+            pass
+    if not paths:
+        try:
+            from .models import ProductVariant
+            for op in offer.products.all():
+                for v in (ProductVariant.objects.filter(product_id=op.product_id)
+                          .exclude(image="").exclude(image__isnull=True)[:cap]):
+                    try:
+                        paths.append(v.image.path)
+                    except Exception:
+                        pass
+                    if len(paths) >= cap:
+                        break
+                if len(paths) >= cap:
+                    break
+        except Exception:
+            pass
+    return paths[:cap]
+
+
+def _generate_offer_description(offer, cap=4):
+    """Write a DISTINCTIVE, design-focused English description of an offer FROM
+    its photos, so the text matcher can tell it apart from look-alikes. Returns
+    (text, "") on success or (None, reason). Describes the DESIGN that identifies
+    the product regardless of colour (pattern, cut, collar, sleeves, logo,
+    pieces) and lists the colours — because colour varies per order and is
+    resolved separately, but the design is constant. One vision call."""
+    photos = _offer_desc_photos(offer, cap=cap)
+    if not photos:
+        return None, "no photo"
+    multi = len(photos) > 1
+    prompt = (
+        "You are writing a description of a clothing offer for an AI "
+        "product-recognition system that must tell it apart from very similar "
+        "products. "
+        + ("These are photos of the SAME item in its different colours. "
+           if multi else "This is a photo of a clothing item. ")
+        + "Describe IN ENGLISH, factually, the DESIGN that identifies this "
+        "product REGARDLESS of colour: (1) exact type (two-piece set "
+        "polo+trousers, sweater/pull, sleeveless vest/gilet, shorts, shirt, "
+        "jacket...), (2) the EXACT pattern and its shape — distinguish "
+        "horizontal vs vertical stripes, geometric/jacquard (greek-key, "
+        "diamonds, squares), camouflage, plain, ribbed/knit, crochet, "
+        "(3) collar (polo/crew/high/V-neck) and sleeves (short/long), (4) any "
+        "visible logo/brand and WHERE it sits, (5) for a set, how many pieces "
+        "and what each piece is. Emphasise what makes THIS product DIFFERENT "
+        "from similar ones. "
+        + ("Then list the available colours you can see across the photos. "
+           if multi else "")
+        + "Write 3-5 sentences, no bullet lists. Do not invent a brand that is "
+        "not visible. Offer name for context (do not just repeat it): "
+        + (offer.name or "")
+    )
+    errs = []
+    text = _claude_generate(prompt, max_tokens=380, temperature=0.2,
+                            local_images=photos, max_images=cap, errbox=errs)
+    if not text:
+        return None, ("; ".join(errs))[:200] or "no reply"
+    return text.strip(), ""
 
 
 @login_required(login_url="/login/")
