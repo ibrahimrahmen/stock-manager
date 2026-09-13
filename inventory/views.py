@@ -2734,19 +2734,18 @@ def _bot_reply(conv):
                 if _d:
                     product_details_context = (
                         "\n\nDETAILS MTE3 EL MNTEJ \"" + _identified_name
-                        + "\" — esta3melhom KI EL 7ARIF YES2EL 3AL 9MECH/tissu, "
-                        "el coupe (large wala serré), chnowa fih (kadech de "
-                        "pièces), wala el couleurs. Jaweb b jomla wa7da besita "
-                        "bel tounsi men hedhi el ma3loumet. MOHIM: el description "
-                        "maktouba bel anglais/français — MA T3AWEDCH el kelmet "
-                        "anglais lel 7arif (mathal 'performance', 'breathable', "
-                        "'dri-fit', 'mesh'). Fasarhom bel tounsi besit (mathal "
-                        "'9mech riadhi khfif yet5alla el hwa yfout w ma "
-                        "yt3arre9ch barcha'). Ken el ma3louma eli sa2el 3liha "
-                        "(mathal naw3 el 9mech bel dhabt) MECH mawjouda hne, 9oll "
-                        "barka 'la7dha khouya w n2akedlek' — MA TEKHTERE3CH. MA "
-                        "T9RACH el description kamel lel 7arif:\n\"\"\"\n"
-                        + _d[:1500] + "\n\"\"\""
+                        + "\" (esta3melhom SEKtar KI EL 7ARIF YES2EL 3AL "
+                        "9MECH/tissu, coupe, chnowa fih wala couleurs — MA "
+                        "TZIDHOMCH WA7DEK fi reply mte3 el recognition/"
+                        "disponibilité, jaweb 3al so2el barka). Ki tjaweb, "
+                        "esta3mel BARKA el ma3loumet eli fi hedhi el description "
+                        "ta7t — 3OMREK ma tekhtere3 khaselet (ki 'riadhi', "
+                        "'khfif', 'mayt3ara9ch', 'coton'...) ken el description "
+                        "ma 9altomch. Ken el ma3louma mech mawjouda, 9oll barka "
+                        "'la7dha khouya w n2akedlek'. Fasar bel tounsi besit, "
+                        "ma t3awedch kelmet anglais (performance/breathable/"
+                        "mesh...). MA T9RACH el description kamel lel 7arif:"
+                        "\n\"\"\"\n" + _d[:1500] + "\n\"\"\""
                     )
         except Exception:
             product_details_context = ""
