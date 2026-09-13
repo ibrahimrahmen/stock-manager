@@ -1538,25 +1538,32 @@ def _match_product_by_image_once(local_images, url_images, offers_data, model=No
         # snippet — so distinctive details (pattern, logo placement, pieces)
         # actually reach the model. Capped high only to guard against a
         # pathologically long entry; real descriptions are 3-6 sentences.
+        _seas_lbl = {"summer": "été", "winter": "hiver"}
         clist = "\n".join(
-            f"{i+1}. {c['name']} : {c['price']} DT — {(c.get('desc','') or '')[:1200]}"
+            f"{i+1}. {c['name']} [{_seas_lbl.get((c.get('season') or ''), 'saison ?')}]"
+            f" : {c['price']} DT — {(c.get('desc','') or '')[:1200]}"
             for i, c in enumerate(candidates))
         pick_prompt = (
             "Regarde la PHOTO ci-jointe (c'est ce que le client a envoyé). "
             "Description de secours de la photo:\n"
             + seen + "\n\nVoici les produits candidats du catalogue:\n" + clist
-            + "\n\nQuel numéro correspond le mieux à la PHOTO ? Le critère LE "
-            "PLUS décisif est le MOTIF/IMPRIMÉ + les COULEURS (rayures "
-            "horizontales vs verticales, géométrique/grecques/diamants/"
-            "jacquard-monogramme/médaillon, camouflage, uni). Un jacquard "
-            "monogramme rose sur crème, par exemple, identifie le produit à lui "
-            "seul. IMPORTANT: la LONGUEUR DES MANCHES et le type exact de col se "
-            "lisent MAL sur une photo à plat — NE REJETTE PAS un candidat dont "
-            "le MOTIF et les COULEURS collent fort juste parce que les manches "
-            "ou le col semblent un peu différents. Si le motif + couleurs "
-            "matchent nettement un seul candidat, choisis-le. Réponds "
-            "UNIQUEMENT par le numéro (ex: 3). Réponds 0 seulement si AUCUN "
-            "motif/couleur ne colle."
+            + "\n\nQuel numéro correspond le mieux à la PHOTO ?\n"
+            "1) D'ABORD la SAISON: un vêtement à MANCHES LONGUES / tissu ÉPAIS "
+            "(pull, sweat, veste) = HIVER ; à MANCHES COURTES / tissu léger "
+            "(t-shirt, polo, short) = ÉTÉ. Chaque candidat a sa saison entre "
+            "[crochets]. Choisis SEULEMENT un produit de la MÊME saison que la "
+            "photo. Si le motif ressemble mais la saison DIFFÈRE (ex: photo "
+            "pull manches longues = hiver, mais le candidat est un produit "
+            "d'été manches courtes), CE N'EST PAS le même produit → réponds 0.\n"
+            "2) ENSUITE, PARMI les produits de la bonne saison, le critère "
+            "décisif est le MOTIF/IMPRIMÉ + les COULEURS (rayures horizontales "
+            "vs verticales, géométrique/grecques/diamants/jacquard-monogramme/"
+            "médaillon, camouflage, uni). Un jacquard monogramme rose sur "
+            "crème, par exemple, identifie le produit à lui seul. Dans la MÊME "
+            "saison, ne rejette pas un candidat dont le motif+couleurs collent "
+            "fort juste parce que le col semble un peu différent.\n"
+            "Réponds UNIQUEMENT par le numéro (ex: 3). Réponds 0 si aucun "
+            "produit de la bonne saison ne colle au motif+couleurs."
         )
         pick_prompt2 = (pick_prompt
             + "\n\nFormat: le numéro, une virgule, puis 'sur' si le "
