@@ -1545,17 +1545,24 @@ def _match_product_by_image_once(local_images, url_images, offers_data, model=No
             "Regarde la PHOTO ci-jointe (c'est ce que le client a envoyé). "
             "Description de secours de la photo:\n"
             + seen + "\n\nVoici les produits candidats du catalogue:\n" + clist
-            + "\n\nQuel numéro correspond le mieux à la PHOTO ? Compare "
-            "surtout: le TYPE (ensemble/pull/gilet), le MOTIF EXACT (rayures "
+            + "\n\nQuel numéro correspond le mieux à la PHOTO ? Le critère LE "
+            "PLUS décisif est le MOTIF/IMPRIMÉ + les COULEURS (rayures "
             "horizontales vs verticales, géométrique/grecques/diamants/"
-            "jacquard, camouflage), et les couleurs. Le motif est le critère "
-            "décisif entre produits similaires. Réponds UNIQUEMENT par le "
-            "numéro (ex: 3). Si aucun ne correspond vraiment, réponds 0."
+            "jacquard-monogramme/médaillon, camouflage, uni). Un jacquard "
+            "monogramme rose sur crème, par exemple, identifie le produit à lui "
+            "seul. IMPORTANT: la LONGUEUR DES MANCHES et le type exact de col se "
+            "lisent MAL sur une photo à plat — NE REJETTE PAS un candidat dont "
+            "le MOTIF et les COULEURS collent fort juste parce que les manches "
+            "ou le col semblent un peu différents. Si le motif + couleurs "
+            "matchent nettement un seul candidat, choisis-le. Réponds "
+            "UNIQUEMENT par le numéro (ex: 3). Réponds 0 seulement si AUCUN "
+            "motif/couleur ne colle."
         )
         pick_prompt2 = (pick_prompt
-            + "\n\nFormat: le numéro, une virgule, puis 'sur' si tu es "
-            "certain (motif+type+couleurs identiques) ou 'pasur' si plusieurs "
-            "candidats se ressemblent et tu hésites. Ex: '3,sur' ou '5,pasur'.")
+            + "\n\nFormat: le numéro, une virgule, puis 'sur' si le "
+            "motif+couleurs collent nettement, ou 'pasur' si plusieurs "
+            "candidats ont le même motif+couleurs et tu hésites vraiment. "
+            "Ex: '3,sur' ou '5,pasur'.")
         pick = _claude_generate(pick_prompt2, max_tokens=12, temperature=0.0,
                                 image_urls=url_images or None,
                                 local_images=local_images or None,
