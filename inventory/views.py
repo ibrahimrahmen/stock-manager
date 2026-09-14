@@ -2185,10 +2185,17 @@ def _identify_offer_for_conv(conv, page=None, persist=False):
         # sweater must not match "Ensemble 3pcs NK". If nothing single-type
         # matches in-season, defer.
         if len(od) < len(od_season) and (not match.get("name") or not match.get("confident")):
-            _retry = od_season
             _cat = cls.get("category") or ""
-            if _cat and _cat != "ensemble":
+            if _cat == "ensemble":
+                # A 2-PIECE photo must match an ENSEMBLE, never a single pull.
+                # Retry among ALL ensembles across seasons (season is misread on
+                # knit tops), so a 2-piece camo set goes to 'Ensemble Camo ZR',
+                # not the single winter 'Pull Akai' that shares the camo pattern.
+                _retry = [o for o in od_full if (o.get("category") or "") == "ensemble"]
+            elif _cat:
                 _retry = [o for o in od_season if (o.get("category") or "") != "ensemble"]
+            else:
+                _retry = od_season
             _m2 = _match_product_by_image(match_local, match_urls, _retry) or {}
             if _m2.get("name") and (_m2.get("confident") or not match.get("name")):
                 match = _m2
@@ -5536,10 +5543,13 @@ def api_debug_capture(request, pk):
                 od = c
         match = _match_product_by_image(match_local, match_urls, od) or {}
         if len(od) < len(od_season) and (not match.get("name") or not match.get("confident")):
-            _retry = od_season
             _cat = cls.get("category") or ""
-            if _cat and _cat != "ensemble":
+            if _cat == "ensemble":
+                _retry = [o for o in od_full if (o.get("category") or "") == "ensemble"]
+            elif _cat:
                 _retry = [o for o in od_season if (o.get("category") or "") != "ensemble"]
+            else:
+                _retry = od_season
             _m2 = _match_product_by_image(match_local, match_urls, _retry) or {}
             if _m2.get("name") and (_m2.get("confident") or not match.get("name")):
                 match = _m2
