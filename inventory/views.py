@@ -257,6 +257,50 @@ def _fetch_ig_post_media(page_id, media_id):
         return None
 
 
+_SHARE_CAPTION_CACHE = {}
+
+
+def _fetch_share_caption(page_id, source_ad_ref):
+    """A customer who SHARED one of our IG reels/posts arrives with
+    source_ad_ref = 'share:https://www.instagram.com/reel/<shortcode>/'. The
+    webhook gives only the link, not the caption — but the caption usually NAMES
+    the product ('Available now balaclava hoodie'), so it's a strong identity
+    signal we were throwing away. Resolve the shortcode to its caption by
+    scanning the account's OWN media (permalink match). Cached. Best-effort;
+    returns '' if not found."""
+    import re as _re
+    import json as _json
+    import urllib.request as _ureq
+    ref = (source_ad_ref or "").strip()
+    m = _re.search(r"instagram\.com/(?:reel|reels|p|tv)/([A-Za-z0-9_\-]+)", ref)
+    if not m:
+        return ""
+    shortcode = m.group(1)
+    if shortcode in _SHARE_CAPTION_CACHE:
+        return _SHARE_CAPTION_CACHE[shortcode]
+    cap = ""
+    token = _messenger_page_token(page_id)
+    if token:
+        try:
+            url = ("https://graph.instagram.com/v21.0/me/media"
+                   "?fields=permalink,caption&limit=100&access_token=%s"
+                   % _ureq.quote(token, safe=""))
+            pages = 0
+            while url and pages < 4 and not cap:
+                with _ureq.urlopen(url, timeout=12) as r:
+                    d = _json.load(r)
+                for it in (d.get("data") or []):
+                    if shortcode in (it.get("permalink") or ""):
+                        cap = (it.get("caption") or "").strip()
+                        break
+                url = ((d.get("paging") or {}).get("next")) or ""
+                pages += 1
+        except Exception:
+            cap = ""
+    _SHARE_CAPTION_CACHE[shortcode] = cap
+    return cap
+
+
 def _fetch_ig_story_origin(page_id, sender_id):
     """For an Instagram conversation, find how the customer entered: a reply to
     one of our STORIES, or a shared REEL/POST. Returns a dict:
@@ -1878,6 +1922,16 @@ def _ad_offer_for_conv(conv):
                 return o
         camp = ((getattr(conv, "source_campaign_name", "") or "")
                 or (getattr(conv, "source_campaign", "") or "")).strip().lower()
+        # A customer can come from a SHARED reel/post (source_ad_ref), whose
+        # CAPTION names the product ('balaclava hoodie') — add it to the text we
+        # match offers against, so a reel with no ad_id still resolves. The
+        # generic 'reel/post instagram' campaign label alone never matches.
+        try:
+            _cap = _fetch_share_caption(getattr(conv, "page_id", ""),
+                                        getattr(conv, "source_ad_ref", "") or "")
+        except Exception:
+            _cap = ""
+        camp = (camp + " " + (_cap or "")).strip().lower()
         if camp:
             # Longest offer name that appears in the campaign wins (so
             # "Ensemble WaveLine" beats "WaveLine").
@@ -2284,9 +2338,21 @@ def _capture_product_for_order_sync(order, conv):
         elif not chosen_offer and not (match_local or match_urls):
             camp = ((getattr(conv, "source_campaign_name", "") or "")
                     or (getattr(conv, "source_campaign", "") or "")).strip()
-            note_bits.append(
-                (("venu de la pub «%s» — confirmer le produit" % camp)[:120])
-                if camp else "pas de photo — produit à identifier")
+            # If they came from a shared reel/post, show its CAPTION (names the
+            # product) so staff know what to add/pick, e.g. 'balaclava hoodie'.
+            try:
+                _cap = _fetch_share_caption(getattr(conv, "page_id", ""),
+                                            getattr(conv, "source_ad_ref", "") or "")
+            except Exception:
+                _cap = ""
+            if _cap:
+                note_bits.append(("reel: «%s» — produit pas dans le catalogue"
+                                  % _cap.replace("\n", " ").strip())[:150])
+            elif camp:
+                note_bits.append(
+                    ("venu de la pub «%s» — confirmer le produit" % camp)[:120])
+            else:
+                note_bits.append("pas de photo — produit à identifier")
 
         # Confidence gate: only FILL on a confident photo match.
         if not chosen_offer or not confident:
