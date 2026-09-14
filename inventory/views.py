@@ -16946,12 +16946,16 @@ def _build_shopify_shape_from_extraction(data, conv):
         "name": f"DM{conv.id}",
         "shipping_address": {
             "phone": data.get("phone") or "",
-            "name": data.get("customer_name") or conv.sender_name or "",
+            # NAME comes from the Facebook profile (sender_name), NEVER from the
+            # chat: the bot never asks the name, and parsing it from messages
+            # grabs the wrong word (e.g. 'Sliman' out of the address). Only fall
+            # back to an extracted name if the FB profile name is missing.
+            "name": conv.sender_name or data.get("customer_name") or "",
             "city": data.get("city") or "",
             "address1": data.get("address") or "",
         },
         "customer": {"phone": data.get("phone") or "",
-                     "first_name": data.get("customer_name") or conv.sender_name or ""},
+                     "first_name": conv.sender_name or data.get("customer_name") or ""},
         "phone": data.get("phone") or "",
         "line_items": line_items,
         "shipping_lines": [],
