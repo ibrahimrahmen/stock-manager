@@ -2159,14 +2159,15 @@ def _identify_offer_for_conv(conv, page=None, persist=False):
     if (match_local or match_urls):
         od_full = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
         cls = _classify_photo(match_local, match_urls)
-        # SEASON is a hard filter (reliable: thick/long-sleeve=winter,
-        # light/short-sleeve=summer). CATEGORY is soft (often misjudged — a
-        # sleeveless gilet read as 'veste', a set read as 'pull'). So we narrow
-        # by season, then by category, but any retry stays WITHIN the season —
-        # never cross to the full catalogue, or a winter photo falls back to a
-        # summer product (Pull Camo/Vintage) when it has no winter match.
+        # SEASON is a hard filter ONLY for tops/outerwear, where sleeve length +
+        # thickness make it reliable (thick/long-sleeve=winter, light/short=
+        # summer). It is NOT reliable for PANTS or SHOES — trackpants/joggers/
+        # sneakers look the same year-round and the classifier guesses, so a
+        # summer-tagged 'Trackpants NK' got dropped when the photo read 'winter'.
+        # For those categories, skip the season filter (match across seasons).
+        _SEASONLESS = {"pantalon", "espadrille", "claquette", "sport"}
         od_season = list(od_full)
-        if cls.get("season"):
+        if cls.get("season") and cls.get("category") not in _SEASONLESS:
             s = [o for o in od_full if (o.get("season") or "") == cls["season"]]
             if s:
                 od_season = s
@@ -5521,8 +5522,9 @@ def api_debug_capture(request, pk):
         od_full = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
         out["page_offers_count"] = len(od_full)
         cls = _classify_photo(match_local, match_urls)
+        _SEASONLESS = {"pantalon", "espadrille", "claquette", "sport"}
         od_season = list(od_full)
-        if cls.get("season"):
+        if cls.get("season") and cls.get("category") not in _SEASONLESS:
             s = [o for o in od_full if (o.get("season") or "") == cls["season"]]
             if s:
                 od_season = s
