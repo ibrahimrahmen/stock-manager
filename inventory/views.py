@@ -17160,24 +17160,39 @@ def _build_shopify_shape_from_extraction(data, conv):
     that _create_order_from_shopify_shaped_payload expects."""
     items = data.get("items") or []
     line_items = []
-    for it in items:
-        prod = (it.get("product") or "").strip()
-        if not prod:
-            continue
-        color = (it.get("color") or "").strip()
-        size = (it.get("size") or "").strip()
-        vt_parts = [p for p in (size, color) if p]
-        line_items.append({
-            "title": prod,
-            "name": prod,
-            "variant_title": " / ".join(vt_parts),
-            "properties": [
-                {"name": "couleur", "value": color} if color else {"name": "", "value": ""},
-            ],
-            "quantity": int(it.get("qty") or 1),
-            "price": "0",
-            "sku": "",
-        })
+    # On AI-capture pages, the PHOTO cascade owns the product. Do NOT seed the
+    # order with the extraction's loose TEXT items — e.g. the word "pantalon"
+    # got matched to "Pantalon Chic Nolan" and filled at creation with NO
+    # confidence badge, which then made the capture SKIP ("already has product")
+    # and hid the real photo match (NV TENUE / the full set). Leave products
+    # empty on capture pages; the capture fills them from the photo and stamps
+    # the green/yellow badge.
+    _capture_on = False
+    try:
+        _sp = MESSENGER_PAGE_TO_SALESPAGE.get(
+            str(getattr(conv, "page_id", "") or ""), MESSENGER_DEFAULT_SALESPAGE)
+        _capture_on = (_cfg("capture_ai:%s" % _sp, "") == "on")
+    except Exception:
+        _capture_on = False
+    if not _capture_on:
+        for it in items:
+            prod = (it.get("product") or "").strip()
+            if not prod:
+                continue
+            color = (it.get("color") or "").strip()
+            size = (it.get("size") or "").strip()
+            vt_parts = [p for p in (size, color) if p]
+            line_items.append({
+                "title": prod,
+                "name": prod,
+                "variant_title": " / ".join(vt_parts),
+                "properties": [
+                    {"name": "couleur", "value": color} if color else {"name": "", "value": ""},
+                ],
+                "quantity": int(it.get("qty") or 1),
+                "price": "0",
+                "sku": "",
+            })
     return {
         "id": f"dm_{conv.id}",
         "order_number": f"DM{conv.id}",
