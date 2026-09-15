@@ -13615,33 +13615,121 @@ def _generate_offer_description(offer, cap=4):
         return None, "no photo"
     multi = len(photos) > 1
     prompt = (
-        "You are writing a description of a clothing offer for an AI "
-        "product-recognition system that must tell it apart from very similar "
-        "products. "
-        + ("These are photos of the SAME item in its different colours. "
-           if multi else "This is a photo of a clothing item. ")
-        + "Describe IN ENGLISH, factually, the DESIGN that identifies this "
-        "product REGARDLESS of colour: (1) exact type (two-piece set "
-        "polo+trousers, sweater/pull, sleeveless vest/gilet, shorts, shirt, "
-        "jacket...), (2) the EXACT pattern and its shape — distinguish "
-        "horizontal vs vertical stripes, geometric/jacquard (greek-key, "
-        "diamonds, squares), camouflage, plain, ribbed/knit, crochet, "
-        "(3) collar (polo/crew/high/V-neck) and sleeves (short/long), (4) any "
-        "visible logo/brand and WHERE it sits, (5) for a set, how many pieces "
-        "and what each piece is. Emphasise what makes THIS product DIFFERENT "
-        "from similar ones. "
-        + ("Then list the available colours you can see across the photos. "
+        "You are writing a SHORT identity description of a clothing offer for an "
+        "AI product-recognition system. Its ONLY job is to tell this product "
+        "apart from very SIMILAR ones, so focus on what is SPECIAL / "
+        "DISTINCTIVE — the one or two things that make THIS product different — "
+        "NOT an exhaustive list of generic attributes (avoid filler like "
+        "'comfortable', 'stylish', flat-lay/props/background). "
+        + ("These photos show the SAME item in its different colours. "
            if multi else "")
-        + "Write 3-5 sentences, no bullet lists. Do not invent a brand that is "
-        "not visible. Offer name for context (do not just repeat it): "
+        + "Structure IN ENGLISH:\n"
+        "1) START with the SINGLE most distinctive feature — the exact "
+        "pattern/motif and its shape (horizontal vs vertical stripes, "
+        "geometric/jacquard greek-key/diamonds/medallion, camouflage/cow-print "
+        "blob, tie-dye, plain, ribbed, crochet), a signature detail (contrast "
+        "tipping, ripped trims), or a visible logo/brand and WHERE it sits.\n"
+        "2) The TYPE: single pull/polo/gilet/shorts/jacket, OR a set — and for "
+        "a set say HOW MANY pieces and what each piece is (polo + shorts + "
+        "trousers, pull + pants...).\n"
+        + ("3) End with the available COLOURS you see across the photos.\n"
+           if multi else "")
+        + "2-4 sentences, no bullet lists, no generic filler. Lead with what "
+        "makes it UNIQUE vs look-alikes. Do NOT invent a brand that is not "
+        "clearly visible. Offer name for context (do NOT just repeat it): "
         + (offer.name or "")
     )
     errs = []
-    text = _claude_generate(prompt, max_tokens=380, temperature=0.2,
-                            local_images=photos, max_images=cap, errbox=errs)
+    text = _claude_generate(prompt, max_tokens=320, temperature=0.2,
+                            local_images=photos, max_images=cap, errbox=errs,
+                            model=_vision_model())
     if not text:
         return None, ("; ".join(errs))[:200] or "no reply"
     return text.strip(), ""
+
+
+def _regen_offer_desc_worker(sales_page_id, overwrite, only_missing):
+    """Background: regenerate DISTINCTIVE descriptions for offers from their own
+    photos. Progress stored via _set_cfg so any worker/process can read it."""
+    import json as _json
+    from .models import Offer, SalesPage
+
+    def _stat(d):
+        try:
+            _set_cfg("offer_desc_regen_status", _json.dumps(d))
+        except Exception:
+            pass
+
+    st = {"running": True, "total": 0, "done": 0, "filled": 0, "skipped": 0,
+          "no_photo": 0, "failed": []}
+    try:
+        qs = Offer.objects.filter(is_active=True)
+        if sales_page_id:
+            page = SalesPage.objects.filter(pk=sales_page_id).first()
+            if page:
+                qs = qs.filter(sales_pages=page)
+        offers = list(qs.distinct().order_by("name"))
+        st["total"] = len(offers)
+        _stat(st)
+        for o in offers:
+            has = bool((o.description or "").strip())
+            if (only_missing and has) or (has and not overwrite):
+                st["skipped"] += 1
+                st["done"] += 1
+                _stat(st)
+                continue
+            text, err = _generate_offer_description(o)
+            if text:
+                try:
+                    o.description = text
+                    o.save(update_fields=["description", "updated_at"])
+                    st["filled"] += 1
+                except Exception:
+                    st["failed"].append(o.name)
+            elif err == "no photo":
+                st["no_photo"] += 1
+                st["failed"].append("%s: no photo" % o.name)
+            else:
+                st["failed"].append("%s: %s" % (o.name, (err or "")[:40]))
+            st["done"] += 1
+            _stat(st)
+    except Exception as e:
+        st["error"] = str(e)[:150]
+    finally:
+        st["running"] = False
+        _stat(st)
+
+
+@login_required(login_url="/login/")
+def api_regen_offer_descriptions(request):
+    """Bulk-regenerate DISTINCTIVE offer descriptions from each offer's OWN
+    photos (per-colour OfferImages + main + variant photos), in a BACKGROUND
+    thread. Superuser only. GET -> progress. POST -> start
+    (?sales_page=<id> to scope, ?overwrite=0 to keep existing text,
+    ?only_missing=1 to fill only blanks)."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    import json as _json
+    if request.method == "POST":
+        try:
+            cur = _json.loads(_cfg("offer_desc_regen_status", "") or "{}")
+        except Exception:
+            cur = {}
+        if cur.get("running"):
+            return JsonResponse({"status": "ok", "message": "déjà en cours",
+                                 "progress": cur})
+        import threading
+        sp = request.GET.get("sales_page") or None
+        overwrite = (request.GET.get("overwrite", "1") not in ("0", "false", "no"))
+        only_missing = (request.GET.get("only_missing", "0") in ("1", "true", "yes"))
+        threading.Thread(target=_regen_offer_desc_worker,
+                         args=(sp, overwrite, only_missing), daemon=True).start()
+        return JsonResponse({"status": "ok", "message": "démarré"})
+    try:
+        cur = _json.loads(_cfg("offer_desc_regen_status", "") or "{}")
+    except Exception:
+        cur = {}
+    return JsonResponse({"status": "ok", "progress": cur})
 
 
 @login_required(login_url="/login/")
