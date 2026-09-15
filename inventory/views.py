@@ -5342,6 +5342,69 @@ def api_debug_ai_health(request):
 
 
 @login_required(login_url="/login/")
+def api_debug_fb_referral(request, pk):
+    """READ-ONLY: query Meta for a Messenger conversation's ORIGIN — the ad or
+    PUBLICATION the customer replied to — even when it wasn't captured at webhook
+    time. Returns attachment titles + any resolvable post CAPTION (text only, no
+    URLs, to pass the privacy filter). Superuser only, best-effort."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    import json as _json
+    import urllib.request as _ureq
+    from .models import MessengerConversation
+    conv = MessengerConversation.objects.filter(pk=pk).first()
+    if not conv:
+        return JsonResponse({"status": "error", "message": "introuvable"}, status=404)
+    page_id = str(getattr(conv, "page_id", "") or "")
+    sender = str(getattr(conv, "sender_id", "") or "")
+    token = _messenger_page_token(page_id)
+    out = {"status": "ok", "conv": pk, "page_id": page_id, "has_token": bool(token),
+           "stored_ref": (getattr(conv, "source_ad_ref", "") or "")[:60],
+           "att_titles": [], "post_ids": [], "captions": []}
+    if not token:
+        out["error"] = "no page token"
+        return JsonResponse(out)
+
+    def _q(u):
+        with _ureq.urlopen(u, timeout=15) as r:
+            return _json.load(r)
+
+    try:
+        url = ("https://graph.facebook.com/v21.0/%s/conversations?platform=messenger"
+               "&user_id=%s&fields=messages.limit(20){message,attachments{title,type,"
+               "target,payload}}&access_token=%s"
+               % (page_id, sender, _ureq.quote(token, safe="")))
+        d = _q(url)
+        post_ids = []
+        for thread in d.get("data", []):
+            for m in ((thread.get("messages") or {}).get("data") or []):
+                for a in ((m.get("attachments") or {}).get("data") or []):
+                    ti = a.get("title")
+                    if ti and ti not in out["att_titles"]:
+                        out["att_titles"].append(ti[:120])
+                    tgt = (a.get("target") or {})
+                    pid = tgt.get("id") or ((a.get("payload") or {}).get("id") or "")
+                    if pid and pid not in post_ids:
+                        post_ids.append(str(pid))
+        out["post_ids"] = post_ids[:5]
+        # Resolve each post id to its caption (message) — text only.
+        for pid in post_ids[:3]:
+            try:
+                pd = _q("https://graph.facebook.com/v21.0/%s?fields=message,name,"
+                        "description&access_token=%s"
+                        % (pid, _ureq.quote(token, safe="")))
+                cap = (pd.get("message") or pd.get("description")
+                       or pd.get("name") or "").strip()
+                if cap:
+                    out["captions"].append(cap[:300])
+            except Exception:
+                pass
+    except Exception as e:
+        out["error"] = str(e)[:200]
+    return JsonResponse(out)
+
+
+@login_required(login_url="/login/")
 def api_debug_catalogue_health(request):
     """READ-ONLY, NO vision calls (free): explain WHY photo-matching fails.
 
