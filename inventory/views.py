@@ -13901,28 +13901,51 @@ def _offer_all_photos(offer, cap=8):
 
 def _rebuild_offer_hashes(sales_page_id=None):
     """Compute dHashes for every active offer's photos and store the map in
-    config as JSON {offer_id: {name, hashes:[...]}}. Run once (and after adding
-    photos). Returns (offers_hashed, total_hashes)."""
+    config as JSON {offer_id: {name, hashes:[...]}}. Saves INCREMENTALLY and
+    writes progress so a slow run (many images) survives and is observable.
+    Runs in a background thread via the endpoint. Never raises."""
     import json as _json
     from .models import Offer, SalesPage
-    qs = Offer.objects.filter(is_active=True)
-    if sales_page_id:
-        page = SalesPage.objects.filter(pk=sales_page_id).first()
-        if page:
-            qs = qs.filter(sales_pages=page)
-    store = {}
-    total = 0
-    for o in qs.distinct():
-        hs = []
-        for p in _offer_all_photos(o):
-            h = _image_dhash(p)
-            if h and h not in hs:
-                hs.append(h)
-        if hs:
-            store[str(o.id)] = {"name": o.name, "hashes": hs}
-            total += len(hs)
-    _set_cfg("offer_photo_hashes", _json.dumps(store))
-    return (len(store), total)
+
+    def _stat(d):
+        try:
+            _set_cfg("offer_hash_status", _json.dumps(d))
+        except Exception:
+            pass
+
+    st = {"running": True, "done": 0, "total": 0, "offers": 0, "hashes": 0}
+    try:
+        qs = Offer.objects.filter(is_active=True)
+        if sales_page_id:
+            page = SalesPage.objects.filter(pk=sales_page_id).first()
+            if page:
+                qs = qs.filter(sales_pages=page)
+        offers = list(qs.distinct())
+        st["total"] = len(offers)
+        _stat(st)
+        store = {}
+        for o in offers:
+            hs = []
+            for p in _offer_all_photos(o):
+                h = _image_dhash(p)
+                if h and h not in hs:
+                    hs.append(h)
+            if hs:
+                store[str(o.id)] = {"name": o.name, "hashes": hs}
+                st["offers"] += 1
+                st["hashes"] += len(hs)
+            st["done"] += 1
+            if st["done"] % 5 == 0:
+                _set_cfg("offer_photo_hashes", _json.dumps(store))
+                _stat(st)
+        _set_cfg("offer_photo_hashes", _json.dumps(store))
+        return (len(store), st["hashes"])
+    except Exception as e:
+        st["error"] = str(e)[:150]
+        return (st["offers"], st["hashes"])
+    finally:
+        st["running"] = False
+        _stat(st)
 
 
 def _fingerprint_match(local_images, url_images, threshold=10):
@@ -13971,13 +13994,25 @@ def api_rebuild_offer_hashes(request):
         return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
     import json as _json
     if request.method == "POST":
-        n, total = _rebuild_offer_hashes(request.GET.get("sales_page") or None)
-        return JsonResponse({"status": "ok", "offers_hashed": n, "total_hashes": total})
+        try:
+            cur = _json.loads(_cfg("offer_hash_status", "") or "{}")
+        except Exception:
+            cur = {}
+        if cur.get("running"):
+            return JsonResponse({"status": "ok", "message": "déjà en cours", "progress": cur})
+        import threading
+        sp = request.GET.get("sales_page") or None
+        threading.Thread(target=_rebuild_offer_hashes, args=(sp,), daemon=True).start()
+        return JsonResponse({"status": "ok", "message": "démarré"})
     try:
         store = _json.loads(_cfg("offer_photo_hashes", "") or "{}")
     except Exception:
         store = {}
-    return JsonResponse({"status": "ok", "offers_in_store": len(store)})
+    try:
+        prog = _json.loads(_cfg("offer_hash_status", "") or "{}")
+    except Exception:
+        prog = {}
+    return JsonResponse({"status": "ok", "offers_in_store": len(store), "progress": prog})
 
 
 @login_required(login_url="/login/")
