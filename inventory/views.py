@@ -2165,16 +2165,34 @@ def _identify_offer_for_conv(conv, page=None, persist=False):
     chosen_offer = None
     confident = False
 
+    # PRIORITY 0 — IMAGE FINGERPRINT (perceptual dHash). Free + local. If the
+    # customer's photo is a near-duplicate of a catalogue photo (a SCREENSHOT of
+    # the product), it matches instantly and we skip the vision cascade. Only a
+    # VERY close hash (<=10 bits) is trusted; anything farther falls through to
+    # the vision matcher (which handles worn / different-angle photos).
+    if has_customer_photo:
+        try:
+            _fp = _fingerprint_match(match_local, match_urls)
+        except Exception:
+            _fp = {}
+        if _fp and _fp.get("confident") and _fp.get("name"):
+            _fo = (Offer.objects.filter(name__iexact=_fp["name"], is_active=True).first()
+                   or Offer.objects.filter(name__iexact=_fp["name"]).first())
+            if _fo:
+                chosen_offer, confident = _fo, True
+                out["note"] = "fingerprint (capture d'écran)"
+
     # CATALOGUE MATCH — page -> saison -> catégorie -> match visuel. Run it FIRST
     # whenever there's an image, because the customer's PHOTO is the ground
     # truth. (Previously the ad path ran first and short-circuited this: a
     # customer who came from the WaveLine ad but sent a CASA-WHITE photo got
     # "WaveLine" because step1 falsely said photo==ad and the catalogue match
-    # never ran. The photo and the ad had nothing in common.)
+    # never ran. The photo and the ad had nothing in common.) Skipped when the
+    # fingerprint already nailed it (PRIORITY 0).
     match = {}
     cat_offer = None
     cat_conf = False
-    if (match_local or match_urls):
+    if not chosen_offer and (match_local or match_urls):
         od_full = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
         cls = _classify_photo(match_local, match_urls)
         # SEASON is a hard filter ONLY for tops/outerwear, where sleeve length +
