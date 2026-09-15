@@ -122,6 +122,8 @@ urlpatterns = [
     path("api/conversations/<int:pk>/fb-referral/", views.api_debug_fb_referral, name="api_debug_fb_referral"),
     path("api/debug/self-match/", views.api_debug_self_match, name="api_debug_self_match"),
     path("api/offers/regen-descriptions/", views.api_regen_offer_descriptions, name="api_regen_offer_descriptions"),
+    path("api/offers/rebuild-hashes/", views.api_rebuild_offer_hashes, name="api_rebuild_offer_hashes"),
+    path("api/conversations/<int:pk>/fingerprint/", views.api_debug_fingerprint, name="api_debug_fingerprint"),
     # Ads & offers: Meta spend per campaign linked to offers, cross-source revenue
     path("ads-offers/", views.ads_offers_dashboard, name="ads_offers_dashboard"),
     path("api/ads/<int:pk>/link-offer/", views.api_ad_link_offer, name="api_ad_link_offer"),

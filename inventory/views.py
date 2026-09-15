@@ -13812,6 +13812,191 @@ def api_regen_offer_descriptions(request):
     return JsonResponse({"status": "ok", "progress": cur})
 
 
+# ---------------------------------------------------------------------------
+# IMAGE FINGERPRINTS (perceptual dHash) — free, local, no API. Near-duplicate
+# detection: a screenshot of a product photo gets an (almost) identical hash to
+# that catalogue photo, so it matches instantly. Complements the vision matcher
+# (which handles worn / different-angle photos). Uses Pillow (already a dep).
+# ---------------------------------------------------------------------------
+def _image_dhash(img_source, size=8):
+    """64-bit difference-hash of an image as a 16-char hex string ('' on fail).
+    img_source: a file path or raw bytes. Two visually near-identical images
+    (e.g. a screenshot of the same photo) differ by only a few bits."""
+    try:
+        from PIL import Image as _PILImage
+        import io as _io
+        if isinstance(img_source, (bytes, bytearray)):
+            im = _PILImage.open(_io.BytesIO(img_source))
+        else:
+            im = _PILImage.open(img_source)
+        im = im.convert("L").resize((size + 1, size), _PILImage.LANCZOS)
+        px = list(im.getdata())
+        bits = 0
+        for row in range(size):
+            base = row * (size + 1)
+            for col in range(size):
+                bits = (bits << 1) | (1 if px[base + col] > px[base + col + 1] else 0)
+        return "%016x" % bits
+    except Exception:
+        return ""
+
+
+def _hash_distance(a, b):
+    """Hamming distance between two hex hashes (0 = identical, 64 = opposite)."""
+    try:
+        return bin(int(a, 16) ^ int(b, 16)).count("1")
+    except Exception:
+        return 999
+
+
+def _download_image_bytes(url):
+    """Download an image URL to raw bytes (Meta CDN needs a UA). '' on failure."""
+    try:
+        import urllib.request as _ureq
+        req = _ureq.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with _ureq.urlopen(req, timeout=10) as r:
+            return r.read()
+    except Exception:
+        return b""
+
+
+def _offer_all_photos(offer, cap=8):
+    """Every local photo path for an offer: per-colour OfferImages + main image
+    + each product variant's image. Used to fingerprint the offer from ALL its
+    colourways (so any colour screenshot matches)."""
+    paths = []
+    try:
+        for oi in offer.images.all():
+            if oi.image:
+                try:
+                    paths.append(oi.image.path)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    if getattr(offer, "image", None):
+        try:
+            paths.append(offer.image.path)
+        except Exception:
+            pass
+    try:
+        from .models import ProductVariant
+        for op in offer.products.all():
+            for v in (ProductVariant.objects.filter(product_id=op.product_id)
+                      .exclude(image="").exclude(image__isnull=True)):
+                try:
+                    paths.append(v.image.path)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    # de-dup, keep order
+    seen, out = set(), []
+    for p in paths:
+        if p and p not in seen:
+            seen.add(p)
+            out.append(p)
+    return out[:cap]
+
+
+def _rebuild_offer_hashes(sales_page_id=None):
+    """Compute dHashes for every active offer's photos and store the map in
+    config as JSON {offer_id: {name, hashes:[...]}}. Run once (and after adding
+    photos). Returns (offers_hashed, total_hashes)."""
+    import json as _json
+    from .models import Offer, SalesPage
+    qs = Offer.objects.filter(is_active=True)
+    if sales_page_id:
+        page = SalesPage.objects.filter(pk=sales_page_id).first()
+        if page:
+            qs = qs.filter(sales_pages=page)
+    store = {}
+    total = 0
+    for o in qs.distinct():
+        hs = []
+        for p in _offer_all_photos(o):
+            h = _image_dhash(p)
+            if h and h not in hs:
+                hs.append(h)
+        if hs:
+            store[str(o.id)] = {"name": o.name, "hashes": hs}
+            total += len(hs)
+    _set_cfg("offer_photo_hashes", _json.dumps(store))
+    return (len(store), total)
+
+
+def _fingerprint_match(local_images, url_images, threshold=10):
+    """Match a customer image to a catalogue offer by dHash near-duplicate.
+    Returns {name, distance, confident} — confident when the nearest offer photo
+    is within `threshold` bits (a screenshot of that product). {} if no store or
+    no image or nothing close."""
+    import json as _json
+    try:
+        store = _json.loads(_cfg("offer_photo_hashes", "") or "{}")
+    except Exception:
+        store = {}
+    if not store:
+        return {}
+    ch = ""
+    for p in (local_images or []):
+        ch = _image_dhash(p)
+        if ch:
+            break
+    if not ch:
+        for u in (url_images or []):
+            b = _download_image_bytes(u)
+            if b:
+                ch = _image_dhash(b)
+                if ch:
+                    break
+    if not ch:
+        return {}
+    best_name, best_d = None, 999
+    for _oid, rec in store.items():
+        for h in rec.get("hashes", []):
+            d = _hash_distance(ch, h)
+            if d < best_d:
+                best_d, best_name = d, rec.get("name")
+    if best_name is None:
+        return {}
+    return {"name": best_name, "distance": best_d,
+            "confident": best_d <= threshold}
+
+
+@login_required(login_url="/login/")
+def api_rebuild_offer_hashes(request):
+    """Build/refresh the offer photo-fingerprint store. Superuser only.
+    POST (?sales_page=<id> to scope) -> rebuild. GET -> current store size."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    import json as _json
+    if request.method == "POST":
+        n, total = _rebuild_offer_hashes(request.GET.get("sales_page") or None)
+        return JsonResponse({"status": "ok", "offers_hashed": n, "total_hashes": total})
+    try:
+        store = _json.loads(_cfg("offer_photo_hashes", "") or "{}")
+    except Exception:
+        store = {}
+    return JsonResponse({"status": "ok", "offers_in_store": len(store)})
+
+
+@login_required(login_url="/login/")
+def api_debug_fingerprint(request, pk):
+    """READ-ONLY: fingerprint a conversation's customer photo and show the
+    nearest catalogue offer + bit-distance. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import MessengerConversation
+    conv = MessengerConversation.objects.filter(pk=pk).first()
+    if not conv:
+        return JsonResponse({"status": "error", "message": "introuvable"}, status=404)
+    local, urls = _capture_images_for_conv(conv)
+    m = _fingerprint_match(local, urls)
+    return JsonResponse({"status": "ok", "conv": pk,
+                         "customer_images": {"urls": len(urls), "local": len(local)},
+                         "match": m or None})
+
+
 @login_required(login_url="/login/")
 def order_view(request, pk):
     if not _orders_role_check(request):
