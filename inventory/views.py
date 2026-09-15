@@ -1798,6 +1798,24 @@ def _capture_variant_by_image(product, local_images, url_images):
             return (None, False)
         import re as _re
 
+        # Which PIECE is this? On a 2-piece photo, resolving the top's colour
+        # must look ONLY at the top (else the black trousers make the white polo
+        # read as black — the #23042 bug). Tell the model which garment to read.
+        _pn = (getattr(product, "name", "") or "").lower()
+        if any(w in _pn for w in ("pant", "short", "jogging", "trouser", "serwel",
+                                  "sarwel", "bas ", "bermuda")):
+            _piece = ("IMPORTANT: regarde SEULEMENT la couleur du BAS "
+                      "(pantalon/short) dans la photo du client — IGNORE le "
+                      "haut, les chaussures et les accessoires.\n")
+        elif any(w in _pn for w in ("pull", "polo", "chemise", "shirt", "tshirt",
+                                    "t-shirt", "tee", "sweat", "hoodie", "veste",
+                                    "haut", "top")):
+            _piece = ("IMPORTANT: regarde SEULEMENT la couleur du HAUT "
+                      "(polo/pull/chemise) dans la photo du client — IGNORE le "
+                      "bas, les chaussures et les accessoires.\n")
+        else:
+            _piece = ""
+
         # --- Preferred: photo-to-photo against variant images ---
         var_imgs, labeled = [], []
         for v in variants:
@@ -1817,7 +1835,7 @@ def _capture_variant_by_image(product, local_images, url_images):
             prompt = (
                 "La PREMIÈRE image est le vêtement du CLIENT. Les images "
                 "SUIVANTES sont les coloris du catalogue, dans cet ordre:\n"
-                + order_txt + "\n\nRegarde surtout la COULEUR DE FOND (base) vs "
+                + order_txt + "\n\n" + _piece + "Regarde surtout la COULEUR DE FOND (base) vs "
                 "la couleur du MOTIF. Attention aux coloris INVERSÉS: 'fond "
                 "blanc à motifs noirs' n'est PAS 'fond noir à motifs blancs'. "
                 "Quelle image de catalogue a EXACTEMENT le même coloris que le "
@@ -1844,7 +1862,8 @@ def _capture_variant_by_image(product, local_images, url_images):
             f"{i+1}. {(v.color_label or v.color_name or '?')}"
             for i, v in enumerate(variants))
         prompt = (
-            "Regarde la photo du vêtement. Voici les couleurs disponibles:\n"
+            "Regarde la photo du vêtement. " + _piece
+            + "Voici les couleurs disponibles:\n"
             + labels + "\n\nQuel numéro correspond à la couleur sur la photo ? "
             "Réponds UNIQUEMENT par le numéro, une virgule, puis 'sur' si tu es "
             "certain ou 'pasur' si tu hésites (ex: '2,sur'). Si aucune ne "
