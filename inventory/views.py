@@ -14007,6 +14007,23 @@ def _rebuild_offer_hashes(sales_page_id=None):
             if st["done"] % 5 == 0:
                 _set_cfg("offer_photo_hashes", _json.dumps(store))
                 _stat(st)
+        # Drop AMBIGUOUS hashes — an image shared by 2+ offers (a generic/
+        # cross-attached photo, e.g. the same White/Black variant on Blueline,
+        # ICY MAZE and WaveLine) can't identify anything, so it must never
+        # produce a confident match. Keep only hashes unique to ONE offer.
+        _count = {}
+        for rec in store.values():
+            for h in rec["hashes"]:
+                _count[h] = _count.get(h, 0) + 1
+        _dropped = 0
+        for rec in list(store.values()):
+            keep = [h for h in rec["hashes"] if _count.get(h, 0) == 1]
+            _dropped += len(rec["hashes"]) - len(keep)
+            rec["hashes"] = keep
+        store = {k: v for k, v in store.items() if v["hashes"]}
+        st["offers"] = len(store)
+        st["hashes"] = sum(len(v["hashes"]) for v in store.values())
+        st["dropped_shared"] = _dropped
         _set_cfg("offer_photo_hashes", _json.dumps(store))
         return (len(store), st["hashes"])
     except Exception as e:
