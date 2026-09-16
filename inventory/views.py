@@ -1896,6 +1896,43 @@ def _size_to_number(s):
     return mapping.get(s, s)
 
 
+def _fr_color(label):
+    """Map a stored colour label (WHITE, BLACK, blue, GRY...) to its FRENCH name,
+    because the bot must answer colour questions ('chfih alwen') in French."""
+    s = (label or "").strip().lower()
+    if not s:
+        return ""
+    m = {
+        "white": "blanc", "wht": "blanc", "wte": "blanc", "off-white": "blanc",
+        "cream": "crème", "ivory": "ivoire", "beige": "beige",
+        "black": "noir", "blk": "noir",
+        "blue": "bleu", "blu": "bleu", "navy": "bleu marine", "skyblue": "bleu ciel",
+        "gray": "gris", "grey": "gris", "gry": "gris", "grn": "vert",
+        "green": "vert", "red": "rouge", "rge": "rouge",
+        "pink": "rose", "rose": "rose", "purple": "violet", "yellow": "jaune",
+        "orange": "orange", "brown": "marron", "marron": "marron",
+        "camel": "camel", "khaki": "kaki", "kaki": "kaki",
+        "maroon": "bordeaux", "burgundy": "bordeaux", "bordeaux": "bordeaux",
+        "multicolor": "multicolore", "multicolore": "multicolore",
+    }
+    return m.get(s, label.strip())
+
+
+def _offer_colors_fr(offer):
+    """Distinct available colours of an offer's products, in FRENCH."""
+    out = []
+    try:
+        from .models import ProductVariant
+        for op in offer.products.all():
+            for v in ProductVariant.objects.filter(product_id=op.product_id):
+                fr = _fr_color(v.color_label or v.color_name or "")
+                if fr and fr not in out:
+                    out.append(fr)
+    except Exception:
+        pass
+    return out
+
+
 def _capture_size_hint(order, conv):
     """Best-effort size from the extraction result or the conversation text,
     returned in the system's NUMERIC form (1..5) — never the raw letter."""
@@ -2959,6 +2996,20 @@ def _bot_reply(conv):
                         "mesh...). MA T9RACH el description kamel lel 7arif:"
                         "\n\"\"\"\n" + _d[:1500] + "\n\"\"\""
                     )
+                # Available colours — the customer often asks "chfih alwen ?" /
+                # "quelles couleurs". Give the real variant colours IN FRENCH and
+                # require the answer in French colour words (never English labels
+                # like WHITE/BLK, never the raw code).
+                _cols = _offer_colors_fr(_off) if _off else []
+                if _cols:
+                    product_details_context += (
+                        "\n\nCOULEURS DISPONIBLES (en français): "
+                        + ", ".join(_cols) + ". KI EL 7ARIF YES2EL 3AL LWEN "
+                        "('chfih alwen', 'chnowa el couleurs', 'quelles "
+                        "couleurs'), 3AWEDLOU EL COULEURS B HEDHI EL ASME EL "
+                        "FRANCAIS BARKA (mathal 'disponible en blanc, noir, "
+                        "bleu w gris') — 3OMREK ma t9oul el couleur bel anglais "
+                        "(white/black) wala el code (WHT/BLK).")
         except Exception:
             product_details_context = ""
 
