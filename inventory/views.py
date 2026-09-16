@@ -2464,6 +2464,7 @@ def _capture_product_for_order_sync(order, conv):
         # guess so staff see the likely one, but flag "couleur à confirmer".
         _has_photo = bool(ident.get("_has_customer_photo"))
         colour_uncertain = False
+        _lines_made = 0
         with transaction.atomic():
             oo = OrderOffer.objects.create(
                 order=order, offer=chosen_offer, offer_name=chosen_offer.name,
@@ -2485,7 +2486,23 @@ def _capture_product_for_order_sync(order, conv):
                     order=order, order_offer=oo, product=op.product,
                     variant=variant, size=size_hint,
                     quantity=op.quantity or 1, unit_price=0)
+                _lines_made += 1
             order.recalc_total()
+
+        # The offer matched confidently but has NO products linked in the
+        # catalogue (offer.products empty) -> we created an offer wrapper with
+        # zero pickable lines. That is an empty order, not a filled one: never
+        # show a green badge for it. Flag so staff link the product / pick.
+        if _lines_made == 0:
+            order.capture_product_confidence = 40
+            order.capture_product_note = (
+                "offre «%s» reconnue mais sans produit au catalogue — "
+                "à compléter" % chosen_offer.name)[:200]
+            order.save(update_fields=["capture_product_confidence",
+                                      "capture_product_note", "updated_at"])
+            res["action"] = "flagged"
+            res["reason"] = "offer-no-products:%s" % chosen_offer.name
+            return res
 
         if colour_uncertain:
             order.capture_product_confidence = 75
