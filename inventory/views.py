@@ -2387,6 +2387,14 @@ def _capture_product_for_order_sync(order, conv):
     res = {"order_id": getattr(order, "id", None), "action": "skip", "reason": ""}
     try:
         from .models import Offer, OrderOffer, OrderLine, SalesPage
+        # Owner rule: ALWAYS leave the product/order section empty. Aida records
+        # only the client (page + name + phone + address); staff identify and add
+        # every product themselves. So the whole product-fill cascade is off by
+        # default. Set config "capture_fill_products" to "on" to re-enable it.
+        if str(_cfg("capture_fill_products", "0")).strip().lower() not in (
+                "1", "on", "true", "yes"):
+            res["reason"] = "product-fill-disabled"
+            return res
         if (not order or order.status != order.NON_CONFIRMEE
                 or order.bordereau_barcode):
             res["reason"] = "not-draft"
