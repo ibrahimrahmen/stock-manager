@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Statistiques — Modèles</title>
+<title>Statistiques — Offres</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -43,7 +43,6 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 table{width:100%;border-collapse:collapse;min-width:820px;}
 th,td{text-align:center;padding:12px 8px;font-size:14px;}
 th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;border-bottom:0.5px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap;position:sticky;top:0;z-index:5;background:var(--surface);}
-/* keep the header row solid + separated while rows scroll under it */
 thead th{box-shadow:0 1px 0 var(--border);}
 td{border-bottom:0.5px solid var(--border);}
 tr:last-child td{border-bottom:none;}
@@ -70,12 +69,12 @@ tr.totaux td{color:var(--text);}
 
 <div class="wrap">
   <div class="page-title">Statistiques</div>
-  <div class="muted">Par modèle (produit), compté en <b>unités</b>, sur la période choisie.</div>
+  <div class="muted">Par offre, compté en <b>unités d'offre</b> (une commande avec quantité 2 compte 2), sur la période choisie.</div>
 
   <div class="tabs">
     <a href="{% url 'stats_commandes' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Commandes</a>
-    <a href="{% url 'stats_modeles' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab active">Modèles</a>
-    <a href="{% url 'stats_offres' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Offres</a>
+    <a href="{% url 'stats_modeles' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Modèles</a>
+    <a href="{% url 'stats_offres' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab active">Offres</a>
     <span class="tab" style="opacity:0.4;cursor:default;">Pages</span>
     <span class="tab" style="opacity:0.4;cursor:default;">Couleurs</span>
     <a href="{% url 'stats_gouvernorats' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Gouvernorat</a>
@@ -94,7 +93,7 @@ tr.totaux td{color:var(--text);}
     </div>
     <div style="margin-left:auto;">
       <label>Rechercher</label>
-      <input type="search" id="search" placeholder="Nom du modèle…" oninput="filterRows()">
+      <input type="search" id="search" placeholder="Nom de l'offre…" oninput="filterRows()">
     </div>
   </form>
 
@@ -105,13 +104,13 @@ tr.totaux td{color:var(--text);}
     <a href="?from={{ from_date }}&to={{ to_date }}&source=facebook" class="src-btn {% if source_filter == 'facebook' %}active{% endif %}">📘 Facebook</a>
   </div>
 
-  <div class="n-info">{{ per_model|length }} modèle(s) avec des ventes sur la période. Clique un en-tête pour trier.</div>
+  <div class="n-info">{{ per_offer|length }} offre(s) avec des ventes sur la période. Clique un en-tête pour trier.</div>
 
   <div class="card">
     <table id="modtable">
       <thead>
         <tr>
-          <th class="modele" onclick="sortBy(0,false)">Modèle</th>
+          <th class="modele" onclick="sortBy(0,false)">Offre</th>
           <th onclick="sortBy(1,true)">Total</th>
           <th onclick="sortBy(2,true)">Sortie</th>
           <th onclick="sortBy(3,true)">Livrée</th>
@@ -124,9 +123,9 @@ tr.totaux td{color:var(--text);}
         </tr>
       </thead>
       <tbody id="modbody">
-        {% for r in per_model %}
+        {% for r in per_offer %}
         <tr class="modelrow modelrow-{{ r.id }}" onclick="togglePages({{ r.id }})" title="Cliquer pour voir par page">
-          <td class="modele"><span class="caret">▸</span> {{ r.product }}</td>
+          <td class="modele"><span class="caret">▸</span> {{ r.offer }}</td>
           <td>{{ r.total }}</td>
           <td>{{ r.sortie }}</td>
           <td>{{ r.livree }}</td>
@@ -155,7 +154,7 @@ tr.totaux td{color:var(--text);}
         <tr><td class="modele" colspan="10" style="text-align:center;color:var(--muted);padding:26px;">Aucune vente sur la période.</td></tr>
         {% endfor %}
       </tbody>
-      {% if per_model %}
+      {% if per_offer %}
       <tfoot>
         <tr class="totaux">
           <td class="modele">TOTAL</td>
@@ -179,7 +178,7 @@ tr.totaux td{color:var(--text);}
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
 
-// A "group" = one model row (head) plus its page sub-rows.
+// A "group" = one offer row (head) plus its page sub-rows.
 function _groups(){
   const body = document.getElementById('modbody');
   const groups = []; let cur = null;
@@ -242,9 +241,7 @@ function sortBy(col, numeric){
   }
 })();
 
-// Make the table card fill from its position to the bottom of the screen, so
-// the LIST scrolls inside the card (header pinned) instead of the whole page
-// scrolling the header off. Re-fit on resize.
+// Fit the table card to the screen so the LIST scrolls inside it (header pinned).
 (function(){
   function fitCard(){
     var c=document.querySelector('.card'); if(!c) return;

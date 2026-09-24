@@ -16090,6 +16090,129 @@ def stats_modeles(request):
     })
 
 
+def stats_offres(request):
+    """Statistics — Offres tab. Per-OFFER breakdown counted in offer units
+    (an order with quantity 2 of an offer counts 2), across the same order-status
+    rows as the Modèles tab, over a date range, with a per-page drill-down."""
+    if not request.user.is_superuser:
+        return redirect("home")
+    from .models import Order, ShippingOrder, OrderOffer, Offer
+    from collections import defaultdict
+    import datetime as _dt
+    try:
+        import zoneinfo
+        tz = zoneinfo.ZoneInfo("Africa/Tunis")
+    except Exception:
+        tz = timezone.get_current_timezone()
+
+    today = timezone.localdate()
+    try:
+        start_date = _dt.date.fromisoformat(request.GET.get("from", ""))
+    except ValueError:
+        start_date = today - _dt.timedelta(days=13)
+    try:
+        end_date = _dt.date.fromisoformat(request.GET.get("to", ""))
+    except ValueError:
+        end_date = today
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    win_start, _ = _business_day_bounds(start_date, tz)
+    _, win_end = _business_day_bounds(end_date, tz)
+
+    orders = Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end)
+    source_filter = request.GET.get("source", "all")
+    if source_filter == "barats":
+        orders = orders.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "converty":
+        orders = orders.filter(sales_page__name__iexact="Converty")
+    elif source_filter == "facebook":
+        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+    orders = list(orders.values("id", "status", "exchange_of_id", "sales_page__name"))
+    order_ids = [o["id"] for o in orders]
+
+    sortie_ids = set(ShippingOrder.objects.filter(order_id__in=order_ids)
+                     .values_list("order_id", flat=True))
+
+    def _row_for(o):
+        if o["exchange_of_id"]:
+            return ["echange"]
+        rows = []
+        st = o["status"]
+        if st in ("returned", "returning"):
+            rows.append("retour")
+        elif st in ("en_cours", "au_magasin"):
+            rows.append("encours")
+        elif st == "livree":
+            rows.append("livree")
+        elif st == "payee":
+            rows.append("payee")
+        elif st == "annulee":
+            rows.append("annulee")
+        if o["id"] in sortie_ids:
+            rows.append("sortie")
+        return rows
+
+    order_by_id = {o["id"]: o for o in orders}
+    om = defaultdict(lambda: defaultdict(int))        # offer_id -> row -> qty
+    om_page = defaultdict(lambda: defaultdict(int))   # (offer_id, page) -> row -> qty
+    if order_ids:
+        for r in OrderOffer.objects.filter(
+                order_id__in=order_ids, offer_id__isnull=False).values(
+                "order_id", "offer_id", "quantity"):
+            o = order_by_id.get(r["order_id"])
+            if not o:
+                continue
+            rows = _row_for(o)
+            page = o.get("sales_page__name") or "—"
+            q = r["quantity"] or 1
+            om[r["offer_id"]]["total"] += q
+            om_page[(r["offer_id"], page)]["total"] += q
+            for rk in rows:
+                om[r["offer_id"]][rk] += q
+                om_page[(r["offer_id"], page)][rk] += q
+
+    def _mk_row(c):
+        sortie = c.get("sortie", 0)
+        retour = c.get("retour", 0)
+        return {
+            "total": c.get("total", 0), "sortie": sortie, "livree": c.get("livree", 0),
+            "retour": retour, "encours": c.get("encours", 0), "payee": c.get("payee", 0),
+            "annulee": c.get("annulee", 0), "echange": c.get("echange", 0),
+            "retour_pct": round(retour / sortie * 100, 1) if sortie else 0.0,
+        }
+
+    pages_by_offer = defaultdict(list)
+    for (oid_, page), c in om_page.items():
+        d = _mk_row(c)
+        d["page"] = page
+        pages_by_offer[oid_].append(d)
+    for oid_ in pages_by_offer:
+        pages_by_offer[oid_].sort(key=lambda r: -r["total"])
+
+    names = dict(Offer.objects.filter(id__in=list(om.keys())).values_list("id", "name"))
+    per_offer = []
+    totals = defaultdict(int)
+    for oid_, c in om.items():
+        row = _mk_row(c)
+        row["id"] = oid_
+        row["offer"] = names.get(oid_, f"#{oid_}")
+        row["pages"] = pages_by_offer.get(oid_, [])
+        for k in ("total", "sortie", "livree", "retour", "encours", "payee", "annulee", "echange"):
+            totals[k] += c.get(k, 0)
+        per_offer.append(row)
+    per_offer.sort(key=lambda r: -r["total"])
+    totals["retour_pct"] = round(totals["retour"] / totals["sortie"] * 100, 1) if totals["sortie"] else 0.0
+
+    return render(request, "inventory/stats_offres.html", {
+        "per_offer": per_offer,
+        "totals": dict(totals),
+        "from_date": start_date.isoformat(),
+        "to_date": end_date.isoformat(),
+        "source_filter": source_filter,
+    })
+
+
 @login_required(login_url="/login/")
 def stats_gouvernorats(request):
     """Statistics — Gouvernorat tab. Per-governorate (region) breakdown counted

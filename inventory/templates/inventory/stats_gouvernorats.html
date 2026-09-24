@@ -76,7 +76,7 @@ tr.totaux td{color:var(--text);}
   <div class="tabs">
     <a href="{% url 'stats_commandes' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Commandes</a>
     <a href="{% url 'stats_modeles' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Modèles</a>
-    <span class="tab" style="opacity:0.4;cursor:default;">Offres</span>
+    <a href="{% url 'stats_offres' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Offres</a>
     <span class="tab" style="opacity:0.4;cursor:default;">Pages</span>
     <span class="tab" style="opacity:0.4;cursor:default;">Couleurs</span>
     <a href="{% url 'stats_gouvernorats' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab active">Gouvernorat</a>
