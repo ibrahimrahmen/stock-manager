@@ -11160,14 +11160,20 @@ def api_debug_converty_raw(request):
         keys = sorted(co.keys())
         tracking = {k: co[k] for k in keys
                     if any(t in k.lower() for t in TRACK)}
+        _sess = co.get("session") or {}
+        _sess_keys = sorted(_sess.keys()) if isinstance(_sess, dict) else []
+        _probe_terms = TRACK + ("url", "ref", "fb", "land", "src", "gclid", "click")
+        _sess_track = ({k: _sess[k] for k in _sess_keys
+                        if any(t in k.lower() for t in _probe_terms)}
+                       if isinstance(_sess, dict) else {})
         out.append({
             "reference": co.get("reference"),
             "top_level_keys": keys,
             "customer_keys": sorted((co.get("customer") or {}).keys())
             if isinstance(co.get("customer"), dict) else [],
             "tracking_like_fields": tracking,
-            "session": co.get("session"),
-            "store": co.get("store"),
+            "visit_probe_keys": _sess_keys,
+            "visit_probe_tracking": _sess_track,
         })
     return JsonResponse({"http_status": st, "count": len(rows), "orders": out},
                         json_dumps_params={"ensure_ascii": False})
