@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Statistiques — Gouvernorat</title>
+<title>Statistiques — Pages</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -52,14 +52,7 @@ tr.totaux td{color:var(--text);}
 .ret-high{color:var(--red);font-weight:700;}
 .ret-mid{color:var(--amber);}
 .ret-low{color:var(--green);}
-.zero td{color:var(--muted);opacity:0.55;}
-.modelrow{cursor:pointer;}
 .modelrow:hover td{background:var(--surface2);}
-.caret{display:inline-block;width:14px;color:var(--muted);font-size:11px;transition:transform .1s;}
-.caret.empty{opacity:0.25;}
-.pagerow{display:none;}
-.pagerow td{background:var(--surface2);font-size:13px;}
-.pagecell{padding-left:34px !important;font-weight:400;color:var(--muted);}
 .n-info{font-size:12px;color:var(--muted);margin-bottom:10px;}
 </style>
 </head>
@@ -71,15 +64,15 @@ tr.totaux td{color:var(--text);}
 
 <div class="wrap">
   <div class="page-title">Statistiques</div>
-  <div class="muted">Par gouvernorat, compté en <b>commandes</b>, sur la période choisie. Clique un gouvernorat pour voir par ville.</div>
+  <div class="muted">Par page de vente, compté en <b>commandes</b>, sur la période choisie.</div>
 
   <div class="tabs">
     <a href="{% url 'stats_commandes' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Commandes</a>
     <a href="{% url 'stats_modeles' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Modèles</a>
     <a href="{% url 'stats_offres' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Offres</a>
-    <a href="{% url 'stats_pages' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Pages</a>
+    <a href="{% url 'stats_pages' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab active">Pages</a>
     <span class="tab" style="opacity:0.4;cursor:default;">Couleurs</span>
-    <a href="{% url 'stats_gouvernorats' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab active">Gouvernorat</a>
+    <a href="{% url 'stats_gouvernorats' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Gouvernorat</a>
     <span class="tab" style="opacity:0.4;cursor:default;">Stock</span>
   </div>
 
@@ -95,7 +88,7 @@ tr.totaux td{color:var(--text);}
     </div>
     <div style="margin-left:auto;">
       <label>Rechercher</label>
-      <input type="search" id="search" placeholder="Nom du gouvernorat…" oninput="filterRows()">
+      <input type="search" id="search" placeholder="Nom de la page…" oninput="filterRows()">
     </div>
   </form>
 
@@ -106,13 +99,13 @@ tr.totaux td{color:var(--text);}
     <a href="?from={{ from_date }}&to={{ to_date }}&source=facebook" class="src-btn {% if source_filter == 'facebook' %}active{% endif %}">📘 Facebook</a>
   </div>
 
-  <div class="n-info">{{ n_gov }} gouvernorat(s). Clique un en-tête pour trier, ou une ligne pour voir les villes.</div>
+  <div class="n-info">{{ per_page|length }} page(s) avec des commandes sur la période. Clique un en-tête pour trier.</div>
 
   <div class="card">
     <table id="modtable">
       <thead>
         <tr>
-          <th class="modele" onclick="sortBy(0,false)">Gouvernorat</th>
+          <th class="modele" onclick="sortBy(0,false)">Page</th>
           <th onclick="sortBy(1,true)">Total</th>
           <th onclick="sortBy(2,true)">Sortie</th>
           <th onclick="sortBy(3,true)">Livrée</th>
@@ -125,9 +118,9 @@ tr.totaux td{color:var(--text);}
         </tr>
       </thead>
       <tbody id="modbody">
-        {% for r in per_gov %}
-        <tr class="modelrow modelrow-{{ r.id }}{% if not r.total %} zero{% endif %}" onclick="togglePages({{ r.id }})" title="Cliquer pour voir par ville">
-          <td class="modele"><span class="caret {% if not r.cities %}empty{% endif %}">▸</span> {{ r.gov }}</td>
+        {% for r in per_page %}
+        <tr class="modelrow">
+          <td class="modele">{{ r.page }}</td>
           <td>{{ r.total }}</td>
           <td>{{ r.sortie }}</td>
           <td>{{ r.livree }}</td>
@@ -138,25 +131,11 @@ tr.totaux td{color:var(--text);}
           <td>{{ r.echange }}</td>
           <td class="{% if r.retour_pct >= 20 %}ret-high{% elif r.retour_pct >= 8 %}ret-mid{% else %}ret-low{% endif %}">{{ r.retour_pct }}%</td>
         </tr>
-        {% for pg in r.cities %}
-        <tr class="pagerow pagerow-{{ r.id }}">
-          <td class="modele pagecell">↳ {{ pg.city }}</td>
-          <td>{{ pg.total }}</td>
-          <td>{{ pg.sortie }}</td>
-          <td>{{ pg.livree }}</td>
-          <td>{{ pg.retour }}</td>
-          <td>{{ pg.encours }}</td>
-          <td>{{ pg.payee }}</td>
-          <td>{{ pg.annulee }}</td>
-          <td>{{ pg.echange }}</td>
-          <td class="{% if pg.retour_pct >= 20 %}ret-high{% elif pg.retour_pct >= 8 %}ret-mid{% else %}ret-low{% endif %}">{{ pg.retour_pct }}%</td>
-        </tr>
-        {% endfor %}
         {% empty %}
-        <tr><td class="modele" colspan="10" style="text-align:center;color:var(--muted);padding:26px;">Aucun gouvernorat.</td></tr>
+        <tr><td class="modele" colspan="10" style="text-align:center;color:var(--muted);padding:26px;">Aucune commande sur la période.</td></tr>
         {% endfor %}
       </tbody>
-      {% if per_gov %}
+      {% if per_page %}
       <tfoot>
         <tr class="totaux">
           <td class="modele">TOTAL</td>
@@ -180,33 +159,13 @@ tr.totaux td{color:var(--text);}
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
 
-// A "group" = one governorate row (head) plus its city sub-rows.
-function _groups(){
-  const body = document.getElementById('modbody');
-  const groups = []; let cur = null;
-  Array.from(body.children).forEach(function(tr){
-    if (tr.classList.contains('modelrow')){ cur = {head: tr, pages: []}; groups.push(cur); }
-    else if (tr.classList.contains('pagerow') && cur){ cur.pages.push(tr); }
-  });
-  return groups;
-}
-
-function togglePages(pid){
-  const rows = document.querySelectorAll('.pagerow-' + pid);
-  const caret = document.querySelector('.modelrow-' + pid + ' .caret');
-  let anyHidden = false;
-  rows.forEach(function(r){ if (getComputedStyle(r).display === 'none') anyHidden = true; });
-  rows.forEach(function(r){ r.style.display = anyHidden ? 'table-row' : 'none'; });
-  if (caret && rows.length) caret.textContent = anyHidden ? '▾' : '▸';
-}
-
 function filterRows(){
   const q = (document.getElementById('search').value || '').toLowerCase();
-  _groups().forEach(function(g){
-    const name = (g.head.querySelector('.modele').textContent || '').toLowerCase();
-    const match = name.includes(q);
-    g.head.style.display = match ? '' : 'none';
-    if (!match) g.pages.forEach(function(p){ p.style.display = 'none'; });
+  Array.from(document.getElementById('modbody').children).forEach(function(tr){
+    const cell = tr.querySelector('.modele');
+    if (!cell) return;
+    const name = (cell.textContent || '').toLowerCase();
+    tr.style.display = name.includes(q) ? '' : 'none';
   });
 }
 
@@ -222,13 +181,8 @@ function sortBy(col, numeric){
     return asc ? av.localeCompare(bv) : bv.localeCompare(av);
   };
   const body = document.getElementById('modbody');
-  const groups = _groups();
-  groups.sort((a, b) => cmp(a.head, b.head));
-  groups.forEach(function(g){
-    g.pages.sort(cmp);
-    body.appendChild(g.head);
-    g.pages.forEach(p => body.appendChild(p));
-  });
+  Array.from(body.children).filter(t => t.classList.contains('modelrow'))
+    .sort(cmp).forEach(t => body.appendChild(t));
 }
 
 // Quick range links (?range=N) -> set dates and submit.
@@ -243,8 +197,7 @@ function sortBy(col, numeric){
   }
 })();
 
-// Fit the table card to the screen so the LIST scrolls inside it (header
-// pinned) instead of the whole page scrolling the header out of view.
+// Fit the table card to the screen so the LIST scrolls inside it (header pinned).
 (function(){
   function fitCard(){
     var c=document.querySelector('.card'); if(!c) return;

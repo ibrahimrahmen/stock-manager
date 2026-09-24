@@ -16263,6 +16263,108 @@ def stats_offres(request):
     })
 
 
+def stats_pages(request):
+    """Statistics — Pages tab. Per-sales-page breakdown counted in ORDERS
+    (one order = 1), across the same order-status rows as the other tabs, over a
+    date range. Shows, per page: total / Sortie / Livrée / Retour / En cours /
+    Payée / Annulée / Échange orders, plus a return rate (Retour % vs Sortie)."""
+    if not request.user.is_superuser:
+        return redirect("home")
+    from .models import Order, ShippingOrder
+    from collections import defaultdict
+    import datetime as _dt
+    try:
+        import zoneinfo
+        tz = zoneinfo.ZoneInfo("Africa/Tunis")
+    except Exception:
+        tz = timezone.get_current_timezone()
+
+    today = timezone.localdate()
+    try:
+        start_date = _dt.date.fromisoformat(request.GET.get("from", ""))
+    except ValueError:
+        start_date = today - _dt.timedelta(days=13)
+    try:
+        end_date = _dt.date.fromisoformat(request.GET.get("to", ""))
+    except ValueError:
+        end_date = today
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    win_start, _ = _business_day_bounds(start_date, tz)
+    _, win_end = _business_day_bounds(end_date, tz)
+
+    orders = Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end)
+    source_filter = request.GET.get("source", "all")
+    if source_filter == "barats":
+        orders = orders.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "converty":
+        orders = orders.filter(sales_page__name__iexact="Converty")
+    elif source_filter == "facebook":
+        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+    orders = list(orders.values("id", "status", "exchange_of_id", "sales_page__name"))
+    order_ids = [o["id"] for o in orders]
+
+    sortie_ids = set(ShippingOrder.objects.filter(order_id__in=order_ids)
+                     .values_list("order_id", flat=True))
+
+    def _row_for(o):
+        if o["exchange_of_id"]:
+            return ["echange"]
+        rows = []
+        st = o["status"]
+        if st in ("returned", "returning"):
+            rows.append("retour")
+        elif st in ("en_cours", "au_magasin"):
+            rows.append("encours")
+        elif st == "livree":
+            rows.append("livree")
+        elif st == "payee":
+            rows.append("payee")
+        elif st == "annulee":
+            rows.append("annulee")
+        if o["id"] in sortie_ids:
+            rows.append("sortie")
+        return rows
+
+    pc = defaultdict(lambda: defaultdict(int))   # page name -> row -> orders
+    for o in orders:
+        page = o.get("sales_page__name") or "—"
+        rows = _row_for(o)
+        pc[page]["total"] += 1
+        for rk in rows:
+            pc[page][rk] += 1
+
+    def _mk_row(c):
+        sortie = c.get("sortie", 0)
+        retour = c.get("retour", 0)
+        return {
+            "total": c.get("total", 0), "sortie": sortie, "livree": c.get("livree", 0),
+            "retour": retour, "encours": c.get("encours", 0), "payee": c.get("payee", 0),
+            "annulee": c.get("annulee", 0), "echange": c.get("echange", 0),
+            "retour_pct": round(retour / sortie * 100, 1) if sortie else 0.0,
+        }
+
+    per_page = []
+    totals = defaultdict(int)
+    for name, c in pc.items():
+        row = _mk_row(c)
+        row["page"] = name
+        for k in ("total", "sortie", "livree", "retour", "encours", "payee", "annulee", "echange"):
+            totals[k] += c.get(k, 0)
+        per_page.append(row)
+    per_page.sort(key=lambda r: -r["total"])
+    totals["retour_pct"] = round(totals["retour"] / totals["sortie"] * 100, 1) if totals["sortie"] else 0.0
+
+    return render(request, "inventory/stats_pages.html", {
+        "per_page": per_page,
+        "totals": dict(totals),
+        "from_date": start_date.isoformat(),
+        "to_date": end_date.isoformat(),
+        "source_filter": source_filter,
+    })
+
+
 @login_required(login_url="/login/")
 def stats_gouvernorats(request):
     """Statistics — Gouvernorat tab. Per-governorate (region) breakdown counted

@@ -80,7 +80,7 @@ canvas{max-height:420px;}
     <a href="{% url 'stats_commandes' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab active">Commandes</a>
     <a href="{% url 'stats_modeles' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Modèles</a>
     <a href="{% url 'stats_offres' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Offres</a>
-    <span class="tab" style="opacity:0.4;cursor:default;">Pages</span>
+    <a href="{% url 'stats_pages' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Pages</a>
     <span class="tab" style="opacity:0.4;cursor:default;">Couleurs</span>
     <a href="{% url 'stats_gouvernorats' %}?from={{ from_date }}&to={{ to_date }}&source={{ source_filter }}" class="tab">Gouvernorat</a>
     <span class="tab" style="opacity:0.4;cursor:default;">Stock</span>
