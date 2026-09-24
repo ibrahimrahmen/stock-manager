@@ -9806,7 +9806,8 @@ def ads_offers_dashboard(request):
                 .filter(exchange_of__isnull=True)
                 .distinct()
                 .select_related("sales_page")
-                .prefetch_related("order_offers"))
+                .prefetch_related("order_offers",
+                                  "messenger_conversations__matched_ad"))
 
     # Index by (offer_id, page_id) and by offer_id (any page). For each we track
     # the total QUANTITY of that offer sold (3× ICY MAZE counts as 3) and the
@@ -9822,6 +9823,14 @@ def ads_offers_dashboard(request):
     page_rev = defaultdict(lambda: Decimal("0"))
     barats_qty = 0
     barats_rev = Decimal("0")
+    # DIRECT per-campaign attribution (the new model): attribute each order to
+    # the campaign the customer actually came from, captured on the
+    # conversation referral (conv.matched_ad). Independent of offer links.
+    ad_ids_visible = {a.id for a in ads}
+    camp_orders = defaultdict(int)                      # ad_id -> order count
+    camp_rev = defaultdict(lambda: Decimal("0"))       # ad_id -> net revenue
+    organic_orders = 0
+    organic_rev = Decimal("0")
     for o in q_orders:
         page_id = o.sales_page_id
         page_name = (o.sales_page.name if o.sales_page else "").strip().lower()
@@ -9832,6 +9841,18 @@ def ads_offers_dashboard(request):
         # customer bought (incl. unrelated items) counts, since that campaign
         # brought them. An order is attributed to at most one ad.
         order_net = (o.total or Decimal("0")) - (o.delivery_fee or Decimal("0"))
+        # --- DIRECT attribution: one order -> the campaign it came from ---
+        _cap_ad_id = None
+        for _cv in o.messenger_conversations.all():
+            if _cv.matched_ad_id and _cv.matched_ad_id in ad_ids_visible:
+                _cap_ad_id = _cv.matched_ad_id
+                break
+        if _cap_ad_id is not None:
+            camp_orders[_cap_ad_id] += 1
+            camp_rev[_cap_ad_id] += order_net
+        else:
+            organic_orders += 1
+            organic_rev += order_net
         attributed_ad = None
         for oo in o.order_offers.all():
             if not oo.offer_id:
@@ -10021,7 +10042,42 @@ def ads_offers_dashboard(request):
         key=lambda r: r["real_net"], reverse=True,
     )[:3]
 
+    # --- NEW: direct per-campaign rows (attribution by captured ad) ---
+    camp_rows = []
+    for a in ads:
+        n = camp_orders.get(a.id, 0)
+        rev = camp_rev.get(a.id, Decimal("0"))
+        spend = a.spend or Decimal("0")
+        if not (spend > 0 or n > 0):
+            continue  # hide campaigns with neither spend nor a captured order
+        camp_rows.append({
+            "ad": a,
+            "spend": spend,
+            "spend_orig": a.spend_original or Decimal("0"),
+            "currency": a.currency or "TND",
+            "orders": n,
+            "revenue": rev,
+            "cpo": (spend / n) if n else None,
+            "profit": rev - spend,
+            "status": a.effective_status or "",
+        })
+    camp_rows.sort(key=lambda r: r["spend"], reverse=True)
+    camp_total_spend = sum((r["spend"] for r in camp_rows), Decimal("0"))
+    camp_total_orders = sum(r["orders"] for r in camp_rows)
+    camp_total_rev = sum((r["revenue"] for r in camp_rows), Decimal("0"))
+    camp_total_profit = camp_total_rev - camp_total_spend
+    organic = {
+        "orders": organic_orders,
+        "revenue": organic_rev,
+    }
+
     return render(request, "inventory/ads_offers.html", {
+        "camp_rows": camp_rows,       # NEW: direct per-campaign attribution
+        "camp_total_spend": camp_total_spend,
+        "camp_total_orders": camp_total_orders,
+        "camp_total_rev": camp_total_rev,
+        "camp_total_profit": camp_total_profit,
+        "organic": organic,           # orders with no captured ad
         "rows": rows,                 # kept for back-compat / any other use
         "page_blocks": page_blocks,   # per-page summary + detailed ads
         "unassigned": unassigned,     # ads with no page link

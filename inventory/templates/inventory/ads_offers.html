@@ -78,6 +78,14 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
 .advice-sub{color:var(--muted);font-size:11px;width:100%;}
 .muted{color:var(--muted);font-size:12px;}
 .empty{text-align:center;color:var(--muted);padding:40px;background:var(--surface);border:0.5px solid var(--border);border-radius:14px;}
+.camptable{width:100%;border-collapse:collapse;background:var(--surface);border:0.5px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:12px;}
+.camptable th,.camptable td{padding:11px 12px;font-size:13px;text-align:right;border-bottom:0.5px solid var(--border);}
+.camptable th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;font-weight:600;}
+.camptable th:first-child,.camptable td:first-child{text-align:left;}
+.camptable tr:last-child td{border-bottom:none;}
+.camptable .num{font-variant-numeric:tabular-nums;white-space:nowrap;}
+.camptable tfoot td{font-weight:700;background:var(--surface2);}
+.camp-wrap{overflow-x:auto;margin-bottom:20px;}
 </style>
 </head>
 <body>
@@ -113,6 +121,48 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
     <div class="stat"><div class="label">Revenu (qualifié)</div><div class="value">{{ total_revenue|floatformat:2 }} DT</div></div>
     <div class="stat"><div class="label">Profit</div><div class="value {% if total_profit < 0 %}neg{% else %}pos{% endif %}">{{ total_profit|floatformat:2 }} DT</div></div>
     {% if unlinked_count %}<div class="stat"><div class="label">Pubs à lier</div><div class="value" style="color:var(--amber);">{{ unlinked_count }}</div></div>{% endif %}
+  </div>
+
+  <!-- ===== PAR CAMPAGNE — attribution directe (pub captée) ===== -->
+  <div class="section-title">🎯 Par campagne — attribution directe (pub captée)</div>
+  <div class="muted" style="margin-bottom:8px;">Chaque commande est attribuée à la campagne d'où le client est réellement venu (référence captée dans la conversation). Statuts comptés : En cours + Livrée + Payée.</div>
+  {% if camp_rows %}
+  <div class="camp-wrap">
+    <table class="camptable">
+      <thead><tr>
+        <th>Campagne</th><th>Dépense</th><th>Commandes</th><th>Revenu</th><th>Coût / cmd</th><th>Profit</th>
+      </tr></thead>
+      <tbody>
+      {% for r in camp_rows %}
+        <tr>
+          <td>{{ r.ad.campaign_name }}{% if r.status and r.status != 'ACTIVE' %}<span class="status-badge sb-other">{{ r.status }}</span>{% endif %}</td>
+          <td class="num">{{ r.spend|floatformat:2 }} DT</td>
+          <td class="num">{{ r.orders }}</td>
+          <td class="num">{{ r.revenue|floatformat:2 }} DT</td>
+          <td class="num cpo">{% if r.cpo %}{{ r.cpo|floatformat:3 }} DT{% else %}—{% endif %}</td>
+          <td class="num {% if r.profit < 0 %}neg{% else %}pos{% endif %}">{{ r.profit|floatformat:2 }} DT</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+      <tfoot><tr>
+        <td>TOTAL</td>
+        <td class="num">{{ camp_total_spend|floatformat:2 }} DT</td>
+        <td class="num">{{ camp_total_orders }}</td>
+        <td class="num">{{ camp_total_rev|floatformat:2 }} DT</td>
+        <td class="num">—</td>
+        <td class="num {% if camp_total_profit < 0 %}neg{% else %}pos{% endif %}">{{ camp_total_profit|floatformat:2 }} DT</td>
+      </tr></tfoot>
+    </table>
+  </div>
+  {% else %}
+  <div class="muted" style="margin-bottom:12px;">Aucune campagne avec dépense ou commande captée sur la période.</div>
+  {% endif %}
+
+  <!-- Organique / sans pub -->
+  <div class="campaign" style="margin-bottom:24px;">
+    <div class="cname">🌱 Organique / sans pub <span class="muted">(commandes sans référence de pub : DM organiques, partages, site web)</span></div>
+    <div class="crev"><span class="clabel">Commandes</span><br><b>{{ organic.orders }}</b></div>
+    <div class="crev"><span class="clabel">Revenu</span><br><b>{{ organic.revenue|floatformat:2 }} DT</b></div>
   </div>
 
   <!-- ============ CONSEILS (marge réelle) ============ -->
