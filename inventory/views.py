@@ -10055,6 +10055,11 @@ def ads_offers_dashboard(request):
     # --- NEW: direct per-campaign rows (attribution by captured ad) ---
     camp_rows = []
     for a in ads:
+        # Show ONLY active campaigns. Anything Meta reports as paused/deleted/etc.
+        # is hidden (owner's choice). Empty status = treat as active (unsynced).
+        _st = (a.effective_status or "").upper()
+        if _st and _st != "ACTIVE":
+            continue
         n = camp_orders.get(a.id, 0)
         rev = camp_rev.get(a.id, Decimal("0"))
         spend = a.spend or Decimal("0")
