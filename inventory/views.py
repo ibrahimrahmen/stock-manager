@@ -11138,6 +11138,39 @@ def api_shopify_webhook_order_created(request):
     )
 
 
+@login_required(login_url="/login/")
+def api_debug_converty_raw(request):
+    """DIAGNOSTIC (admin): dump the raw fields of a few recent Converty orders so
+    we can see whether they carry any campaign / UTM / ad-tracking data we could
+    use to attribute website orders to a campaign. Read-only."""
+    if not request.user.is_superuser:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    from .converty import get_valid_converty_token, _api_request
+    token = get_valid_converty_token()
+    if not token:
+        return JsonResponse({"error": "no converty token"}, status=400)
+    st, data = _api_request("GET", "/orders", token)
+    rows = (data.get("data") if isinstance(data, dict) else None) or []
+    TRACK = ("utm", "campaign", "source", "fbclid", "tracking", "referr",
+             "landing", "origin", "channel", "fbp", "fbc", "pixel", "ad_", "advert")
+    out = []
+    for co in rows[:5]:
+        if not isinstance(co, dict):
+            continue
+        keys = sorted(co.keys())
+        tracking = {k: co[k] for k in keys
+                    if any(t in k.lower() for t in TRACK)}
+        out.append({
+            "reference": co.get("reference"),
+            "top_level_keys": keys,
+            "customer_keys": sorted((co.get("customer") or {}).keys())
+            if isinstance(co.get("customer"), dict) else [],
+            "tracking_like_fields": tracking,
+        })
+    return JsonResponse({"http_status": st, "count": len(rows), "orders": out},
+                        json_dumps_params={"ensure_ascii": False})
+
+
 def _maybe_send_status_sms(order):
     """Send the customer SMS appropriate to the order's CURRENT status, once.
     Covers: injoignable, expédié (en_cours covers shipped+delivery in our flow),
