@@ -9829,6 +9829,11 @@ def ads_offers_dashboard(request):
     ad_ids_visible = {a.id for a in ads}
     camp_orders = defaultdict(int)                      # ad_id -> order count
     camp_rev = defaultdict(lambda: Decimal("0"))       # ad_id -> net revenue
+    camp_page_count = defaultdict(int)                 # (ad_id, page_id) -> count
+    page_ad_orders = defaultdict(int)                  # page_id -> ad-driven orders
+    page_ad_rev = defaultdict(lambda: Decimal("0"))
+    page_org_orders = defaultdict(int)                 # page_id -> organic orders
+    page_org_rev = defaultdict(lambda: Decimal("0"))
     organic_orders = 0
     organic_rev = Decimal("0")
     for o in q_orders:
@@ -9850,9 +9855,14 @@ def ads_offers_dashboard(request):
         if _cap_ad_id is not None:
             camp_orders[_cap_ad_id] += 1
             camp_rev[_cap_ad_id] += order_net
+            camp_page_count[(_cap_ad_id, page_id)] += 1
+            page_ad_orders[page_id] += 1
+            page_ad_rev[page_id] += order_net
         else:
             organic_orders += 1
             organic_rev += order_net
+            page_org_orders[page_id] += 1
+            page_org_rev[page_id] += order_net
         attributed_ad = None
         for oo in o.order_offers.all():
             if not oo.offer_id:
@@ -10071,12 +10081,47 @@ def ads_offers_dashboard(request):
         "revenue": organic_rev,
     }
 
+    # --- NEW: per-page blocks from direct attribution. Each campaign is placed
+    # under the page where it captured the MOST orders (a campaign = one account
+    # = one page in practice). Page totals are just the sum of its campaigns. ---
+    camp_primary_page = {}
+    _best_n = {}
+    for (aid, pid), n in camp_page_count.items():
+        if n > _best_n.get(aid, -1):
+            _best_n[aid] = n
+            camp_primary_page[aid] = pid
+    _pbd = {}
+    for r in camp_rows:
+        pid = camp_primary_page.get(r["ad"].id)
+        blk = _pbd.get(pid)
+        if blk is None:
+            _pg = page_by_id.get(pid)
+            blk = _pbd[pid] = {
+                "page": _pg,
+                "page_name": (_pg.name if _pg else "—"),
+                "spend": Decimal("0"), "orders": 0, "revenue": Decimal("0"),
+                "campaigns": [],
+            }
+        blk["spend"] += r["spend"]
+        blk["orders"] += r["orders"]
+        blk["revenue"] += r["revenue"]
+        blk["campaigns"].append(r)
+    pageblocks_direct = []
+    for pid, blk in _pbd.items():
+        blk["cpo"] = (blk["spend"] / blk["orders"]) if blk["orders"] else None
+        blk["profit"] = blk["revenue"] - blk["spend"]
+        blk["organic_orders"] = page_org_orders.get(pid, 0)
+        blk["organic_rev"] = page_org_rev.get(pid, Decimal("0"))
+        pageblocks_direct.append(blk)
+    pageblocks_direct.sort(key=lambda b: b["spend"], reverse=True)
+
     return render(request, "inventory/ads_offers.html", {
         "camp_rows": camp_rows,       # NEW: direct per-campaign attribution
         "camp_total_spend": camp_total_spend,
         "camp_total_orders": camp_total_orders,
         "camp_total_rev": camp_total_rev,
         "camp_total_profit": camp_total_profit,
+        "pageblocks_direct": pageblocks_direct,  # NEW: per-page (direct attribution)
         "organic": organic,           # orders with no captured ad
         "rows": rows,                 # kept for back-compat / any other use
         "page_blocks": page_blocks,   # per-page summary + detailed ads

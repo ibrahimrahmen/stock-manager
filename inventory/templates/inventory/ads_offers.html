@@ -165,6 +165,42 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
     <div class="crev"><span class="clabel">Revenu</span><br><b>{{ organic.revenue|floatformat:2 }} DT</b></div>
   </div>
 
+  <!-- ===== PAR PAGE — attribution directe (campagnes groupées par page) ===== -->
+  <div class="section-title">📄 Par page — attribution directe</div>
+  <div class="muted" style="margin-bottom:8px;">Chaque campagne est placée sous la page où ses commandes captées ont atterri. Totaux page = somme de ses campagnes.</div>
+  {% for pb in pageblocks_direct %}
+  <div class="barats-card" style="margin-bottom:8px;">
+    <div class="cname" style="font-weight:600;margin-bottom:8px;font-size:15px;">{{ pb.page_name }}</div>
+    <div class="barats-metrics">
+      <div class="bm"><div class="l">Dépense</div><div class="v">{{ pb.spend|floatformat:2 }} DT</div></div>
+      <div class="bm"><div class="l">Commandes (pub)</div><div class="v">{{ pb.orders }}</div></div>
+      <div class="bm"><div class="l">Coût / cmd</div><div class="v cpo">{% if pb.cpo %}{{ pb.cpo|floatformat:3 }} DT{% else %}—{% endif %}</div></div>
+      <div class="bm"><div class="l">Revenu</div><div class="v">{{ pb.revenue|floatformat:2 }} DT</div></div>
+      <div class="bm"><div class="l">Profit</div><div class="v {% if pb.profit < 0 %}neg{% else %}pos{% endif %}">{{ pb.profit|floatformat:2 }} DT</div></div>
+      <div class="bm"><div class="l">Organique</div><div class="v">{{ pb.organic_orders }} cmd · {{ pb.organic_rev|floatformat:0 }} DT</div></div>
+    </div>
+  </div>
+  <div class="camp-wrap">
+    <table class="camptable">
+      <thead><tr><th>Campagne</th><th>Dépense</th><th>Commandes</th><th>Revenu</th><th>Coût / cmd</th><th>Profit</th></tr></thead>
+      <tbody>
+      {% for r in pb.campaigns %}
+        <tr>
+          <td>{{ r.ad.campaign_name }}</td>
+          <td class="num">{{ r.spend|floatformat:2 }} DT</td>
+          <td class="num">{{ r.orders }}</td>
+          <td class="num">{{ r.revenue|floatformat:2 }} DT</td>
+          <td class="num cpo">{% if r.cpo %}{{ r.cpo|floatformat:3 }} DT{% else %}—{% endif %}</td>
+          <td class="num {% if r.profit < 0 %}neg{% else %}pos{% endif %}">{{ r.profit|floatformat:2 }} DT</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% empty %}
+  <div class="muted" style="margin-bottom:16px;">Aucune commande attribuée à une pub sur la période.</div>
+  {% endfor %}
+
   <!-- ============ CONSEILS (marge réelle) ============ -->
   {% if advice_boost or advice_losing %}
   <div class="advice-wrap">
@@ -244,23 +280,7 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
   {% endfor %}
   {% endif %}
 
-  <!-- ============ PAGES : box résumé par page + pubs détaillées ============ -->
-  {% for pb in page_blocks %}
-  <div class="section-title">📄 {{ pb.page.name|default:"Page" }}</div>
-  <div class="barats-card">
-    <div class="muted">{{ pb.ads|length }} pub(s) · dépense de la page ÷ toutes les commandes de la page</div>
-    <div class="barats-metrics">
-      <div class="bm"><div class="l">Dépense</div><div class="v">{{ pb.spend|floatformat:2 }} DT</div></div>
-      <div class="bm"><div class="l">Unités vendues</div><div class="v">{{ pb.order_count }}</div></div>
-      <div class="bm"><div class="l">Coût / unité</div><div class="v cpo">{% if pb.cpo %}{{ pb.cpo|floatformat:3 }} DT{% else %}—{% endif %}</div></div>
-      <div class="bm"><div class="l">Revenu</div><div class="v">{{ pb.revenue|floatformat:2 }} DT</div></div>
-      <div class="bm"><div class="l">Profit</div><div class="v {% if pb.profit < 0 %}neg{% else %}pos{% endif %}">{{ pb.profit|floatformat:2 }} DT</div></div>
-    </div>
-  </div>
-  {% for r in pb.ads %}
-    {% include "inventory/_ad_card.html" %}
-  {% endfor %}
-  {% endfor %}
+  <!-- (Ancienne section « par page » en pool remplacée par « Par page — attribution directe » ci-dessus.) -->
 
   {% if unassigned %}
   <div class="section-title">❔ Pubs non assignées à une page</div>
@@ -270,8 +290,8 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
   {% endif %}
 
   <p class="muted" style="margin-top:14px;">
-    Coût/unité = dépense ÷ unités vendues. Chaque box de page = dépense totale des pubs de la page ÷ toutes les commandes de la page.
-    Barats.tn : dépense carrousel totale ÷ toutes les commandes Barats.tn.
+    Attribution directe : chaque commande est rattachée à la campagne d'où le client est réellement venu (référence captée). Coût/cmd = dépense de la campagne ÷ ses commandes captées.
+    Les commandes sans pub (organiques, partages, site web) sont dans « Organique / sans pub ».
   </p>
 </div>
 
