@@ -11166,6 +11166,8 @@ def api_debug_converty_raw(request):
             "customer_keys": sorted((co.get("customer") or {}).keys())
             if isinstance(co.get("customer"), dict) else [],
             "tracking_like_fields": tracking,
+            "session": co.get("session"),
+            "store": co.get("store"),
         })
     return JsonResponse({"http_status": st, "count": len(rows), "orders": out},
                         json_dumps_params={"ensure_ascii": False})
