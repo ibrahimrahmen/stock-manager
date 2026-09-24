@@ -242,6 +242,21 @@ function sortBy(col, numeric){
     location.replace(`?from=${fmt(from)}&to=${fmt(to)}&source=${src}`);
   }
 })();
+
+// Fit the table card to the screen so the LIST scrolls inside it (header
+// pinned) instead of the whole page scrolling the header out of view.
+(function(){
+  function fitCard(){
+    var c=document.querySelector('.card'); if(!c) return;
+    if(window.scrollY>2){ window.scrollTo(0,0); }
+    var top=c.getBoundingClientRect().top;
+    var h=window.innerHeight - top - 12;
+    c.style.maxHeight=(h>240?h:240)+'px';
+  }
+  window.addEventListener('resize', fitCard);
+  window.addEventListener('load', fitCard);
+  fitCard();
+})();
 </script>
 </body>
 </html>
