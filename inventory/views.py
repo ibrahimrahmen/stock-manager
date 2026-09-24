@@ -9827,6 +9827,13 @@ def ads_offers_dashboard(request):
     # the campaign the customer actually came from, captured on the
     # conversation referral (conv.matched_ad). Independent of offer links.
     ad_ids_visible = {a.id for a in ads}
+    # Map campaign NAME -> ad id, so an order can be attributed by the captured
+    # campaign name even when conv.matched_ad was never set (it's only written at
+    # order-creation time and often stays empty -> orders were leaking to organic).
+    name_to_ad = {}
+    for a in ads:
+        if a.campaign_name:
+            name_to_ad.setdefault(a.campaign_name.strip().lower(), a.id)
     camp_orders = defaultdict(int)                      # ad_id -> order count
     camp_rev = defaultdict(lambda: Decimal("0"))       # ad_id -> net revenue
     camp_page_count = defaultdict(int)                 # (ad_id, page_id) -> count
@@ -9847,8 +9854,19 @@ def ads_offers_dashboard(request):
         # brought them. An order is attributed to at most one ad.
         order_net = (o.total or Decimal("0")) - (o.delivery_fee or Decimal("0"))
         # --- DIRECT attribution: one order -> the campaign it came from ---
+        # Prefer the captured campaign NAME (resolved name, then ad-title), and
+        # fall back to a stored matched_ad. Name-matching catches the many orders
+        # whose matched_ad was never written.
         _cap_ad_id = None
         for _cv in o.messenger_conversations.all():
+            _nm = (getattr(_cv, "source_campaign_name", "") or "").strip().lower()
+            if _nm and _nm in name_to_ad:
+                _cap_ad_id = name_to_ad[_nm]
+                break
+            _nm2 = (getattr(_cv, "source_campaign", "") or "").strip().lower()
+            if _nm2 and _nm2 in name_to_ad:
+                _cap_ad_id = name_to_ad[_nm2]
+                break
             if _cv.matched_ad_id and _cv.matched_ad_id in ad_ids_visible:
                 _cap_ad_id = _cv.matched_ad_id
                 break
@@ -18376,10 +18394,14 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
     conv.extracted = data
 
     # Link the source ad if we can match the campaign/ad to a known Ad row.
-    if conv.source_campaign and not conv.matched_ad_id:
-        ad = Ad.objects.filter(campaign_name__iexact=conv.source_campaign).first()
-        if ad:
-            conv.matched_ad = ad
+    # Prefer the RESOLVED campaign name (source_campaign_name); the ad-title in
+    # source_campaign only matches when it happens to equal the campaign name.
+    if not conv.matched_ad_id:
+        _cn = (conv.source_campaign_name or "").strip() or (conv.source_campaign or "").strip()
+        if _cn:
+            ad = Ad.objects.filter(campaign_name__iexact=_cn).first()
+            if ad:
+                conv.matched_ad = ad
 
     # Build the payload from whatever Gemini extracted (may have no line items).
     shaped = _build_shopify_shape_from_extraction(data, conv)
