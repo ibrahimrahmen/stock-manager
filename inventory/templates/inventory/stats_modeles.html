@@ -39,10 +39,12 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .quick a:hover{background:var(--surface2);color:var(--text);}
 .src-btn{padding:7px 14px;border-radius:8px;border:0.5px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;font-size:13px;text-decoration:none;font-weight:500;}
 .src-btn.active{background:var(--text);color:var(--bg);border-color:var(--text);}
-.card{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;padding:6px 20px 14px;overflow-x:auto;}
+.card{background:var(--surface);border:0.5px solid var(--border);border-radius:12px;padding:6px 20px 14px;overflow:auto;max-height:calc(100vh - 16px);}
 table{width:100%;border-collapse:collapse;min-width:820px;}
 th,td{text-align:center;padding:12px 8px;font-size:14px;}
-th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;border-bottom:0.5px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap;}
+th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;border-bottom:0.5px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap;position:sticky;top:0;z-index:5;background:var(--surface);}
+/* keep the header row solid + separated while rows scroll under it */
+thead th{box-shadow:0 1px 0 var(--border);}
 td{border-bottom:0.5px solid var(--border);}
 tr:last-child td{border-bottom:none;}
 td.modele,th.modele{text-align:left;font-weight:500;}
