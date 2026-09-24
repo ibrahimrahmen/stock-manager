@@ -11174,6 +11174,10 @@ def api_debug_converty_raw(request):
             "tracking_like_fields": tracking,
             "visit_probe_keys": _sess_keys,
             "visit_probe_tracking": _sess_track,
+            "visit_probe_type": type(_sess).__name__,
+            "visit_probe_raw": str(co.get("session"))[:300],
+            "customer_ua": (co.get("customer") or {}).get("userAgent", "")[:60]
+            if isinstance(co.get("customer"), dict) else "",
         })
     return JsonResponse({"http_status": st, "count": len(rows), "orders": out},
                         json_dumps_params={"ensure_ascii": False})
