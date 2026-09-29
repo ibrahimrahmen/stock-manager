@@ -33,6 +33,27 @@ class CustomUserAdmin(DjangoUserAdmin):
     get_role.short_description = "Rôle"
     get_role.admin_order_field = "profile__role"
 
+    def save_formset(self, request, form, formset, change):
+        # A post_save signal already creates a UserProfile for every new user
+        # (get_or_create). The profile inline would then INSERT a second one on
+        # user-add -> duplicate-key crash. So for the profile inline we UPDATE the
+        # existing (signal-created) profile with the inline's values instead of
+        # inserting a new row.
+        if formset.model is UserProfile:
+            instances = formset.save(commit=False)
+            for inst in instances:
+                existing = UserProfile.objects.filter(user=inst.user).first()
+                if existing and existing.pk != inst.pk:
+                    for f in inst._meta.fields:
+                        if f.name not in ("id", "user"):
+                            setattr(existing, f.name, getattr(inst, f.name))
+                    existing.save()
+                else:
+                    inst.save()
+            formset.save_m2m()
+            return
+        super().save_formset(request, form, formset, change)
+
 
 admin.site.unregister(User)
 admin.site.register(User, CustomUserAdmin)
