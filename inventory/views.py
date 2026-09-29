@@ -5371,12 +5371,16 @@ def product_test_add(request):
     """Add a product to Testing: a name + colour variants (colour, sizes, photo).
     Like a normal product but no barcode / description / stock. Creates a card."""
     from .models import ProductTest, ProductTestVariant, SalesPage
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
     pages = SalesPage.objects.filter(is_active=True).order_by("name")
+    users = User.objects.filter(is_active=True).order_by("username")
+    ctx = {"pages": pages, "users": users, "current_user_id": request.user.id}
     if request.method == "POST":
         name = (request.POST.get("name") or "").strip()
         if not name:
             return render(request, "inventory/testing_production_add.html",
-                          {"error": "Le nom du produit est obligatoire.", "pages": pages})
+                          dict(ctx, error="Le nom du produit est obligatoire."))
         sp = None
         try:
             _spid = int(request.POST.get("sales_page") or 0)
@@ -5384,9 +5388,18 @@ def product_test_add(request):
                 sp = SalesPage.objects.filter(pk=_spid).first()
         except (ValueError, TypeError):
             sp = None
+        made_by = request.user
+        try:
+            _uid = int(request.POST.get("made_by") or 0)
+            if _uid:
+                _u = User.objects.filter(pk=_uid, is_active=True).first()
+                if _u:
+                    made_by = _u
+        except (ValueError, TypeError):
+            pass
         pt = ProductTest.objects.create(
             name=name, status=ProductTest.TESTING, sales_page=sp,
-            created_by=request.user)
+            created_by=made_by)
         try:
             n = int(request.POST.get("variant_count") or 0)
         except ValueError:
@@ -5400,7 +5413,7 @@ def product_test_add(request):
             ProductTestVariant.objects.create(
                 product_test=pt, color_label=cl or "—", sizes=sz, image=img)
         return redirect("/testing-production/?tab=testing")
-    return render(request, "inventory/testing_production_add.html", {"pages": pages})
+    return render(request, "inventory/testing_production_add.html", ctx)
 
 
 @login_required(login_url="/login/")

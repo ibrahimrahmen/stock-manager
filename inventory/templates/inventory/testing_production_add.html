@@ -67,6 +67,15 @@ input[type=file]{display:none;}
       </select>
     </div>
 
+    <div class="field">
+      <label>Fait par (utilisateur)</label>
+      <select name="made_by">
+        {% for u in users %}
+        <option value="{{ u.id }}" {% if u.id == current_user_id %}selected{% endif %}>{{ u.username }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
     <div class="vhead">COULEURS / VARIANTES</div>
     <div id="variants"></div>
 
