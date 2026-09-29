@@ -1762,3 +1762,38 @@ class MetaToken(models.Model):
 
     def __str__(self):
         return f"{self.platform}:{self.account_id} ({self.name})"
+
+
+class ProductTest(models.Model):
+    """A product going through the Testing -> Production workflow.
+
+    Testing:    product being trialled (e.g. with ads) before committing stock.
+    Production: passed testing, now a live/stocked product.
+    History:    archived — testing finished (kept / dropped), for reference.
+
+    Built step by step; fields will grow as the workflow is defined.
+    """
+    TESTING = "testing"
+    PRODUCTION = "production"
+    HISTORY = "history"
+    STATUS_CHOICES = [
+        (TESTING, "Testing"),
+        (PRODUCTION, "Production"),
+        (HISTORY, "History"),
+    ]
+
+    name = models.CharField(max_length=200)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES,
+                              default=TESTING, db_index=True)
+    note = models.TextField(blank=True, default="")
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="product_tests")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.name} [{self.status}]"

@@ -10,19 +10,31 @@
 :root{
   --bg:#0f0f0d; --surface:#1a1a17; --surface2:#222220;
   --border:rgba(255,255,255,0.08); --text:#f0ede6; --muted:#8a887f;
+  --amber:#f5a623; --amber-dim:rgba(245,166,35,0.15);
+  --green:#4ade9a; --green-dim:rgba(74,222,154,0.15);
   --blue:#5b9dff; --blue-dim:rgba(91,157,255,0.15);
+  --purple:#a78bfa; --purple-dim:rgba(167,139,250,0.15);
 }
 body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
 .topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
 .brand{font-family:'DM Serif Display',serif;font-size:22px;}
 .userbar a{color:var(--muted);text-decoration:none;font-size:13px;}
 .userbar a:hover{color:var(--text);}
-.wrap{max-width:1000px;margin:0 auto;padding:32px 24px;}
+.wrap{max-width:1000px;margin:0 auto;padding:34px 24px;}
 .page-title{font-family:'DM Serif Display',serif;font-size:30px;margin-bottom:6px;display:flex;align-items:center;gap:12px;}
-.page-icon{width:52px;height:52px;border-radius:16px;background:var(--blue-dim);display:flex;align-items:center;justify-content:center;font-size:26px;}
-.sub{color:var(--muted);font-size:14px;margin-bottom:28px;}
-.placeholder{background:var(--surface);border:0.5px solid var(--border);border-radius:16px;padding:40px;text-align:center;color:var(--muted);}
-.placeholder h2{font-family:'DM Serif Display',serif;font-weight:400;font-size:20px;color:var(--text);margin-bottom:8px;}
+.page-icon{width:52px;height:52px;border-radius:16px;background:var(--amber-dim);display:flex;align-items:center;justify-content:center;font-size:26px;}
+.sub{color:var(--muted);font-size:14px;margin-bottom:30px;}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;}
+.card{background:var(--surface);border:0.5px solid var(--border);border-radius:22px;padding:26px;text-decoration:none;color:inherit;display:block;transition:transform .15s ease,border-color .15s ease;position:relative;}
+.card:hover{transform:translateY(-4px);border-color:rgba(255,255,255,0.16);}
+.card-icon{width:54px;height:54px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:26px;margin-bottom:18px;}
+.card.testing .card-icon{background:var(--amber-dim);}
+.card.production .card-icon{background:var(--green-dim);}
+.card.history .card-icon{background:var(--purple-dim);}
+.card h2{font-family:'DM Serif Display',serif;font-size:22px;font-weight:400;margin-bottom:2px;}
+.card .desc{color:var(--muted);font-size:13px;margin-bottom:16px;}
+.count{font-family:'DM Serif Display',serif;font-size:40px;line-height:1;}
+.count-label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-left:6px;}
 </style>
 </head>
 <body>
@@ -33,11 +45,31 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 
 <div class="wrap">
   <div class="page-title"><span class="page-icon">🧪</span> Testing &amp; Production</div>
-  <div class="sub">Test des produits et passage en production.</div>
+  <div class="sub">Test des produits, passage en production, et historique.</div>
 
-  <div class="placeholder">
-    <h2>Interface en cours de construction</h2>
-    <div>On la construit étape par étape.</div>
+  <div class="cards">
+
+    <a href="?tab=testing" class="card testing">
+      <div class="card-icon">🧪</div>
+      <h2>Testing</h2>
+      <div class="desc">Produits en cours de test</div>
+      <div><span class="count">{{ testing_count }}</span><span class="count-label">produit(s)</span></div>
+    </a>
+
+    <a href="?tab=production" class="card production">
+      <div class="card-icon">✅</div>
+      <h2>Production</h2>
+      <div class="desc">Produits validés en production</div>
+      <div><span class="count">{{ production_count }}</span><span class="count-label">produit(s)</span></div>
+    </a>
+
+    <a href="?tab=history" class="card history">
+      <div class="card-icon">🗂️</div>
+      <h2>History</h2>
+      <div class="desc">Tests terminés / archivés</div>
+      <div><span class="count">{{ history_count }}</span><span class="count-label">produit(s)</span></div>
+    </a>
+
   </div>
 </div>
 </body>

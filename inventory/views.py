@@ -5343,8 +5343,13 @@ def bot_test_page(request):
 @login_required(login_url="/login/")
 def testing_production_page(request):
     """'Testing & Production' space — visible to ALL logged-in members.
-    Product testing + production workflow. Interface built step by step."""
-    return render(request, "inventory/testing_production.html", {})
+    Entry screen: 3 cards (Testing / Production / History) with live counts."""
+    from .models import ProductTest
+    return render(request, "inventory/testing_production.html", {
+        "testing_count": ProductTest.objects.filter(status=ProductTest.TESTING).count(),
+        "production_count": ProductTest.objects.filter(status=ProductTest.PRODUCTION).count(),
+        "history_count": ProductTest.objects.filter(status=ProductTest.HISTORY).count(),
+    })
 
 
 @login_required(login_url="/login/")
