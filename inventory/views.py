@@ -5370,14 +5370,23 @@ def testing_production_page(request):
 def product_test_add(request):
     """Add a product to Testing: a name + colour variants (colour, sizes, photo).
     Like a normal product but no barcode / description / stock. Creates a card."""
-    from .models import ProductTest, ProductTestVariant
+    from .models import ProductTest, ProductTestVariant, SalesPage
+    pages = SalesPage.objects.filter(is_active=True).order_by("name")
     if request.method == "POST":
         name = (request.POST.get("name") or "").strip()
         if not name:
             return render(request, "inventory/testing_production_add.html",
-                          {"error": "Le nom du produit est obligatoire."})
+                          {"error": "Le nom du produit est obligatoire.", "pages": pages})
+        sp = None
+        try:
+            _spid = int(request.POST.get("sales_page") or 0)
+            if _spid:
+                sp = SalesPage.objects.filter(pk=_spid).first()
+        except (ValueError, TypeError):
+            sp = None
         pt = ProductTest.objects.create(
-            name=name, status=ProductTest.TESTING, created_by=request.user)
+            name=name, status=ProductTest.TESTING, sales_page=sp,
+            created_by=request.user)
         try:
             n = int(request.POST.get("variant_count") or 0)
         except ValueError:
@@ -5391,7 +5400,7 @@ def product_test_add(request):
             ProductTestVariant.objects.create(
                 product_test=pt, color_label=cl or "—", sizes=sz, image=img)
         return redirect("/testing-production/?tab=testing")
-    return render(request, "inventory/testing_production_add.html", {})
+    return render(request, "inventory/testing_production_add.html", {"pages": pages})
 
 
 @login_required(login_url="/login/")

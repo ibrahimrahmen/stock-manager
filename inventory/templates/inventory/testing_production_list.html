@@ -70,7 +70,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
     <div class="pcard">
       <div class="pname">{{ it.name }}</div>
       <div class="pmeta">
-        {% if it.created_by %}{{ it.created_by.username }} · {% endif %}{{ it.created_at|date:"d/m/Y" }} · {{ it.variants.count }} couleur(s)
+        {% if it.sales_page %}📄 {{ it.sales_page.name }} · {% endif %}{% if it.created_by %}{{ it.created_by.username }} · {% endif %}{{ it.created_at|date:"d/m/Y" }} · {{ it.variants.count }} couleur(s)
       </div>
       <div class="variants">
         {% for v in it.variants.all %}

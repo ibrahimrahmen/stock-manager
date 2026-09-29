@@ -1785,6 +1785,9 @@ class ProductTest(models.Model):
     name = models.CharField(max_length=200)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES,
                               default=TESTING, db_index=True)
+    sales_page = models.ForeignKey(
+        "SalesPage", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="product_tests", help_text="Page où le produit est testé.")
     note = models.TextField(blank=True, default="")
     created_by = models.ForeignKey(
         "auth.User", on_delete=models.SET_NULL, null=True, blank=True,

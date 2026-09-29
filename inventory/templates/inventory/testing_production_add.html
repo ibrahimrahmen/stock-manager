@@ -18,6 +18,7 @@ h1{font-family:'DM Serif Display',serif;font-size:26px;font-weight:400;margin-bo
 .sub{color:var(--muted);font-size:13px;margin-bottom:22px;}
 label{display:block;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
 input[type=text]{width:100%;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:10px;padding:11px 13px;font-family:inherit;font-size:14px;}
+select{width:100%;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:10px;padding:11px 13px;font-family:inherit;font-size:14px;}
 .field{margin-bottom:20px;}
 .variant{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;padding:16px;margin-bottom:12px;position:relative;}
 .variant .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
@@ -54,6 +55,16 @@ input[type=file]{display:none;}
     <div class="field">
       <label>Nom du produit</label>
       <input type="text" name="name" placeholder="ex: Ensemble Cargo Beige" required>
+    </div>
+
+    <div class="field">
+      <label>Page</label>
+      <select name="sales_page">
+        <option value="">— Choisir une page —</option>
+        {% for p in pages %}
+        <option value="{{ p.id }}">{{ p.name }}</option>
+        {% endfor %}
+      </select>
     </div>
 
     <div class="vhead">COULEURS / VARIANTES</div>
