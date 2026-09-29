@@ -11146,6 +11146,79 @@ def api_shopify_webhook_order_created(request):
 
 
 @login_required(login_url="/login/")
+def api_debug_db_cleanup(request):
+    """ADMIN maintenance: prune old AuditLog, trim old no-order conversations,
+    and VACUUM to reclaim disk. Batched so no request times out. Requires
+    ?confirm=YES. Read the code — destructive but scoped and reversible-safe
+    (AuditLog is a log; conv trim only clears message JSON, keeps the row)."""
+    if not request.user.is_superuser:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    if request.GET.get("confirm") != "YES":
+        return JsonResponse({"error": "add ?confirm=YES"}, status=400)
+    import datetime as _dt
+    from django.db import connection
+    action = request.GET.get("action", "status")
+    try:
+        days = int(request.GET.get("days", "60"))
+    except ValueError:
+        days = 60
+    try:
+        batch = int(request.GET.get("batch", "100000"))
+    except ValueError:
+        batch = 100000
+    cutoff = timezone.now() - _dt.timedelta(days=days)
+    out = {"action": action, "days": days}
+    try:
+        from .models import AuditLog, MessengerConversation
+        if action == "audit":
+            ids = list(AuditLog.objects.filter(created_at__lt=cutoff)
+                       .values_list("id", flat=True)[:batch])
+            deleted = 0
+            if ids:
+                deleted = AuditLog.objects.filter(id__in=ids).delete()[0]
+            out["deleted"] = deleted
+            out["remaining_older"] = AuditLog.objects.filter(created_at__lt=cutoff).count()
+            out["total_now"] = AuditLog.objects.count()
+        elif action == "convtrim":
+            # Clear the heavy messages JSON on OLD conversations that never became
+            # an order. Keep the row (customer link + ad referral stay intact).
+            qs = (MessengerConversation.objects
+                  .filter(created_at__lt=cutoff, pending_order__isnull=True)
+                  .exclude(messages=[]))
+            ids = list(qs.values_list("id", flat=True)[:batch])
+            trimmed = 0
+            if ids:
+                trimmed = MessengerConversation.objects.filter(id__in=ids).update(
+                    messages=[], extracted=None)
+            out["trimmed"] = trimmed
+            out["remaining_older"] = (MessengerConversation.objects
+                                      .filter(created_at__lt=cutoff,
+                                              pending_order__isnull=True)
+                                      .exclude(messages=[]).count())
+        elif action == "vacuum":
+            table = request.GET.get("table", "inventory_auditlog")
+            allowed = {"inventory_auditlog", "inventory_messengerconversation"}
+            if table not in allowed:
+                return JsonResponse({"error": "table not allowed"}, status=400)
+            full = request.GET.get("full") == "1"
+            sql = "VACUUM %s %s" % ("FULL" if full else "", table)
+            old_autocommit = connection.get_autocommit()
+            try:
+                connection.set_autocommit(True)
+                with connection.cursor() as cur:
+                    cur.execute(sql)
+            finally:
+                connection.set_autocommit(old_autocommit)
+            out["vacuumed"] = table
+            out["full"] = full
+        else:
+            out["note"] = "use action=audit|convtrim|vacuum"
+    except Exception as e:
+        out["error"] = str(e)[:300]
+    return JsonResponse(out, json_dumps_params={"ensure_ascii": False})
+
+
+@login_required(login_url="/login/")
 def api_debug_db_usage(request):
     """DIAGNOSTIC (admin): report DB size + biggest tables + key row counts, so we
     can see what's eating storage. Read-only."""
@@ -16637,18 +16710,6 @@ def api_messenger_webhook(request):
     except Exception:
         return JsonResponse({"status": "ok"})  # ack anyway so Meta doesn't retry
 
-    # TEMP DIAGNOSTIC: log the raw payload so we can see Instagram vs Messenger
-    # structure. Remove once Instagram handling is confirmed.
-    try:
-        _dump = _json.dumps(payload, ensure_ascii=False)
-        # If this payload carries an ad referral, log it in FULL (not truncated)
-        # so we can see exactly where the ad_id sits for Instagram.
-        _limit = 6000 if ("referral" in _dump or "ad_id" in _dump) else 1500
-        log_action(None, AuditLog.OTHER,
-                   description="DM webhook RAW: " + _dump[:_limit])
-    except Exception:
-        pass
-
     try:
         obj_type = payload.get("object", "")
         # "instagram" => IG Direct; "page" => Facebook Messenger.
@@ -16713,15 +16774,6 @@ def api_messenger_webhook(request):
                     conv.source_campaign = str(referral.get("ads_context_data", {}).get("ad_title")
                                                or conv.source_campaign or "")
                     conv.ctwa_clid = str(referral.get("ctwa_clid") or conv.ctwa_clid or "")
-                    # TEMP DIAGNOSTIC: record what we actually extracted, so we
-                    # can confirm Instagram referral capture. Remove later.
-                    try:
-                        log_action(None, AuditLog.OTHER,
-                                   description=("REFERRAL %s | keys=%s | ad_id=%s"
-                                                % (platform, list(referral.keys()),
-                                                   referral.get("ad_id"))))
-                    except Exception:
-                        pass
                     # Resolve the ad_id to its real Meta campaign name once, so
                     # the UI can show "Traffic | Jordan" instead of the post
                     # title. Best-effort; won't block if Meta is slow.
