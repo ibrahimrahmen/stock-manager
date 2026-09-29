@@ -11179,6 +11179,23 @@ def api_debug_db_cleanup(request):
             out["deleted"] = deleted
             out["remaining_older"] = AuditLog.objects.filter(created_at__lt=cutoff).count()
             out["total_now"] = AuditLog.objects.count()
+        elif action == "junk":
+            # Delete the pure-diagnostic rows (raw webhook dumps + referral probes)
+            # at ANY age — they have no accountability value and are the bulk of
+            # the table's size (~6 KB each).
+            from django.db.models import Q as _Q
+            jq = AuditLog.objects.filter(
+                _Q(description__startswith="DM webhook RAW")
+                | _Q(description__startswith="REFERRAL "))
+            ids = list(jq.values_list("id", flat=True)[:batch])
+            deleted = 0
+            if ids:
+                deleted = AuditLog.objects.filter(id__in=ids).delete()[0]
+            out["deleted"] = deleted
+            out["remaining_junk"] = AuditLog.objects.filter(
+                _Q(description__startswith="DM webhook RAW")
+                | _Q(description__startswith="REFERRAL ")).count()
+            out["total_now"] = AuditLog.objects.count()
         elif action == "convtrim":
             # Clear the heavy messages JSON on OLD conversations that never became
             # an order. Keep the row (customer link + ad referral stay intact).
