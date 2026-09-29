@@ -5343,8 +5343,22 @@ def bot_test_page(request):
 @login_required(login_url="/login/")
 def testing_production_page(request):
     """'Testing & Production' space — visible to ALL logged-in members.
-    Entry screen: 3 cards (Testing / Production / History) with live counts."""
+    No ?tab -> entry screen with 3 count cards.
+    ?tab=testing|production|history -> that section's list."""
     from .models import ProductTest
+    tab = (request.GET.get("tab") or "").strip().lower()
+    valid = {
+        "testing": (ProductTest.TESTING, "Testing", "🧪"),
+        "production": (ProductTest.PRODUCTION, "Production", "✅"),
+        "history": (ProductTest.HISTORY, "History", "🗂️"),
+    }
+    if tab in valid:
+        status, label, icon = valid[tab]
+        items = ProductTest.objects.filter(status=status)
+        return render(request, "inventory/testing_production_list.html", {
+            "tab": tab, "label": label, "icon": icon,
+            "items": items, "count": items.count(),
+        })
     return render(request, "inventory/testing_production.html", {
         "testing_count": ProductTest.objects.filter(status=ProductTest.TESTING).count(),
         "production_count": ProductTest.objects.filter(status=ProductTest.PRODUCTION).count(),
