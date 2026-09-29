@@ -25,12 +25,20 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .head h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;}
 .count-pill{font-size:13px;color:var(--muted);margin-left:6px;}
 .sub{color:var(--muted);font-size:13px;margin:2px 0 24px 58px;}
-.list{background:var(--surface);border:0.5px solid var(--border);border-radius:16px;overflow:hidden;}
-.row{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:0.5px solid var(--border);}
-.row:last-child{border-bottom:none;}
-.row .name{font-weight:500;}
-.row .meta{color:var(--muted);font-size:12px;margin-left:auto;text-align:right;}
-.empty{padding:48px 20px;text-align:center;color:var(--muted);}
+.topbtn{margin-left:auto;}
+.addbtn{background:var(--green);color:#04120b;border:none;border-radius:12px;padding:11px 18px;font-family:inherit;font-weight:600;font-size:14px;text-decoration:none;}
+.pcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;}
+.pcard{background:var(--surface);border:0.5px solid var(--border);border-radius:16px;padding:16px;}
+.pcard .pname{font-family:'DM Serif Display',serif;font-size:19px;margin-bottom:2px;}
+.pcard .pmeta{color:var(--muted);font-size:12px;margin-bottom:14px;}
+.variants{display:flex;flex-direction:column;gap:10px;}
+.v{display:flex;gap:12px;align-items:center;}
+.v img{width:56px;height:56px;object-fit:cover;border-radius:10px;background:var(--surface2);flex:0 0 auto;}
+.v .noimg{width:56px;height:56px;border-radius:10px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--muted);flex:0 0 auto;}
+.v .vname{font-weight:500;font-size:14px;}
+.v .vsizes{color:var(--muted);font-size:12px;margin-top:2px;}
+.chip{display:inline-block;background:var(--surface2);border:0.5px solid var(--border);border-radius:8px;padding:2px 8px;font-size:11px;margin:2px 3px 0 0;}
+.empty{padding:48px 20px;text-align:center;color:var(--muted);background:var(--surface);border:0.5px solid var(--border);border-radius:16px;}
 .empty .big{font-size:34px;margin-bottom:10px;}
 </style>
 </head>
@@ -46,6 +54,9 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
     <span class="icon">{{ icon }}</span>
     <h1>{{ label }}</h1>
     <span class="count-pill">{{ count }} produit(s)</span>
+    {% if tab == 'testing' %}
+    <span class="topbtn"><a class="addbtn" href="{% url 'product_test_add' %}">➕ Ajouter un test</a></span>
+    {% endif %}
   </div>
   <div class="sub">
     {% if tab == 'testing' %}Produits en cours de test.
@@ -54,22 +65,36 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
   </div>
 
   {% if items %}
-  <div class="list">
+  <div class="pcards">
     {% for it in items %}
-    <div class="row">
-      <div class="name">{{ it.name }}</div>
-      <div class="meta">
-        {% if it.created_by %}{{ it.created_by.username }} · {% endif %}{{ it.created_at|date:"d/m/Y" }}
+    <div class="pcard">
+      <div class="pname">{{ it.name }}</div>
+      <div class="pmeta">
+        {% if it.created_by %}{{ it.created_by.username }} · {% endif %}{{ it.created_at|date:"d/m/Y" }} · {{ it.variants.count }} couleur(s)
+      </div>
+      <div class="variants">
+        {% for v in it.variants.all %}
+        <div class="v">
+          {% if v.image %}<img src="{{ v.image.url }}" alt="{{ v.color_label }}">{% else %}<div class="noimg">🎨</div>{% endif %}
+          <div>
+            <div class="vname">{{ v.color_label }}</div>
+            <div class="vsizes">
+              {% for s in v.size_list %}<span class="chip">{{ s }}</span>{% empty %}<span class="vsizes">—</span>{% endfor %}
+            </div>
+          </div>
+        </div>
+        {% empty %}
+        <div class="vsizes">Aucune couleur.</div>
+        {% endfor %}
       </div>
     </div>
     {% endfor %}
   </div>
   {% else %}
-  <div class="list">
-    <div class="empty">
-      <div class="big">{{ icon }}</div>
-      <div>Aucun produit dans « {{ label }} » pour le moment.</div>
-    </div>
+  <div class="empty">
+    <div class="big">{{ icon }}</div>
+    <div>Aucun produit dans « {{ label }} » pour le moment.</div>
+    {% if tab == 'testing' %}<div style="margin-top:14px;"><a class="addbtn" href="{% url 'product_test_add' %}">➕ Ajouter un test</a></div>{% endif %}
   </div>
   {% endif %}
 </div>

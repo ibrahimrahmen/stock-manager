@@ -5354,7 +5354,7 @@ def testing_production_page(request):
     }
     if tab in valid:
         status, label, icon = valid[tab]
-        items = ProductTest.objects.filter(status=status)
+        items = ProductTest.objects.filter(status=status).prefetch_related("variants")
         return render(request, "inventory/testing_production_list.html", {
             "tab": tab, "label": label, "icon": icon,
             "items": items, "count": items.count(),
@@ -5364,6 +5364,34 @@ def testing_production_page(request):
         "production_count": ProductTest.objects.filter(status=ProductTest.PRODUCTION).count(),
         "history_count": ProductTest.objects.filter(status=ProductTest.HISTORY).count(),
     })
+
+
+@login_required(login_url="/login/")
+def product_test_add(request):
+    """Add a product to Testing: a name + colour variants (colour, sizes, photo).
+    Like a normal product but no barcode / description / stock. Creates a card."""
+    from .models import ProductTest, ProductTestVariant
+    if request.method == "POST":
+        name = (request.POST.get("name") or "").strip()
+        if not name:
+            return render(request, "inventory/testing_production_add.html",
+                          {"error": "Le nom du produit est obligatoire."})
+        pt = ProductTest.objects.create(
+            name=name, status=ProductTest.TESTING, created_by=request.user)
+        try:
+            n = int(request.POST.get("variant_count") or 0)
+        except ValueError:
+            n = 0
+        for i in range(n):
+            cl = (request.POST.get("color_%d" % i) or "").strip()
+            sz = (request.POST.get("sizes_%d" % i) or "").strip()
+            img = request.FILES.get("image_%d" % i)
+            if not (cl or sz or img):
+                continue
+            ProductTestVariant.objects.create(
+                product_test=pt, color_label=cl or "—", sizes=sz, image=img)
+        return redirect("/testing-production/?tab=testing")
+    return render(request, "inventory/testing_production_add.html", {})
 
 
 @login_required(login_url="/login/")

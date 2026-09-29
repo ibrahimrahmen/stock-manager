@@ -164,6 +164,7 @@ urlpatterns = [
     # Bot test harness (superuser): run the real bot reply logic, no Meta.
     path("bot-test/", views.bot_test_page, name="bot_test_page"),
     path("testing-production/", views.testing_production_page, name="testing_production_page"),
+    path("testing-production/add/", views.product_test_add, name="product_test_add"),
     path("api/bot-test-reply/", views.api_bot_test_reply, name="api_bot_test_reply"),
     path("connect/facebook/", views.oauth_facebook_start, name="oauth_facebook_start"),
     path("connect/facebook/callback/", views.oauth_facebook_callback, name="oauth_facebook_callback"),

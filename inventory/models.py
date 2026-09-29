@@ -1797,3 +1797,35 @@ class ProductTest(models.Model):
 
     def __str__(self):
         return f"{self.name} [{self.status}]"
+
+
+class ProductTestVariant(models.Model):
+    """A colour variant of a ProductTest — like ProductVariant but lightweight:
+    a colour, its available sizes (free text, e.g. "S,M,L,XL"), and a photo.
+    No barcode, no stock units."""
+    product_test = models.ForeignKey(
+        "ProductTest", on_delete=models.CASCADE, related_name="variants")
+    color_label = models.CharField(max_length=50, help_text="Couleur, ex: Bleu")
+    sizes = models.CharField(
+        max_length=120, blank=True, default="",
+        help_text="Tailles disponibles, séparées par des virgules, ex: S,M,L,XL")
+    image = models.ImageField(upload_to="test_variants/", blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"{self.product_test.name} — {self.color_label}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.image:
+            try:
+                _resize_image_in_place(self.image.path, max_size=1200, quality=80)
+            except Exception:
+                pass
+
+    @property
+    def size_list(self):
+        return [s.strip() for s in (self.sizes or "").split(",") if s.strip()]
