@@ -139,6 +139,7 @@
     .bubble.shipping .bubble-icon { background: var(--green-dim); }
     .bubble.office .bubble-icon { background: var(--amber-dim); }
     .bubble.messages .bubble-icon { background: var(--purple-dim); }
+    .bubble.testprod .bubble-icon { background: rgba(91,157,255,0.15); }
 
     .bubble h2 {
       font-family: 'DM Serif Display', serif;
@@ -227,6 +228,13 @@
         <div class="bubble-icon">💬</div>
         <h2>Messages Team</h2>
         <div class="subtitle">Consultation seule</div>
+      </a>
+
+      <!-- TESTING & PRODUCTION (all members) -->
+      <a href="{% url 'testing_production_page' %}" class="bubble testprod" style="text-decoration:none;color:inherit;display:block;">
+        <div class="bubble-icon">🧪</div>
+        <h2>Testing &amp; Production</h2>
+        <div class="subtitle">Test des produits &amp; production</div>
       </a>
 
       {% if request.user.is_superuser %}

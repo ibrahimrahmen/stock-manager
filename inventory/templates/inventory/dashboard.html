@@ -434,6 +434,18 @@
     </a>
     {% endif %}
 
+    {# Testing & Production — visible in all views, to all members #}
+    {% if view_mode == 'all' or view_mode == 'shipping' or view_mode == 'office' or view_mode == 'messages' %}
+    <a href="{% url 'testing_production_page' %}" class="bubble bubble-stock" style="--before-bg:#5b9dff;">
+      <div class="bubble-icon" style="background:rgba(91,157,255,0.12);font-size:20px;">🧪</div>
+      <div>
+        <div class="bubble-title">Testing &amp; Production</div>
+        <div class="bubble-sub">Test des produits &amp; production</div>
+      </div>
+      <div class="bubble-arrow">→</div>
+    </a>
+    {% endif %}
+
     {% if view_mode == 'all' and request.user.is_superuser %}
     <a href="{% url 'stats_commandes' %}" class="bubble bubble-stock" style="--before-bg:#7956d6;">
       <div class="bubble-icon" style="background:rgba(121,86,214,0.1);">

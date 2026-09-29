@@ -5341,6 +5341,13 @@ def bot_test_page(request):
 
 
 @login_required(login_url="/login/")
+def testing_production_page(request):
+    """'Testing & Production' space — visible to ALL logged-in members.
+    Product testing + production workflow. Interface built step by step."""
+    return render(request, "inventory/testing_production.html", {})
+
+
+@login_required(login_url="/login/")
 @require_POST
 def api_bot_test_reply(request):
     """Simulate a customer message and return the bot's reply. The simulated
