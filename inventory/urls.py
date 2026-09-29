@@ -18,6 +18,7 @@ urlpatterns = [
     path("statistiques/offres/", views.stats_offres, name="stats_offres"),
     path("statistiques/pages/", views.stats_pages, name="stats_pages"),
     path("api/debug/converty-raw/", views.api_debug_converty_raw, name="api_debug_converty_raw"),
+    path("api/debug/db-usage/", views.api_debug_db_usage, name="api_debug_db_usage"),
     path("statistiques/gouvernorats/", views.stats_gouvernorats, name="stats_gouvernorats"),
     path("converty/connect/", converty.converty_connect, name="converty_connect"),
     path("converty/resubscribe/", converty.converty_resubscribe, name="converty_resubscribe"),

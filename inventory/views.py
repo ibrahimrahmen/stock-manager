@@ -11146,6 +11146,39 @@ def api_shopify_webhook_order_created(request):
 
 
 @login_required(login_url="/login/")
+def api_debug_db_usage(request):
+    """DIAGNOSTIC (admin): report DB size + biggest tables + key row counts, so we
+    can see what's eating storage. Read-only."""
+    if not request.user.is_superuser:
+        return JsonResponse({"error": "forbidden"}, status=403)
+    from django.db import connection
+    out = {"engine": connection.vendor}
+    try:
+        with connection.cursor() as cur:
+            if connection.vendor == "postgresql":
+                cur.execute("SELECT pg_size_pretty(pg_database_size(current_database()))")
+                out["database_size"] = cur.fetchone()[0]
+                cur.execute("""
+                    SELECT relname,
+                           pg_size_pretty(pg_total_relation_size(relid)) AS total,
+                           pg_total_relation_size(relid) AS bytes,
+                           n_live_tup
+                    FROM pg_stat_user_tables
+                    ORDER BY pg_total_relation_size(relid) DESC
+                    LIMIT 25
+                """)
+                out["tables"] = [
+                    {"table": r[0], "size": r[1], "bytes": r[2], "rows": r[3]}
+                    for r in cur.fetchall()
+                ]
+            else:
+                out["note"] = "non-postgres; sizes unavailable"
+    except Exception as e:
+        out["error"] = str(e)[:200]
+    return JsonResponse(out, json_dumps_params={"ensure_ascii": False})
+
+
+@login_required(login_url="/login/")
 def api_debug_converty_raw(request):
     """DIAGNOSTIC (admin): dump the raw fields of a few recent Converty orders so
     we can see whether they carry any campaign / UTM / ad-tracking data we could
