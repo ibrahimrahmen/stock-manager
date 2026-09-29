@@ -15,9 +15,14 @@ from .models import AuditLog, UserProfile, log_action
 
 @receiver(post_save, sender=User)
 def _create_profile(sender, instance, created, **kwargs):
-    """Every new user gets a Profile (default role = office)."""
+    """Every new user gets a Profile (default role = office). A brand-new
+    non-admin user is created with a temporary password, so flag them to set a
+    new one on first login."""
     if created:
-        UserProfile.objects.get_or_create(user=instance)
+        prof, _ = UserProfile.objects.get_or_create(user=instance)
+        if not instance.is_superuser and not prof.must_change_password:
+            prof.must_change_password = True
+            prof.save(update_fields=["must_change_password"])
     else:
         # Make sure existing users always have a profile too — idempotent.
         UserProfile.objects.get_or_create(user=instance)

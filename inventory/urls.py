@@ -29,6 +29,7 @@ urlpatterns = [
     path("dashboard/", views.dashboard, name="dashboard"),
     path("login/", views.login_view, name="login"),
     path("logout/", views.logout_view, name="logout"),
+    path("force-password/", views.force_password_change, name="force_password_change"),
     path("scan/shipping/", views.shipping_scan, name="shipping_scan"),
     path("scan/return/", views.return_scan, name="return_scan"),
     # Internal sale (employee / friend) — admin only

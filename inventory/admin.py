@@ -45,7 +45,9 @@ class CustomUserAdmin(DjangoUserAdmin):
                 existing = UserProfile.objects.filter(user=inst.user).first()
                 if existing and existing.pk != inst.pk:
                     for f in inst._meta.fields:
-                        if f.name not in ("id", "user"):
+                        # Don't overwrite must_change_password — it's set by the
+                        # signal for new users and isn't in the inline form.
+                        if f.name not in ("id", "user", "must_change_password"):
                             setattr(existing, f.name, getattr(inst, f.name))
                     existing.save()
                 else:

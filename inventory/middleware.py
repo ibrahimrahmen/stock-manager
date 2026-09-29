@@ -42,8 +42,24 @@ class RoleAccessMiddleware:
     def __call__(self, request):
         user = getattr(request, "user", None)
 
-        # Anonymous, superuser, or pre-auth requests — pass through.
-        if not user or not user.is_authenticated or user.is_superuser:
+        # Anonymous / pre-auth requests — pass through.
+        if not user or not user.is_authenticated:
+            return self.get_response(request)
+
+        # Force temp-password change: a user flagged must_change_password is
+        # redirected to the change-password page until they set a new one.
+        # (Logout, the change page itself, and static/media are always allowed.)
+        try:
+            must_change = user.profile.must_change_password
+        except Exception:
+            must_change = False
+        if must_change:
+            _ok = ("/force-password/", "/logout/", "/static/", "/media/", "/favicon.ico")
+            if not any(request.path.startswith(p) for p in _ok):
+                return redirect("force_password_change")
+
+        # Superuser — pass through (after the temp-password gate above).
+        if user.is_superuser:
             return self.get_response(request)
 
         # Get role; default to "office" (most permissive non-admin role).

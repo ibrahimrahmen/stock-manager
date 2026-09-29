@@ -1300,6 +1300,10 @@ class UserProfile(models.Model):
     )
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=OFFICE)
     theme = models.CharField(max_length=10, choices=THEME_CHOICES, default=THEME_DARK)
+    must_change_password = models.BooleanField(
+        default=False,
+        help_text="Si vrai, l'utilisateur doit définir un nouveau mot de passe "
+                  "à sa prochaine connexion (mot de passe temporaire).")
 
     def __str__(self):
         return f"{self.user.username} — {self.get_role_display()}"

@@ -5334,6 +5334,33 @@ def home_dispatcher(request):
 
 @login_required(login_url="/login/")
 @login_required(login_url="/login/")
+@login_required(login_url="/login/")
+def force_password_change(request):
+    """Temp-password flow: a user flagged must_change_password must set a new
+    password here before using the app. Keeps them logged in afterwards."""
+    from django.contrib.auth import update_session_auth_hash
+    from .models import UserProfile
+    prof, _ = UserProfile.objects.get_or_create(user=request.user)
+    if not prof.must_change_password:
+        return redirect("home")
+    error = ""
+    if request.method == "POST":
+        p1 = request.POST.get("password1") or ""
+        p2 = request.POST.get("password2") or ""
+        if len(p1) < 6:
+            error = "Le mot de passe doit contenir au moins 6 caractères."
+        elif p1 != p2:
+            error = "Les deux mots de passe ne correspondent pas."
+        else:
+            request.user.set_password(p1)
+            request.user.save()
+            prof.must_change_password = False
+            prof.save(update_fields=["must_change_password"])
+            update_session_auth_hash(request, request.user)  # stay logged in
+            return redirect("home")
+    return render(request, "inventory/force_password.html", {"error": error})
+
+
 def bot_test_page(request):
     """Simple chat UI to test the auto-reply bot without Meta: you type as the
     customer, the bot answers using the real logic (catalogue, gender, vision)."""
