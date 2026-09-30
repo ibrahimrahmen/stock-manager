@@ -6475,6 +6475,92 @@ def api_expense_add(request):
 
 @login_required(login_url="/login/")
 @require_POST
+def api_expense_bulk_import(request):
+    """One-time bulk import of expenses (e.g. a month's cash journal).
+    Body JSON: {expenses:[{date:'YYYY-MM-DD', category, amount, comment}],
+                confirm:'YES', replace_month:'YYYY-MM'}.
+    Without confirm='YES' it is a dry run: reports how many rows already exist
+    in `replace_month` and how many would be created, and changes nothing.
+    With replace_month set, existing expenses in that month are deleted first,
+    so re-running the same import is idempotent. Admin only."""
+    if not request.user.is_staff:
+        return JsonResponse({"status": "error", "message": "Non autorisé"}, status=403)
+    import json as _json
+    from datetime import datetime as _dt
+    try:
+        data = _json.loads(request.body or "{}")
+    except Exception:
+        return JsonResponse({"status": "error", "message": "JSON invalide"}, status=400)
+    rows = data.get("expenses") or []
+    if not isinstance(rows, list) or not rows:
+        return JsonResponse({"status": "error", "message": "Aucune dépense"}, status=400)
+    valid_cats = {c[0] for c in Expense.CATEGORY_CHOICES}
+    replace_month = (data.get("replace_month") or "").strip()  # 'YYYY-MM'
+    month_start = month_end = None
+    if replace_month:
+        try:
+            y, m = replace_month.split("-")
+            month_start = _dt(int(y), int(m), 1).date()
+            month_end = _dt(int(y) + (1 if int(m) == 12 else 0),
+                            1 if int(m) == 12 else int(m) + 1, 1).date()
+        except Exception:
+            return JsonResponse({"status": "error", "message": "replace_month invalide"}, status=400)
+
+    # Validate/normalise every row before touching the DB.
+    parsed = []
+    errors = []
+    for i, r in enumerate(rows):
+        try:
+            amt = Decimal(str(r.get("amount", "")).replace(",", ".").strip())
+        except Exception:
+            errors.append(f"ligne {i}: montant invalide"); continue
+        if amt <= 0:
+            errors.append(f"ligne {i}: montant <= 0"); continue
+        cat = (r.get("category") or "").strip()
+        if cat not in valid_cats:
+            errors.append(f"ligne {i}: catégorie '{cat}' invalide"); continue
+        try:
+            d = _dt.strptime((r.get("date") or "").strip(), "%Y-%m-%d").date()
+        except Exception:
+            errors.append(f"ligne {i}: date invalide"); continue
+        parsed.append((amt, cat, (r.get("comment") or "").strip()[:300], d))
+    if errors:
+        return JsonResponse({"status": "error", "message": "Validation échouée",
+                             "errors": errors[:50]}, status=400)
+
+    existing = 0
+    if month_start:
+        existing = Expense.objects.filter(date__gte=month_start, date__lt=month_end).count()
+
+    if str(data.get("confirm", "")).strip().upper() != "YES":
+        return JsonResponse({
+            "status": "dry_run",
+            "would_create": len(parsed),
+            "existing_in_month": existing,
+            "replace_month": replace_month or None,
+            "total_amount": str(sum((p[0] for p in parsed), Decimal("0"))),
+        })
+
+    from django.db import transaction as _tx
+    with _tx.atomic():
+        deleted = 0
+        if month_start:
+            deleted, _ = Expense.objects.filter(date__gte=month_start,
+                                                date__lt=month_end).delete()
+        Expense.objects.bulk_create([
+            Expense(amount=a, category=c, comment=cm, date=d)
+            for (a, c, cm, d) in parsed
+        ])
+    return JsonResponse({
+        "status": "ok",
+        "created": len(parsed),
+        "deleted_in_month": deleted if month_start else 0,
+        "total_amount": str(sum((p[0] for p in parsed), Decimal("0"))),
+    })
+
+
+@login_required(login_url="/login/")
+@require_POST
 def api_expense_delete(request, pk):
     """Delete an expense by id. Admin only."""
     if not request.user.is_staff:
