@@ -6395,9 +6395,21 @@ def revenue(request):
     if date_to:
         _exp_qs = _exp_qs.filter(date__lte=date_to)
     total_expenses = _exp_qs.aggregate(s=_Sum("amount"))["s"] or Decimal("0")
-    # breakdown by category (for display), largest first
-    expenses_by_cat = list(
-        _exp_qs.values("category").annotate(total=_Sum("amount")).order_by("-total"))
+    # Breakdown grouped by MAIN category, each with its sub-categories, largest first.
+    _raw = _exp_qs.values("category").annotate(total=_Sum("amount"))
+    _sublabel = dict(Expense.CATEGORY_CHOICES)
+    _mains = {}
+    for r in _raw:
+        sub = r["category"]
+        m = Expense.SUB_TO_MAIN.get(sub, "divers")
+        g = _mains.setdefault(m, {"main_label": Expense.MAIN_LABELS.get(m, m),
+                                  "total": Decimal("0"), "subs": []})
+        g["total"] += (r["total"] or Decimal("0"))
+        g["subs"].append({"category": sub, "label": _sublabel.get(sub, sub),
+                          "total": r["total"]})
+    expenses_grouped = sorted(_mains.values(), key=lambda x: -(x["total"] or 0))
+    for g in expenses_grouped:
+        g["subs"].sort(key=lambda s: -(s["total"] or 0))
     recent_expenses = list(_exp_qs.order_by("-date", "-created_at")[:40])
 
     net_profit = net_revenue - ad_spend - total_expenses
@@ -6408,9 +6420,9 @@ def revenue(request):
         "margin_pct": margin_pct, "total_returns": total_returns,
         "return_fees": return_fees, "net_revenue": net_revenue,
         "ad_spend": ad_spend, "ad_spend_available": ad_spend_available,
-        "total_expenses": total_expenses, "expenses_by_cat": expenses_by_cat,
+        "total_expenses": total_expenses, "expenses_grouped": expenses_grouped,
         "recent_expenses": recent_expenses,
-        "expense_categories": Expense.CATEGORY_CHOICES,
+        "expense_categories_grouped": Expense.grouped_choices(),
         "net_profit": net_profit,
         "order_rows": order_rows,
         "date_from": date_from_str, "date_to": date_to_str,
@@ -6503,8 +6515,9 @@ def api_expense_category_detail(request):
         "comment": (e.comment or "(sans commentaire)"),
         "date": e.date.strftime("%d/%m/%Y") if e.date else "",
     } for e in qs.order_by("-amount", "-date", "-created_at")[:300]]
+    _lbl = dict(Expense.CATEGORY_CHOICES).get(category, category)
     return JsonResponse({
-        "status": "ok", "category": category,
+        "status": "ok", "category": category, "category_label": _lbl,
         "total": str(total), "groups": groups, "items": items,
     })
 

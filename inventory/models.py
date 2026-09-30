@@ -1596,32 +1596,69 @@ class Expense(models.Model):
     """A manually-recorded business expense, deducted from the month's net
     profit on the revenue page. Categories mirror the company's cash journal.
     """
-    CATEGORY_CHOICES = [
-        ("Tailor",               "Tailor (confection/broderie/coupe)"),
-        ("Tissu",                "Tissu"),
-        ("Fourniture",           "Fourniture (emballage, cordon, étiquettes...)"),
-        ("Fournitures Bureau",   "Fournitures Bureau"),
-        ("Salaire",              "Salaire / Avance / Prime"),
-        ("CNSS",                 "CNSS"),
-        ("% des commerciaux",    "% des commerciaux"),
-        ("Sponsoring",           "Sponsoring (pub externe)"),
-        ("Marketing",            "Marketing (shooting, concours)"),
-        ("Bureau",               "Bureau / Loyer dépôt"),
-        ("Home",                 "Home / Loyer maison"),
-        ("SONEDE + STEG",        "SONEDE + STEG (eau/électricité)"),
-        ("Internet",             "Internet"),
-        ("Telecom",              "Telecom"),
-        ("ENTRETIEN & MAINTENANCE", "Entretien & Maintenance"),
-        ("Transportation",       "Transportation (essence, leasing...)"),
-        ("FullFillment",         "FullFillment"),
-        ("Comptable",            "Comptable (honoraires)"),
-        ("Recette des finances", "Recette des finances (impôts, DM)"),
-        ("Investissement",       "Investissement"),
-        ("Restaurant",           "Restaurant"),
-        ("Groceries",            "Groceries (déjeuner équipe)"),
-        ("Pressing",             "Pressing"),
-        ("Other",                "Autre"),
+    # Top-level categories.
+    MAIN_CATEGORIES = [
+        ("production", "🧵 Production"),
+        ("marketing",  "📣 Marketing & Pub"),
+        ("personnel",  "👥 Salaires & Personnel"),
+        ("locaux",     "🏠 Loyers & Locaux"),
+        ("equipement", "💻 Équipement & Bureau"),
+        ("transport",  "🚗 Transport & Véhicules"),
+        ("admin",      "📑 Administratif & Taxes"),
+        ("charges",    "⚡ Charges (Utilities)"),
+        ("divers",     "🍽️ Frais équipe & Divers"),
     ]
+    # Sub-categories: (value, label, main).
+    SUBCATEGORIES = [
+        ("tissu",              "Tissu",                       "production"),
+        ("confection",         "Confection / Façon",          "production"),
+        ("fourniture_prod",    "Fournitures & Patronnage",    "production"),
+        ("sponsoring",         "Sponsoring (pub)",            "marketing"),
+        ("marketing_autre",    "Autre marketing (shooting…)", "marketing"),
+        ("salaire",            "Salaire",                     "personnel"),
+        ("avance",             "Avance",                      "personnel"),
+        ("cnss",               "CNSS / charges sociales",     "personnel"),
+        ("commerciaux",        "% des commerciaux",           "personnel"),
+        ("loyer_pro",          "Loyer bureau / dépôt / garage","locaux"),
+        ("loyer_logement",     "Loyer logement",              "locaux"),
+        ("amenagement",        "Aménagement / travaux",       "locaux"),
+        ("materiel_info",      "Matériel informatique",       "equipement"),
+        ("fournitures_bureau", "Fournitures bureau",          "equipement"),
+        ("logiciels",          "Logiciels & abonnements",     "equipement"),
+        ("investissement",     "Investissement",              "equipement"),
+        ("carburant",          "Carburant",                   "transport"),
+        ("leasing",            "Leasing véhicule",            "transport"),
+        ("entretien_vehicule", "Entretien véhicule",          "transport"),
+        ("comptable",          "Comptable / honoraires",      "admin"),
+        ("impots",             "Impôts & taxes",              "admin"),
+        ("bancaire",           "Frais bancaires",             "admin"),
+        ("internet",           "Internet",                    "charges"),
+        ("telecom",            "Telecom",                     "charges"),
+        ("sonede_steg",        "SONEDE + STEG",               "charges"),
+        ("maintenance",        "Entretien & maintenance",     "charges"),
+        ("repas",              "Repas / Café",                "divers"),
+        ("fullfillment",       "Fulfillment",                 "divers"),
+        ("pressing",           "Pressing",                    "divers"),
+        ("autre",              "Autre",                       "divers"),
+    ]
+    CATEGORY_CHOICES = [(k, lbl) for (k, lbl, m) in SUBCATEGORIES]
+    SUB_TO_MAIN = {k: m for (k, lbl, m) in SUBCATEGORIES}
+    MAIN_LABELS = dict(MAIN_CATEGORIES)
+
+    @classmethod
+    def grouped_choices(cls):
+        """[(main_key, main_label, [(sub_val, sub_label), ...]), ...] for the form."""
+        out = []
+        for mk, ml in cls.MAIN_CATEGORIES:
+            subs = [(k, lbl) for (k, lbl, m) in cls.SUBCATEGORIES if m == mk]
+            out.append((mk, ml, subs))
+        return out
+
+    def main_category(self):
+        return self.SUB_TO_MAIN.get(self.category, "divers")
+
+    def main_category_label(self):
+        return self.MAIN_LABELS.get(self.main_category(), "Divers")
 
     amount     = models.DecimalField(max_digits=12, decimal_places=3)
     category   = models.CharField(max_length=40, choices=CATEGORY_CHOICES,

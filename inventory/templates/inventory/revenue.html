@@ -211,13 +211,20 @@
     {% endif %}
   </div>
 
-  <!-- category breakdown chips -->
-  {% if expenses_by_cat %}
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;">
-    {% for c in expenses_by_cat %}
-    <span class="cat-chip" data-cat="{{ c.category }}" style="font-size:12px;background:var(--surface2);border:0.5px solid var(--border);border-radius:20px;padding:5px 12px;color:var(--muted);cursor:pointer;transition:all .12s;">
-      {{ c.category }} · <b style="color:var(--text);">{{ c.total|floatformat:3 }}</b>
-    </span>
+  <!-- category breakdown grouped by main category -->
+  {% if expenses_grouped %}
+  <div style="margin-bottom:18px;">
+    {% for g in expenses_grouped %}
+    <div style="margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:600;margin-bottom:7px;">{{ g.main_label }} · <span style="color:var(--red);">{{ g.total|floatformat:3 }} TND</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        {% for s in g.subs %}
+        <span class="cat-chip" data-cat="{{ s.category }}" style="font-size:12px;background:var(--surface2);border:0.5px solid var(--border);border-radius:20px;padding:5px 12px;color:var(--muted);cursor:pointer;transition:all .12s;">
+          {{ s.label }} · <b style="color:var(--text);">{{ s.total|floatformat:3 }}</b>
+        </span>
+        {% endfor %}
+      </div>
+    </div>
     {% endfor %}
   </div>
   <style>.cat-chip:hover{border-color:rgba(61,186,138,0.4);color:var(--text);}</style>
@@ -246,7 +253,7 @@
                   +"&date_from={{ date_from }}&date_to={{ date_to }}";
           fetch(url).then(function(r){return r.json();}).then(function(d){
             if(d.status!=='ok')return;
-            document.getElementById('detailCat').textContent=d.category;
+            document.getElementById('detailCat').textContent=d.category_label||d.category;
             document.getElementById('detailTotal').textContent=parseFloat(d.total).toFixed(3);
             var body=document.getElementById('detailBody');
             body.innerHTML='';
@@ -282,7 +289,7 @@
       {% for e in recent_expenses %}
       <tr data-exp="{{ e.id }}">
         <td style="color:var(--muted);font-size:12px;">{{ e.date|date:"d/m/Y" }}</td>
-        <td>{{ e.category }}</td>
+        <td>{{ e.get_category_display }}</td>
         <td style="color:var(--muted);">{{ e.comment }}</td>
         <td class="r">{{ e.amount|floatformat:3 }}</td>
         <td><button onclick="delExpense({{ e.id }})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;">✕</button></td>
@@ -297,10 +304,15 @@
     <div style="background:var(--surface);border:0.5px solid var(--border);border-radius:20px;padding:28px;max-width:560px;width:92%;max-height:80vh;overflow:auto;">
       <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:600;margin-bottom:4px;">Catégorie de la dépense</div>
       <div style="font-size:13px;color:var(--muted);margin-bottom:18px;">Montant : <b id="modalAmount" style="color:var(--text);"></b> TND</div>
-      <div id="catGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px;">
-        {% for val, label in expense_categories %}
-        <button type="button" class="cat-opt" data-cat="{{ val }}"
-          style="text-align:left;font-size:13px;color:var(--text);background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:11px 14px;cursor:pointer;transition:all .12s;">{{ val }}</button>
+      <div id="catGrid" style="margin-bottom:18px;">
+        {% for mk, ml, subs in expense_categories_grouped %}
+        <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 6px;">{{ ml }}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          {% for val, label in subs %}
+          <button type="button" class="cat-opt" data-cat="{{ val }}"
+            style="text-align:left;font-size:13px;color:var(--text);background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:11px 14px;cursor:pointer;transition:all .12s;">{{ label }}</button>
+          {% endfor %}
+        </div>
         {% endfor %}
       </div>
       <div id="commentBox" style="display:none;">
