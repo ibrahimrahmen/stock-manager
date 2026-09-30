@@ -1,0 +1,23 @@
+{# Shared Testing&Production chrome: light-theme palette + theme toggle + Dashboard link.
+   Include inside <head> (after the page's own <style>). Requires the page to set
+   <html data-theme="{{ user_theme }}">. #}
+<style>
+[data-theme="light"]{
+  --bg:#faf9f6; --surface:#ffffff; --surface2:#f0eee8;
+  --border:rgba(0,0,0,0.10); --text:#1a1a17; --muted:#6b6a63;
+}
+.navbtn{color:var(--muted);text-decoration:none;font-size:13px;padding:6px 11px;border:0.5px solid var(--border);border-radius:20px;background:transparent;cursor:pointer;font-family:inherit;line-height:1;}
+.navbtn:hover{color:var(--text);border-color:var(--text);}
+</style>
+<div style="display:none">{% csrf_token %}</div>
+<script>
+function _ttcsrf(){const el=document.querySelector('[name=csrfmiddlewaretoken]');if(el)return el.value;return document.cookie.split('csrftoken=')[1]?.split(';')[0]||'';}
+function toggleTheme(){
+  const h=document.documentElement;
+  const cur=h.getAttribute('data-theme')||'dark';
+  const next=cur==='dark'?'light':'dark';
+  h.setAttribute('data-theme',next);
+  const ic=document.getElementById('theme-icon'); if(ic) ic.textContent=next==='light'?'🌙':'☀';
+  try{ fetch('/api/user/theme/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':_ttcsrf()},body:JSON.stringify({theme:next})}); }catch(e){}
+}
+</script>

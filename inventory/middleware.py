@@ -38,6 +38,7 @@ def _is_allowed(path):
 # URL prefixes a Producteur may access — Testing & Production only.
 PRODUCER_ALLOWED_PREFIXES = (
     "/testing-production/",   # entry, tabs, add, finish, per-test orders
+    "/api/user/theme/",       # dark/light toggle
     "/force-password/",
     "/logout/",
     "/static/",

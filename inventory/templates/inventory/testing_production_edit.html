@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" data-theme="{{ user_theme }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -21,11 +21,16 @@ input[type=text],select{width:100%;background:var(--surface2);border:0.5px solid
 .btn-save{background:var(--green);color:#04120b;border:none;border-radius:12px;padding:13px 26px;font-family:inherit;font-weight:600;font-size:15px;cursor:pointer;}
 .btn-cancel{background:transparent;color:var(--muted);border:0.5px solid var(--border);border-radius:12px;padding:13px 22px;text-decoration:none;font-size:15px;}
 </style>
+{% include "inventory/_tp_chrome.html" %}
 </head>
 <body>
 <div class="topbar">
   <div class="brand">Stock Manager</div>
-  <div class="userbar"><a href="{% url 'testing_production_page' %}?tab={{ pt.status }}">← Retour</a></div>
+  <div class="userbar">
+    <a class="navbtn" href="{% url 'dashboard' %}">🏠 Dashboard</a>
+    <button class="navbtn" onclick="toggleTheme()"><span id="theme-icon">{% if user_theme == 'light' %}🌙{% else %}☀{% endif %}</span></button>
+    <a href="{% url 'testing_production_page' %}?tab={{ pt.status }}">← Retour</a>
+  </div>
 </div>
 
 <div class="wrap">

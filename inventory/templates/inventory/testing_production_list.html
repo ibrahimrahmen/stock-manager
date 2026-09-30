@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" data-theme="{{ user_theme }}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -97,11 +97,16 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .totrow .tlabel{color:var(--muted);font-size:13px;}
 .totrow .tval{font-family:'DM Serif Display',serif;font-size:26px;}
 </style>
+{% include "inventory/_tp_chrome.html" %}
 </head>
 <body>
 <div class="topbar">
   <div class="brand">Stock Manager</div>
-  <div class="userbar"><a href="{% url 'testing_production_page' %}">← Testing &amp; Production</a></div>
+  <div class="userbar">
+    <a class="navbtn" href="{% url 'dashboard' %}">🏠 Dashboard</a>
+    <button class="navbtn" onclick="toggleTheme()"><span id="theme-icon">{% if user_theme == 'light' %}🌙{% else %}☀{% endif %}</span></button>
+    <a href="{% url 'testing_production_page' %}">← Testing &amp; Production</a>
+  </div>
 </div>
 
 <div class="wrap">
