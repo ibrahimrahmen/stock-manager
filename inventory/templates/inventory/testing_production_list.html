@@ -48,6 +48,17 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .result .r{display:flex;justify-content:space-between;padding:2px 0;}
 .result .r b{color:var(--text);}
 .live-badge{display:inline-block;background:var(--green);color:#04120b;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;margin-top:10px;}
+.pvariants{display:flex;flex-direction:column;gap:12px;margin-top:2px;}
+.pv{display:flex;gap:12px;align-items:center;}
+.pv img{width:54px;height:54px;object-fit:cover;border-radius:10px;background:var(--surface2);flex:0 0 auto;}
+.pv .noimg{width:54px;height:54px;border-radius:10px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:20px;flex:0 0 auto;}
+.pv .body{flex:1;min-width:0;}
+.pv-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;}
+.pv-head .vname{font-weight:500;font-size:14px;}
+.pv-total{background:rgba(74,222,154,0.15);color:var(--green);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap;}
+.qpill{display:inline-block;background:var(--surface2);border:0.5px solid var(--border);border-radius:8px;padding:3px 9px;font-size:12px;margin:2px 5px 0 0;}
+.qpill b{color:var(--green);font-weight:700;}
+.qpill .sz{color:var(--muted);}
 .pcard.live{animation:liveBlink 1.4s ease-in-out infinite;}
 @keyframes liveBlink{0%,100%{border-color:var(--border);box-shadow:none;}50%{border-color:var(--green);box-shadow:0 0 14px rgba(74,222,154,0.35);}}
 /* modal */
@@ -106,6 +117,21 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
       <div class="pmeta">
         {% if it.sales_page %}📄 {{ it.sales_page.name }} · {% endif %}{% if it.created_by %}{{ it.created_by.username }} · {% endif %}{{ it.created_at|date:"d/m/Y" }} · {{ it.variants.count }} couleur(s)
       </div>
+      {% if it.production_started and it.plan_rows %}
+      <div class="pvariants">
+        {% for r in it.plan_rows %}
+        <div class="pv">
+          {% if r.image %}<img src="{{ r.image.url }}" alt="{{ r.label }}">{% else %}<div class="noimg">🎨</div>{% endif %}
+          <div class="body">
+            <div class="pv-head"><span class="vname">{{ r.label }}</span><span class="pv-total">🏭 {{ r.total }} pièces</span></div>
+            <div>
+              {% for c in r.cells %}<span class="qpill"><b>{{ c.qty }}</b> <span class="sz">× {{ c.size }}</span></span>{% endfor %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
       <div class="variants">
         {% for v in it.variants.all %}
         <div class="v">
@@ -121,6 +147,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
         <div class="vsizes">Aucune couleur.</div>
         {% endfor %}
       </div>
+      {% endif %}
 
       {% if tab == 'testing' %}
       <button class="finishbtn" onclick="startFinish('{{ it.id }}')">✔️ Terminer le test</button>

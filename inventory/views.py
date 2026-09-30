@@ -5396,6 +5396,27 @@ def testing_production_page(request):
                              for v in it.variants.all()],
             } for it in items
         }
+        # For products already in production, build a per-colour quantity display
+        # (from the saved production plan) to show on the card instead of chips.
+        def _int(x):
+            try:
+                return int(x or 0)
+            except (ValueError, TypeError):
+                return 0
+        for it in items:
+            it.plan_rows = None
+            if it.production_started and isinstance(it.production_plan, dict):
+                rows = []
+                for v in it.variants.all():
+                    prow = it.production_plan.get(v.color_label) or {}
+                    cells = [{"size": ("Inconnu" if s == "unknown" else s),
+                              "qty": _int(q)}
+                             for s, q in prow.items() if _int(q) > 0]
+                    total = sum(_int(q) for q in prow.values())
+                    if total > 0:
+                        rows.append({"label": v.color_label, "image": v.image,
+                                     "cells": cells, "total": total})
+                it.plan_rows = rows
         return render(request, "inventory/testing_production_list.html", {
             "tab": tab, "label": label, "icon": icon,
             "items": items, "count": len(items), "items_data": items_data,
