@@ -1814,7 +1814,20 @@ class ProductTest(models.Model):
     finished_at = models.DateTimeField(null=True, blank=True)
     # Production launch (only for products in Production):
     # production_plan = {"<colour>": {"<size>": qty, ...}, ...}
+    STAGE_CHOICES = [
+        ("en_production", "En Production"),
+        ("patronnage", "Patronnage"),
+        ("cherche_tissu", "Cherche Tissu"),
+        ("echantillon", "Échantillon"),
+        ("fil_chaine", "Fil Chaîne"),
+        ("broderie", "Broderie"),
+        ("matelassage", "Matelassage"),
+        ("serigraphie", "Sérigraphie"),
+        ("finition", "Finition"),
+    ]
     production_started = models.BooleanField(default=False)
+    production_stage = models.CharField(
+        max_length=30, choices=STAGE_CHOICES, default="en_production")
     production_plan = models.JSONField(null=True, blank=True)
     producer = models.ForeignKey(
         "auth.User", on_delete=models.SET_NULL, null=True, blank=True,

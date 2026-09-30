@@ -5679,6 +5679,28 @@ def product_test_start_production(request, pk):
 
 @login_required(login_url="/login/")
 @require_POST
+def product_test_set_stage(request, pk):
+    """Update the production stage of a product (En Production, Patronnage, …)."""
+    from .models import ProductTest
+    try:
+        pt = ProductTest.objects.get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    try:
+        data = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        data = {}
+    stage = (data.get("stage") or "").strip()
+    if stage not in dict(ProductTest.STAGE_CHOICES):
+        return JsonResponse({"status": "error", "message": "Étape invalide."}, status=400)
+    pt.production_stage = stage
+    pt.save(update_fields=["production_stage", "updated_at"])
+    return JsonResponse({"status": "ok", "stage": stage,
+                         "label": pt.get_production_stage_display()})
+
+
+@login_required(login_url="/login/")
+@require_POST
 def api_bot_test_reply(request):
     """Simulate a customer message and return the bot's reply. The simulated
     conversation lives in the request payload (no DB writes). Accepts optional

@@ -53,6 +53,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .result .r{display:flex;justify-content:space-between;padding:2px 0;}
 .result .r b{color:var(--text);}
 .live-badge{display:inline-block;background:var(--green);color:#04120b;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;margin-top:10px;}
+.stage-select{margin-top:10px;width:100%;background:rgba(74,222,154,0.12);border:0.5px solid var(--green);color:var(--green);border-radius:10px;padding:8px 10px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}
 .pvariants{display:flex;flex-direction:column;gap:12px;margin-top:2px;}
 .pv{display:flex;gap:12px;align-items:center;}
 .pv img{width:54px;height:54px;object-fit:cover;border-radius:10px;background:var(--surface2);flex:0 0 auto;}
@@ -167,7 +168,19 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
         <div class="r"><span>Montant dépensé</span><b>{{ it.amount_spent|floatformat:2 }} DT</b></div>
         {% if it.finished_at %}<div class="r"><span>Terminé le</span><b>{{ it.finished_at|date:"d/m/Y" }}</b></div>{% endif %}
       </a>
-      {% if it.production_started %}<span class="live-badge">🟢 En production</span>{% endif %}
+      {% if it.production_started %}
+      <select class="stage-select" onchange="setStage('{{ it.id }}', this.value)">
+        <option value="en_production" {% if it.production_stage == 'en_production' %}selected{% endif %}>🟢 En Production</option>
+        <option value="patronnage" {% if it.production_stage == 'patronnage' %}selected{% endif %}>Patronnage</option>
+        <option value="cherche_tissu" {% if it.production_stage == 'cherche_tissu' %}selected{% endif %}>Cherche Tissu</option>
+        <option value="echantillon" {% if it.production_stage == 'echantillon' %}selected{% endif %}>Échantillon</option>
+        <option value="fil_chaine" {% if it.production_stage == 'fil_chaine' %}selected{% endif %}>Fil Chaîne</option>
+        <option value="broderie" {% if it.production_stage == 'broderie' %}selected{% endif %}>Broderie</option>
+        <option value="matelassage" {% if it.production_stage == 'matelassage' %}selected{% endif %}>Matelassage</option>
+        <option value="serigraphie" {% if it.production_stage == 'serigraphie' %}selected{% endif %}>Sérigraphie</option>
+        <option value="finition" {% if it.production_stage == 'finition' %}selected{% endif %}>Finition</option>
+      </select>
+      {% endif %}
       {% endif %}
     </div>
     {% endfor %}
@@ -181,7 +194,9 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
   {% endif %}
 </div>
 
+<div style="display:none">{% csrf_token %}</div>
 <script>
+function _csrf(){ const el=document.querySelector('[name=csrfmiddlewaretoken]'); return el?el.value:''; }
 function toggleSizes(head){
   const grid = head.nextElementSibling;
   const caret = head.querySelector('.caret');
@@ -189,6 +204,14 @@ function toggleSizes(head){
   const open = grid.style.display !== 'none';
   grid.style.display = open ? 'none' : 'flex';
   if(caret) caret.textContent = open ? '▸' : '▾';
+}
+function setStage(id, stage){
+  fetch('/testing-production/'+id+'/set-stage/', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrf()},
+    body: JSON.stringify({stage:stage})
+  }).then(r=>r.json()).then(function(j){
+    if(j.status!=='ok'){ alert('Erreur: '+(j.message||'')); }
+  }).catch(function(e){ alert('Erreur: '+e); });
 }
 </script>
 
