@@ -124,8 +124,8 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
         <div class="pv">
           {% if r.image %}<img src="{{ r.image.url }}" alt="{{ r.label }}">{% else %}<div class="noimg">🎨</div>{% endif %}
           <div class="body">
-            <div class="pv-head"><span class="vname">{{ r.label }}</span><span class="pv-total">🏭 {{ r.total }} pièces</span></div>
-            <div class="qgrid">
+            <div class="pv-head" onclick="toggleSizes(this)" style="cursor:pointer;"><span class="vname">{{ r.label }}</span><span class="pv-total">🏭 {{ r.total }} pièces <span class="caret">▸</span></span></div>
+            <div class="qgrid" style="display:none;">
               {% for c in r.cells %}<div class="qcell"><div class="qn">{{ c.qty }}</div><div class="qs">{% if c.size == 'Inconnu' %}Inconnu{% else %}T. {{ c.size }}{% endif %}</div></div>{% endfor %}
             </div>
           </div>
@@ -171,6 +171,17 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
   </div>
   {% endif %}
 </div>
+
+<script>
+function toggleSizes(head){
+  const grid = head.nextElementSibling;
+  const caret = head.querySelector('.caret');
+  if(!grid) return;
+  const open = grid.style.display !== 'none';
+  grid.style.display = open ? 'none' : 'flex';
+  if(caret) caret.textContent = open ? '▸' : '▾';
+}
+</script>
 
 {% if tab == 'testing' %}
 <div style="display:none">{% csrf_token %}</div>
