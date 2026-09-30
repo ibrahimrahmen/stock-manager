@@ -53,7 +53,12 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .result .r{display:flex;justify-content:space-between;padding:2px 0;}
 .result .r b{color:var(--text);}
 .live-badge{display:inline-block;background:var(--green);color:#04120b;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;margin-top:10px;}
-.stage-select{margin-top:10px;width:100%;background:rgba(74,222,154,0.12);border:0.5px solid var(--green);color:var(--green);border-radius:10px;padding:8px 10px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}
+.stage-select{margin-top:10px;width:100%;background:#0c0c0a;border:0.5px solid var(--border);color:var(--text);border-radius:10px;padding:10px 12px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%238a887f' stroke-width='1.6' fill='none' stroke-linecap='round'/></svg>");background-repeat:no-repeat;background-position:right 12px center;padding-right:30px;}
+.stage-select:hover{border-color:var(--green);}
+.stage-select option{background:#0c0c0a;color:var(--text);font-weight:500;}
+.finishprod-btn{margin-top:10px;width:100%;background:var(--green);color:#04120b;border:none;border-radius:10px;padding:10px;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;}
+.reproduce-btn{margin-top:10px;width:100%;background:rgba(91,157,255,0.14);color:var(--blue);border:0.5px solid rgba(91,157,255,0.45);border-radius:10px;padding:10px;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;}
+.reproduce-btn:hover{background:rgba(91,157,255,0.26);}
 .pvariants{display:flex;flex-direction:column;gap:12px;margin-top:2px;}
 .pv{display:flex;gap:12px;align-items:center;}
 .pv img{width:54px;height:54px;object-fit:cover;border-radius:10px;background:var(--surface2);flex:0 0 auto;}
@@ -171,15 +176,21 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
       {% if it.production_started %}
       <select class="stage-select" onchange="setStage('{{ it.id }}', this.value)">
         <option value="en_production" {% if it.production_stage == 'en_production' %}selected{% endif %}>🟢 En Production</option>
-        <option value="patronnage" {% if it.production_stage == 'patronnage' %}selected{% endif %}>Patronnage</option>
-        <option value="cherche_tissu" {% if it.production_stage == 'cherche_tissu' %}selected{% endif %}>Cherche Tissu</option>
-        <option value="echantillon" {% if it.production_stage == 'echantillon' %}selected{% endif %}>Échantillon</option>
-        <option value="fil_chaine" {% if it.production_stage == 'fil_chaine' %}selected{% endif %}>Fil Chaîne</option>
-        <option value="broderie" {% if it.production_stage == 'broderie' %}selected{% endif %}>Broderie</option>
-        <option value="matelassage" {% if it.production_stage == 'matelassage' %}selected{% endif %}>Matelassage</option>
-        <option value="serigraphie" {% if it.production_stage == 'serigraphie' %}selected{% endif %}>Sérigraphie</option>
-        <option value="finition" {% if it.production_stage == 'finition' %}selected{% endif %}>Finition</option>
+        <option value="patronnage" {% if it.production_stage == 'patronnage' %}selected{% endif %}>📐 Patronnage</option>
+        <option value="cherche_tissu" {% if it.production_stage == 'cherche_tissu' %}selected{% endif %}>🧵 Cherche Tissu</option>
+        <option value="echantillon" {% if it.production_stage == 'echantillon' %}selected{% endif %}>🧷 Échantillon</option>
+        <option value="fil_chaine" {% if it.production_stage == 'fil_chaine' %}selected{% endif %}>🪢 Fil Chaîne</option>
+        <option value="broderie" {% if it.production_stage == 'broderie' %}selected{% endif %}>🪡 Broderie</option>
+        <option value="matelassage" {% if it.production_stage == 'matelassage' %}selected{% endif %}>🛏️ Matelassage</option>
+        <option value="serigraphie" {% if it.production_stage == 'serigraphie' %}selected{% endif %}>🖨️ Sérigraphie</option>
+        <option value="finition" {% if it.production_stage == 'finition' %}selected{% endif %}>✨ Finition</option>
       </select>
+      {% endif %}
+      {% if tab == 'production' and it.production_started and it.production_stage == 'finition' %}
+      <button class="finishprod-btn" onclick="finishProduction('{{ it.id }}')">✅ Finir la production</button>
+      {% endif %}
+      {% if tab == 'history' and it.production_started %}
+      <button class="reproduce-btn" onclick="reproduce('{{ it.id }}')">🔁 Reproduire</button>
       {% endif %}
       {% endif %}
     </div>
@@ -211,6 +222,22 @@ function setStage(id, stage){
     body: JSON.stringify({stage:stage})
   }).then(r=>r.json()).then(function(j){
     if(j.status!=='ok'){ alert('Erreur: '+(j.message||'')); }
+  }).catch(function(e){ alert('Erreur: '+e); });
+}
+function finishProduction(id){
+  if(!confirm('Terminer la production et déplacer vers History ?')) return;
+  fetch('/testing-production/'+id+'/finish-production/', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrf()}
+  }).then(r=>r.json()).then(function(j){
+    if(j.status==='ok'){ location.reload(); } else { alert('Erreur: '+(j.message||'')); }
+  }).catch(function(e){ alert('Erreur: '+e); });
+}
+function reproduce(id){
+  fetch('/testing-production/'+id+'/reproduce/', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrf()}
+  }).then(r=>r.json()).then(function(j){
+    if(j.status==='ok'){ location.href='{% url "testing_production_page" %}?tab=production'; }
+    else { alert('Erreur: '+(j.message||'')); }
   }).catch(function(e){ alert('Erreur: '+e); });
 }
 </script>

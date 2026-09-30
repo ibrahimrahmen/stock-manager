@@ -5701,6 +5701,51 @@ def product_test_set_stage(request, pk):
 
 @login_required(login_url="/login/")
 @require_POST
+def product_test_finish_production(request, pk):
+    """Finish production (from the Finition stage) -> move the product to History."""
+    from .models import ProductTest
+    try:
+        pt = ProductTest.objects.get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    pt.status = ProductTest.HISTORY
+    pt.finished_at = pt.finished_at or timezone.now()
+    pt.save(update_fields=["status", "finished_at", "updated_at"])
+    return JsonResponse({"status": "ok"})
+
+
+@login_required(login_url="/login/")
+@require_POST
+def product_test_reproduce(request, pk):
+    """Duplicate a produced product back into Production (fresh, not yet started)."""
+    from .models import ProductTest, ProductTestVariant
+    try:
+        orig = ProductTest.objects.prefetch_related("variants").get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    new = ProductTest.objects.create(
+        name=orig.name,
+        status=ProductTest.PRODUCTION,
+        sales_page=orig.sales_page,
+        facebook_link=orig.facebook_link,
+        created_by=request.user,
+        results=orig.results,
+        production_plan=orig.production_plan,
+        production_started=False,
+        production_stage="en_production",
+    )
+    for v in orig.variants.all():
+        ProductTestVariant.objects.create(
+            product_test=new,
+            color_label=v.color_label,
+            sizes=v.sizes,
+            image=(v.image.name if v.image else None),
+        )
+    return JsonResponse({"status": "ok", "new_id": new.id})
+
+
+@login_required(login_url="/login/")
+@require_POST
 def api_bot_test_reply(request):
     """Simulate a customer message and return the bot's reply. The simulated
     conversation lives in the request payload (no DB writes). Accepts optional
