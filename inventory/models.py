@@ -1285,11 +1285,13 @@ class UserProfile(models.Model):
     SHIPPING = "shipping"
     OFFICE   = "office"
     MESSAGES = "messages"
+    PRODUCER = "producer"
 
     ROLE_CHOICES = [
         (SHIPPING, "Shipping"),
         (OFFICE,   "Office"),
         (MESSAGES, "Messages Team"),
+        (PRODUCER, "Producteur (Testing & Production)"),
     ]
 
     # UI theme preferences

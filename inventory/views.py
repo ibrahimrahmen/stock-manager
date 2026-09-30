@@ -5326,6 +5326,10 @@ def home_dispatcher(request):
     except Exception:
         role = "office"
 
+    # Producteur only ever sees Testing & Production — skip the bubble picker.
+    if role == "producer":
+        return redirect("testing_production_page")
+
     return render(request, "inventory/bubble_home.html", {
         "role": role,
         "is_messages_team": role == "messages",

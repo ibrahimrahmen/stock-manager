@@ -35,6 +35,28 @@ def _is_allowed(path):
     return False
 
 
+# URL prefixes a Producteur may access — Testing & Production only.
+PRODUCER_ALLOWED_PREFIXES = (
+    "/testing-production/",   # entry, tabs, add, finish, per-test orders
+    "/force-password/",
+    "/logout/",
+    "/static/",
+    "/media/",
+    "/favicon.ico",
+)
+
+
+def _producer_allowed(path):
+    """Return True if a Producteur may visit this path."""
+    for prefix in PRODUCER_ALLOWED_PREFIXES:
+        if path.startswith(prefix):
+            return True
+    # Allow only the 'send an order back to the list' action from a test page.
+    if path.startswith("/api/orders/") and path.endswith("/back-from-test/"):
+        return True
+    return False
+
+
 class RoleAccessMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
@@ -71,5 +93,10 @@ class RoleAccessMiddleware:
         if role == "messages":
             if not _is_allowed(request.path):
                 return redirect("home")
+
+        # Producteur: can ONLY see Testing & Production.
+        if role == "producer":
+            if not _producer_allowed(request.path):
+                return redirect("testing_production_page")
 
         return self.get_response(request)
