@@ -1799,6 +1799,9 @@ class ProductTest(models.Model):
     sales_page = models.ForeignKey(
         "SalesPage", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="product_tests", help_text="Page où le produit est testé.")
+    facebook_link = models.CharField(
+        max_length=500, blank=True, default="",
+        help_text="Lien vers la publication Facebook/Instagram du produit.")
     note = models.TextField(blank=True, default="")
     created_by = models.ForeignKey(
         "auth.User", on_delete=models.SET_NULL, null=True, blank=True,

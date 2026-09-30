@@ -5461,7 +5461,8 @@ def product_test_add(request):
             pass
         pt = ProductTest.objects.create(
             name=name, status=ProductTest.TESTING, sales_page=sp,
-            created_by=made_by)
+            created_by=made_by,
+            facebook_link=(request.POST.get("facebook_link") or "").strip())
         try:
             n = int(request.POST.get("variant_count") or 0)
         except ValueError:
@@ -5583,6 +5584,31 @@ def product_test_orders(request, pk):
     return render(request, "inventory/testing_production_orders.html", {
         "pt": pt, "orders": orders, "count": orders.count(),
     })
+
+
+@login_required(login_url="/login/")
+def product_test_edit(request, pk):
+    """Edit a product test: name, Facebook link, page."""
+    from .models import ProductTest, SalesPage
+    try:
+        pt = ProductTest.objects.get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return redirect("testing_production_page")
+    pages = SalesPage.objects.filter(is_active=True).order_by("name")
+    if request.method == "POST":
+        name = (request.POST.get("name") or "").strip()
+        if name:
+            pt.name = name
+        pt.facebook_link = (request.POST.get("facebook_link") or "").strip()
+        try:
+            _spid = int(request.POST.get("sales_page") or 0)
+            pt.sales_page = SalesPage.objects.filter(pk=_spid).first() if _spid else None
+        except (ValueError, TypeError):
+            pass
+        pt.save()
+        return redirect("/testing-production/?tab=" + pt.status)
+    return render(request, "inventory/testing_production_edit.html",
+                  {"pt": pt, "pages": pages})
 
 
 @login_required(login_url="/login/")

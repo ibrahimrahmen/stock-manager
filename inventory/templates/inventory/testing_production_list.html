@@ -32,7 +32,12 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .ordersbtn{display:inline-block;float:right;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:8px;padding:4px 10px;font-size:12px;text-decoration:none;font-weight:600;}
 .ordersbtn:hover{border-color:var(--blue);color:var(--blue);}
 .pcard .pname{font-family:'DM Serif Display',serif;font-size:19px;margin-bottom:2px;}
-.pcard .pmeta{color:var(--muted);font-size:12px;margin-bottom:14px;}
+.pcard .pmeta{color:var(--muted);font-size:12px;margin-bottom:10px;}
+.pactions{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+.fblink{display:inline-block;background:rgba(24,119,242,0.15);color:#4a9bff;border:0.5px solid rgba(24,119,242,0.4);border-radius:8px;padding:4px 10px;font-size:12px;text-decoration:none;font-weight:600;}
+.fblink:hover{background:rgba(24,119,242,0.28);}
+.editlink{display:inline-block;background:var(--surface2);border:0.5px solid var(--border);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:12px;text-decoration:none;font-weight:600;}
+.editlink:hover{color:var(--text);}
 .variants{display:flex;flex-direction:column;gap:10px;}
 .v{display:flex;gap:12px;align-items:center;}
 .v img{width:56px;height:56px;object-fit:cover;border-radius:10px;background:var(--surface2);flex:0 0 auto;}
@@ -117,6 +122,10 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
       <div class="pname">{{ it.name }}</div>
       <div class="pmeta">
         {% if it.sales_page %}📄 {{ it.sales_page.name }} · {% endif %}{% if it.created_by %}{{ it.created_by.username }} · {% endif %}{{ it.created_at|date:"d/m/Y" }} · {{ it.variants.count }} couleur(s)
+      </div>
+      <div class="pactions">
+        {% if it.facebook_link %}<a class="fblink" href="{{ it.facebook_link }}" target="_blank" rel="noopener">📘 Voir sur Facebook</a>{% endif %}
+        <a class="editlink" href="{% url 'product_test_edit' it.id %}">✏️ Modifier</a>
       </div>
       {% if it.production_started and it.plan_rows %}
       <div class="pvariants">
