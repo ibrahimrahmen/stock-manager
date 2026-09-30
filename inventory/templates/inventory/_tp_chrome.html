@@ -1,6 +1,4 @@
-{# Shared Testing&Production chrome: light-theme palette + theme toggle + Dashboard link.
-   Include inside <head> (after the page's own <style>). Requires the page to set
-   <html data-theme="{{ user_theme }}">. #}
+{% comment %}Shared Testing&Production chrome: light-theme palette + theme toggle + Dashboard link. Include inside <head> after the page's own <style>; the page must set <html data-theme="{{ user_theme }}">.{% endcomment %}
 <style>
 [data-theme="light"]{
   --bg:#faf9f6; --surface:#ffffff; --surface2:#f0eee8;
