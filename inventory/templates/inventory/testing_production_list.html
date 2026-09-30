@@ -29,6 +29,8 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .addbtn{background:var(--green);color:#04120b;border:none;border-radius:12px;padding:11px 18px;font-family:inherit;font-weight:600;font-size:14px;text-decoration:none;}
 .pcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px;}
 .pcard{background:var(--surface);border:0.5px solid var(--border);border-radius:16px;padding:16px;}
+.ordersbtn{display:inline-block;float:right;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:8px;padding:4px 10px;font-size:12px;text-decoration:none;font-weight:600;}
+.ordersbtn:hover{border-color:var(--blue);color:var(--blue);}
 .pcard .pname{font-family:'DM Serif Display',serif;font-size:19px;margin-bottom:2px;}
 .pcard .pmeta{color:var(--muted);font-size:12px;margin-bottom:14px;}
 .variants{display:flex;flex-direction:column;gap:10px;}
@@ -95,6 +97,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
   <div class="pcards">
     {% for it in items %}
     <div class="pcard">
+      <a href="{% url 'product_test_orders' it.id %}" class="ordersbtn" title="Commandes envoyées à ce test">🧾 {{ it.norders }} commande(s)</a>
       <div class="pname">{{ it.name }}</div>
       <div class="pmeta">
         {% if it.sales_page %}📄 {{ it.sales_page.name }} · {% endif %}{% if it.created_by %}{{ it.created_by.username }} · {% endif %}{{ it.created_at|date:"d/m/Y" }} · {{ it.variants.count }} couleur(s)

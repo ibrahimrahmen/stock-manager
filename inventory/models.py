@@ -723,6 +723,11 @@ class Order(models.Model):
     is_angry = models.BooleanField(default=False, db_index=True,
         help_text="Auto: la conversation contient des mots de colère / insultes.")
     created_by = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="orders_created")
+    # When set, this order was "sent to a product test": it leaves the orders
+    # (ajouter commande) list and appears under that test. Reversible.
+    sent_to_test = models.ForeignKey(
+        "ProductTest", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="test_orders")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     # Optional "schedule for later" date. Defaults to today on creation.

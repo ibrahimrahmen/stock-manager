@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commandes — {{ pt.name }}</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{--bg:#0f0f0d;--surface:#1a1a17;--surface2:#222220;--border:rgba(255,255,255,0.08);--text:#f0ede6;--muted:#8a887f;--green:#4ade9a;--red:#f87171;--blue:#5b9dff;}
+body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
+.brand{font-family:'DM Serif Display',serif;font-size:22px;}
+.userbar a{color:var(--muted);text-decoration:none;font-size:13px;}
+.wrap{max-width:900px;margin:0 auto;padding:28px 24px;}
+.back{color:var(--muted);text-decoration:none;font-size:13px;display:inline-block;margin-bottom:16px;}
+h1{font-family:'DM Serif Display',serif;font-size:26px;font-weight:400;margin-bottom:4px;}
+.sub{color:var(--muted);font-size:13px;margin-bottom:22px;}
+.olist{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;overflow:hidden;}
+.orow{display:flex;align-items:center;gap:14px;padding:13px 16px;border-bottom:0.5px solid var(--border);}
+.orow:last-child{border-bottom:none;}
+.orow .oid{font-family:monospace;color:var(--muted);font-size:12px;}
+.orow .who{font-weight:500;font-size:14px;}
+.orow .meta{color:var(--muted);font-size:12px;}
+.orow .art{color:var(--muted);font-size:12px;max-width:220px;}
+.orow .total{margin-left:auto;font-weight:600;white-space:nowrap;}
+.backbtn{background:rgba(91,157,255,0.14);color:var(--blue);border:0.5px solid rgba(91,157,255,0.4);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap;}
+.backbtn:hover{background:rgba(91,157,255,0.25);}
+.empty{padding:44px 20px;text-align:center;color:var(--muted);}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">Stock Manager</div>
+  <div class="userbar"><a href="{% url 'testing_production_page' %}">← Testing &amp; Production</a></div>
+</div>
+
+<div style="display:none">{% csrf_token %}</div>
+<div class="wrap">
+  <a class="back" href="{% url 'testing_production_page' %}?tab={{ pt.status }}">← Retour</a>
+  <h1>🧾 Commandes — {{ pt.name }}</h1>
+  <div class="sub">{{ count }} commande(s) envoyée(s) à ce test. Vous pouvez les renvoyer vers « Ajouter commande ».</div>
+
+  {% if orders %}
+  <div class="olist">
+    {% for o in orders %}
+    <div class="orow" data-order-id="{{ o.id }}">
+      <div>
+        <div class="who">{{ o.display_name|default:o.customer.phone }} <span class="oid">#{{ o.id }}</span></div>
+        <div class="meta">{{ o.customer.phone }}{% if o.region %} · {{ o.region.name }}{% endif %}{% if o.ville %} · {{ o.ville }}{% endif %}</div>
+        {% if o.article_summary %}<div class="art">{{ o.article_summary }}</div>{% endif %}
+      </div>
+      <div class="total">{{ o.total|floatformat:0 }} DT</div>
+      <button class="backbtn" onclick="sendBack({{ o.id }})">↩ Renvoyer aux commandes</button>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="olist"><div class="empty">Aucune commande envoyée à ce test.</div></div>
+  {% endif %}
+</div>
+
+<script>
+function csrf(){ const el=document.querySelector('[name=csrfmiddlewaretoken]'); if(el) return el.value; return document.cookie.split('csrftoken=')[1]?.split(';')[0] || ''; }
+function sendBack(id){
+  fetch('/api/orders/'+id+'/back-from-test/', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':csrf()}
+  }).then(r=>r.json()).then(function(j){
+    if(j.status==='ok'){ const row=document.querySelector(`.orow[data-order-id="${id}"]`); if(row) row.remove(); }
+    else { alert('Erreur: '+(j.message||'')); }
+  }).catch(function(e){ alert('Erreur: '+e); });
+}
+</script>
+</body>
+</html>

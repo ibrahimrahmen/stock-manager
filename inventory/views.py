@@ -5381,7 +5381,9 @@ def testing_production_page(request):
     }
     if tab in valid:
         status, label, icon = valid[tab]
-        items = list(ProductTest.objects.filter(status=status).prefetch_related("variants"))
+        items = list(ProductTest.objects.filter(status=status)
+                     .annotate(norders=Count("test_orders"))
+                     .prefetch_related("variants"))
         # Per-product colour/size map, for the "finish test" form built in JS.
         items_data = {
             str(it.id): {
@@ -5493,6 +5495,69 @@ def product_test_finish(request, pk):
     pt.save()
     return JsonResponse({"status": "ok", "total_orders": total,
                          "new_status": pt.status})
+
+
+@login_required(login_url="/login/")
+def api_testing_products(request):
+    """List products currently in Testing — for the 'send order to test' picker."""
+    from .models import ProductTest
+    items = list(ProductTest.objects.filter(status=ProductTest.TESTING)
+                 .order_by("name").values("id", "name"))
+    return JsonResponse({"products": items})
+
+
+@login_required(login_url="/login/")
+@require_POST
+def order_send_to_test(request, order_id):
+    """Move a non-confirmed order out of the orders list and attach it to a test."""
+    from .models import Order, ProductTest
+    try:
+        order = Order.objects.get(pk=order_id)
+    except Order.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Commande introuvable."}, status=404)
+    if order.status != order.NON_CONFIRMEE:
+        return JsonResponse({"status": "error", "message": "Seules les commandes non confirmées."}, status=400)
+    try:
+        data = json.loads(request.body.decode("utf-8") or "{}")
+        tid = int(data.get("test_id") or 0)
+    except (ValueError, json.JSONDecodeError):
+        tid = 0
+    pt = ProductTest.objects.filter(pk=tid, status=ProductTest.TESTING).first()
+    if not pt:
+        return JsonResponse({"status": "error", "message": "Test introuvable."}, status=400)
+    order.sent_to_test = pt
+    order.save(update_fields=["sent_to_test", "updated_at"])
+    return JsonResponse({"status": "ok", "test_name": pt.name})
+
+
+@login_required(login_url="/login/")
+@require_POST
+def order_back_from_test(request, order_id):
+    """Send an order back to the orders (ajouter commande) list from a test."""
+    from .models import Order
+    try:
+        order = Order.objects.get(pk=order_id)
+    except Order.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Commande introuvable."}, status=404)
+    order.sent_to_test = None
+    order.save(update_fields=["sent_to_test", "updated_at"])
+    return JsonResponse({"status": "ok"})
+
+
+@login_required(login_url="/login/")
+def product_test_orders(request, pk):
+    """Page listing the orders sent to a given test, each with a 'send back' action."""
+    from .models import ProductTest, Order
+    try:
+        pt = ProductTest.objects.get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return redirect("testing_production_page")
+    orders = (Order.objects.filter(sent_to_test=pt)
+              .select_related("customer", "region", "sales_page")
+              .order_by("-created_at"))
+    return render(request, "inventory/testing_production_orders.html", {
+        "pt": pt, "orders": orders, "count": orders.count(),
+    })
 
 
 @login_required(login_url="/login/")
@@ -8662,6 +8727,8 @@ def orders_list(request):
     qs = Order.objects.select_related("customer", "region", "sales_page").prefetch_related(
         "lines__product", "order_offers", "shipping_orders"
     )
+    # Orders sent to a product test leave the list until they're sent back.
+    qs = qs.filter(sent_to_test__isnull=True)
 
     # Source filter: barats.tn (website), converty, or facebook (every other
     # page). Default = all sources.
