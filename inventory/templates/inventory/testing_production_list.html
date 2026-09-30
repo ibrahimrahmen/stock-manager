@@ -56,9 +56,10 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .pv-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px;}
 .pv-head .vname{font-weight:500;font-size:14px;}
 .pv-total{background:rgba(74,222,154,0.15);color:var(--green);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;white-space:nowrap;}
-.qpill{display:inline-block;background:var(--surface2);border:0.5px solid var(--border);border-radius:8px;padding:3px 9px;font-size:12px;margin:2px 5px 0 0;}
-.qpill b{color:var(--green);font-weight:700;}
-.qpill .sz{color:var(--muted);}
+.qgrid{display:flex;flex-wrap:wrap;gap:7px;}
+.qcell{background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:7px 4px 5px;text-align:center;min-width:52px;}
+.qcell .qn{font-family:'DM Serif Display',serif;font-size:20px;line-height:1;color:var(--green);}
+.qcell .qs{font-size:10px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.03em;}
 .pcard.live{animation:liveBlink 1.4s ease-in-out infinite;}
 @keyframes liveBlink{0%,100%{border-color:var(--border);box-shadow:none;}50%{border-color:var(--green);box-shadow:0 0 14px rgba(74,222,154,0.35);}}
 /* modal */
@@ -124,8 +125,8 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
           {% if r.image %}<img src="{{ r.image.url }}" alt="{{ r.label }}">{% else %}<div class="noimg">🎨</div>{% endif %}
           <div class="body">
             <div class="pv-head"><span class="vname">{{ r.label }}</span><span class="pv-total">🏭 {{ r.total }} pièces</span></div>
-            <div>
-              {% for c in r.cells %}<span class="qpill"><b>{{ c.qty }}</b> <span class="sz">× {{ c.size }}</span></span>{% endfor %}
+            <div class="qgrid">
+              {% for c in r.cells %}<div class="qcell"><div class="qn">{{ c.qty }}</div><div class="qs">{% if c.size == 'Inconnu' %}Inconnu{% else %}T. {{ c.size }}{% endif %}</div></div>{% endfor %}
             </div>
           </div>
         </div>
