@@ -5381,10 +5381,18 @@ def testing_production_page(request):
     }
     if tab in valid:
         status, label, icon = valid[tab]
-        items = ProductTest.objects.filter(status=status).prefetch_related("variants")
+        items = list(ProductTest.objects.filter(status=status).prefetch_related("variants"))
+        # Per-product colour/size map, for the "finish test" form built in JS.
+        items_data = {
+            str(it.id): {
+                "name": it.name,
+                "variants": [{"label": v.color_label, "sizes": v.size_list}
+                             for v in it.variants.all()],
+            } for it in items
+        }
         return render(request, "inventory/testing_production_list.html", {
             "tab": tab, "label": label, "icon": icon,
-            "items": items, "count": items.count(),
+            "items": items, "count": len(items), "items_data": items_data,
         })
     return render(request, "inventory/testing_production.html", {
         "testing_count": ProductTest.objects.filter(status=ProductTest.TESTING).count(),
@@ -5441,6 +5449,50 @@ def product_test_add(request):
                 product_test=pt, color_label=cl or "—", sizes=sz, image=img)
         return redirect("/testing-production/?tab=testing")
     return render(request, "inventory/testing_production_add.html", ctx)
+
+
+@login_required(login_url="/login/")
+@require_POST
+def product_test_finish(request, pk):
+    """Finish a test: save per-colour/size order counts + amount spent, then move
+    the product to Production (pass) or History (fail). Body JSON:
+    {results:{colour:{size:qty,...,unknown:qty}}, amount_spent, outcome:pass|fail}."""
+    from .models import ProductTest
+    try:
+        pt = ProductTest.objects.get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    try:
+        data = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        data = {}
+    results = data.get("results") or {}
+    outcome = (data.get("outcome") or "").strip().lower()
+    try:
+        amount = Decimal(str(data.get("amount_spent") or "0"))
+    except Exception:
+        amount = Decimal("0")
+    # Server recomputes the total from the submitted counts (never trust the client).
+    total = 0
+    if isinstance(results, dict):
+        for vres in results.values():
+            if isinstance(vres, dict):
+                for q in vres.values():
+                    try:
+                        total += int(q or 0)
+                    except (ValueError, TypeError):
+                        pass
+    pt.results = results
+    pt.total_orders = total
+    pt.amount_spent = amount
+    pt.finished_at = timezone.now()
+    if outcome == "pass":
+        pt.status = ProductTest.PRODUCTION
+    elif outcome == "fail":
+        pt.status = ProductTest.HISTORY
+    pt.save()
+    return JsonResponse({"status": "ok", "total_orders": total,
+                         "new_status": pt.status})
 
 
 @login_required(login_url="/login/")

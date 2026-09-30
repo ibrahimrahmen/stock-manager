@@ -40,6 +40,33 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .chip{display:inline-block;background:var(--surface2);border:0.5px solid var(--border);border-radius:8px;padding:2px 8px;font-size:11px;margin:2px 3px 0 0;}
 .empty{padding:48px 20px;text-align:center;color:var(--muted);background:var(--surface);border:0.5px solid var(--border);border-radius:16px;}
 .empty .big{font-size:34px;margin-bottom:10px;}
+.finishbtn{margin-top:14px;width:100%;background:var(--blue);color:#04121f;border:none;border-radius:10px;padding:10px;font-family:inherit;font-weight:600;font-size:13px;cursor:pointer;}
+.result{margin-top:12px;background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;}
+.result .r{display:flex;justify-content:space-between;padding:2px 0;}
+.result .r b{color:var(--text);}
+/* modal */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
+.modal-bg.open{display:flex;}
+.modal{background:var(--surface);border:0.5px solid var(--border);border-radius:18px;padding:24px;width:100%;max-width:520px;max-height:88vh;overflow:auto;}
+.modal h3{font-family:'DM Serif Display',serif;font-size:22px;font-weight:400;margin-bottom:6px;}
+.modal .msub{color:var(--muted);font-size:13px;margin-bottom:18px;}
+.mrow{display:flex;gap:10px;margin-top:18px;}
+.mbtn{flex:1;border:none;border-radius:12px;padding:13px;font-family:inherit;font-weight:600;font-size:15px;cursor:pointer;}
+.mbtn.grey{background:var(--surface2);color:var(--text);border:0.5px solid var(--border);}
+.mbtn.blue{background:var(--blue);color:#04121f;}
+.mbtn.green{background:var(--green);color:#04120b;}
+.mbtn.red{background:var(--red);color:#1a0606;}
+.vblock{border:0.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px;}
+.vblock .vtitle{font-weight:600;font-size:14px;margin-bottom:10px;}
+.sizegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;}
+.sizecell label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;}
+.sizecell input{width:100%;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:8px;padding:8px;font-family:inherit;font-size:14px;text-align:center;}
+.money{margin-top:14px;}
+.money label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;}
+.money input{width:100%;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:10px;padding:11px 13px;font-family:inherit;font-size:15px;}
+.totrow{display:flex;justify-content:space-between;align-items:center;margin-top:16px;background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:12px 14px;}
+.totrow .tlabel{color:var(--muted);font-size:13px;}
+.totrow .tval{font-family:'DM Serif Display',serif;font-size:26px;}
 </style>
 </head>
 <body>
@@ -87,6 +114,16 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
         <div class="vsizes">Aucune couleur.</div>
         {% endfor %}
       </div>
+
+      {% if tab == 'testing' %}
+      <button class="finishbtn" onclick="startFinish('{{ it.id }}')">✔️ Terminer le test</button>
+      {% else %}
+      <div class="result">
+        <div class="r"><span>Total commandes</span><b>{{ it.total_orders }}</b></div>
+        <div class="r"><span>Montant dépensé</span><b>{{ it.amount_spent|floatformat:2 }} DT</b></div>
+        {% if it.finished_at %}<div class="r"><span>Terminé le</span><b>{{ it.finished_at|date:"d/m/Y" }}</b></div>{% endif %}
+      </div>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
@@ -98,5 +135,115 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
   </div>
   {% endif %}
 </div>
+
+{% if tab == 'testing' %}
+<div style="display:none">{% csrf_token %}</div>
+{{ items_data|json_script:"ptdata" }}
+
+<!-- Modal 1: confirm -->
+<div class="modal-bg" id="m1">
+  <div class="modal">
+    <h3>Terminer le test ?</h3>
+    <div class="msub">Vous allez saisir les résultats du test, puis décider s'il passe en production ou non.</div>
+    <div class="mrow">
+      <button class="mbtn blue" onclick="m1confirm()">Terminer le test</button>
+      <button class="mbtn grey" onclick="closeAll()">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal 2: results form -->
+<div class="modal-bg" id="m2">
+  <div class="modal">
+    <h3 id="m2title">Résultats du test</h3>
+    <div class="msub">Pour chaque couleur, saisissez le nombre de commandes par taille. « Inconnu » = commandes sans taille précisée.</div>
+    <div id="formbody"></div>
+    <div class="money">
+      <label>Montant dépensé (DT)</label>
+      <input type="number" min="0" step="0.01" id="amt" placeholder="ex: 120">
+    </div>
+    <div class="totrow">
+      <span class="tlabel">Total commandes (auto)</span>
+      <span class="tval" id="totval">0</span>
+    </div>
+    <div class="mrow">
+      <button class="mbtn blue" onclick="m2next()">Suivant</button>
+      <button class="mbtn grey" onclick="closeAll()">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal 3: outcome -->
+<div class="modal-bg" id="m3">
+  <div class="modal">
+    <h3>Résultat du test</h3>
+    <div class="msub">Ce produit passe-t-il en production, ou est-il abandonné ?</div>
+    <div class="mrow">
+      <button class="mbtn green" onclick="finalize('pass')">✅ Pass → Production</button>
+      <button class="mbtn red" onclick="finalize('fail')">❌ Fail → History</button>
+    </div>
+    <div class="mrow">
+      <button class="mbtn grey" onclick="closeAll()">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let curId=null, curData=null, collected=null;
+function ptdata(){ try{return JSON.parse(document.getElementById('ptdata').textContent);}catch(e){return {};} }
+function closeAll(){ document.querySelectorAll('.modal-bg').forEach(m=>m.classList.remove('open')); }
+function openM(id){ document.getElementById(id).classList.add('open'); }
+function closeM(id){ document.getElementById(id).classList.remove('open'); }
+function csrf(){ const el=document.querySelector('[name=csrfmiddlewaretoken]'); return el?el.value:''; }
+
+function startFinish(id){ curId=String(id); openM('m1'); }
+function m1confirm(){ closeM('m1'); buildForm(); openM('m2'); }
+
+function buildForm(){
+  const d=ptdata()[curId]||{variants:[]}; curData=d;
+  document.getElementById('m2title').textContent='Résultats : '+(d.name||'');
+  const wrap=document.getElementById('formbody'); wrap.innerHTML='';
+  (d.variants||[]).forEach(function(v,vi){
+    const sizes=(v.sizes&&v.sizes.length)?v.sizes:[];
+    let cells='';
+    sizes.forEach(function(s){
+      cells+='<div class="sizecell"><label>Taille '+s+'</label><input type="number" min="0" value="0" data-v="'+vi+'" data-s="'+s+'" oninput="recalc()"></div>';
+    });
+    cells+='<div class="sizecell"><label>Inconnu</label><input type="number" min="0" value="0" data-v="'+vi+'" data-s="unknown" oninput="recalc()"></div>';
+    wrap.insertAdjacentHTML('beforeend','<div class="vblock"><div class="vtitle">🎨 '+(v.label||'')+'</div><div class="sizegrid">'+cells+'</div></div>');
+  });
+  if(!(d.variants&&d.variants.length)){ wrap.innerHTML='<div class="msub">Ce produit n\'a pas de couleur.</div>'; }
+  document.getElementById('amt').value=''; recalc();
+}
+function recalc(){
+  let t=0;
+  document.querySelectorAll('#formbody input[type=number]').forEach(function(i){ t+=parseInt(i.value||0)||0; });
+  document.getElementById('totval').textContent=t;
+}
+function m2next(){
+  const d=curData||{variants:[]}; const results={};
+  document.querySelectorAll('#formbody input[type=number]').forEach(function(i){
+    const vi=i.getAttribute('data-v'), s=i.getAttribute('data-s');
+    const label=(d.variants[vi]&&d.variants[vi].label)||('couleur '+vi);
+    results[label]=results[label]||{};
+    results[label][s]=parseInt(i.value||0)||0;
+  });
+  const amount=parseFloat(document.getElementById('amt').value||0)||0;
+  collected={results:results, amount_spent:amount};
+  closeM('m2'); openM('m3');
+}
+function finalize(outcome){
+  if(!collected) return;
+  const payload=Object.assign({outcome:outcome}, collected);
+  fetch('/testing-production/'+curId+'/finish/',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
+    body:JSON.stringify(payload)
+  }).then(function(r){return r.json();}).then(function(j){
+    if(j.status==='ok'){ location.reload(); } else { alert('Erreur: '+(j.message||'')); }
+  }).catch(function(e){ alert('Erreur: '+e); });
+}
+</script>
+{% endif %}
 </body>
 </html>

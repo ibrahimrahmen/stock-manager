@@ -1796,6 +1796,12 @@ class ProductTest(models.Model):
     created_by = models.ForeignKey(
         "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="product_tests")
+    # Filled when the test is finished:
+    # results = {"<colour label>": {"<size>": qty, ..., "unknown": qty}, ...}
+    results = models.JSONField(null=True, blank=True)
+    total_orders = models.IntegerField(default=0)
+    amount_spent = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    finished_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
