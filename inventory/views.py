@@ -5525,10 +5525,12 @@ def product_test_finish(request, pk):
 
 @login_required(login_url="/login/")
 def api_testing_products(request):
-    """List products currently in Testing — for the 'send order to test' picker."""
+    """List products in Testing OR Production — for the 'send order to test' picker."""
     from .models import ProductTest
-    items = list(ProductTest.objects.filter(status=ProductTest.TESTING)
-                 .order_by("name").values("id", "name"))
+    items = list(ProductTest.objects
+                 .filter(status__in=[ProductTest.TESTING, ProductTest.PRODUCTION])
+                 .order_by("status", "name")
+                 .values("id", "name", "status"))
     return JsonResponse({"products": items})
 
 
@@ -5548,9 +5550,10 @@ def order_send_to_test(request, order_id):
         tid = int(data.get("test_id") or 0)
     except (ValueError, json.JSONDecodeError):
         tid = 0
-    pt = ProductTest.objects.filter(pk=tid, status=ProductTest.TESTING).first()
+    pt = ProductTest.objects.filter(
+        pk=tid, status__in=[ProductTest.TESTING, ProductTest.PRODUCTION]).first()
     if not pt:
-        return JsonResponse({"status": "error", "message": "Test introuvable."}, status=400)
+        return JsonResponse({"status": "error", "message": "Produit introuvable."}, status=400)
     order.sent_to_test = pt
     order.save(update_fields=["sent_to_test", "updated_at"])
     return JsonResponse({"status": "ok", "test_name": pt.name})

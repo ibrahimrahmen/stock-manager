@@ -2705,7 +2705,9 @@ function openSendTest(orderId, ev){
     const items = (d.products||[]);
     if(!items.length){ list.innerHTML = '<div class="sm-sub">Aucun produit en test. Ajoutez-en un dans Testing &amp; Production.</div>'; return; }
     list.innerHTML = items.map(function(p){
-      return `<div class="st-item" onclick="doSendTest(${p.id})"><span class="nm">🧪 ${(p.name||'').replace(/</g,'&lt;')}</span></div>`;
+      const ic = p.status === 'production' ? '🏭' : '🧪';
+      const tag = p.status === 'production' ? ' <span style="color:#4ade9a;font-size:11px;">(Production)</span>' : ' <span style="color:#8a887f;font-size:11px;">(Test)</span>';
+      return `<div class="st-item" onclick="doSendTest(${p.id})"><span class="nm">${ic} ${(p.name||'').replace(/</g,'&lt;')}${tag}</span></div>`;
     }).join('');
   }).catch(function(e){ list.innerHTML = '<div class="sm-sub">Erreur: '+e+'</div>'; });
 }
