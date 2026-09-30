@@ -43,9 +43,13 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .empty{padding:48px 20px;text-align:center;color:var(--muted);background:var(--surface);border:0.5px solid var(--border);border-radius:16px;}
 .empty .big{font-size:34px;margin-bottom:10px;}
 .finishbtn{margin-top:14px;width:100%;background:var(--blue);color:#04121f;border:none;border-radius:10px;padding:10px;font-family:inherit;font-weight:600;font-size:13px;cursor:pointer;}
-.result{margin-top:12px;background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;}
+.result{margin-top:12px;background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:10px 12px;font-size:13px;text-decoration:none;color:inherit;display:block;}
+.result:hover{border-color:var(--blue);}
 .result .r{display:flex;justify-content:space-between;padding:2px 0;}
 .result .r b{color:var(--text);}
+.live-badge{display:inline-block;background:var(--green);color:#04120b;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;margin-top:10px;}
+.pcard.live{animation:liveBlink 1.4s ease-in-out infinite;}
+@keyframes liveBlink{0%,100%{border-color:var(--border);box-shadow:none;}50%{border-color:var(--green);box-shadow:0 0 14px rgba(74,222,154,0.35);}}
 /* modal */
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
 .modal-bg.open{display:flex;}
@@ -96,7 +100,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
   {% if items %}
   <div class="pcards">
     {% for it in items %}
-    <div class="pcard">
+    <div class="pcard{% if it.production_started %} live{% endif %}">
       <a href="{% url 'product_test_orders' it.id %}" class="ordersbtn" title="Commandes envoyées à ce test">🧾 {{ it.norders }} commande(s)</a>
       <div class="pname">{{ it.name }}</div>
       <div class="pmeta">
@@ -121,11 +125,12 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
       {% if tab == 'testing' %}
       <button class="finishbtn" onclick="startFinish('{{ it.id }}')">✔️ Terminer le test</button>
       {% else %}
-      <div class="result">
+      <a class="result" href="{% url 'product_test_detail' it.id %}" title="Voir le détail">
         <div class="r"><span>Total commandes</span><b>{{ it.total_orders }}</b></div>
         <div class="r"><span>Montant dépensé</span><b>{{ it.amount_spent|floatformat:2 }} DT</b></div>
         {% if it.finished_at %}<div class="r"><span>Terminé le</span><b>{{ it.finished_at|date:"d/m/Y" }}</b></div>{% endif %}
-      </div>
+      </a>
+      {% if it.production_started %}<span class="live-badge">🟢 En production</span>{% endif %}
       {% endif %}
     </div>
     {% endfor %}

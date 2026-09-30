@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ pt.name }} — Détail</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{--bg:#0f0f0d;--surface:#1a1a17;--surface2:#222220;--border:rgba(255,255,255,0.08);--text:#f0ede6;--muted:#8a887f;--green:#4ade9a;--red:#f87171;--blue:#5b9dff;--amber:#f5a623;}
+body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min-height:100vh;}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:18px 24px;border-bottom:0.5px solid var(--border);}
+.brand{font-family:'DM Serif Display',serif;font-size:22px;}
+.userbar a{color:var(--muted);text-decoration:none;font-size:13px;}
+.wrap{max-width:760px;margin:0 auto;padding:26px 24px 60px;}
+.back{color:var(--muted);text-decoration:none;font-size:13px;display:inline-block;margin-bottom:16px;}
+h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bottom:4px;}
+.meta{color:var(--muted);font-size:13px;margin-bottom:22px;}
+.card{background:var(--surface);border:0.5px solid var(--border);border-radius:16px;padding:18px;margin-bottom:16px;}
+.card h2{font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:14px;}
+.v{display:flex;gap:12px;align-items:center;margin-bottom:12px;}
+.v img{width:56px;height:56px;object-fit:cover;border-radius:10px;background:var(--surface2);}
+.v .noimg{width:56px;height:56px;border-radius:10px;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:20px;}
+.v .vname{font-weight:500;}
+.chip{display:inline-block;background:var(--surface2);border:0.5px solid var(--border);border-radius:8px;padding:2px 8px;font-size:11px;margin:2px 3px 0 0;}
+.rrow{display:flex;justify-content:space-between;padding:4px 0;font-size:14px;}
+.rrow b{color:var(--text);}
+.btn{border:none;border-radius:12px;padding:13px 22px;font-family:inherit;font-weight:600;font-size:15px;cursor:pointer;}
+.btn-green{background:var(--green);color:#04120b;}
+.btn-grey{background:var(--surface2);color:var(--text);border:0.5px solid var(--border);}
+.vblock{border:0.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:12px;}
+.vblock .vtitle{font-weight:600;margin-bottom:10px;}
+.sizegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;}
+.sizecell label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px;}
+.sizecell input{width:100%;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:8px;padding:8px;font-family:inherit;font-size:14px;text-align:center;}
+.selrow{margin:14px 0;}
+.selrow label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;}
+.selrow select{width:100%;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:10px;padding:11px 13px;font-family:inherit;font-size:15px;}
+.prod-live{background:linear-gradient(135deg,rgba(74,222,154,0.14),var(--surface));border:0.5px solid var(--green);}
+.badge-live{display:inline-block;background:var(--green);color:#04120b;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;}
+.hint{color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="brand">Stock Manager</div>
+  <div class="userbar"><a href="{% url 'testing_production_page' %}?tab={{ pt.status }}">← Retour</a></div>
+</div>
+
+<div class="wrap">
+  <a class="back" href="{% url 'testing_production_page' %}?tab={{ pt.status }}">← Retour</a>
+  <h1>{{ pt.name }}</h1>
+  <div class="meta">
+    {% if pt.sales_page %}📄 {{ pt.sales_page.name }} · {% endif %}{% if pt.created_by %}{{ pt.created_by.username }} · {% endif %}{{ pt.created_at|date:"d/m/Y" }}
+  </div>
+
+  <!-- Variants -->
+  <div class="card">
+    <h2>Couleurs</h2>
+    {% for v in pt.variants.all %}
+    <div class="v">
+      {% if v.image %}<img src="{{ v.image.url }}" alt="{{ v.color_label }}">{% else %}<div class="noimg">🎨</div>{% endif %}
+      <div>
+        <div class="vname">{{ v.color_label }}</div>
+        <div>{% for s in v.size_list %}<span class="chip">{{ s }}</span>{% endfor %}</div>
+      </div>
+    </div>
+    {% empty %}<div class="hint">Aucune couleur.</div>{% endfor %}
+  </div>
+
+  <!-- Test results -->
+  {% if pt.finished_at %}
+  <div class="card">
+    <h2>Résultats du test</h2>
+    <div class="rrow"><span>Total commandes</span><b>{{ pt.total_orders }}</b></div>
+    <div class="rrow"><span>Montant dépensé</span><b>{{ pt.amount_spent|floatformat:2 }} DT</b></div>
+    <div class="rrow"><span>Terminé le</span><b>{{ pt.finished_at|date:"d/m/Y" }}</b></div>
+  </div>
+  {% endif %}
+
+  <!-- Production -->
+  {% if pt.production_started %}
+  <div class="card prod-live">
+    <h2>Production</h2>
+    <div style="margin-bottom:12px;"><span class="badge-live">🟢 En production</span></div>
+    <div class="rrow"><span>Producteur</span><b>{{ pt.producer.username|default:"—" }}</b></div>
+    <div class="rrow"><span>Démarré le</span><b>{{ pt.production_started_at|date:"d/m/Y H:i" }}</b></div>
+  </div>
+  {% elif pt.status == 'production' %}
+  <div class="card">
+    <h2>Production</h2>
+    <button class="btn btn-green" id="openProd" onclick="showForm()">🏭 Démarrer la production</button>
+
+    <div id="prodForm" style="display:none;margin-top:16px;">
+      <div class="hint" style="margin-bottom:12px;">Quantités à produire par couleur / taille (pré-remplies d'après les commandes).</div>
+      {% for v in vdata %}
+      <div class="vblock">
+        <div class="vtitle">🎨 {{ v.label }}</div>
+        <div class="sizegrid">
+          {% for c in v.cells %}
+          <div class="sizecell">
+            <label>{% if c.size == 'unknown' %}Inconnu{% else %}Taille {{ c.size }}{% endif %}</label>
+            <input type="number" min="0" value="{{ c.val }}" data-color="{{ v.label }}" data-size="{{ c.size }}">
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+
+      <div class="selrow">
+        <label>Producteur (employé)</label>
+        {% if producers %}
+        <select id="producer">
+          <option value="">— Choisir un producteur —</option>
+          {% for u in producers %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}
+        </select>
+        {% else %}
+        <div class="hint">Aucun employé avec le rôle « Producteur ». Créez-en un d'abord (Admin → Utilisateurs → rôle Producteur).</div>
+        {% endif %}
+      </div>
+
+      <button class="btn btn-green" onclick="startProd()">Démarrer</button>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div style="display:none">{% csrf_token %}</div>
+<script>
+function csrf(){const el=document.querySelector('[name=csrfmiddlewaretoken]');return el?el.value:'';}
+function showForm(){ document.getElementById('prodForm').style.display='block'; document.getElementById('openProd').style.display='none'; }
+function startProd(){
+  const plan={};
+  document.querySelectorAll('#prodForm input[type=number]').forEach(function(i){
+    const c=i.getAttribute('data-color'), s=i.getAttribute('data-size');
+    plan[c]=plan[c]||{}; plan[c][s]=parseInt(i.value||0)||0;
+  });
+  const sel=document.getElementById('producer');
+  const pid=sel?sel.value:'';
+  if(sel && !pid){ alert('Choisissez un producteur.'); return; }
+  fetch('{% url "product_test_start_production" pt.id %}', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
+    body: JSON.stringify({plan:plan, producer_id:pid})
+  }).then(r=>r.json()).then(function(j){
+    if(j.status==='ok'){ location.href='{% url "testing_production_page" %}?tab=production'; }
+    else { alert('Erreur: '+(j.message||'')); }
+  }).catch(function(e){ alert('Erreur: '+e); });
+}
+</script>
+</body>
+</html>

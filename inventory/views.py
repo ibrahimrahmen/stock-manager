@@ -5565,6 +5565,72 @@ def product_test_orders(request, pk):
 
 
 @login_required(login_url="/login/")
+def product_test_detail(request, pk):
+    """Detail of a product test + (for Production) the 'start production' form."""
+    from .models import ProductTest
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    try:
+        pt = ProductTest.objects.prefetch_related("variants").get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return redirect("testing_production_page")
+    results = pt.results or {}
+    plan = pt.production_plan or {}
+    # Per-colour rows for the production form, pre-filled from the plan (if any)
+    # else from the recorded order counts.
+    vdata = []
+    for v in pt.variants.all():
+        rrow = results.get(v.color_label, {}) if isinstance(results, dict) else {}
+        prow = plan.get(v.color_label, {}) if isinstance(plan, dict) else {}
+        cells = []
+        for s in v.size_list:
+            cells.append({"size": s,
+                          "val": prow.get(s, rrow.get(s, 0)) if prow else rrow.get(s, 0)})
+        cells.append({"size": "unknown",
+                      "val": prow.get("unknown", rrow.get("unknown", 0)) if prow else rrow.get("unknown", 0)})
+        vdata.append({"label": v.color_label, "image": v.image, "cells": cells})
+    producers = list(User.objects.filter(is_active=True, profile__role="producer")
+                     .order_by("username"))
+    return render(request, "inventory/testing_production_detail.html", {
+        "pt": pt, "vdata": vdata, "producers": producers,
+    })
+
+
+@login_required(login_url="/login/")
+@require_POST
+def product_test_start_production(request, pk):
+    """Launch production: save the per-colour/size plan + assigned producer, and
+    flag the product as 'in production' (the card then blinks green)."""
+    from .models import ProductTest
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    try:
+        pt = ProductTest.objects.get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    try:
+        data = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        data = {}
+    plan = data.get("plan") or {}
+    producer = None
+    try:
+        pid = int(data.get("producer_id") or 0)
+        if pid:
+            producer = User.objects.filter(pk=pid, is_active=True,
+                                           profile__role="producer").first()
+    except (ValueError, TypeError):
+        producer = None
+    pt.production_plan = plan
+    pt.producer = producer
+    pt.production_started = True
+    pt.production_started_at = timezone.now()
+    pt.save()
+    return JsonResponse({"status": "ok",
+                         "producer": producer.username if producer else None})
+
+
+@login_required(login_url="/login/")
 @require_POST
 def api_bot_test_reply(request):
     """Simulate a customer message and return the bot's reply. The simulated
