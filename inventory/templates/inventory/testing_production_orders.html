@@ -26,6 +26,12 @@ h1{font-family:'DM Serif Display',serif;font-size:26px;font-weight:400;margin-bo
 .orow .total{margin-left:auto;font-weight:600;white-space:nowrap;}
 .backbtn{background:rgba(91,157,255,0.14);color:var(--blue);border:0.5px solid rgba(91,157,255,0.4);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap;}
 .backbtn:hover{background:rgba(91,157,255,0.25);}
+.oitem{border-bottom:0.5px solid var(--border);}
+.oitem:last-child{border-bottom:none;}
+.oitem .orow{border-bottom:none;}
+.convbtn{background:var(--surface2);border:0.5px solid var(--border);color:var(--muted);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap;}
+.convbtn:hover{color:var(--text);border-color:var(--blue);}
+.conv{background:var(--bg);border:0.5px solid var(--border);border-radius:10px;padding:12px 14px;margin:0 16px 14px;font-size:13px;line-height:1.55;max-height:320px;overflow:auto;white-space:pre-wrap;}
 .empty{padding:44px 20px;text-align:center;color:var(--muted);}
 </style>
 </head>
@@ -44,14 +50,18 @@ h1{font-family:'DM Serif Display',serif;font-size:26px;font-weight:400;margin-bo
   {% if orders %}
   <div class="olist">
     {% for o in orders %}
-    <div class="orow" data-order-id="{{ o.id }}">
-      <div>
-        <div class="who">{{ o.display_name|default:o.customer.phone }} <span class="oid">#{{ o.id }}</span></div>
-        <div class="meta">{{ o.customer.phone }}{% if o.region %} · {{ o.region.name }}{% endif %}{% if o.ville %} · {{ o.ville }}{% endif %}</div>
-        {% if o.article_summary %}<div class="art">{{ o.article_summary }}</div>{% endif %}
+    <div class="oitem" data-order-id="{{ o.id }}">
+      <div class="orow">
+        <div>
+          <div class="who">{{ o.display_name|default:o.customer.phone }} <span class="oid">#{{ o.id }}</span></div>
+          <div class="meta">{{ o.customer.phone }}{% if o.region %} · {{ o.region.name }}{% endif %}{% if o.ville %} · {{ o.ville }}{% endif %}</div>
+          {% if o.article_summary %}<div class="art">{{ o.article_summary }}</div>{% endif %}
+        </div>
+        <div class="total">{{ o.total|floatformat:0 }} DT</div>
+        {% if o.conversation_text %}<button class="convbtn" onclick="toggleConv({{ o.id }})">💬 Conversation</button>{% endif %}
+        <button class="backbtn" onclick="sendBack({{ o.id }})">↩ Renvoyer aux commandes</button>
       </div>
-      <div class="total">{{ o.total|floatformat:0 }} DT</div>
-      <button class="backbtn" onclick="sendBack({{ o.id }})">↩ Renvoyer aux commandes</button>
+      {% if o.conversation_text %}<div class="conv" id="conv-{{ o.id }}" style="display:none;">{{ o.conversation_text }}</div>{% endif %}
     </div>
     {% endfor %}
   </div>
@@ -62,11 +72,15 @@ h1{font-family:'DM Serif Display',serif;font-size:26px;font-weight:400;margin-bo
 
 <script>
 function csrf(){ const el=document.querySelector('[name=csrfmiddlewaretoken]'); if(el) return el.value; return document.cookie.split('csrftoken=')[1]?.split(';')[0] || ''; }
+function toggleConv(id){
+  const el=document.getElementById('conv-'+id);
+  if(el) el.style.display = (el.style.display==='none' ? 'block' : 'none');
+}
 function sendBack(id){
   fetch('/api/orders/'+id+'/back-from-test/', {
     method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':csrf()}
   }).then(r=>r.json()).then(function(j){
-    if(j.status==='ok'){ const row=document.querySelector(`.orow[data-order-id="${id}"]`); if(row) row.remove(); }
+    if(j.status==='ok'){ const row=document.querySelector(`.oitem[data-order-id="${id}"]`); if(row) row.remove(); }
     else { alert('Erreur: '+(j.message||'')); }
   }).catch(function(e){ alert('Erreur: '+e); });
 }
