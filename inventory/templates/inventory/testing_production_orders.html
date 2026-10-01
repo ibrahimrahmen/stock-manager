@@ -31,7 +31,8 @@ h1{font-family:'DM Serif Display',serif;font-size:26px;font-weight:400;margin-bo
 .oitem .orow{border-bottom:none;}
 .convbtn{background:var(--surface2);border:0.5px solid var(--border);color:var(--muted);border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap;}
 .convbtn:hover{color:var(--text);border-color:var(--blue);}
-.conv{background:var(--bg);border:0.5px solid var(--border);border-radius:10px;padding:12px 14px;margin:0 16px 14px;font-size:13px;line-height:1.55;max-height:320px;overflow:auto;white-space:pre-wrap;}
+.conv{background:var(--bg);border:0.5px solid var(--border);border-radius:10px;padding:12px 14px;margin:0 16px 14px;font-size:13px;line-height:1.55;max-height:340px;overflow:auto;}
+.conv .conv-raw{white-space:pre-wrap;}
 .empty{padding:44px 20px;text-align:center;color:var(--muted);}
 </style>
 {% include "inventory/_tp_chrome.html" %}
@@ -66,7 +67,7 @@ h1{font-family:'DM Serif Display',serif;font-size:26px;font-weight:400;margin-bo
         {% if o.conversation_text %}<button class="convbtn" onclick="toggleConv({{ o.id }})">💬 Conversation</button>{% endif %}
         <button class="backbtn" onclick="sendBack({{ o.id }})">↩ Renvoyer aux commandes</button>
       </div>
-      {% if o.conversation_text %}<div class="conv" id="conv-{{ o.id }}" style="display:none;">{{ o.conversation_text }}</div>{% endif %}
+      {% if o.conversation_text %}<div class="conv" id="conv-{{ o.id }}" style="display:none;"><div class="conv-raw">{{ o.conversation_text }}</div></div>{% endif %}
     </div>
     {% endfor %}
   </div>
@@ -77,9 +78,45 @@ h1{font-family:'DM Serif Display',serif;font-size:26px;font-weight:400;margin-bo
 
 <script>
 function csrf(){ const el=document.querySelector('[name=csrfmiddlewaretoken]'); if(el) return el.value; return document.cookie.split('csrftoken=')[1]?.split(';')[0] || ''; }
+// Render a raw "Client: … / Page: …" transcript into Messenger-style chat bubbles.
+function renderChatBubbles(text){
+  const esc=(s)=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const lines=(text||'').split('\n');
+  let html='<div style="display:flex;flex-direction:column;gap:6px;padding:2px;">';
+  let curWho=null, curText=[];
+  const flush=()=>{
+    if(curText.length===0) return;
+    const isPage=(curWho==='page');
+    const msg=esc(curText.join('\n')).replace(/\n/g,'<br>');
+    const align=isPage?'flex-end':'flex-start';
+    const bg=isPage?'#0084ff':'var(--surface2)';
+    const color=isPage?'#fff':'var(--text)';
+    const radius=isPage?'16px 16px 4px 16px':'16px 16px 16px 4px';
+    html+=`<div style="display:flex;justify-content:${align};"><div style="max-width:78%;background:${bg};color:${color};padding:8px 12px;border-radius:${radius};font-size:13px;line-height:1.4;word-wrap:break-word;white-space:normal;">${msg}</div></div>`;
+    curText=[];
+  };
+  for(const line of lines){
+    const m=line.match(/^\s*(Client|Page)\s*:\s?(.*)$/);
+    if(m){ const who=(m[1]==='Page')?'page':'client'; if(who!==curWho){ flush(); curWho=who; } curText.push(m[2]); }
+    else if(curWho){ curText.push(line); }
+  }
+  flush();
+  html+='</div>';
+  return html;
+}
+document.addEventListener('DOMContentLoaded', function(){
+  document.querySelectorAll('.conv').forEach(function(box){
+    const raw=box.querySelector('.conv-raw');
+    const txt=raw?raw.textContent:'';
+    if(txt && txt.trim()){ box.innerHTML=renderChatBubbles(txt); }
+  });
+});
 function toggleConv(id){
   const el=document.getElementById('conv-'+id);
-  if(el) el.style.display = (el.style.display==='none' ? 'block' : 'none');
+  if(!el) return;
+  const show=(el.style.display==='none');
+  el.style.display = show ? 'block' : 'none';
+  if(show){ el.scrollTop = el.scrollHeight; }
 }
 function sendBack(id){
   fetch('/api/orders/'+id+'/back-from-test/', {
