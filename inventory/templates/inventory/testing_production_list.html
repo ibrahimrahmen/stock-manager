@@ -59,6 +59,14 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .finishprod-btn{margin-top:10px;width:100%;background:var(--green);color:#04120b;border:none;border-radius:10px;padding:10px;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;}
 .reproduce-btn{margin-top:10px;width:100%;background:rgba(91,157,255,0.14);color:var(--blue);border:0.5px solid rgba(91,157,255,0.45);border-radius:10px;padding:10px;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;}
 .reproduce-btn:hover{background:rgba(91,157,255,0.26);}
+/* Production stage timeline: each stage with the date it was reached. */
+.timeline{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-top:12px;padding:11px 12px;background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;}
+.tl-title{width:100%;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:2px;}
+.tl-step{display:flex;flex-direction:column;align-items:flex-start;}
+.tl-date{font-size:10px;color:var(--muted);font-weight:600;}
+.tl-stage{font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;}
+.tl-step.tl-current .tl-stage{color:var(--green);}
+.tl-sep{color:var(--muted);align-self:center;margin-top:12px;opacity:0.5;letter-spacing:1px;font-size:11px;}
 .pvariants{display:flex;flex-direction:column;gap:12px;margin-top:2px;}
 .pv{display:flex;gap:12px;align-items:center;}
 .pv img{width:54px;height:54px;object-fit:cover;border-radius:10px;background:var(--surface2);flex:0 0 auto;}
@@ -179,11 +187,23 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
         {% if it.finished_at %}<div class="r"><span>Terminé le</span><b>{{ it.finished_at|date:"d/m/Y" }}</b></div>{% endif %}
       </a>
       {% if it.production_started %}
+      {% with tl=it.stage_timeline %}{% if tl %}
+      <div class="timeline" id="tl-{{ it.id }}">
+        <div class="tl-title">⏱️ Timeline de production</div>
+        {% for e in tl %}
+        <div class="tl-step{% if forloop.last %} tl-current{% endif %}">
+          <div class="tl-date">{{ e.at }}</div>
+          <div class="tl-stage">{{ e.label }}</div>
+        </div>{% if not forloop.last %}<div class="tl-sep">—</div>{% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}{% endwith %}
       <select class="stage-select" onchange="setStage('{{ it.id }}', this.value)">
         <option value="en_production" {% if it.production_stage == 'en_production' %}selected{% endif %}>🟢 En Production</option>
         <option value="patronnage" {% if it.production_stage == 'patronnage' %}selected{% endif %}>📐 Patronnage</option>
         <option value="cherche_tissu" {% if it.production_stage == 'cherche_tissu' %}selected{% endif %}>🧵 Cherche Tissu</option>
         <option value="echantillon" {% if it.production_stage == 'echantillon' %}selected{% endif %}>🧷 Échantillon</option>
+        <option value="salle_de_coupe" {% if it.production_stage == 'salle_de_coupe' %}selected{% endif %}>✂️ Salle de Coupe</option>
         <option value="fil_chaine" {% if it.production_stage == 'fil_chaine' %}selected{% endif %}>🪢 Fil Chaîne</option>
         <option value="broderie" {% if it.production_stage == 'broderie' %}selected{% endif %}>🪡 Broderie</option>
         <option value="matelassage" {% if it.production_stage == 'matelassage' %}selected{% endif %}>🛏️ Matelassage</option>
@@ -226,8 +246,30 @@ function setStage(id, stage){
     method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrf()},
     body: JSON.stringify({stage:stage})
   }).then(r=>r.json()).then(function(j){
-    if(j.status!=='ok'){ alert('Erreur: '+(j.message||'')); }
+    if(j.status!=='ok'){ alert('Erreur: '+(j.message||'')); return; }
+    if(j.timeline){ renderTimeline(id, j.timeline); }
+    // The "Finir la production" button only exists at the Finition stage and is
+    // rendered server-side, so reload when entering/leaving that stage.
+    var el=document.getElementById('tl-'+id);
+    var card=el?el.closest('.pcard'):null;
+    var hasBtn=!!(card && card.querySelector('.finishprod-btn'));
+    if((stage==='finition')!==hasBtn){ location.reload(); }
   }).catch(function(e){ alert('Erreur: '+e); });
+}
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function renderTimeline(id, tl){
+  var el=document.getElementById('tl-'+id);
+  if(!el){
+    el=document.createElement('div'); el.className='timeline'; el.id='tl-'+id;
+    var sel=document.querySelector('select.stage-select[onchange*="setStage(\''+id+'\'"]');
+    if(sel && sel.parentNode){ sel.parentNode.insertBefore(el, sel); } else { return; }
+  }
+  var html='<div class="tl-title">⏱️ Timeline de production</div>';
+  (tl||[]).forEach(function(e,i){
+    html+='<div class="tl-step'+(i===tl.length-1?' tl-current':'')+'"><div class="tl-date">'+esc(e.at)+'</div><div class="tl-stage">'+esc(e.label)+'</div></div>';
+    if(i<tl.length-1){ html+='<div class="tl-sep">—</div>'; }
+  });
+  el.innerHTML=html;
 }
 function finishProduction(id){
   if(!confirm('Terminer la production et déplacer vers History ?')) return;

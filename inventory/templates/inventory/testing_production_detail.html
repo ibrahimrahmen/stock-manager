@@ -39,6 +39,13 @@ h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bo
 .prod-live{background:linear-gradient(135deg,rgba(74,222,154,0.14),var(--surface));border:0.5px solid var(--green);}
 .badge-live{display:inline-block;background:var(--green);color:#04120b;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;}
 .hint{color:var(--muted);font-size:13px;}
+.timeline{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:14px;padding:12px;background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;}
+.tl-title{width:100%;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:2px;}
+.tl-step{display:flex;flex-direction:column;align-items:flex-start;}
+.tl-date{font-size:11px;color:var(--muted);font-weight:600;}
+.tl-stage{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;}
+.tl-step.tl-current .tl-stage{color:var(--green);}
+.tl-sep{color:var(--muted);align-self:center;margin-top:13px;opacity:0.5;letter-spacing:1px;}
 </style>
 {% include "inventory/_tp_chrome.html" %}
 </head>
@@ -90,6 +97,14 @@ h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bo
     <div style="margin-bottom:12px;"><span class="badge-live">🟢 En production</span></div>
     <div class="rrow"><span>Producteur</span><b>{{ pt.producer.username|default:"—" }}</b></div>
     <div class="rrow"><span>Démarré le</span><b>{{ pt.production_started_at|date:"d/m/Y H:i" }}</b></div>
+    {% with tl=pt.stage_timeline %}{% if tl %}
+    <div class="timeline">
+      <div class="tl-title">⏱️ Timeline de production</div>
+      {% for e in tl %}
+      <div class="tl-step{% if forloop.last %} tl-current{% endif %}"><div class="tl-date">{{ e.at }}</div><div class="tl-stage">{{ e.label }}</div></div>{% if not forloop.last %}<div class="tl-sep">—</div>{% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}{% endwith %}
   </div>
   {% elif pt.status == 'production' %}
   <div class="card">

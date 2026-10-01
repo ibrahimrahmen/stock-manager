@@ -5675,6 +5675,15 @@ def product_test_start_production(request, pk):
     pt.producer = producer
     pt.production_started = True
     pt.production_started_at = timezone.now()
+    # Start the production timeline at the current stage (en_production by default).
+    stg = pt.production_stage or "en_production"
+    pt.stage_history = [{
+        "stage": stg,
+        "label": pt.stage_label(stg),
+        "at": pt.production_started_at.strftime("%d/%m/%Y"),
+        "at_full": pt.production_started_at.strftime("%d/%m/%Y %H:%M"),
+        "by": request.user.get_username(),
+    }]
     pt.save()
     return JsonResponse({"status": "ok",
                          "producer": producer.username if producer else None})
@@ -5696,10 +5705,33 @@ def product_test_set_stage(request, pk):
     stage = (data.get("stage") or "").strip()
     if stage not in dict(ProductTest.STAGE_CHOICES):
         return JsonResponse({"status": "error", "message": "Étape invalide."}, status=400)
+    hist = list(pt.stage_history or [])
+    # Seed the timeline from the production start if it hasn't been recorded yet
+    # (products that started before the timeline feature existed).
+    if not hist and pt.production_started and pt.production_started_at and pt.production_stage:
+        hist = [{
+            "stage": pt.production_stage,
+            "label": pt.stage_label(pt.production_stage),
+            "at": pt.production_started_at.strftime("%d/%m/%Y"),
+            "at_full": pt.production_started_at.strftime("%d/%m/%Y %H:%M"),
+            "by": "",
+        }]
+    # Record a new timeline point only when the stage actually changes.
+    if not hist or hist[-1].get("stage") != stage:
+        now = timezone.now()
+        hist.append({
+            "stage": stage,
+            "label": pt.stage_label(stage),
+            "at": now.strftime("%d/%m/%Y"),
+            "at_full": now.strftime("%d/%m/%Y %H:%M"),
+            "by": request.user.get_username(),
+        })
     pt.production_stage = stage
-    pt.save(update_fields=["production_stage", "updated_at"])
+    pt.stage_history = hist
+    pt.save(update_fields=["production_stage", "stage_history", "updated_at"])
     return JsonResponse({"status": "ok", "stage": stage,
-                         "label": pt.get_production_stage_display()})
+                         "label": pt.get_production_stage_display(),
+                         "timeline": pt.stage_timeline()})
 
 
 @login_required(login_url="/login/")

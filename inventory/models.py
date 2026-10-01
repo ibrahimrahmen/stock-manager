@@ -1887,16 +1887,33 @@ class ProductTest(models.Model):
         ("patronnage", "Patronnage"),
         ("cherche_tissu", "Cherche Tissu"),
         ("echantillon", "Échantillon"),
+        ("salle_de_coupe", "Salle de Coupe"),
         ("fil_chaine", "Fil Chaîne"),
         ("broderie", "Broderie"),
         ("matelassage", "Matelassage"),
         ("serigraphie", "Sérigraphie"),
         ("finition", "Finition"),
     ]
+    # Label with an emoji, used in the stage dropdown and the timeline.
+    STAGE_EMOJI = {
+        "en_production": "🟢 En Production",
+        "patronnage": "📐 Patronnage",
+        "cherche_tissu": "🧵 Cherche Tissu",
+        "echantillon": "🧷 Échantillon",
+        "salle_de_coupe": "✂️ Salle de Coupe",
+        "fil_chaine": "🪢 Fil Chaîne",
+        "broderie": "🪡 Broderie",
+        "matelassage": "🛏️ Matelassage",
+        "serigraphie": "🖨️ Sérigraphie",
+        "finition": "✨ Finition",
+    }
     production_started = models.BooleanField(default=False)
     production_stage = models.CharField(
         max_length=30, choices=STAGE_CHOICES, default="en_production")
     production_plan = models.JSONField(null=True, blank=True)
+    # Timeline of production stages: a list of {stage, label, at, at_full, by}
+    # entries, oldest first — each stage change keeps its own date.
+    stage_history = models.JSONField(default=list, blank=True)
     producer = models.ForeignKey(
         "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="produced_tests",
@@ -1910,6 +1927,37 @@ class ProductTest(models.Model):
 
     def __str__(self):
         return f"{self.name} [{self.status}]"
+
+    def stage_label(self, stage=None):
+        """Emoji + label for a stage key (defaults to the current stage)."""
+        s = stage or self.production_stage
+        return self.STAGE_EMOJI.get(s, dict(self.STAGE_CHOICES).get(s, s))
+
+    def stage_timeline(self):
+        """Production stages with the date each was reached, oldest first.
+        Falls back to a single seeded entry for products that started
+        production before the timeline existed."""
+        out = []
+        for e in (self.stage_history or []):
+            if not isinstance(e, dict) or not e.get("stage"):
+                continue
+            out.append({
+                "stage": e.get("stage"),
+                "label": e.get("label") or self.stage_label(e.get("stage")),
+                "at": e.get("at", ""),
+                "at_full": e.get("at_full", e.get("at", "")),
+                "by": e.get("by", ""),
+            })
+        if not out and self.production_started and self.production_started_at:
+            at = self.production_started_at
+            out.append({
+                "stage": self.production_stage,
+                "label": self.stage_label(self.production_stage),
+                "at": at.strftime("%d/%m/%Y"),
+                "at_full": at.strftime("%d/%m/%Y %H:%M"),
+                "by": "",
+            })
+        return out
 
 
 class ProductTestVariant(models.Model):
