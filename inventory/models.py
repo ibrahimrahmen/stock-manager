@@ -758,6 +758,11 @@ class Order(models.Model):
         help_text="Note/raison saisie lors d'un changement de statut (injoignable, rappeler, pas sérieux).")
     # When the note was last written/updated, so the UI can show its time.
     status_note_at       = models.DateTimeField(null=True, blank=True)
+    # Full note history: a list of {"text", "at" (dd/mm HH:MM), "by"} entries,
+    # oldest first. Each note keeps its own timestamp (status_note above only
+    # ever holds the latest one, kept in sync for backward compatibility).
+    notes_log            = models.JSONField(default=list, blank=True,
+        help_text="Historique des notes : chaque note garde sa propre date.")
 
     # When Navex processes an exchange, it generates a SECOND barcode for the
     # return colis (the one that will pick up the old products). We store it here.
@@ -809,6 +814,32 @@ class Order(models.Model):
     def display_name(self):
         """Per-order name if set, otherwise the customer's name."""
         return (self.customer_name or "").strip() or (self.customer.name if self.customer else "")
+
+    def note_entries(self):
+        """Return the notes as a list of {'text','at','by'} dicts, oldest first.
+        Falls back to the legacy single status_note field when the log is empty,
+        so notes written before notes_log existed still show up."""
+        entries = []
+        for e in (self.notes_log or []):
+            if isinstance(e, dict) and (e.get("text") or "").strip():
+                entries.append({"text": e.get("text", ""),
+                                "at": e.get("at", ""),
+                                "by": e.get("by", "")})
+        if not entries and self.status_note:
+            at = ""
+            if self.status_note_at:
+                try:
+                    at = self.status_note_at.strftime("%d/%m %H:%M")
+                except Exception:
+                    at = ""
+            entries.append({"text": self.status_note, "at": at, "by": ""})
+        return entries
+
+    @property
+    def note_entries_json(self):
+        """note_entries() as a compact JSON string, for a data- attribute."""
+        import json as _json
+        return _json.dumps(self.note_entries(), ensure_ascii=False)
 
     def recalc_total(self):
         """Recompute total from order_offers + standalone lines + delivery − discount.

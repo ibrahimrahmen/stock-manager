@@ -148,6 +148,19 @@ a.row-link:hover{text-decoration:underline;}
 .note-icon .note-text{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;word-break:break-word;}
 .note-icon .note-empty{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;color:#a8922f;font-style:italic;opacity:0.85;}
 .note-icon.has-note{background:linear-gradient(135deg,#fff09a 0%,#ffdf5e 100%);}
+/* Each note in the stack keeps its own date; a thin line separates them. */
+.note-icon .note-entry{display:block;}
+.note-icon .note-entry + .note-entry{margin-top:4px;padding-top:4px;border-top:1px solid rgba(0,0,0,0.12);}
+/* Editor: the existing-notes log above the "add" box. */
+.note-pop .note-log{max-height:160px;overflow:auto;margin-bottom:8px;display:flex;flex-direction:column;gap:6px;}
+.note-pop .nl-item{display:flex;gap:6px;align-items:flex-start;background:var(--surface2);border:0.5px solid var(--border);border-radius:7px;padding:6px 8px;}
+.note-pop .nl-item .nl-body{flex:1;min-width:0;}
+.note-pop .nl-item .nl-text{font-size:12.5px;white-space:pre-wrap;word-break:break-word;color:var(--text);}
+.note-pop .nl-item .nl-time{display:block;margin-top:2px;font-size:10px;opacity:0.6;}
+.note-pop .nl-item .nl-del{flex:none;border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px;border-radius:5px;}
+.note-pop .nl-item .nl-del:hover{color:#dc5050;background:rgba(220,80,80,0.12);}
+.note-pop .nl-empty{font-size:11.5px;color:var(--muted);font-style:italic;margin-bottom:8px;}
+.note-pop .nl-addlabel{font-size:11px;color:var(--muted);margin-bottom:4px;}
 .note-plus{background:transparent;border:0.5px dashed var(--border);color:var(--muted);font-size:11px;cursor:pointer;padding:3px 9px;border-radius:6px;margin-top:5px;font-family:inherit;transition:all .15s;}
 .note-time{display:block;margin-top:3px;opacity:0.55;font-size:0.8em;font-weight:500;}
 .note-plus:hover{border-color:#d97706;color:#d97706;background:rgba(217,119,6,0.08);}
@@ -379,7 +392,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
           </td>
           <td>{{ o.sales_page.name|default:"—" }}
             <div class="note-wrap">
-              {% if o.status == 'injoignable' or o.status == 'rappeler_plus_tard' %}<button class="note-icon {% if o.status_note %}has-note{% endif %}" onclick="openNoteEditor(this, {{ o.id }})" title="{% if o.status_note %}{{ o.status_note }}{% if o.status_note_at %} · {{ o.status_note_at }}{% endif %}{% else %}Ajouter une note{% endif %}" data-note="{{ o.status_note|escape }}">{% if o.status_note %}<span class="note-text">{{ o.status_note }}</span>{% if o.status_note_at %}<span class="note-time"> · {{ o.status_note_at }}</span>{% endif %}{% else %}<span class="note-empty">+ note</span>{% endif %}</button>{% elif o.status == 'non_confirmee' or o.status == 'annulee' %}{% if o.status_note %}<button class="note-icon has-note" onclick="openNoteEditor(this, {{ o.id }})" title="{{ o.status_note }}{% if o.status_note_at %} · {{ o.status_note_at }}{% endif %}" data-note="{{ o.status_note|escape }}"><span class="note-text">{{ o.status_note }}</span>{% if o.status_note_at %}<span class="note-time"> · {{ o.status_note_at }}</span>{% endif %}</button>{% else %}<button class="note-plus" onclick="openNoteEditor(this, {{ o.id }})" title="Ajouter une note" data-note="">＋ note</button>{% endif %}{% endif %}
+              {% with entries=o.note_entries %}{% if o.status == 'injoignable' or o.status == 'rappeler_plus_tard' %}<button class="note-icon {% if entries %}has-note{% endif %}" onclick="openNoteEditor(this, {{ o.id }})" title="{% if entries %}Voir / ajouter des notes{% else %}Ajouter une note{% endif %}" data-entries="{{ o.note_entries_json|escape }}" data-ostatus="{{ o.status }}">{% if entries %}{% for e in entries %}<span class="note-entry"><span class="note-text">{{ e.text }}</span>{% if e.at %}<span class="note-time"> · {{ e.at }}</span>{% endif %}</span>{% endfor %}{% else %}<span class="note-empty">+ note</span>{% endif %}</button>{% elif o.status == 'non_confirmee' or o.status == 'annulee' %}{% if entries %}<button class="note-icon has-note" onclick="openNoteEditor(this, {{ o.id }})" title="Voir / ajouter des notes" data-entries="{{ o.note_entries_json|escape }}" data-ostatus="{{ o.status }}">{% for e in entries %}<span class="note-entry"><span class="note-text">{{ e.text }}</span>{% if e.at %}<span class="note-time"> · {{ e.at }}</span>{% endif %}</span>{% endfor %}</button>{% else %}<button class="note-plus" onclick="openNoteEditor(this, {{ o.id }})" title="Ajouter une note" data-entries="[]" data-ostatus="{{ o.status }}">＋ note</button>{% endif %}{% endif %}{% endwith %}
             </div>
           </td>
           <td>
@@ -1112,7 +1125,7 @@ function buildOrderRowHtml(o) {
     <td><span class="date-cell" data-order-id="${o.id}" data-scheduled="${scheduled}" onclick="openDatePicker(this)" title="Cliquer pour reporter la commande">${dateCellInner}</span></td>
     <td>${pageName}
       <div class="note-wrap">
-        ${(o.status === 'injoignable' || o.status === 'rappeler_plus_tard') ? `<button class="note-icon ${o.status_note ? 'has-note' : ''}" onclick="openNoteEditor(this, ${o.id})" title="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') + (o.status_note_at ? ' · ' + o.status_note_at : '') : 'Ajouter une note'}" data-note="${o.status_note ? String(o.status_note).replace(/"/g,'&quot;') : ''}">${o.status_note ? `<span class="note-text">${String(o.status_note).replace(/</g,'&lt;')}</span>${o.status_note_at ? `<span class="note-time"> · ${o.status_note_at}</span>` : ''}` : '<span class="note-empty">+ note</span>'}</button>` : ((o.status === 'non_confirmee' || o.status === 'annulee') ? (o.status_note ? `<button class="note-icon has-note" onclick="openNoteEditor(this, ${o.id})" title="${String(o.status_note).replace(/"/g,'&quot;') + (o.status_note_at ? ' · ' + o.status_note_at : '')}" data-note="${String(o.status_note).replace(/"/g,'&quot;')}"><span class="note-text">${String(o.status_note).replace(/</g,'&lt;')}</span>${o.status_note_at ? `<span class="note-time"> · ${o.status_note_at}</span>` : ''}</button>` : `<button class="note-plus" onclick="openNoteEditor(this, ${o.id})" title="Ajouter une note" data-note="">＋ note</button>`) : '')}
+        ${renderNoteCell(o)}
       </div>
     </td>
     <td>
@@ -2123,56 +2136,126 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ---- Notes: a log of entries, each keeping its own date -------------------
+function noteEsc(s){ return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// Normalise an order's notes into an array of {text, at}. Supports the new
+// note_entries list and falls back to the legacy single status_note field.
+function noteEntriesOf(o){
+  if (Array.isArray(o.note_entries) && o.note_entries.length) return o.note_entries;
+  if (o.status_note) return [{text: o.status_note, at: o.status_note_at || ''}];
+  return [];
+}
+
+// The stacked entries shown inside a note button.
+function noteEntriesInner(entries){
+  if (!entries || !entries.length) return '<span class="note-empty">+ note</span>';
+  return entries.map(e =>
+    `<span class="note-entry"><span class="note-text">${noteEsc(e.text)}</span>${e.at ? `<span class="note-time"> · ${noteEsc(e.at)}</span>` : ''}</span>`
+  ).join('');
+}
+
+// Full <button> markup for the note cell of a JS-rendered row.
+function renderNoteCell(o){
+  const entries = noteEntriesOf(o);
+  const dataAttr = `data-entries="${noteEsc(JSON.stringify(entries))}" data-ostatus="${noteEsc(o.status)}"`;
+  if (o.status === 'injoignable' || o.status === 'rappeler_plus_tard') {
+    return `<button class="note-icon ${entries.length ? 'has-note' : ''}" onclick="openNoteEditor(this, ${o.id})" title="${entries.length ? 'Voir / ajouter des notes' : 'Ajouter une note'}" ${dataAttr}>${noteEntriesInner(entries)}</button>`;
+  }
+  if (o.status === 'non_confirmee' || o.status === 'annulee') {
+    if (entries.length) {
+      return `<button class="note-icon has-note" onclick="openNoteEditor(this, ${o.id})" title="Voir / ajouter des notes" ${dataAttr}>${noteEntriesInner(entries)}</button>`;
+    }
+    return `<button class="note-plus" onclick="openNoteEditor(this, ${o.id})" title="Ajouter une note" ${dataAttr}>＋ note</button>`;
+  }
+  return '';
+}
+
+// Update an existing note button in place after a save/delete.
+function applyNoteButton(btn, entries){
+  const ostatus = btn.getAttribute('data-ostatus') || '';
+  btn.setAttribute('data-entries', JSON.stringify(entries || []));
+  if (!entries || !entries.length) {
+    if (ostatus === 'non_confirmee' || ostatus === 'annulee') {
+      btn.className = 'note-plus';
+      btn.title = 'Ajouter une note';
+      btn.innerHTML = '＋ note';
+    } else {
+      btn.className = 'note-icon';
+      btn.title = 'Ajouter une note';
+      btn.innerHTML = '<span class="note-empty">+ note</span>';
+    }
+    return;
+  }
+  btn.className = 'note-icon has-note';
+  btn.title = 'Voir / ajouter des notes';
+  btn.innerHTML = noteEntriesInner(entries);
+}
+
 function openNoteEditor(btn, orderId) {
   // close any existing popup
   const existing = document.querySelector('.note-pop');
   if (existing) existing.remove();
-  const current = btn.getAttribute('data-note') || '';
+  let entries = [];
+  try { entries = JSON.parse(btn.getAttribute('data-entries') || '[]'); } catch (e) { entries = []; }
+
   const pop = document.createElement('div');
   pop.className = 'note-pop';
-  pop.innerHTML = `
-    <textarea placeholder="Note / raison...">${current.replace(/</g,'&lt;')}</textarea>
-    <div class="note-actions">
-      <button class="cancel">Annuler</button>
-      <button class="save">Enregistrer</button>
-    </div>`;
   document.body.appendChild(pop);
-  const r = btn.getBoundingClientRect();
-  pop.style.left = (r.left + window.scrollX) + 'px';
-  pop.style.top = (r.bottom + window.scrollY + 4) + 'px';
-  // keep it on screen
-  const pr = pop.getBoundingClientRect();
-  if (pr.right > window.innerWidth - 8) {
-    pop.style.left = (window.innerWidth - pr.width - 8 + window.scrollX) + 'px';
-  }
-  const ta = pop.querySelector('textarea');
-  ta.focus();
+
   const close = () => { pop.remove(); document.removeEventListener('click', onDoc, true); };
-  const onDoc = (e) => { if (!pop.contains(e.target) && e.target !== btn) close(); };
-  setTimeout(() => document.addEventListener('click', onDoc, true), 0);
-  pop.querySelector('.cancel').addEventListener('click', close);
-  pop.querySelector('.save').addEventListener('click', async () => {
-    const note = ta.value.trim();
+  const onDoc = (e) => { if (!pop.contains(e.target) && e.target !== btn && !btn.contains(e.target)) close(); };
+
+  const renderPop = () => {
+    const log = entries.length
+      ? `<div class="note-log">${entries.map((e,i) =>
+          `<div class="nl-item"><div class="nl-body"><div class="nl-text">${noteEsc(e.text)}</div>${e.at ? `<span class="nl-time">${noteEsc(e.at)}${e.by ? ' · ' + noteEsc(e.by) : ''}</span>` : ''}</div><button class="nl-del" data-i="${i}" title="Supprimer cette note">✕</button></div>`
+        ).join('')}</div>`
+      : `<div class="nl-empty">Aucune note pour l'instant.</div>`;
+    pop.innerHTML = `
+      ${log}
+      <div class="nl-addlabel">Ajouter une note</div>
+      <textarea placeholder="Nouvelle note / raison..."></textarea>
+      <div class="note-actions">
+        <button class="cancel">Fermer</button>
+        <button class="save">Ajouter</button>
+      </div>`;
+    // position (do it after content so size is known)
+    const r = btn.getBoundingClientRect();
+    pop.style.left = (r.left + window.scrollX) + 'px';
+    pop.style.top = (r.bottom + window.scrollY + 4) + 'px';
+    const pr = pop.getBoundingClientRect();
+    if (pr.right > window.innerWidth - 8) {
+      pop.style.left = (Math.max(8, window.innerWidth - pr.width - 8) + window.scrollX) + 'px';
+    }
+    pop.querySelector('.cancel').addEventListener('click', close);
+    pop.querySelector('textarea').focus();
+    pop.querySelector('.save').addEventListener('click', () => doPost({add: pop.querySelector('textarea').value.trim()}));
+    pop.querySelectorAll('.nl-del').forEach(b =>
+      b.addEventListener('click', () => doPost({delete_index: parseInt(b.getAttribute('data-i'), 10)})));
+  };
+
+  const doPost = async (payload) => {
+    if (payload.add !== undefined && !payload.add) { return; }  // nothing typed
     try {
       const res = await fetch(`/api/sales-orders/${orderId}/note/`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken()},
-        body: JSON.stringify({note}),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (data.status === 'ok') {
-        btn.setAttribute('data-note', data.note);
-        btn.setAttribute('title', (data.note || 'Ajouter une note') + (data.note && data.note_at ? ' · ' + data.note_at : ''));
-        btn.className = 'note-icon' + (data.note ? ' has-note' : '');
-        btn.innerHTML = data.note
-          ? `<span class="note-text">${String(data.note).replace(/</g,'&lt;')}</span>${data.note_at ? `<span class="note-time"> · ${data.note_at}</span>` : ''}`
-          : '<span class="note-empty">+ note</span>';
-        close();
+        entries = data.entries || [];
+        applyNoteButton(btn, entries);
+        renderPop();
       } else {
         alert(data.message || 'Erreur.');
       }
     } catch (e) { alert('Erreur réseau.'); }
-  });
+  };
+
+  renderPop();
+  setTimeout(() => document.addEventListener('click', onDoc, true), 0);
 }
 
 function openStatusMenu(btn, orderId, currentStatus, hasBordereau) {

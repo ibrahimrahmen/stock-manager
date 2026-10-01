@@ -9984,6 +9984,7 @@ def api_orders_search(request):
             "amount_collected": str(o.amount_collected) if o.amount_collected is not None else None,
             "status_note": o.status_note or "",
             "status_note_at": o.status_note_at.strftime("%d/%m %H:%M") if o.status_note_at else "",
+            "note_entries": o.note_entries(),
             "bordereau": o.bordereau_barcode,
             "navex_last_status": o.navex_last_status or "",
             "navex_last_synced_at": o.navex_last_synced_at.strftime("%d/%m %H:%M") if o.navex_last_synced_at else "",
@@ -14970,18 +14971,65 @@ def api_order_set_note(request, pk):
     except json.JSONDecodeError:
         return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
     order = get_object_or_404(Order, pk=pk)
-    note = (data.get("note") or "").strip()[:300]
-    order.status_note = note
-    order.status_note_at = timezone.now() if note else None
-    order.save(update_fields=["status_note", "status_note_at", "updated_at"])
-    log_action(
-        request.user, AuditLog.EDIT,
-        description=f"Commande #{order.id} : note mise à jour" + (f" → {note}" if note else " (effacée)"),
-        request=request, target_model="Order", target_id=order.id,
-    )
+
+    # Seed the log from the legacy single-note field the first time we touch it,
+    # so notes written before notes_log existed are preserved as the first entry.
+    log = list(order.notes_log or [])
+    if not log and order.status_note:
+        _at = order.status_note_at.strftime("%d/%m %H:%M") if order.status_note_at else ""
+        log = [{"text": order.status_note, "at": _at, "by": ""}]
+
+    add = (data.get("add") or data.get("note") or "").strip()[:300]
+    del_index = data.get("delete_index", None)
+    desc = ""
+
+    if del_index is not None:
+        # Remove one entry by its index (oldest-first).
+        try:
+            i = int(del_index)
+        except (TypeError, ValueError):
+            i = -1
+        if 0 <= i < len(log):
+            removed = log.pop(i)
+            desc = f"note supprimée ({removed.get('text','')[:40]})"
+    elif add:
+        # Append a NEW note — it keeps its own timestamp.
+        log.append({
+            "text": add,
+            "at": timezone.now().strftime("%d/%m %H:%M"),
+            "by": request.user.get_username(),
+        })
+        desc = f"note ajoutée → {add}"
+    elif data.get("clear_all"):
+        log = []
+        desc = "notes effacées"
+    else:
+        # Nothing to do (empty submit) — just echo current state.
+        pass
+
+    order.notes_log = log
+    # Keep the legacy field in sync with the latest note so filters, titles and
+    # the JSON serializer that still read status_note stay correct.
+    if log:
+        order.status_note = (log[-1].get("text") or "")[:300]
+        order.status_note_at = timezone.now()
+    else:
+        order.status_note = ""
+        order.status_note_at = None
+    order.save(update_fields=["notes_log", "status_note", "status_note_at", "updated_at"])
+
+    if desc:
+        log_action(
+            request.user, AuditLog.EDIT,
+            description=f"Commande #{order.id} : {desc}",
+            request=request, target_model="Order", target_id=order.id,
+        )
     return JsonResponse({
-        "status": "ok", "note": note,
-        "note_at": order.status_note_at.strftime("%d/%m %H:%M") if order.status_note_at else "",
+        "status": "ok",
+        "entries": log,
+        "has_note": bool(log),
+        "note": (log[-1].get("text") if log else ""),
+        "note_at": (log[-1].get("at") if log else ""),
     })
 
 
@@ -15229,10 +15277,21 @@ def api_order_change_status(request, pk):
     order.status = new_status
     update_fields = ["status", "updated_at"]
     if status_note:
+        # Append the reason as a new note entry (keeping its own timestamp),
+        # seeding the log from the legacy field first if needed.
+        _log = list(order.notes_log or [])
+        if not _log and order.status_note:
+            _at = order.status_note_at.strftime("%d/%m %H:%M") if order.status_note_at else ""
+            _log = [{"text": order.status_note, "at": _at, "by": ""}]
+        _log.append({
+            "text": status_note[:300],
+            "at": timezone.now().strftime("%d/%m %H:%M"),
+            "by": request.user.get_username(),
+        })
+        order.notes_log = _log
         order.status_note = status_note[:300]
         order.status_note_at = timezone.now()
-        update_fields.append("status_note")
-        update_fields.append("status_note_at")
+        update_fields += ["notes_log", "status_note", "status_note_at"]
     order.save(update_fields=update_fields)
     _maybe_send_status_sms(order)
     log_action(
