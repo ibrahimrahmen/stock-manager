@@ -10704,7 +10704,18 @@ def ads_offers_dashboard(request):
         pageblocks_direct.append(blk)
     pageblocks_direct.sort(key=lambda b: b["spend"], reverse=True)
 
+    # ---- Top summary: total ad spend over the period, number of orders that are
+    # LIVRÉE + PAYÉE (created in the period), and the cost per delivered order. ----
+    delivered_count = (Order.objects
+                       .filter(created_at__date__gte=start, created_at__date__lte=end)
+                       .filter(status__in=[Order.LIVREE, Order.PAYEE])
+                       .filter(exchange_of__isnull=True)
+                       .count())
+    cost_per_delivered = (total_spend / delivered_count) if delivered_count else None
+
     return render(request, "inventory/ads_offers.html", {
+        "delivered_count": delivered_count,
+        "cost_per_delivered": cost_per_delivered,
         "camp_rows": camp_rows,       # NEW: direct per-campaign attribution
         "camp_total_spend": camp_total_spend,
         "camp_total_orders": camp_total_orders,

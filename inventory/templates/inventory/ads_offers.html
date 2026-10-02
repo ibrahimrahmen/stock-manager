@@ -33,6 +33,12 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .stat{background:var(--surface);border:0.5px solid var(--border);border-radius:14px;padding:18px;}
 .stat .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;}
 .stat .value{font-size:24px;font-weight:600;margin-top:6px;}
+.hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:20px;}
+.hero .hcard{background:linear-gradient(135deg,rgba(245,166,35,0.08),var(--surface));border:0.5px solid var(--border);border-radius:16px;padding:20px;}
+.hero .hcard.accent{border-color:var(--amber);background:linear-gradient(135deg,rgba(245,166,35,0.16),var(--surface));}
+.hero .hlabel{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:6px;}
+.hero .hvalue{font-size:30px;font-weight:700;margin-top:8px;}
+.hero .hsub{font-size:11px;color:var(--muted);margin-top:5px;}
 .section-title{font-family:'DM Serif Display',serif;font-size:20px;margin:26px 0 12px;padding-bottom:10px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:10px;}
 .barats-card{background:linear-gradient(135deg,rgba(96,165,250,0.10),var(--surface));border:0.5px solid var(--blue);border-radius:16px;padding:20px;margin-bottom:12px;}
 .barats-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:16px;margin-top:12px;}
@@ -114,6 +120,25 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
   <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;">
     <a class="chip" href="?">Aujourd'hui</a>
     <a class="chip" href="?start={{ start }}&end={{ start }}">Jour de début seul</a>
+  </div>
+
+  <!-- Top summary: total ad spend, delivered+paid orders, cost per delivered order -->
+  <div class="hero">
+    <div class="hcard">
+      <div class="hlabel">💸 Dépense pub totale</div>
+      <div class="hvalue">{{ total_spend|floatformat:2 }} DT</div>
+      <div class="hsub">Meta · période sélectionnée</div>
+    </div>
+    <div class="hcard">
+      <div class="hlabel">📦 Commandes livrées + payées</div>
+      <div class="hvalue">{{ delivered_count }}</div>
+      <div class="hsub">Créées sur la période · statut Livrée ou Payée</div>
+    </div>
+    <div class="hcard accent">
+      <div class="hlabel">🎯 Coût par commande livrée</div>
+      <div class="hvalue cpo">{% if cost_per_delivered %}{{ cost_per_delivered|floatformat:3 }} DT{% else %}—{% endif %}</div>
+      <div class="hsub">Dépense pub ÷ commandes livrées + payées</div>
+    </div>
   </div>
 
   <div class="stats">
