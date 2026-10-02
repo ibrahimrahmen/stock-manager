@@ -1907,6 +1907,21 @@ class ProductTest(models.Model):
         "serigraphie": "🖨️ Sérigraphie",
         "finition": "✨ Finition",
     }
+    # Production priority, settable per product in the Production list.
+    PRIORITY_CHOICES = [
+        ("high", "Haute"),
+        ("medium", "Moyenne"),
+        ("low", "Basse"),
+    ]
+    PRIORITY_META = {
+        "high": "🔴 Haute",
+        "medium": "🟠 Moyenne",
+        "low": "🟢 Basse",
+    }
+    # Sort weight so high-priority products float to the top of the list.
+    PRIORITY_RANK = {"high": 0, "medium": 1, "low": 2}
+    priority = models.CharField(
+        max_length=10, choices=PRIORITY_CHOICES, default="medium", db_index=True)
     production_started = models.BooleanField(default=False)
     production_stage = models.CharField(
         max_length=30, choices=STAGE_CHOICES, default="en_production")
@@ -1932,6 +1947,10 @@ class ProductTest(models.Model):
         """Emoji + label for a stage key (defaults to the current stage)."""
         s = stage or self.production_stage
         return self.STAGE_EMOJI.get(s, dict(self.STAGE_CHOICES).get(s, s))
+
+    def priority_label(self):
+        """Emoji + label for the current priority."""
+        return self.PRIORITY_META.get(self.priority, "🟠 Moyenne")
 
     def stage_timeline(self):
         """Production stages with the date each was reached, oldest first.

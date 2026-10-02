@@ -67,6 +67,14 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .tl-stage{font-size:12.5px;font-weight:600;color:var(--text);white-space:nowrap;}
 .tl-step.tl-current .tl-stage{color:var(--green);}
 .tl-sep{color:var(--muted);align-self:center;margin-top:12px;opacity:0.5;letter-spacing:1px;font-size:11px;}
+/* Production priority: badge on the card + a selector to change it. */
+.prio-badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;margin:2px 0 8px;}
+.prio-badge.prio-high{background:rgba(248,113,113,0.16);color:#f87171;border:0.5px solid rgba(248,113,113,0.5);}
+.prio-badge.prio-medium{background:rgba(245,166,35,0.16);color:#f5a623;border:0.5px solid rgba(245,166,35,0.5);}
+.prio-badge.prio-low{background:rgba(74,222,154,0.16);color:#4ade9a;border:0.5px solid rgba(74,222,154,0.5);}
+.priority-select{margin-top:10px;width:100%;background:#0c0c0a;border:0.5px solid rgba(255,255,255,0.12);color:#f0ede6;border-radius:10px;padding:10px 12px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%238a887f' stroke-width='1.6' fill='none' stroke-linecap='round'/></svg>");background-repeat:no-repeat;background-position:right 12px center;padding-right:30px;}
+.priority-select:hover{border-color:var(--amber);}
+.priority-select option{background:#0c0c0a;color:#f0ede6;}
 .pvariants{display:flex;flex-direction:column;gap:12px;margin-top:2px;}
 .pv{display:flex;gap:12px;align-items:center;}
 .pv img{width:54px;height:54px;object-fit:cover;border-radius:10px;background:var(--surface2);flex:0 0 auto;}
@@ -139,6 +147,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
     <div class="pcard{% if it.production_started %} live{% endif %}">
       <a href="{% url 'product_test_orders' it.id %}" class="ordersbtn" title="Commandes envoyées à ce test">🧾 {{ it.norders }} commande(s)</a>
       <div class="pname">{{ it.name }}</div>
+      {% if tab == 'production' %}<span class="prio-badge prio-{{ it.priority }}" id="prio-badge-{{ it.id }}">{{ it.priority_label }}</span>{% endif %}
       <div class="pmeta">
         {% if it.sales_page %}📄 {{ it.sales_page.name }} · {% endif %}{% if it.created_by %}{{ it.created_by.username }} · {% endif %}{{ it.created_at|date:"d/m/Y" }} · {{ it.variants.count }} couleur(s)
       </div>
@@ -186,6 +195,13 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
         <div class="r"><span>Montant dépensé</span><b>{{ it.amount_spent|floatformat:2 }} DT</b></div>
         {% if it.finished_at %}<div class="r"><span>Terminé le</span><b>{{ it.finished_at|date:"d/m/Y" }}</b></div>{% endif %}
       </a>
+      {% if tab == 'production' %}
+      <select class="priority-select" onchange="setPriority('{{ it.id }}', this.value)">
+        <option value="high" {% if it.priority == 'high' %}selected{% endif %}>🔴 Priorité : Haute</option>
+        <option value="medium" {% if it.priority == 'medium' %}selected{% endif %}>🟠 Priorité : Moyenne</option>
+        <option value="low" {% if it.priority == 'low' %}selected{% endif %}>🟢 Priorité : Basse</option>
+      </select>
+      {% endif %}
       {% if it.production_started %}
       {% with tl=it.stage_timeline %}{% if tl %}
       <div class="timeline" id="tl-{{ it.id }}">
@@ -270,6 +286,17 @@ function renderTimeline(id, tl){
     if(i<tl.length-1){ html+='<div class="tl-sep">—</div>'; }
   });
   el.innerHTML=html;
+}
+function setPriority(id, priority){
+  fetch('/testing-production/'+id+'/set-priority/', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrf()},
+    body: JSON.stringify({priority:priority})
+  }).then(r=>r.json()).then(function(j){
+    if(j.status!=='ok'){ alert('Erreur: '+(j.message||'')); return; }
+    // Update the badge instantly.
+    var b=document.getElementById('prio-badge-'+id);
+    if(b){ b.className='prio-badge prio-'+priority; b.textContent=j.label; }
+  }).catch(function(e){ alert('Erreur: '+e); });
 }
 function finishProduction(id){
   if(!confirm('Terminer la production et déplacer vers History ?')) return;

@@ -5388,6 +5388,9 @@ def testing_production_page(request):
         items = list(ProductTest.objects.filter(status=status)
                      .annotate(norders=Count("test_orders"))
                      .prefetch_related("variants"))
+        # In Production, show highest-priority products first.
+        if tab == "production":
+            items.sort(key=lambda it: ProductTest.PRIORITY_RANK.get(it.priority, 1))
         # Per-product colour/size map, for the "finish test" form built in JS.
         items_data = {
             str(it.id): {
@@ -5732,6 +5735,28 @@ def product_test_set_stage(request, pk):
     return JsonResponse({"status": "ok", "stage": stage,
                          "label": pt.get_production_stage_display(),
                          "timeline": pt.stage_timeline()})
+
+
+@login_required(login_url="/login/")
+@require_POST
+def product_test_set_priority(request, pk):
+    """Set a product's production priority (Haute / Moyenne / Basse)."""
+    from .models import ProductTest
+    try:
+        pt = ProductTest.objects.get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    try:
+        data = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        data = {}
+    priority = (data.get("priority") or "").strip()
+    if priority not in dict(ProductTest.PRIORITY_CHOICES):
+        return JsonResponse({"status": "error", "message": "Priorité invalide."}, status=400)
+    pt.priority = priority
+    pt.save(update_fields=["priority", "updated_at"])
+    return JsonResponse({"status": "ok", "priority": priority,
+                         "label": pt.priority_label()})
 
 
 @login_required(login_url="/login/")
