@@ -161,7 +161,19 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
         })(dnum);
       }
     }
-    function open(){ panel.hidden=false; selFrom.textContent=longLabel(selS); selTo.textContent=longLabel(selE); renderPresets(); renderCal(); setTimeout(function(){document.addEventListener('click',onDoc,true);},0); }
+    function open(){
+      panel.hidden=false;
+      panel.style.left='0'; panel.style.right='auto';
+      selFrom.textContent=longLabel(selS); selTo.textContent=longLabel(selE);
+      renderPresets(); renderCal();
+      // Keep the panel inside the viewport (the trigger is often near the right
+      // edge, which would otherwise clip the calendar off-screen).
+      var rect=panel.getBoundingClientRect();
+      if(rect.right > window.innerWidth-8){ panel.style.left='auto'; panel.style.right='0'; }
+      rect=panel.getBoundingClientRect();
+      if(rect.left < 8){ panel.style.right='auto'; panel.style.left=(8-root.getBoundingClientRect().left)+'px'; }
+      setTimeout(function(){document.addEventListener('click',onDoc,true);},0);
+    }
     function close(){ panel.hidden=true; pick=null; document.removeEventListener('click',onDoc,true); }
     function onDoc(e){ if(!root.contains(e.target)) close(); }
     trigger.addEventListener('click',function(){ panel.hidden?open():close(); });
