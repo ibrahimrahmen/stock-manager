@@ -111,15 +111,8 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
       <div class="subtitle">Dépense Meta vs commandes (En cours + Livrée + Payée) · Barats.tn en pool · autres pages par offre(s)</div>
     </div>
     <form class="daypick" method="get">
-      <div><label>Début</label><input type="date" name="start" value="{{ start }}"></div>
-      <div><label>Fin</label><input type="date" name="end" value="{{ end }}"></div>
-      <button class="btn" type="submit">Voir</button>
+      {% include "inventory/_date_filter.html" with start_name="start" end_name="end" cur_start=start cur_end=end %}
     </form>
-  </div>
-
-  <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;">
-    <a class="chip" href="?">Aujourd'hui</a>
-    <a class="chip" href="?start={{ start }}&end={{ start }}">Jour de début seul</a>
   </div>
 
   <!-- Top summary: total ad spend, delivered+paid orders, cost per delivered order -->

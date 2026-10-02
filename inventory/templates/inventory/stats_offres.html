@@ -83,14 +83,7 @@ tr.totaux td{color:var(--text);}
 
   <form method="get" class="controls">
     <input type="hidden" name="source" value="{{ source_filter }}">
-    <div><label>Du</label><input type="date" name="from" value="{{ from_date }}"></div>
-    <div><label>Au</label><input type="date" name="to" value="{{ to_date }}"></div>
-    <button type="submit">Appliquer</button>
-    <div class="quick">
-      <a href="?from={{ to_date }}&to={{ to_date }}&source={{ source_filter }}">Aujourd'hui</a>
-      <a href="?range=7&source={{ source_filter }}">7 jours</a>
-      <a href="?range=30&source={{ source_filter }}">30 jours</a>
-    </div>
+    {% include "inventory/_date_filter.html" with start_name="from" end_name="to" cur_start=from_date cur_end=to_date %}
     <div style="margin-left:auto;">
       <label>Rechercher</label>
       <input type="search" id="search" placeholder="Nom de l'offre…" oninput="filterRows()">

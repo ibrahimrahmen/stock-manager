@@ -1,0 +1,177 @@
+{% comment %}
+Reusable Meta-style date range filter.
+Usage (place INSIDE the page's GET <form>):
+  {% include "inventory/_date_filter.html" with start_name="start" end_name="end" cur_start=start cur_end=end %}
+It renders its own hidden inputs (start_name / end_name) + a trigger button and a
+dropdown with presets and a calendar. On Apply it sets the hidden inputs and
+submits the enclosing form, so the page keeps all its other fields.
+Colors come from the page's CSS variables (--surface, --border, --text, --muted,
+--amber), so it adapts to light/dark automatically.
+{% endcomment %}
+<div class="mdf" data-start-name="{{ start_name }}" data-end-name="{{ end_name }}"
+     data-start="{{ cur_start }}" data-end="{{ cur_end }}">
+  <input type="hidden" name="{{ start_name }}" value="{{ cur_start }}" class="mdf-in-start">
+  <input type="hidden" name="{{ end_name }}" value="{{ cur_end }}" class="mdf-in-end">
+  <button type="button" class="mdf-trigger">
+    <span class="mdf-ico">📅</span><span class="mdf-label">—</span><span class="mdf-caret">▾</span>
+  </button>
+  <div class="mdf-panel" hidden>
+    <div class="mdf-presets"></div>
+    <div class="mdf-cal">
+      <div class="mdf-cal-head">
+        <button type="button" class="mdf-nav mdf-prev" aria-label="Mois précédent">‹</button>
+        <span class="mdf-month"></span>
+        <button type="button" class="mdf-nav mdf-next" aria-label="Mois suivant">›</button>
+      </div>
+      <div class="mdf-grid"></div>
+      <div class="mdf-sel"><span class="mdf-sel-from">—</span> → <span class="mdf-sel-to">—</span></div>
+      <div class="mdf-actions">
+        <button type="button" class="mdf-cancel">Annuler</button>
+        <button type="button" class="mdf-apply">Appliquer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if not mdf_assets_loaded %}
+<style>
+.mdf{position:relative;display:inline-block;font-family:inherit;}
+.mdf-trigger{display:inline-flex;align-items:center;gap:8px;background:var(--surface2,#222220);border:0.5px solid var(--border,rgba(255,255,255,.12));color:var(--text,#f0ede6);border-radius:10px;padding:10px 14px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;}
+.mdf-trigger:hover{border-color:var(--amber,#f5a623);}
+.mdf-caret{color:var(--muted,#8a887f);font-size:11px;}
+.mdf-panel{position:absolute;z-index:300;top:calc(100% + 6px);left:0;display:flex;background:var(--surface,#1a1a17);border:0.5px solid var(--border,rgba(255,255,255,.12));border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.5);overflow:hidden;}
+.mdf-panel[hidden]{display:none;}
+.mdf-presets{display:flex;flex-direction:column;min-width:172px;padding:8px;border-right:0.5px solid var(--border,rgba(255,255,255,.12));gap:2px;}
+.mdf-preset{text-align:left;background:transparent;border:none;color:var(--text,#f0ede6);padding:9px 12px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap;}
+.mdf-preset:hover{background:var(--surface2,#222220);}
+.mdf-preset.active{background:var(--amber,#f5a623);color:#0a0a08;font-weight:700;}
+.mdf-cal{padding:12px;width:286px;}
+.mdf-cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.mdf-month{font-weight:600;font-size:14px;text-transform:capitalize;}
+.mdf-nav{background:var(--surface2,#222220);border:0.5px solid var(--border,rgba(255,255,255,.12));color:var(--text,#f0ede6);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:15px;line-height:1;}
+.mdf-nav:hover{border-color:var(--amber,#f5a623);}
+.mdf-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+.mdf-dow{font-size:10px;color:var(--muted,#8a887f);text-align:center;padding:4px 0;text-transform:uppercase;font-weight:600;}
+.mdf-day{height:34px;border:none;background:transparent;color:var(--text,#f0ede6);border-radius:8px;font-size:12.5px;cursor:pointer;font-family:inherit;}
+.mdf-day:hover{background:var(--surface2,#222220);}
+.mdf-day.empty{visibility:hidden;cursor:default;}
+.mdf-day.in-range{background:rgba(245,166,35,0.18);border-radius:0;}
+.mdf-day.edge{background:var(--amber,#f5a623);color:#0a0a08;font-weight:700;}
+.mdf-day.today{box-shadow:inset 0 0 0 1px var(--muted,#8a887f);}
+.mdf-sel{margin-top:10px;font-size:12px;color:var(--muted,#8a887f);text-align:center;}
+.mdf-actions{display:flex;gap:8px;margin-top:10px;justify-content:flex-end;}
+.mdf-actions button{padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;border:0.5px solid var(--border,rgba(255,255,255,.12));}
+.mdf-cancel{background:var(--surface2,#222220);color:var(--text,#f0ede6);}
+.mdf-apply{background:var(--amber,#f5a623);color:#0a0a08;border-color:var(--amber,#f5a623);}
+@media(max-width:600px){.mdf-panel{flex-direction:column;}.mdf-cal{width:auto;}.mdf-presets{flex-direction:row;flex-wrap:wrap;min-width:0;border-right:none;border-bottom:0.5px solid var(--border,rgba(255,255,255,.12));}}
+</style>
+<script>
+(function(){
+  if (window.__mdfReady) return;
+  window.__mdfReady = true;
+  var MONTHS=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  var MON_SHORT=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+  var DOW=['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+  function pad(n){return (n<10?'0':'')+n;}
+  function fmt(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+  function parse(s){ if(!s) return null; var p=String(s).split('-'); if(p.length!==3) return null; var d=new Date(+p[0],+p[1]-1,+p[2]); return isNaN(d.getTime())?null:d; }
+  function sameDay(a,b){return a&&b&&a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();}
+  function addDays(d,n){var x=new Date(d);x.setDate(x.getDate()+n);return x;}
+  function startOfWeek(d){var x=new Date(d);var wd=(x.getDay()+6)%7;x.setDate(x.getDate()-wd);return x;}
+  function longLabel(d){return d.getDate()+' '+MON_SHORT[d.getMonth()]+' '+d.getFullYear();}
+  function presetsFor(){
+    var t=new Date(); t.setHours(0,0,0,0);
+    var y=addDays(t,-1);
+    var som=new Date(t.getFullYear(),t.getMonth(),1);
+    var lmEnd=new Date(t.getFullYear(),t.getMonth(),0);
+    var lmStart=new Date(lmEnd.getFullYear(),lmEnd.getMonth(),1);
+    return [
+      {k:"Aujourd'hui", s:t, e:t},
+      {k:'Hier', s:y, e:y},
+      {k:'7 derniers jours', s:addDays(t,-6), e:t},
+      {k:'14 derniers jours', s:addDays(t,-13), e:t},
+      {k:'30 derniers jours', s:addDays(t,-29), e:t},
+      {k:'Cette semaine', s:startOfWeek(t), e:t},
+      {k:'Ce mois-ci', s:som, e:t},
+      {k:'Le mois dernier', s:lmStart, e:lmEnd},
+      {k:'Maximum', s:new Date(2020,0,1), e:t},
+    ];
+  }
+  function labelFor(s,e){
+    if(!s||!e) return 'Choisir une période';
+    var ps=presetsFor();
+    for(var i=0;i<ps.length;i++){ if(sameDay(ps[i].s,s)&&sameDay(ps[i].e,e)) return ps[i].k; }
+    if(sameDay(s,e)) return longLabel(s);
+    return longLabel(s)+' – '+longLabel(e);
+  }
+  function initOne(root){
+    if(root.getAttribute('data-ready')) return;
+    root.setAttribute('data-ready','1');
+    var form=root.closest('form');
+    var inStart=root.querySelector('.mdf-in-start'), inEnd=root.querySelector('.mdf-in-end');
+    var trigger=root.querySelector('.mdf-trigger'), label=root.querySelector('.mdf-label');
+    var panel=root.querySelector('.mdf-panel');
+    var presetsBox=root.querySelector('.mdf-presets'), grid=root.querySelector('.mdf-grid');
+    var monthLbl=root.querySelector('.mdf-month');
+    var selFrom=root.querySelector('.mdf-sel-from'), selTo=root.querySelector('.mdf-sel-to');
+    var today=new Date(); today.setHours(0,0,0,0);
+    var selS=parse(root.getAttribute('data-start'))||today;
+    var selE=parse(root.getAttribute('data-end'))||selS;
+    var pick=null; // transient selection start while choosing a custom range
+    var view=new Date(selS.getFullYear(), selS.getMonth(), 1);
+
+    label.textContent=labelFor(selS,selE);
+
+    function apply(s,e){
+      inStart.value=fmt(s); inEnd.value=fmt(e);
+      if(form){ form.submit(); } else { location.search = '?'+root.getAttribute('data-start-name')+'='+fmt(s)+'&'+root.getAttribute('data-end-name')+'='+fmt(e); }
+    }
+    function renderPresets(){
+      var ps=presetsFor(); presetsBox.innerHTML='';
+      ps.forEach(function(p){
+        var b=document.createElement('button'); b.type='button'; b.className='mdf-preset';
+        if(sameDay(p.s,selS)&&sameDay(p.e,selE)) b.className+=' active';
+        b.textContent=p.k;
+        b.addEventListener('click',function(){ apply(p.s,p.e); });
+        presetsBox.appendChild(b);
+      });
+    }
+    function renderCal(){
+      monthLbl.textContent=MONTHS[view.getMonth()]+' '+view.getFullYear();
+      grid.innerHTML='';
+      DOW.forEach(function(d){ var h=document.createElement('div'); h.className='mdf-dow'; h.textContent=d; grid.appendChild(h); });
+      var first=new Date(view.getFullYear(),view.getMonth(),1);
+      var lead=(first.getDay()+6)%7;
+      for(var i=0;i<lead;i++){ var sp=document.createElement('div'); sp.className='mdf-day empty'; grid.appendChild(sp); }
+      var dim=new Date(view.getFullYear(),view.getMonth()+1,0).getDate();
+      var rngS=pick||selS, rngE=pick?null:selE;
+      for(var dnum=1;dnum<=dim;dnum++){
+        (function(dnum){
+          var d=new Date(view.getFullYear(),view.getMonth(),dnum);
+          var b=document.createElement('button'); b.type='button'; b.className='mdf-day'; b.textContent=dnum;
+          if(sameDay(d,today)) b.className+=' today';
+          if(rngE){ if(sameDay(d,rngS)||sameDay(d,rngE)) b.className+=' edge'; else if(d>rngS&&d<rngE) b.className+=' in-range'; }
+          else if(rngS&&sameDay(d,rngS)) b.className+=' edge';
+          b.addEventListener('click',function(){
+            if(!pick){ pick=d; selFrom.textContent=longLabel(d); selTo.textContent='…'; }
+            else{ var s=pick,e=d; if(e<s){ var t=s; s=e; e=t; } selS=s; selE=e; pick=null; selFrom.textContent=longLabel(s); selTo.textContent=longLabel(e); view=new Date(selS.getFullYear(),selS.getMonth(),1); renderPresets(); }
+            renderCal();
+          });
+          grid.appendChild(b);
+        })(dnum);
+      }
+    }
+    function open(){ panel.hidden=false; selFrom.textContent=longLabel(selS); selTo.textContent=longLabel(selE); renderPresets(); renderCal(); setTimeout(function(){document.addEventListener('click',onDoc,true);},0); }
+    function close(){ panel.hidden=true; pick=null; document.removeEventListener('click',onDoc,true); }
+    function onDoc(e){ if(!root.contains(e.target)) close(); }
+    trigger.addEventListener('click',function(){ panel.hidden?open():close(); });
+    root.querySelector('.mdf-prev').addEventListener('click',function(){ view=new Date(view.getFullYear(),view.getMonth()-1,1); renderCal(); });
+    root.querySelector('.mdf-next').addEventListener('click',function(){ view=new Date(view.getFullYear(),view.getMonth()+1,1); renderCal(); });
+    root.querySelector('.mdf-cancel').addEventListener('click',close);
+    root.querySelector('.mdf-apply').addEventListener('click',function(){ apply(selS,selE); });
+  }
+  function initAll(){ document.querySelectorAll('.mdf').forEach(initOne); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initAll); else initAll();
+})();
+</script>
+{% endif %}
