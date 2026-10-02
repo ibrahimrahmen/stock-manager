@@ -10266,6 +10266,16 @@ def _sync_ads_from_meta(start_date, end_date):
         ad.save()
         n += 1
 
+    # Any ad NOT in this range's spend_map had ZERO spend in the selected period.
+    # Zero it so a.spend always reflects the chosen range (otherwise a campaign
+    # keeps the spend from a previous/broader sync and the totals never drop when
+    # you narrow the date filter).
+    synced_ids = [cid for cid in spend_map.keys()]
+    (Ad.objects
+     .exclude(campaign_id__in=synced_ids)
+     .exclude(spend=Decimal("0"))
+     .update(spend=Decimal("0"), spend_original=Decimal("0"), last_synced_at=now))
+
     # Refresh effective_status for ALL known ads (not just those with spend
     # today), so cancelled/paused campaigns get flagged even when idle.
     status_map = _meta_fetch_campaign_status()
