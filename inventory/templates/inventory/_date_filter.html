@@ -162,9 +162,8 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
           if(rngE){ if(sameDay(d,rngS)||sameDay(d,rngE)) b.className+=' edge'; else if(d>rngS&&d<rngE) b.className+=' in-range'; }
           else if(rngS&&sameDay(d,rngS)) b.className+=' edge';
           b.addEventListener('click',function(){
-            if(!pick){ pick=d; selFrom.textContent=longLabel(d); selTo.textContent='…'; }
-            else{ var s=pick,e=d; if(e<s){ var t=s; s=e; e=t; } selS=s; selE=e; pick=null; selFrom.textContent=longLabel(s); selTo.textContent=longLabel(e); view=new Date(selS.getFullYear(),selS.getMonth(),1); renderPresets(); }
-            renderCal();
+            if(!pick){ pick=d; selFrom.textContent=longLabel(d); selTo.textContent='…'; renderCal(); }
+            else{ var s=pick,e=d; if(e<s){ var t=s; s=e; e=t; } pick=null; apply(s,e); }  // 2nd click = apply immediately
           });
           grid.appendChild(b);
         })(dnum);
