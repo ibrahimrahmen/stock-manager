@@ -36,7 +36,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 <body>
 <div class="topbar">
   <div class="brand">Changement de prix</div>
-  <div class="userbar"><a href="{% url 'dashboard' %}">← Dashboard</a></div>
+  <div class="userbar"><span style="font-size:12px;color:var(--text,#f0ede6);opacity:0.8;margin-right:10px;white-space:nowrap;">👤 {{ request.user.first_name|default:request.user.username|title }}</span><a href="{% url 'dashboard' %}">← Dashboard</a></div>
 </div>
 
 <div class="wrap">
