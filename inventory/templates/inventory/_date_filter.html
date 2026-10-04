@@ -51,7 +51,8 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
 .mdf-month{font-weight:600;font-size:14px;text-transform:capitalize;}
 .mdf-nav{background:var(--surface2,#222220);border:0.5px solid var(--border,rgba(255,255,255,.12));color:var(--text,#f0ede6);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:15px;line-height:1;}
 .mdf-nav:hover{border-color:var(--amber,#f5a623);}
-.mdf-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+.mdf-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;width:100%;}
+.mdf-grid>*{min-width:0;}
 .mdf-dow{font-size:10px;color:var(--muted,#8a887f);text-align:center;padding:4px 0;text-transform:uppercase;font-weight:600;}
 .mdf-day{height:34px;border:none;background:transparent;color:var(--text,#f0ede6);border-radius:8px;font-size:12.5px;cursor:pointer;font-family:inherit;}
 .mdf-day:hover{background:var(--surface2,#222220);}
