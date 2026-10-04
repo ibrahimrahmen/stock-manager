@@ -171,30 +171,16 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
     }
     function position(){
       if(panel.hidden) return;
-      // Fixed positioning + viewport clamp so no parent overflow can clip the
-      // panel and it never runs off any edge. Re-run on every change so it stays
-      // correct even if the page reflows after opening (e.g. the ads Meta sync
-      // or a scrollbar appearing changes the viewport width).
+      // ALWAYS a centered modal with a backdrop — it cannot be clipped by the
+      // viewport or by the trigger's side (left/right), on any screen width.
+      // Re-run on every reflow (resize/scroll/ResizeObserver) so it stays centered.
       var vw=document.documentElement.clientWidth || window.innerWidth;
       var vh=window.innerHeight;
-      var narrow = vw < 720;
-      panel.classList.toggle('mdf-narrow', narrow);   // stack presets above calendar
-      if(narrow){ var bd=ensureBackdrop(); if(bd.parentNode!==document.body) document.body.appendChild(bd); bd.style.display='block'; }
-      else if(backdrop){ backdrop.style.display='none'; }
+      panel.classList.toggle('mdf-narrow', vw < 560);   // stack presets above calendar on small screens
+      var bd=ensureBackdrop(); if(bd.parentNode!==document.body) document.body.appendChild(bd); bd.style.display='block';
       var pw=panel.offsetWidth, ph=panel.offsetHeight;
-      var left, top;
-      if(narrow){
-        // Centered modal — guaranteed fully on-screen on phones/small windows.
-        left=Math.max(8,(vw-pw)/2);
-        top=(ph > vh-16) ? 8 : Math.max(8,(vh-ph)/2);
-      } else {
-        var tr=trigger.getBoundingClientRect();
-        left=tr.left;
-        if(left+pw > vw-8) left=vw-8-pw;
-        if(left<8) left=8;
-        top=tr.bottom+6;
-        if(top+ph > vh-8) top=Math.max(8, tr.top-6-ph); // flip up if no room below
-      }
+      var left=Math.max(8,(vw-pw)/2);
+      var top=(ph > vh-16) ? 8 : Math.max(8,(vh-ph)/2);
       panel.style.left=Math.round(left)+'px';
       panel.style.top=Math.round(top)+'px';
     }
