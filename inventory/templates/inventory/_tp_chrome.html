@@ -9,27 +9,48 @@
 </style>
 <div style="display:none">{% csrf_token %}</div>
 <script>
+// Apply the saved theme immediately (runs in <head>, before the body paints).
+try{ document.documentElement.setAttribute('data-theme', "{{ user_theme|default:'dark' }}"); }catch(e){}
 function _ttcsrf(){const el=document.querySelector('[name=csrfmiddlewaretoken]');if(el)return el.value;return document.cookie.split('csrftoken=')[1]?.split(';')[0]||'';}
 function toggleTheme(){
   const h=document.documentElement;
   const cur=h.getAttribute('data-theme')||'dark';
   const next=cur==='dark'?'light':'dark';
   h.setAttribute('data-theme',next);
-  const ic=document.getElementById('theme-icon'); if(ic) ic.textContent=next==='light'?'🌙':'☀';
+  document.querySelectorAll('#theme-icon').forEach(function(ic){ ic.textContent=next==='light'?'🌙':'☀'; });
   try{ fetch('/api/user/theme/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':_ttcsrf()},body:JSON.stringify({theme:next})}); }catch(e){}
 }
-// Show the logged-in user's name in the top bar on every page that includes
-// this chrome. Idempotent: skips if a user chip (👤) is already present.
+// On every page that includes this chrome: show the user's name, and make sure
+// a Dashboard link and a theme toggle exist in the top bar. All idempotent.
 window.__UC="{{ request.user.first_name|default:request.user.username|title|escapejs }}";
 document.addEventListener('DOMContentLoaded',function(){
   try{
-    if(!window.__UC || !window.__UC.trim()) return;
     var bar=document.querySelector('.userbar')||document.querySelector('.topbar-right')||document.querySelector('.topbar');
-    if(!bar || bar.textContent.indexOf('👤')>=0) return;
-    var chip=document.createElement('span');
-    chip.textContent='👤 '+window.__UC;
-    chip.style.cssText='font-size:12px;color:var(--text,#f0ede6);opacity:0.8;margin-right:10px;white-space:nowrap;align-self:center;';
-    bar.insertBefore(chip, bar.firstChild);
+    if(!bar) return;
+    // user name chip
+    if(window.__UC && window.__UC.trim() && bar.textContent.indexOf('👤')<0){
+      var chip=document.createElement('span');
+      chip.textContent='👤 '+window.__UC;
+      chip.style.cssText='font-size:12px;color:var(--text,#f0ede6);opacity:0.8;margin-right:10px;white-space:nowrap;align-self:center;';
+      bar.insertBefore(chip, bar.firstChild);
+    }
+    // Dashboard link (skip if already on the dashboard or a link exists)
+    if(location.pathname.indexOf('/dashboard')!==0 && !document.querySelector('a[href="/dashboard/"]')){
+      var dash=document.createElement('a');
+      dash.href='/dashboard/'; dash.className='navbtn'; dash.textContent='🏠 Dashboard';
+      dash.style.cssText='color:var(--muted);text-decoration:none;font-size:13px;';
+      bar.appendChild(dash);
+    }
+    // Theme toggle (skip if the page already has one)
+    if(!document.getElementById('theme-icon') && !document.querySelector('[onclick*="toggleTheme"]')){
+      var btn=document.createElement('button');
+      btn.type='button'; btn.className='navbtn'; btn.title='Thème clair / sombre';
+      btn.addEventListener('click',toggleTheme);
+      var ic=document.createElement('span'); ic.id='theme-icon';
+      ic.textContent=(document.documentElement.getAttribute('data-theme')==='light')?'🌙':'☀';
+      btn.appendChild(ic);
+      bar.appendChild(btn);
+    }
   }catch(e){}
 });
 </script>
