@@ -170,27 +170,35 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
       }
     }
     function position(){
+      if(panel.hidden) return;
       // Fixed positioning + viewport clamp so no parent overflow can clip the
-      // panel and it never runs off any edge.
-      var narrow = window.innerWidth < 720;
+      // panel and it never runs off any edge. Re-run on every change so it stays
+      // correct even if the page reflows after opening (e.g. the ads Meta sync
+      // or a scrollbar appearing changes the viewport width).
+      var vw=document.documentElement.clientWidth || window.innerWidth;
+      var vh=window.innerHeight;
+      var narrow = vw < 720;
       panel.classList.toggle('mdf-narrow', narrow);   // stack presets above calendar
+      if(narrow){ var bd=ensureBackdrop(); if(bd.parentNode!==document.body) document.body.appendChild(bd); bd.style.display='block'; }
+      else if(backdrop){ backdrop.style.display='none'; }
       var pw=panel.offsetWidth, ph=panel.offsetHeight;
       var left, top;
       if(narrow){
         // Centered modal — guaranteed fully on-screen on phones/small windows.
-        left=Math.max(8,(window.innerWidth-pw)/2);
-        top=(ph > window.innerHeight-16) ? 8 : Math.max(8,(window.innerHeight-ph)/2);
+        left=Math.max(8,(vw-pw)/2);
+        top=(ph > vh-16) ? 8 : Math.max(8,(vh-ph)/2);
       } else {
         var tr=trigger.getBoundingClientRect();
         left=tr.left;
-        if(left+pw > window.innerWidth-8) left=window.innerWidth-8-pw;
+        if(left+pw > vw-8) left=vw-8-pw;
         if(left<8) left=8;
         top=tr.bottom+6;
-        if(top+ph > window.innerHeight-8) top=Math.max(8, tr.top-6-ph); // flip up if no room below
+        if(top+ph > vh-8) top=Math.max(8, tr.top-6-ph); // flip up if no room below
       }
       panel.style.left=Math.round(left)+'px';
       panel.style.top=Math.round(top)+'px';
     }
+    var ro=null;
     function open(){
       // Move the panel to <body> so NO ancestor (overflow:hidden, transform, etc.)
       // can clip it — it's positioned against the viewport only.
@@ -198,9 +206,12 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
       panel.hidden=false;
       selFrom.textContent=longLabel(selS); selTo.textContent=longLabel(selE);
       renderPresets(); renderCal();
-      if(window.innerWidth < 720){ var bd=ensureBackdrop(); document.body.appendChild(bd); bd.style.display='block'; }
       position();
+      // Keep it correctly placed even if the page reflows AFTER opening.
       window.addEventListener('resize', position);
+      window.addEventListener('scroll', position, true);
+      if(window.ResizeObserver){ ro=new ResizeObserver(position); ro.observe(document.documentElement); }
+      setTimeout(position,150); setTimeout(position,500); setTimeout(position,1200);
       setTimeout(function(){document.addEventListener('click',onDoc,true);},0);
     }
     function close(){
@@ -209,6 +220,8 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
       if(panel.parentNode!==origParent) origParent.appendChild(panel); // return it to the root when closed
       document.removeEventListener('click',onDoc,true);
       window.removeEventListener('resize',position);
+      window.removeEventListener('scroll',position,true);
+      if(ro){ ro.disconnect(); ro=null; }
     }
     function onDoc(e){ if(!panel.contains(e.target) && !root.contains(e.target) && !(backdrop&&backdrop.contains(e.target))) close(); }
     trigger.addEventListener('click',function(){ panel.hidden?open():close(); });
