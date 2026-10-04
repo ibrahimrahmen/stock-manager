@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stock Manager</title>
+  <title>Barats</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -191,7 +191,7 @@
 </head>
 <body>
   <div class="topbar">
-    <div class="brand">Stock Manager</div>
+    <div class="brand"><span style="background:linear-gradient(100deg,var(--text,#f0ede6) 35%,var(--green,#4ade9a) 120%);-webkit-background-clip:text;background-clip:text;color:transparent;">Barats</span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green,#4ade9a);margin-left:5px;box-shadow:0 0 8px var(--green,#4ade9a);"></span></div>
     <div class="userbar">
       <span>{{ request.user.username }}</span>
       <span class="role">{{ request.user.profile.get_role_display }}</span>

@@ -117,7 +117,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 </head>
 <body>
 <div class="topbar">
-  <div class="brand">Stock Manager</div>
+  <div class="brand"><span style="background:linear-gradient(100deg,var(--text,#f0ede6) 35%,var(--green,#4ade9a) 120%);-webkit-background-clip:text;background-clip:text;color:transparent;">Barats</span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green,#4ade9a);margin-left:5px;box-shadow:0 0 8px var(--green,#4ade9a);"></span></div>
   <div class="userbar">
     <a class="navbtn" href="{% url 'dashboard' %}">🏠 Dashboard</a>
     <button class="navbtn" onclick="toggleTheme()"><span id="theme-icon">{% if user_theme == 'light' %}🌙{% else %}☀{% endif %}</span></button>
