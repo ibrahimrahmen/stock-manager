@@ -176,7 +176,7 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
       // Re-run on every reflow (resize/scroll/ResizeObserver) so it stays centered.
       var vw=document.documentElement.clientWidth || window.innerWidth;
       var vh=window.innerHeight;
-      panel.classList.toggle('mdf-narrow', vw < 560);   // stack presets above calendar on small screens
+      panel.classList.add('mdf-narrow');   // always stacked: presets on top, full-width calendar below (never clips)
       var bd=ensureBackdrop(); if(bd.parentNode!==document.body) document.body.appendChild(bd); bd.style.display='block';
       var pw=panel.offsetWidth, ph=panel.offsetHeight;
       var left=Math.max(8,(vw-pw)/2);
