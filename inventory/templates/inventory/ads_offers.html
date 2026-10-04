@@ -110,10 +110,10 @@ select{background:var(--surface2);color:var(--text);border:0.5px solid var(--bor
       <div class="title">Coût par commande</div>
       <div class="subtitle">Dépense Meta vs commandes (En cours + Livrée + Payée) · Barats.tn en pool · autres pages par offre(s)</div>
     </div>
-    <form class="daypick" method="get">
-      {% include "inventory/_date_filter.html" with start_name="start" end_name="end" cur_start=start cur_end=end %}
-    </form>
   </div>
+  <form class="daypick" method="get" style="margin-bottom:20px;justify-content:flex-start;">
+    {% include "inventory/_date_filter.html" with start_name="start" end_name="end" cur_start=start cur_end=end %}
+  </form>
 
   <!-- Top summary: total ad spend, delivered+paid orders, cost per delivered order -->
   <div class="hero">
