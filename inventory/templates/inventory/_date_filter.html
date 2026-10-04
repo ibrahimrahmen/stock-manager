@@ -39,7 +39,8 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
 .mdf-trigger{display:inline-flex;align-items:center;gap:8px;background:var(--surface2,#222220);border:0.5px solid var(--border,rgba(255,255,255,.12));color:var(--text,#f0ede6);border-radius:10px;padding:10px 14px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;}
 .mdf-trigger:hover{border-color:var(--amber,#f5a623);}
 .mdf-caret{color:var(--muted,#8a887f);font-size:11px;}
-.mdf-panel{position:absolute;z-index:300;top:calc(100% + 6px);left:0;display:flex;background:var(--surface,#1a1a17);border:0.5px solid var(--border,rgba(255,255,255,.12));border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.5);overflow:hidden;}
+.mdf-panel{position:fixed;z-index:3000;top:0;left:0;display:flex;background:var(--surface,#1a1a17);border:0.5px solid var(--border,rgba(255,255,255,.12));border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.5);overflow:auto;box-sizing:border-box;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);}
+.mdf-panel *{box-sizing:border-box;}
 .mdf-panel[hidden]{display:none;}
 .mdf-presets{display:flex;flex-direction:column;min-width:172px;padding:8px;border-right:0.5px solid var(--border,rgba(255,255,255,.12));gap:2px;}
 .mdf-preset{text-align:left;background:transparent;border:none;color:var(--text,#f0ede6);padding:9px 12px;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;white-space:nowrap;}
@@ -63,6 +64,9 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
 .mdf-actions button{padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;border:0.5px solid var(--border,rgba(255,255,255,.12));}
 .mdf-cancel{background:var(--surface2,#222220);color:var(--text,#f0ede6);}
 .mdf-apply{background:var(--amber,#f5a623);color:#0a0a08;border-color:var(--amber,#f5a623);}
+.mdf-panel.mdf-narrow{flex-direction:column;}
+.mdf-panel.mdf-narrow .mdf-cal{width:auto;}
+.mdf-panel.mdf-narrow .mdf-presets{flex-direction:row;flex-wrap:wrap;min-width:0;border-right:none;border-bottom:0.5px solid var(--border,rgba(255,255,255,.12));}
 @media(max-width:600px){.mdf-panel{flex-direction:column;}.mdf-cal{width:auto;}.mdf-presets{flex-direction:row;flex-wrap:wrap;min-width:0;border-right:none;border-bottom:0.5px solid var(--border,rgba(255,255,255,.12));}}
 </style>
 <script>
@@ -161,20 +165,29 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
         })(dnum);
       }
     }
+    function position(){
+      // Fixed positioning + viewport clamp so no parent overflow can clip the
+      // panel and it never runs off the right/bottom edge.
+      panel.classList.toggle('mdf-narrow', window.innerWidth < 640);
+      var tr=trigger.getBoundingClientRect();
+      var pw=panel.offsetWidth, ph=panel.offsetHeight;
+      var left=tr.left;
+      if(left+pw > window.innerWidth-8) left=window.innerWidth-8-pw;
+      if(left<8) left=8;
+      var top=tr.bottom+6;
+      if(top+ph > window.innerHeight-8) top=Math.max(8, tr.top-6-ph); // flip up if no room below
+      panel.style.left=left+'px';
+      panel.style.top=top+'px';
+    }
     function open(){
       panel.hidden=false;
-      panel.style.left='0'; panel.style.right='auto';
       selFrom.textContent=longLabel(selS); selTo.textContent=longLabel(selE);
       renderPresets(); renderCal();
-      // Keep the panel inside the viewport (the trigger is often near the right
-      // edge, which would otherwise clip the calendar off-screen).
-      var rect=panel.getBoundingClientRect();
-      if(rect.right > window.innerWidth-8){ panel.style.left='auto'; panel.style.right='0'; }
-      rect=panel.getBoundingClientRect();
-      if(rect.left < 8){ panel.style.right='auto'; panel.style.left=(8-root.getBoundingClientRect().left)+'px'; }
+      position();
+      window.addEventListener('resize', position);
       setTimeout(function(){document.addEventListener('click',onDoc,true);},0);
     }
-    function close(){ panel.hidden=true; pick=null; document.removeEventListener('click',onDoc,true); }
+    function close(){ panel.hidden=true; pick=null; document.removeEventListener('click',onDoc,true); window.removeEventListener('resize',position); }
     function onDoc(e){ if(!root.contains(e.target)) close(); }
     trigger.addEventListener('click',function(){ panel.hidden?open():close(); });
     root.querySelector('.mdf-prev').addEventListener('click',function(){ view=new Date(view.getFullYear(),view.getMonth()-1,1); renderCal(); });
