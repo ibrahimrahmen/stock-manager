@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard — Stock Manager</title>
+  <title>Barats — Dashboard</title>
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -48,11 +48,23 @@
     }
     .logo {
       font-family: 'DM Serif Display', serif;
-      font-size: 20px;
-      color: var(--text);
-      letter-spacing: -0.02em;
+      font-size: 25px;
+      letter-spacing: -0.01em;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: linear-gradient(100deg, var(--text) 30%, var(--green) 115%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
     }
-    .logo span { color: var(--green); }
+    .logo .logo-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 10px var(--green);
+      align-self: flex-end;
+      margin-bottom: 5px;
+    }
     .topbar-right { display: flex; align-items: center; gap: 16px; }
     .order-indicator {
       display: flex;
@@ -318,7 +330,7 @@
 <body>
 
 <div class="topbar">
-  <div class="logo">stock<span>.</span>manager</div>
+  <div class="logo">Barats<span class="logo-dot"></span></div>
   <div class="topbar-right">
       {% if not request.user.is_superuser %}
       <a href="{% url 'home' %}" style="font-size:12px;color:var(--muted);text-decoration:none;padding:6px 12px;border:0.5px solid var(--border);border-radius:20px;">← Espaces</a>
@@ -340,7 +352,7 @@
 
 <div class="main">
 
-  <div class="greeting">Bonjour 👋</div>
+  <div class="greeting">Bonjour {{ request.user.first_name|default:request.user.username|title }} 👋</div>
   <div class="greeting-sub">
     {% now "l j F Y" %} —
     {% if open_order %}
