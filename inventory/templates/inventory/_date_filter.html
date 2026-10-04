@@ -64,7 +64,7 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
 .mdf-actions button{padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;border:0.5px solid var(--border,rgba(255,255,255,.12));}
 .mdf-cancel{background:var(--surface2,#222220);color:var(--text,#f0ede6);}
 .mdf-apply{background:var(--amber,#f5a623);color:#0a0a08;border-color:var(--amber,#f5a623);}
-.mdf-panel.mdf-narrow{flex-direction:column;}
+.mdf-panel.mdf-narrow{flex-direction:column;max-width:94vw;width:340px;}
 .mdf-panel.mdf-narrow .mdf-cal{width:auto;}
 .mdf-panel.mdf-narrow .mdf-presets{flex-direction:row;flex-wrap:wrap;min-width:0;border-right:none;border-bottom:0.5px solid var(--border,rgba(255,255,255,.12));}
 @media(max-width:600px){.mdf-panel{flex-direction:column;}.mdf-cal{width:auto;}.mdf-presets{flex-direction:row;flex-wrap:wrap;min-width:0;border-right:none;border-bottom:0.5px solid var(--border,rgba(255,255,255,.12));}}
@@ -167,17 +167,25 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
     }
     function position(){
       // Fixed positioning + viewport clamp so no parent overflow can clip the
-      // panel and it never runs off the right/bottom edge.
-      panel.classList.toggle('mdf-narrow', window.innerWidth < 640);
-      var tr=trigger.getBoundingClientRect();
+      // panel and it never runs off any edge.
+      var narrow = window.innerWidth < 720;
+      panel.classList.toggle('mdf-narrow', narrow);   // stack presets above calendar
       var pw=panel.offsetWidth, ph=panel.offsetHeight;
-      var left=tr.left;
-      if(left+pw > window.innerWidth-8) left=window.innerWidth-8-pw;
-      if(left<8) left=8;
-      var top=tr.bottom+6;
-      if(top+ph > window.innerHeight-8) top=Math.max(8, tr.top-6-ph); // flip up if no room below
-      panel.style.left=left+'px';
-      panel.style.top=top+'px';
+      var left, top;
+      if(narrow){
+        // Centered modal — guaranteed fully on-screen on phones/small windows.
+        left=Math.max(8,(window.innerWidth-pw)/2);
+        top=(ph > window.innerHeight-16) ? 8 : Math.max(8,(window.innerHeight-ph)/2);
+      } else {
+        var tr=trigger.getBoundingClientRect();
+        left=tr.left;
+        if(left+pw > window.innerWidth-8) left=window.innerWidth-8-pw;
+        if(left<8) left=8;
+        top=tr.bottom+6;
+        if(top+ph > window.innerHeight-8) top=Math.max(8, tr.top-6-ph); // flip up if no room below
+      }
+      panel.style.left=Math.round(left)+'px';
+      panel.style.top=Math.round(top)+'px';
     }
     function open(){
       panel.hidden=false;
