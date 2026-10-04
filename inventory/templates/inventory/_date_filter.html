@@ -64,6 +64,7 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
 .mdf-actions button{padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;border:0.5px solid var(--border,rgba(255,255,255,.12));}
 .mdf-cancel{background:var(--surface2,#222220);color:var(--text,#f0ede6);}
 .mdf-apply{background:var(--amber,#f5a623);color:#0a0a08;border-color:var(--amber,#f5a623);}
+.mdf-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2999;display:none;}
 .mdf-panel.mdf-narrow{flex-direction:column;max-width:94vw;width:340px;}
 .mdf-panel.mdf-narrow .mdf-cal{width:auto;}
 .mdf-panel.mdf-narrow .mdf-presets{flex-direction:row;flex-wrap:wrap;min-width:0;border-right:none;border-bottom:0.5px solid var(--border,rgba(255,255,255,.12));}
@@ -123,6 +124,9 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
     var selE=parse(root.getAttribute('data-end'))||selS;
     var pick=null; // transient selection start while choosing a custom range
     var view=new Date(selS.getFullYear(), selS.getMonth(), 1);
+    var origParent=panel.parentNode;   // where the panel lives when closed (the .mdf root)
+    var backdrop=null;
+    function ensureBackdrop(){ if(!backdrop){ backdrop=document.createElement('div'); backdrop.className='mdf-backdrop'; backdrop.addEventListener('click',close); } return backdrop; }
 
     label.textContent=labelFor(selS,selE);
 
@@ -188,15 +192,25 @@ Colors come from the page's CSS variables (--surface, --border, --text, --muted,
       panel.style.top=Math.round(top)+'px';
     }
     function open(){
+      // Move the panel to <body> so NO ancestor (overflow:hidden, transform, etc.)
+      // can clip it — it's positioned against the viewport only.
+      document.body.appendChild(panel);
       panel.hidden=false;
       selFrom.textContent=longLabel(selS); selTo.textContent=longLabel(selE);
       renderPresets(); renderCal();
+      if(window.innerWidth < 720){ var bd=ensureBackdrop(); document.body.appendChild(bd); bd.style.display='block'; }
       position();
       window.addEventListener('resize', position);
       setTimeout(function(){document.addEventListener('click',onDoc,true);},0);
     }
-    function close(){ panel.hidden=true; pick=null; document.removeEventListener('click',onDoc,true); window.removeEventListener('resize',position); }
-    function onDoc(e){ if(!root.contains(e.target)) close(); }
+    function close(){
+      panel.hidden=true; pick=null;
+      if(backdrop) backdrop.style.display='none';
+      if(panel.parentNode!==origParent) origParent.appendChild(panel); // return it to the root when closed
+      document.removeEventListener('click',onDoc,true);
+      window.removeEventListener('resize',position);
+    }
+    function onDoc(e){ if(!panel.contains(e.target) && !root.contains(e.target) && !(backdrop&&backdrop.contains(e.target))) close(); }
     trigger.addEventListener('click',function(){ panel.hidden?open():close(); });
     root.querySelector('.mdf-prev').addEventListener('click',function(){ view=new Date(view.getFullYear(),view.getMonth()-1,1); renderCal(); });
     root.querySelector('.mdf-next').addEventListener('click',function(){ view=new Date(view.getFullYear(),view.getMonth()+1,1); renderCal(); });
