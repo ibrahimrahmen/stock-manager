@@ -116,7 +116,7 @@ input::placeholder{color:var(--faint);}
     <a href="/admin-tools/">Outils admin</a>
     <a href="{% url 'orders_list' %}">Commandes</a>
     <span class="sp"></span>
-    <a href="{% url 'logout' %}">Déconnexion</a>
+    <span style="font-size:12px;color:var(--text,#f0ede6);opacity:0.8;margin-right:6px;white-space:nowrap;">👤 {{ request.user.first_name|default:request.user.username|title }}</span><a href="{% url 'logout' %}">Déconnexion</a>
   </div>
 
   <div class="wrap">

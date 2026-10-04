@@ -285,7 +285,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
     </button>
     {% if not request.user.is_superuser %}<a href="{% url 'home' %}">← Espaces</a>{% endif %}
     {% if request.user.is_superuser %}<a href="{% url 'admin_tools' %}" title="Outils admin">🔧 Outils</a>{% endif %}
-    <a href="{% url 'logout' %}">Déconnexion</a>
+    <span style="font-size:12px;color:var(--text,#f0ede6);opacity:0.8;margin-right:6px;white-space:nowrap;">👤 {{ request.user.first_name|default:request.user.username|title }}</span><a href="{% url 'logout' %}">Déconnexion</a>
   </div>
 </div>
 

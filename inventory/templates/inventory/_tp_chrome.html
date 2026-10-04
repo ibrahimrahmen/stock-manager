@@ -18,4 +18,18 @@ function toggleTheme(){
   const ic=document.getElementById('theme-icon'); if(ic) ic.textContent=next==='light'?'🌙':'☀';
   try{ fetch('/api/user/theme/',{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':_ttcsrf()},body:JSON.stringify({theme:next})}); }catch(e){}
 }
+// Show the logged-in user's name in the top bar on every page that includes
+// this chrome. Idempotent: skips if a user chip (👤) is already present.
+window.__UC="{{ request.user.first_name|default:request.user.username|title|escapejs }}";
+document.addEventListener('DOMContentLoaded',function(){
+  try{
+    if(!window.__UC || !window.__UC.trim()) return;
+    var bar=document.querySelector('.userbar')||document.querySelector('.topbar-right')||document.querySelector('.topbar');
+    if(!bar || bar.textContent.indexOf('👤')>=0) return;
+    var chip=document.createElement('span');
+    chip.textContent='👤 '+window.__UC;
+    chip.style.cssText='font-size:12px;color:var(--text,#f0ede6);opacity:0.8;margin-right:10px;white-space:nowrap;align-self:center;';
+    bar.insertBefore(chip, bar.firstChild);
+  }catch(e){}
+});
 </script>

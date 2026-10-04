@@ -88,7 +88,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green);}
     <a href="{% url 'products_list' %}">← Produits</a>
     <a href="{% url 'offers_manage' %}">Offres</a>
     <a href="{% url 'dashboard' %}">Dashboard</a>
-    <a href="{% url 'logout' %}">Déconnexion</a>
+    <span style="font-size:12px;color:var(--text,#f0ede6);opacity:0.8;margin-right:6px;white-space:nowrap;">👤 {{ request.user.first_name|default:request.user.username|title }}</span><a href="{% url 'logout' %}">Déconnexion</a>
   </div>
 </div>
 

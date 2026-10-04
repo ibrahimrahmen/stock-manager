@@ -65,7 +65,7 @@ td{padding:8px 10px;border-top:0.5px solid var(--border);}
   <div class="brand"><span style="background:linear-gradient(100deg,var(--text,#f0ede6) 35%,var(--green,#4ade9a) 120%);-webkit-background-clip:text;background-clip:text;color:transparent;">Barats</span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green,#4ade9a);margin-left:5px;box-shadow:0 0 8px var(--green,#4ade9a);"></span><span style="color:var(--muted,#8a887f);font-weight:400;"> — Article</span></div>
   <div class="userbar">
     <a href="javascript:history.back()">← Retour</a>
-    <a href="{% url 'logout' %}">Déconnexion</a>
+    <span style="font-size:12px;color:var(--text,#f0ede6);opacity:0.8;margin-right:6px;white-space:nowrap;">👤 {{ request.user.first_name|default:request.user.username|title }}</span><a href="{% url 'logout' %}">Déconnexion</a>
   </div>
 </div>
 
