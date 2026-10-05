@@ -5776,6 +5776,21 @@ def product_test_finish_production(request, pk):
 
 @login_required(login_url="/login/")
 @require_POST
+def product_test_back_to_production(request, pk):
+    """Move a product from History BACK into Production (e.g. it was sent to
+    History by mistake). Keeps the existing data — no duplicate created."""
+    from .models import ProductTest
+    try:
+        pt = ProductTest.objects.get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    pt.status = ProductTest.PRODUCTION
+    pt.save(update_fields=["status", "updated_at"])
+    return JsonResponse({"status": "ok"})
+
+
+@login_required(login_url="/login/")
+@require_POST
 def product_test_reproduce(request, pk):
     """Duplicate a produced product back into Production (fresh, not yet started)."""
     from .models import ProductTest, ProductTestVariant

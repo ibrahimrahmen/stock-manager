@@ -59,6 +59,8 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .finishprod-btn{margin-top:10px;width:100%;background:var(--green);color:#04120b;border:none;border-radius:10px;padding:10px;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;}
 .reproduce-btn{margin-top:10px;width:100%;background:rgba(91,157,255,0.14);color:var(--blue);border:0.5px solid rgba(91,157,255,0.45);border-radius:10px;padding:10px;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;}
 .reproduce-btn:hover{background:rgba(91,157,255,0.26);}
+.backprod-btn{margin-top:10px;width:100%;background:rgba(74,222,154,0.14);color:var(--green);border:0.5px solid rgba(74,222,154,0.45);border-radius:10px;padding:10px;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;}
+.backprod-btn:hover{background:rgba(74,222,154,0.26);}
 /* Production stage timeline: each stage with the date it was reached. */
 .timeline{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-top:12px;padding:11px 12px;background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;}
 .tl-title{width:100%;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:2px;}
@@ -230,6 +232,9 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
       {% if tab == 'production' and it.production_started and it.production_stage == 'finition' %}
       <button class="finishprod-btn" onclick="finishProduction('{{ it.id }}')">✅ Finir la production</button>
       {% endif %}
+      {% if tab == 'history' %}
+      <button class="backprod-btn" onclick="backToProduction('{{ it.id }}')">↩️ Renvoyer en production</button>
+      {% endif %}
       {% if tab == 'history' and it.production_started %}
       <button class="reproduce-btn" onclick="reproduce('{{ it.id }}')">🔁 Reproduire</button>
       {% endif %}
@@ -304,6 +309,15 @@ function finishProduction(id){
     method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrf()}
   }).then(r=>r.json()).then(function(j){
     if(j.status==='ok'){ location.reload(); } else { alert('Erreur: '+(j.message||'')); }
+  }).catch(function(e){ alert('Erreur: '+e); });
+}
+function backToProduction(id){
+  if(!confirm('Renvoyer ce produit en Production ?')) return;
+  fetch('/testing-production/'+id+'/back-to-production/', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrf()}
+  }).then(r=>r.json()).then(function(j){
+    if(j.status==='ok'){ location.href='{% url "testing_production_page" %}?tab=production'; }
+    else { alert('Erreur: '+(j.message||'')); }
   }).catch(function(e){ alert('Erreur: '+e); });
 }
 function reproduce(id){
