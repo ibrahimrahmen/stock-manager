@@ -622,6 +622,8 @@ _CONFIG_SECTIONS = [
     ("Intelligence artificielle", "✨", [
         ("ANTHROPIC_API_KEY", "Clé API Claude (Anthropic)", True),
         ("ANTHROPIC_MODEL", "Modèle Claude (déf. claude-haiku-4-5-20251001 — le moins cher)", False),
+        ("bot_use_vision", "Analyse des photos par le bot (1 = oui / 0 = non). Mettez 0 pour NE PLUS envoyer les photos clients à Claude (le bot répond en texte seulement) — c'est ce qui coûte cher.", False),
+        ("ANTHROPIC_VISION_STRONG_MODEL", "Modèle fort pour les photos difficiles (déf. Sonnet, cher). Mettez claude-haiku-4-5-20251001 pour payer Haiku seulement.", False),
         ("GEMINI_API_KEY", "Clé API Gemini", True),
         ("AUTOREPLY_BOT_TEST_SENDER", "Mode test : le bot ne répond QU'À ces IDs (votre compte). Vide = tous les clients. Plusieurs séparés par une virgule.", False),
     ]),
@@ -1465,6 +1467,15 @@ def _vision_model_strong():
     return (_cfg("ANTHROPIC_VISION_STRONG_MODEL", "") or "claude-sonnet-5").strip()
 
 
+def _bot_vision_enabled():
+    """When OFF (config bot_use_vision = 0/off), the auto-reply bot NEVER sends
+    customer photos to Claude. It still replies with text, but skips ALL image
+    analysis — removing the expensive vision calls, which are the main API cost.
+    Default ON to preserve current behaviour."""
+    return str(_cfg("bot_use_vision", "1")).strip().lower() not in (
+        "0", "off", "false", "no", "")
+
+
 def _match_product_by_image(local_images, url_images, offers_data):
     """Haiku-first, escalate-to-Sonnet-on-failure wrapper. Runs the cheap model;
     only if it is NOT confident (or found no candidate) does it re-run the match
@@ -2229,7 +2240,7 @@ def _identify_offer_for_conv(conv, page=None, persist=False):
     match = {}
     cat_offer = None
     cat_conf = False
-    if not chosen_offer and (match_local or match_urls):
+    if _bot_vision_enabled() and not chosen_offer and (match_local or match_urls):
         od_full = _capture_page_offers_data(page) or _offers_data_for_conv(conv)
         cls = _classify_photo(match_local, match_urls)
         # SEASON is a hard filter ONLY for tops/outerwear, where sleeve length +
@@ -3077,8 +3088,9 @@ def _bot_reply(conv):
             + "\n\nEl conversation lel7d ltew:\n" + transcript
             + "\n\nOkteb reply el bayaa ejjay barka bel tounsi latin (bla 'Vendeur:'): "
         )
-        _fin_urls = [] if _matched else img_urls
-        _fin_local = [] if _matched else local_imgs
+        _no_vision = not _bot_vision_enabled()
+        _fin_urls = [] if (_matched or _no_vision) else img_urls
+        _fin_local = [] if (_matched or _no_vision) else local_imgs
         # Persona as SYSTEM + a hard anti-break-character guard, so even a messy
         # thread full of past test/instruction/roleplay text can't make the bot
         # step out of the seller role or answer in English.
