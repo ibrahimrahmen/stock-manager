@@ -289,6 +289,9 @@ document.addEventListener('DOMContentLoaded', function(){
   try{
     var ed=new URLSearchParams(location.search).get('edit');
     if(!ed) return;
+    // Strip ?edit from the URL so that saving (which reloads the page) does NOT
+    // re-open the edit modal — otherwise it looks like the save didn't work.
+    try{ history.replaceState(null,'',location.pathname); }catch(e){}
     var btn=document.querySelector('.btn-edit[data-id="'+ed+'"]');
     if(btn){ btn.scrollIntoView({block:'center'}); openEditFromButton(btn); }
   }catch(e){}
