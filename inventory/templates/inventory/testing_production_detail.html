@@ -66,6 +66,11 @@ h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bo
     {% if pt.sales_page %}📄 {{ pt.sales_page.name }} · {% endif %}{% if pt.created_by %}{{ pt.created_by.username }} · {% endif %}{{ pt.created_at|date:"d/m/Y" }}
   </div>
 
+  {% if pt.status == 'production' %}
+  <button class="btn btn-green" id="addProdBtn" style="margin-bottom:18px;" onclick="addAsProduct('{{ pt.id }}')">➕ Ajouter à mes produits</button>
+  <div class="hint" style="margin:-10px 0 18px;">Crée une copie dans « Mes produits » avec le nom et les couleurs déjà remplis. Le produit reste en Production — vous complétez le code, les prix et le stock.</div>
+  {% endif %}
+
   <!-- Variants -->
   <div class="card">
     <h2>Couleurs</h2>
@@ -148,6 +153,16 @@ h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bo
 <div style="display:none">{% csrf_token %}</div>
 <script>
 function csrf(){const el=document.querySelector('[name=csrfmiddlewaretoken]');return el?el.value:'';}
+function addAsProduct(id){
+  const b=document.getElementById('addProdBtn');
+  if(b){ b.disabled=true; b.textContent='⏳ Création…'; }
+  const reset=function(){ if(b){ b.disabled=false; b.textContent='➕ Ajouter à mes produits'; } };
+  fetch('/testing-production/'+id+'/to-product/', {method:'POST', headers:{'X-CSRFToken':csrf()}})
+   .then(r=>r.json()).then(function(j){
+     if(j.status==='ok'){ location.href='{% url "products_manage" %}?edit='+j.id; }
+     else { alert('Erreur: '+(j.message||'')); reset(); }
+   }).catch(function(e){ alert('Erreur: '+e); reset(); });
+}
 function showForm(){ document.getElementById('prodForm').style.display='block'; document.getElementById('openProd').style.display='none'; }
 function startProd(){
   const plan={};

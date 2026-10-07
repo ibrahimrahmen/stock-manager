@@ -283,6 +283,17 @@ async function openEditFromButton(btn){
 
 function closeModal(){ document.getElementById('prod-modal').classList.remove('show'); }
 
+// Auto-open a product's edit form when arriving with ?edit=<id> (used by the
+// "Ajouter à mes produits" button on a production test).
+document.addEventListener('DOMContentLoaded', function(){
+  try{
+    var ed=new URLSearchParams(location.search).get('edit');
+    if(!ed) return;
+    var btn=document.querySelector('.btn-edit[data-id="'+ed+'"]');
+    if(btn){ btn.scrollIntoView({block:'center'}); openEditFromButton(btn); }
+  }catch(e){}
+});
+
 async function saveProduct(){
   const err = document.getElementById('modal-err'); err.style.display='none';
   const name = document.getElementById('p-name').value.trim();

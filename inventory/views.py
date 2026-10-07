@@ -5788,6 +5788,60 @@ def product_test_finish_production(request, pk):
 
 @login_required(login_url="/login/")
 @require_POST
+def product_test_to_product(request, pk):
+    """Create a REAL catalogue product (Mes produits) pre-filled from a
+    ProductTest's data — name + colour variants + their photos. The test STAYS
+    in Production; this only creates a duplicate in the catalogue that the user
+    finishes (code, prices, sizes/stock)."""
+    from .models import ProductTest, Product, ProductVariant, log_action, AuditLog
+    from django.core.files.base import ContentFile
+    import re as _re, os as _os
+    try:
+        pt = ProductTest.objects.prefetch_related("variants").get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    # Auto-generate a short, unique product code from the name initials.
+    words = _re.findall(r"[A-Za-z0-9]+", pt.name or "P")
+    base = ("".join(w[0] for w in words[:4]) or "P").upper()[:6] or "P"
+    code = base
+    _n = 1
+    while Product.objects.filter(code=code).exists():
+        _n += 1
+        code = (base[:8] + str(_n))[:10]
+    try:
+        with transaction.atomic():
+            p = Product.objects.create(name=(pt.name or "Produit")[:255], code=code)
+            used = set()
+            for v in pt.variants.all():
+                cl = (v.color_label or "").strip() or "Couleur"
+                cn = (_re.sub(r"[^A-Za-z0-9]", "", cl).upper()[:50]) or "C"
+                base_cn = cn
+                i = 1
+                while cn in used:
+                    i += 1
+                    cn = (base_cn[:48] + str(i))[:50]
+                used.add(cn)
+                nv = ProductVariant(product=p, color_name=cn, color_label=cl[:50])
+                if v.image:
+                    try:
+                        v.image.open("rb")
+                        data = v.image.read()
+                        v.image.close()
+                        nv.image.save(_os.path.basename(v.image.name),
+                                      ContentFile(data), save=False)
+                    except Exception:
+                        pass
+                nv.save()
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:200]}, status=400)
+    log_action(request.user, AuditLog.CREATE,
+               description=f"Produit créé depuis le test « {pt.name} » ({code})",
+               request=request, target_model="Product", target_id=p.id)
+    return JsonResponse({"status": "ok", "id": p.id, "code": code})
+
+
+@login_required(login_url="/login/")
+@require_POST
 def product_test_back_to_production(request, pk):
     """Move a product from History BACK into Production (e.g. it was sent to
     History by mistake). Keeps the existing data — no duplicate created."""
