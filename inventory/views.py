@@ -2174,6 +2174,14 @@ def _identify_offer_for_conv(conv, page=None, persist=False):
         match_local = []
         match_urls = [u for u in ([effective_ad_img] + all_user_imgs) if u][:2]
 
+    # Photo analysis OFF (config bot_use_vision=0): never send ANY image to
+    # Claude from the identification flow — go fully text-only. This also covers
+    # the STEP 1 "same product as the ad?" vision check below.
+    if not _bot_vision_enabled():
+        has_customer_photo = False
+        match_local = []
+        match_urls = []
+
     # Signature of the image(s) we'd match on. If we already identified this
     # exact image set before, reuse the stored offer — identify ONCE, stay
     # grounded, no re-vision (and no flip-flopping across calls).
