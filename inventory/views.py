@@ -9300,8 +9300,10 @@ def orders_list(request):
 
     from django.db.models import Count
     # Chip counts respect the source filter (but not the status filter, so each
-    # chip shows its own total within the chosen source).
-    counts_qs = Order.objects.all()
+    # chip shows its own total within the chosen source). Exclude orders sent to
+    # a product test — they're hidden from the list, so the counts must match
+    # (otherwise the "non confirmé" count stays high after sending to test).
+    counts_qs = Order.objects.filter(sent_to_test__isnull=True)
     if source_filter == "barats":
         counts_qs = counts_qs.filter(sales_page__name__iexact="Barats.tn")
     elif source_filter == "converty":
