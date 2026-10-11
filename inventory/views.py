@@ -993,6 +993,14 @@ MESSENGER_AUTOREPLY_AR = (
     "يرجى التثبت من رقم الهاتف، العنوان، المقاس واللون. شكرا لثقتك في Barats 🛍️"
 )
 
+# Sent (once) when the customer gave their phone but the order still has NO
+# delivery address after a short wait — a single polite nudge for the missing
+# address (governorate + address) and size, so the order can be completed.
+MESSENGER_ASK_INFO_AR = (
+    "باش نكمّلو الكوموند و نوصّلوهالك 🤍 ابعثلنا العنوان الكامل "
+    "(الولاية + العنوان) و المقاس إلا مازال."
+)
+
 # Seconds to wait before sending the confirmation, so we don't cut the customer
 # off while they are still typing their address / size / colour.
 MESSENGER_AUTOREPLY_DELAY = int(os.environ.get("MESSENGER_AUTOREPLY_DELAY", "10"))
@@ -18201,51 +18209,91 @@ def api_messenger_webhook(request):
                                 ).exists())
                     except Exception:
                         has_recent_order = False
+                    # Have we already nudged this customer for the missing
+                    # address? If so, don't spawn another worker — the customer
+                    # is mid-completing and the post-extraction block below sends
+                    # the confirmation as soon as the address lands.
+                    _already_asked_addr = any(
+                        (isinstance(m, dict) and m.get("addr_followup"))
+                        for m in (conv.messages or []))
                     if recently_greeted or has_recent_order:
                         conv.auto_replied = True
                         conv.save(update_fields=["auto_replied", "updated_at"])
-                    else:
-                        # Mark first so a second webhook can't double-send while
-                        # we wait out the typing delay.
-                        conv.auto_replied = True
-                        conv.save(update_fields=["auto_replied", "updated_at"])
+                    elif not _already_asked_addr:
+                        # Spawn ONE background worker (cache-locked so a burst of
+                        # webhooks can't double-fire). It waits out the typing
+                        # delay, then DECIDES:
+                        #   • order has a delivery address  -> send "وصلنا طلبك"
+                        #   • address still missing         -> ask once for the
+                        #       address + size, and DON'T mark the order confirmed
+                        #       (so the confirmation fires later when it arrives).
+                        from django.core.cache import cache as _cl
+                        try:
+                            _spawn = bool(_cl.add("confirm_lock:%s" % conv.pk, 1, 120))
+                        except Exception:
+                            _spawn = True
 
                         def _send_order_confirmation(cid, pg, sn, plat):
                             """Wait a few seconds (the customer may still be
-                            typing their address), then send the order-received
-                            message followed by the delivery-timing promise."""
+                            typing), then either confirm the order or — if there
+                            is still no delivery address — ask once for the
+                            address + size."""
                             import time as _t
                             try:
                                 _t.sleep(MESSENGER_AUTOREPLY_DELAY)
                                 from .models import MessengerConversation as _MC
                                 _c = _MC.objects.filter(pk=cid).first()
-                                if not _c:
+                                if not _c or _c.auto_replied:
                                     return
-                                sent = []
-                                if _messenger_send_text(pg, sn, MESSENGER_AUTOREPLY_AR, plat):
-                                    sent.append(MESSENGER_AUTOREPLY_AR)
-                                    _promise = _delivery_promise_tn()
-                                    if _messenger_send_text(pg, sn, _promise, plat):
-                                        sent.append(_promise)
-                                if sent:
-                                    _c.refresh_from_db()
-                                    _mm = _c.messages or []
-                                    for _txt in sent:
-                                        _mm.append({"from": "page", "text": _txt,
-                                                    "ts": "", "mid": "",
-                                                    "autoreply": True})
-                                    _c.messages = _mm
-                                    _c.save(update_fields=["messages", "updated_at"])
+                                _po = _c.pending_order
+                                _has_addr = bool(_po and (
+                                    (getattr(_po, "address", "") or "").strip()
+                                    or (getattr(_po, "ville", "") or "").strip()
+                                    or getattr(_po, "region_id", None)))
+                                if _has_addr:
+                                    # Order is complete -> order-received message.
+                                    sent = []
+                                    if _messenger_send_text(pg, sn, MESSENGER_AUTOREPLY_AR, plat):
+                                        sent.append(MESSENGER_AUTOREPLY_AR)
+                                        _promise = _delivery_promise_tn()
+                                        if _messenger_send_text(pg, sn, _promise, plat):
+                                            sent.append(_promise)
+                                    if sent:
+                                        _c.refresh_from_db()
+                                        _c.auto_replied = True
+                                        _mm = _c.messages or []
+                                        for _txt in sent:
+                                            _mm.append({"from": "page", "text": _txt,
+                                                        "ts": "", "mid": "",
+                                                        "autoreply": True})
+                                        _c.messages = _mm
+                                        _c.save(update_fields=["messages", "auto_replied", "updated_at"])
+                                else:
+                                    # Address missing -> nudge once for it + size.
+                                    _already = any(
+                                        (isinstance(m, dict) and m.get("addr_followup"))
+                                        for m in (_c.messages or []))
+                                    if not _already:
+                                        _ask = MESSENGER_ASK_INFO_AR
+                                        if _messenger_send_text(pg, sn, _ask, plat):
+                                            _c.refresh_from_db()
+                                            _mm = _c.messages or []
+                                            _mm.append({"from": "page", "text": _ask,
+                                                        "ts": "", "mid": "",
+                                                        "addr_followup": True})
+                                            _c.messages = _mm
+                                            _c.save(update_fields=["messages", "updated_at"])
                             except Exception:
                                 pass
 
-                        try:
-                            import threading as _thr2
-                            _thr2.Thread(target=_send_order_confirmation,
-                                         args=(conv.pk, page_id, sender_id, platform),
-                                         daemon=True).start()
-                        except Exception:
-                            _send_order_confirmation(conv.pk, page_id, sender_id, platform)
+                        if _spawn:
+                            try:
+                                import threading as _thr2
+                                _thr2.Thread(target=_send_order_confirmation,
+                                             args=(conv.pk, page_id, sender_id, platform),
+                                             daemon=True).start()
+                            except Exception:
+                                _send_order_confirmation(conv.pk, page_id, sender_id, platform)
 
                 # A2) FAQ handled earlier (before the bot) so it can gate the
                 # bot and avoid double replies.
@@ -18260,6 +18308,41 @@ def api_messenger_webhook(request):
                         _try_extract_and_create_pending(conv)
                     except Exception:
                         pass
+
+                # C) If we had nudged this customer for the missing address and
+                # it has NOW arrived (extraction just filled it), send the
+                # "وصلنا طلبك" confirmation — once. This is what closes the loop
+                # for a customer who sent their number first and the address
+                # after Aida asked for it.
+                try:
+                    if (not _external_agent) and has_phone_now:
+                        conv.refresh_from_db()
+                        _asked2 = any(
+                            (isinstance(m, dict) and m.get("addr_followup"))
+                            for m in (conv.messages or []))
+                        _po2 = conv.pending_order
+                        _has_addr2 = bool(_po2 and (
+                            (getattr(_po2, "address", "") or "").strip()
+                            or (getattr(_po2, "ville", "") or "").strip()
+                            or getattr(_po2, "region_id", None)))
+                        if _asked2 and _has_addr2 and not conv.auto_replied:
+                            sent2 = []
+                            if _messenger_send_text(page_id, sender_id, MESSENGER_AUTOREPLY_AR, platform):
+                                sent2.append(MESSENGER_AUTOREPLY_AR)
+                                _pr2 = _delivery_promise_tn()
+                                if _messenger_send_text(page_id, sender_id, _pr2, platform):
+                                    sent2.append(_pr2)
+                            if sent2:
+                                conv.auto_replied = True
+                                _mm2 = conv.messages or []
+                                for _tx2 in sent2:
+                                    _mm2.append({"from": "page", "text": _tx2,
+                                                 "ts": "", "mid": "",
+                                                 "autoreply": True})
+                                conv.messages = _mm2
+                                conv.save(update_fields=["messages", "auto_replied", "updated_at"])
+                except Exception:
+                    pass
     except Exception as e:
         try:
             log_action(None, AuditLog.OTHER,
