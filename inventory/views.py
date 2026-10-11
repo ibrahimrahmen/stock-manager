@@ -19265,12 +19265,9 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
             conv.save(update_fields=["status", "updated_at"])
             return
 
-    # Guard: ignore conversations with NO recent activity (stale). Measure from
-    # the LAST message (updated_at), NOT the thread's creation date — otherwise a
-    # customer who returns to an old thread (started months ago) and types their
-    # number now would never get an order created.
-    _last_activity = conv.updated_at or conv.created_at
-    if _last_activity and (_tz.now() - _last_activity) > _td(hours=48):
+    # Guard: ignore conversations older than 48h (stale — staff should handle
+    # any late follow-up manually rather than auto-editing an old order).
+    if conv.created_at and (_tz.now() - conv.created_at) > _td(hours=48):
         return
 
     if pre_data is not None:
