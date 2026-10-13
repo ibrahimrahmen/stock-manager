@@ -17458,26 +17458,23 @@ def stats_pages(request):
     try:
         if _cfg("META_ACCESS_TOKEN", "").strip():
             _sync_ads_from_meta(spend_start.isoformat(), spend_end.isoformat())
-            _kickoff_page_detection()
     except Exception:
         pass
     try:
         _barats_sp = _SP.objects.filter(name__iexact="Barats.tn").first()
         _barats_name = _barats_sp.name if _barats_sp else "Barats.tn"
         for a in (_Ad.objects.filter(archived=False)
-                  .select_related("auto_sales_page")
                   .prefetch_related("links__sales_page")):
             if not a.spend:
                 continue
             if a.attribution == _Ad.ATTR_BARATS:
                 pages = [_barats_name]
             else:
+                # ONLY manually-linked ads count toward a page. Ads we can't be
+                # sure about are NEVER guessed into a page — they stay in the
+                # "Non assigné" line so real page numbers aren't polluted.
                 pages = sorted({lk.sales_page.name for lk in a.links.all()
                                 if lk.sales_page_id})
-                # No manual link? Fall back to the page auto-detected from Meta
-                # (destination + the FB/IG page the ad runs under).
-                if not pages and a.auto_sales_page_id:
-                    pages = [a.auto_sales_page.name]
             if not pages:
                 # An ad with spend but no page link — count it as unassigned.
                 unassigned_spend += a.spend
