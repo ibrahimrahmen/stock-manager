@@ -10397,34 +10397,33 @@ def _sync_ads_from_meta(start_date, end_date):
     return True, f"{n} publicité(s) synchronisée(s) depuis Meta.", n
 
 
-def _detect_ad_pages():
-    """Detect which SALES PAGE each ad belongs to, straight from Meta — no
-    reliance on the campaign name.
+def _meta_spend_by_page(start_date, end_date):
+    """Spend per SALES PAGE for a date range, read straight from Meta at the
+    AD level and attributed by the REAL page each ad posts from — no names, no
+    manual links, no guessing. A campaign whose ad sets run under different
+    pages is therefore split correctly (each ad lands on its own page).
 
-    For every ad account we crawl its ads once and read, per ad:
-      * the ad set destination (MESSAGING_* = a DM ad; anything else = a
-        website / pixel ad), and
-      * the Facebook page it runs under (the prefix of the creative's
-        object_story_id, i.e. "<page_id>_<post_id>").
+    Per ad:
+      * DM ad (destination MESSAGING_*)  -> page from the creative's
+        object_story_id prefix "<page_id>_..." via MESSENGER_PAGE_TO_SALESPAGE
+      * website / pixel ad (any other destination) -> page from the AD ACCOUNT
+        via WEBSITE_ACCOUNT_TO_SALESPAGE_NAME
+      * anything we can't resolve -> '' (unassigned, never guessed onto a page)
 
-    Then each campaign (our Ad row, keyed on campaign_id) gets an
-    auto_sales_page:
-      * DM ad      -> the sales page mapped from its FB/IG page
-                      (MESSENGER_PAGE_TO_SALESPAGE)
-      * website ad -> the sales page mapped from its AD ACCOUNT
-                      (WEBSITE_ACCOUNT_TO_SALESPAGE_NAME)
+    Spend is converted to TND with the per-account rate (META_ACCOUNT_RATES),
+    exactly like _meta_fetch_spend_by_campaign.
 
-    This is only a REPLI: the per-page attribution uses manual ad→page links
-    first (those handle ads that deliberately serve two pages) and falls back
-    to auto_sales_page when an ad has no manual link. Returns (ok, n_updated).
+    Returns (spend_by_name, count_by_name) where keys are sales-page names and
+    '' is the unassigned bucket. Empty dicts on error / no token.
     """
     import urllib.request
-    from django.utils import timezone as _tz
-    from .models import Ad, SalesPage
+    from decimal import Decimal
+    from collections import defaultdict
+    from .models import SalesPage
     token = _cfg("META_ACCESS_TOKEN", "").strip()
     accounts_raw = _cfg("META_AD_ACCOUNT_ID", "").strip()
     if not accounts_raw:
-        return False, 0
+        return {}, {}
     account_ids = [a.strip() for a in accounts_raw.split(",") if a.strip()]
     per_account = {}
     for pair in _cfg("META_AD_ACCOUNT_TOKENS", "").split(","):
@@ -10433,109 +10432,103 @@ def _detect_ad_pages():
             aid, _, tok = pair.partition(":")
             per_account[aid.strip().replace("act_", "")] = tok.strip()
     if not token and not per_account:
-        return False, 0
+        return {}, {}
+    # Per-account currency → TND rate (same source as the campaign sync).
+    account_rates = {}
+    for pair in os.environ.get("META_ACCOUNT_RATES", "").split(","):
+        pair = pair.strip()
+        if not pair or ":" not in pair:
+            continue
+        parts = [p.strip() for p in pair.split(":")]
+        aid = parts[0].replace("act_", "")
+        rate = parts[2] if len(parts) >= 3 else parts[1]
+        try:
+            account_rates[aid] = float(rate)
+        except (ValueError, TypeError):
+            continue
 
-    # Resolve the website-account → sales page map to real SalesPage objects.
-    acct_to_sp = {}
-    for acct, spname in WEBSITE_ACCOUNT_TO_SALESPAGE_NAME.items():
-        sp = SalesPage.objects.filter(name__iexact=spname).first()
-        if sp:
-            acct_to_sp[acct] = sp
+    # Page-id → sales-page NAME (for DM ads) and account → NAME (for website).
+    sp_name_by_id = {sp.id: sp.name for sp in SalesPage.objects.all()}
+    page_to_name = {}
+    for pid, spid in MESSENGER_PAGE_TO_SALESPAGE.items():
+        nm = sp_name_by_id.get(spid)
+        if nm:
+            page_to_name[pid] = nm
 
-    # campaign_id -> {"dm": bool|None, "page_id": str, "account": bare}
-    camp = {}
+    spend_by_name = defaultdict(lambda: Decimal("0"))
+    count_by_name = defaultdict(int)
+
     for account_id in account_ids:
         bare = account_id.replace("act_", "")
         acc_token = per_account.get(bare, token)
         if not acc_token:
             continue
+        rate = account_rates.get(bare, 1.0)
         acct = account_id if account_id.startswith("act_") else f"act_{account_id}"
+        website_name = WEBSITE_ACCOUNT_TO_SALESPAGE_NAME.get(bare, "")
+
+        # 1) Ad-level spend for the window — only ads that actually spent appear.
+        spend_by_ad = {}
         url = (
-            f"https://graph.facebook.com/v18.0/{acct}/ads"
-            f"?fields=campaign_id,adset{{destination_type}},"
-            f"creative{{object_story_id,effective_object_story_id}}"
-            f"&limit=200&access_token={acc_token}"
+            f"https://graph.facebook.com/v18.0/{acct}/insights"
+            f"?level=ad&fields=ad_id,spend"
+            f"&time_range={{'since':'{start_date}','until':'{end_date}'}}"
+            f"&limit=500&access_token={acc_token}"
         )
-        pages_fetched = 0
-        while url and pages_fetched < 40:
+        guard = 0
+        while url and guard < 40:
             try:
                 with urllib.request.urlopen(url, timeout=25) as resp:
                     data = json.loads(resp.read().decode("utf-8", errors="replace"))
             except Exception:
                 break
-            for ad in data.get("data", []):
-                cid = ad.get("campaign_id", "")
-                if not cid:
+            for row in data.get("data", []):
+                aid = row.get("ad_id")
+                if not aid:
                     continue
+                try:
+                    spend_by_ad[aid] = float(row.get("spend", "0") or 0)
+                except (ValueError, TypeError):
+                    spend_by_ad[aid] = 0.0
+            url = (data.get("paging", {}) or {}).get("next")
+            guard += 1
+        if not spend_by_ad:
+            continue
+
+        # 2) Resolve each spending ad's real page (batched by ids, 50 at a time).
+        ad_ids = [a for a in spend_by_ad if spend_by_ad[a] > 0]
+        for i in range(0, len(ad_ids), 50):
+            chunk = ad_ids[i:i + 50]
+            url = (
+                f"https://graph.facebook.com/v18.0/"
+                f"?ids={','.join(chunk)}"
+                f"&fields=adset{{destination_type}},"
+                f"creative{{object_story_id,effective_object_story_id}}"
+                f"&access_token={acc_token}"
+            )
+            try:
+                with urllib.request.urlopen(url, timeout=25) as resp:
+                    obj = json.loads(resp.read().decode("utf-8", errors="replace"))
+            except Exception:
+                # Can't resolve this batch -> unassigned (never guessed).
+                for aid in chunk:
+                    spend_by_name[""] += Decimal(str(spend_by_ad[aid] * rate))
+                    count_by_name[""] += 1
+                continue
+            for aid in chunk:
+                ad = obj.get(aid) or {}
                 dest = ((ad.get("adset") or {}).get("destination_type") or "").upper()
                 cre = ad.get("creative") or {}
                 story = cre.get("object_story_id") or cre.get("effective_object_story_id") or ""
                 page_id = story.split("_", 1)[0] if "_" in story else ""
-                is_dm = dest.startswith("MESSAG")
-                info = camp.setdefault(cid, {"dm": None, "page_id": "", "account": bare})
-                if info["dm"] is None:
-                    info["dm"] = is_dm
-                if not info["page_id"] and page_id:
-                    info["page_id"] = page_id
-            url = (data.get("paging", {}) or {}).get("next")
-            pages_fetched += 1
+                if dest.startswith("MESSAG"):
+                    name = page_to_name.get(page_id, "")   # DM -> real FB/IG page
+                else:
+                    name = website_name                    # website/pixel -> account
+                spend_by_name[name] += Decimal(str(spend_by_ad[aid] * rate))
+                count_by_name[name] += 1
 
-    if not camp:
-        return False, 0
-
-    now = _tz.now()
-    n = 0
-    # Cache SalesPage lookups for the DM (messenger) mapping.
-    sp_by_id = {}
-
-    def _sp(pk):
-        if pk not in sp_by_id:
-            sp_by_id[pk] = SalesPage.objects.filter(pk=pk).first()
-        return sp_by_id[pk]
-
-    for cid, info in camp.items():
-        ad = Ad.objects.filter(campaign_id=cid).first()
-        if ad is None:
-            continue
-        sp = None
-        if info["dm"]:
-            spid = MESSENGER_PAGE_TO_SALESPAGE.get(info["page_id"])
-            if spid:
-                sp = _sp(spid)
-        else:
-            sp = acct_to_sp.get(info["account"])
-        if sp and ad.auto_sales_page_id != sp.id:
-            ad.auto_sales_page = sp
-            ad.page_detected_at = now
-            ad.save(update_fields=["auto_sales_page", "page_detected_at"])
-            n += 1
-        elif sp and not ad.page_detected_at:
-            ad.page_detected_at = now
-            ad.save(update_fields=["page_detected_at"])
-    return True, n
-
-
-def _kickoff_page_detection():
-    """Run _detect_ad_pages() in the background at most once per 30 min, so a
-    page load never blocks on the Meta crawl. Safe no-op if already running /
-    run recently."""
-    try:
-        from django.core.cache import cache as _cl
-        if not _cl.add("ad_page_detect_lock", 1, 1800):
-            return
-    except Exception:
-        pass
-
-    def _run():
-        try:
-            _detect_ad_pages()
-        except Exception:
-            pass
-    try:
-        import threading as _thr
-        _thr.Thread(target=_run, daemon=True).start()
-    except Exception:
-        _run()
+    return dict(spend_by_name), dict(count_by_name)
 
 
 @login_required(login_url="/login/")
@@ -17438,51 +17431,28 @@ def stats_pages(request):
     totals["retour_pct"] = round(totals["retour"] / totals["sortie"] * 100, 1) if totals["sortie"] else 0.0
 
     # --- Ad spend per page + cost per order --------------------------------
-    # Attribute each Meta ad's spend to the sales page(s) it drives, then show
-    # a cost-per-order for the page.
+    # Spend is read straight from Meta at the AD level and attributed to a page
+    # by the REAL page each ad posts from — no names, no manual links, no
+    # guessing (see _meta_spend_by_page). A campaign whose ad sets run under
+    # different pages is split correctly, each ad on its own page. Ads whose
+    # page can't be resolved land in "Non assigné" — never forced onto a page.
     #
     # LAG (J-1): an ad seen one day brings the order the NEXT day (the customer
     # DMs, then confirms tomorrow). So a day's orders are paid for by the
-    # PREVIOUS day's spend. We therefore sync the ad spend for the window
-    # shifted back one day — orders in [start, end] vs spend in [start-1, end-1].
-    from .models import Ad as _Ad, SalesPage as _SP
+    # PREVIOUS day's spend — orders in [start, end] vs spend in [start-1, end-1].
     from decimal import Decimal as _D
     spend_start = start_date - _dt.timedelta(days=1)
     spend_end = end_date - _dt.timedelta(days=1)
-    spend_by_page = defaultdict(lambda: _D("0"))
-    # Spend of ads NOT linked to any page — can't be placed under a page, so it
-    # is NOT in the per-page totals. Surfaced so the numbers are honest: a page
-    # only shows the ads that are linked to it; the rest sit here until linked.
+    spend_by_page = {}
     unassigned_spend = _D("0")
     unassigned_count = 0
     try:
         if _cfg("META_ACCESS_TOKEN", "").strip():
-            _sync_ads_from_meta(spend_start.isoformat(), spend_end.isoformat())
-    except Exception:
-        pass
-    try:
-        _barats_sp = _SP.objects.filter(name__iexact="Barats.tn").first()
-        _barats_name = _barats_sp.name if _barats_sp else "Barats.tn"
-        for a in (_Ad.objects.filter(archived=False)
-                  .prefetch_related("links__sales_page")):
-            if not a.spend:
-                continue
-            if a.attribution == _Ad.ATTR_BARATS:
-                pages = [_barats_name]
-            else:
-                # ONLY manually-linked ads count toward a page. Ads we can't be
-                # sure about are NEVER guessed into a page — they stay in the
-                # "Non assigné" line so real page numbers aren't polluted.
-                pages = sorted({lk.sales_page.name for lk in a.links.all()
-                                if lk.sales_page_id})
-            if not pages:
-                # An ad with spend but no page link — count it as unassigned.
-                unassigned_spend += a.spend
-                unassigned_count += 1
-                continue
-            share = a.spend / len(pages)   # split evenly if an ad drives 2 pages
-            for pn in pages:
-                spend_by_page[pn] += share
+            _sp_map, _ct_map = _meta_spend_by_page(spend_start.isoformat(),
+                                                    spend_end.isoformat())
+            spend_by_page = {k: v for k, v in _sp_map.items() if k}
+            unassigned_spend = _sp_map.get("", _D("0"))
+            unassigned_count = _ct_map.get("", 0)
     except Exception:
         pass
 

@@ -96,7 +96,7 @@ tr.totaux td{color:var(--text);}
   <div class="n-info">{{ per_page|length }} page(s) avec des commandes sur la période. Clique un en-tête pour trier.</div>
   <div class="n-info" style="color:var(--amber);">💡 <b>Dépense pub = dépense de la veille (J-1)</b> : les commandes d'un jour viennent des pubs du jour précédent. Dépense affichée : {{ spend_from }} → {{ spend_to }} · Commandes : {{ from_date }} → {{ to_date }}.</div>
   {% if unassigned_spend %}
-  <div class="n-info" style="color:var(--red);">⚠️ <b>Non assigné : {{ unassigned_spend|floatformat:2 }} DT</b> ({{ unassigned_count }} pub(s) pas encore liées à une page) — cette dépense n'est comptée sous aucune page ci-dessous. Une page n'affiche que les pubs qui lui sont liées. <a href="{% url 'ads_offers_dashboard' %}?start={{ spend_from }}&end={{ spend_to }}" style="color:var(--blue);">Lier les pubs →</a></div>
+  <div class="n-info" style="color:var(--red);">⚠️ <b>Non assigné : {{ unassigned_spend|floatformat:2 }} DT</b> ({{ unassigned_count }} pub(s) dont la page n'a pas pu être identifiée depuis Meta) — cette dépense n'est comptée sous aucune page ci-dessous (jamais devinée).</div>
   {% endif %}
 
   <div class="card">
