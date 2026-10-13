@@ -17288,14 +17288,20 @@ def stats_pages(request):
 
     # --- Ad spend per page + cost per order --------------------------------
     # Attribute each Meta ad's spend to the sales page(s) it drives, then show
-    # a cost-per-order for the page. Spend is synced for the SAME date range so
-    # the numbers match the period above (like the Coût-par-commande dashboard).
+    # a cost-per-order for the page.
+    #
+    # LAG (J-1): an ad seen one day brings the order the NEXT day (the customer
+    # DMs, then confirms tomorrow). So a day's orders are paid for by the
+    # PREVIOUS day's spend. We therefore sync the ad spend for the window
+    # shifted back one day — orders in [start, end] vs spend in [start-1, end-1].
     from .models import Ad as _Ad, SalesPage as _SP
     from decimal import Decimal as _D
+    spend_start = start_date - _dt.timedelta(days=1)
+    spend_end = end_date - _dt.timedelta(days=1)
     spend_by_page = defaultdict(lambda: _D("0"))
     try:
         if _cfg("META_ACCESS_TOKEN", "").strip():
-            _sync_ads_from_meta(start_date.isoformat(), end_date.isoformat())
+            _sync_ads_from_meta(spend_start.isoformat(), spend_end.isoformat())
     except Exception:
         pass
     try:
@@ -17351,6 +17357,8 @@ def stats_pages(request):
         "totals": dict(totals),
         "from_date": start_date.isoformat(),
         "to_date": end_date.isoformat(),
+        "spend_from": spend_start.isoformat(),
+        "spend_to": spend_end.isoformat(),
         "source_filter": source_filter,
     })
 

@@ -94,6 +94,7 @@ tr.totaux td{color:var(--text);}
   </div>
 
   <div class="n-info">{{ per_page|length }} page(s) avec des commandes sur la période. Clique un en-tête pour trier.</div>
+  <div class="n-info" style="color:var(--amber);">💡 <b>Dépense pub = dépense de la veille (J-1)</b> : les commandes d'un jour viennent des pubs du jour précédent. Dépense affichée : {{ spend_from }} → {{ spend_to }} · Commandes : {{ from_date }} → {{ to_date }}.</div>
 
   <div class="card">
     <table id="modtable">
