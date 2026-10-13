@@ -9202,6 +9202,24 @@ def orders_list(request):
     except Exception:
         _tz = timezone.get_current_timezone()
 
+    # Explicit date-range filter (Meta-style picker, like the stats pages).
+    # When a valid from/to is given it scopes BOTH the list and the chip counts
+    # by order CREATION date, using the same 17h→17h business day as the stats,
+    # for EVERY status — and it takes precedence over the "Aujourd'hui" window.
+    range_start = range_end = None
+    date_from = date_to = ""
+    try:
+        _rs = _dt.date.fromisoformat(request.GET.get("from", ""))
+        _re = _dt.date.fromisoformat(request.GET.get("to", ""))
+        if _rs > _re:
+            _rs, _re = _re, _rs
+        range_start, _ = _business_day_bounds(_rs, _tz)
+        _, range_end = _business_day_bounds(_re, _tz)
+        date_from, date_to = _rs.isoformat(), _re.isoformat()
+    except ValueError:
+        range_start = range_end = None
+    range_active = range_start is not None
+
     today_on = request.GET.get("today") == "1"
     EARLY_STATUSES = {"non_confirmee", "confirmee", "rappeler_plus_tard", "injoignable", "pas_serieux", "annulee"}
     today_start = today_end = None
@@ -9228,8 +9246,11 @@ def orders_list(request):
     elif status_filter and status_filter != "all":
         qs = qs.filter(status=status_filter)
 
-    # Apply the today window only to early statuses.
-    if today_on and today_start and (status_filter in EARLY_STATUSES or status_filter == "all"):
+    # An explicit date range wins: scope every status to that window.
+    if range_active:
+        qs = qs.filter(created_at__gte=range_start, created_at__lt=range_end)
+    # Otherwise apply the "Aujourd'hui" window only to early statuses.
+    elif today_on and today_start and (status_filter in EARLY_STATUSES or status_filter == "all"):
         if status_filter == "all":
             # For "Toutes": early statuses limited to today, outcome statuses all.
             qs = qs.filter(Q(created_at__gte=today_start, created_at__lt=today_end)
@@ -9328,9 +9349,11 @@ def orders_list(request):
         counts_qs = counts_qs.filter(sales_page__name__iexact="Converty")
     elif source_filter == "facebook":
         counts_qs = counts_qs.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
-    # Chip counts: when 'today' is on, early statuses are limited to today's
-    # window; outcome statuses always count all.
-    if today_on and today_start:
+    # Chip counts follow the same rules: an explicit date range scopes every
+    # status; otherwise 'Aujourd'hui' limits early statuses only.
+    if range_active:
+        counts_qs = counts_qs.filter(created_at__gte=range_start, created_at__lt=range_end)
+    elif today_on and today_start:
         counts_qs = counts_qs.filter(
             Q(created_at__gte=today_start, created_at__lt=today_end)
             | ~Q(status__in=EARLY_STATUSES)
@@ -9372,6 +9395,8 @@ def orders_list(request):
         "status_filter": status_filter,
         "source_filter": source_filter,
         "today_on": today_on,
+        "date_from": date_from,
+        "date_to": date_to,
         "counts": counts,
         "double_count": double_count,
         "angry_count": angry_count,
