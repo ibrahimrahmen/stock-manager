@@ -17456,32 +17456,42 @@ def stats_pages(request):
     except Exception:
         pass
 
+    # Denominator for "Coût / commande" matures through the day:
+    #   • TODAY before 17:30  -> total orders (still being confirmed, none out)
+    #   • TODAY after 17:30    -> Sortie (orders have shipped)
+    #   • once NONE en cours   -> Payée + Livrée (fully resolved; any day)
+    # Past periods skip the "total" stage.
+    is_today = (start_date == end_date == today)
+    try:
+        _now_tz = timezone.now().astimezone(tz)
+        before_cutoff = _now_tz.time() < _dt.time(17, 30)
+    except Exception:
+        before_cutoff = False
+
+    def _denom(total, sortie, enc, pd):
+        if is_today and before_cutoff:
+            return ("total", total)
+        if enc > 0:
+            return ("sortie", sortie)
+        if pd > 0:               # enc == 0 -> everything resolved
+            return ("payée+livrée", pd)
+        return ("sortie", sortie)
+
     def _attach_cost(row):
-        """Cost per order = spend / sortie. But once nothing is still 'en cours'
-        (every shipped order has resolved), the meaningful denominator is the
-        orders that actually earned money -> payée + livrée."""
         sp = spend_by_page.get(row["page"], _D("0"))
         row["ad_spend"] = sp
-        paid_delivered = row["payee"] + row["livree"]
-        if row["encours"] == 0 and paid_delivered > 0:
-            row["cpo_basis"] = "payée+livrée"
-            denom = paid_delivered
-        else:
-            row["cpo_basis"] = "sortie"
-            denom = row["sortie"]
+        basis, denom = _denom(row["total"], row["sortie"], row["encours"],
+                              row["payee"] + row["livree"])
+        row["cpo_basis"] = basis
         row["cpo"] = (sp / denom) if denom else None
 
     for row in per_page:
         _attach_cost(row)
 
     totals["ad_spend"] = sum((r["ad_spend"] for r in per_page), _D("0"))
-    _tot_pd = totals["payee"] + totals["livree"]
-    if totals["encours"] == 0 and _tot_pd > 0:
-        totals["cpo_basis"] = "payée+livrée"
-        _tot_denom = _tot_pd
-    else:
-        totals["cpo_basis"] = "sortie"
-        _tot_denom = totals["sortie"]
+    _tb, _tot_denom = _denom(totals["total"], totals["sortie"],
+                             totals["encours"], totals["payee"] + totals["livree"])
+    totals["cpo_basis"] = _tb
     totals["cpo"] = (totals["ad_spend"] / _tot_denom) if _tot_denom else None
 
     return render(request, "inventory/stats_pages.html", {
