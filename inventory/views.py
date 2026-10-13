@@ -9242,7 +9242,9 @@ def orders_list(request):
         qs = qs.filter(status="non_confirmee", customer_id__in=_recurrent_ids)
     elif status_filter == "angry":
         # Orders whose captured DM conversation contains an angry word/insult.
-        qs = qs.filter(is_angry=True)
+        # Drop the ones already treated (Payée / Annulée) so the tab only shows
+        # angry orders that still need handling.
+        qs = qs.filter(is_angry=True).exclude(status__in=["payee", "annulee"])
     elif status_filter and status_filter != "all":
         qs = qs.filter(status=status_filter)
 
@@ -9375,7 +9377,7 @@ def orders_list(request):
 
     # "😡 Colère" chip count: orders (within the chosen source) whose DM
     # conversation was auto-flagged as angry (see inventory/angry_words.py).
-    angry_count = counts_qs.filter(is_angry=True).count()
+    angry_count = counts_qs.filter(is_angry=True).exclude(status__in=["payee", "annulee"]).count()
 
     # If ?create_exchange=ID is in the URL, fetch the original order so the
     # template can pre-fill the inline editor for an exchange.
