@@ -17286,6 +17286,66 @@ def stats_pages(request):
     per_page.sort(key=lambda r: -r["total"])
     totals["retour_pct"] = round(totals["retour"] / totals["sortie"] * 100, 1) if totals["sortie"] else 0.0
 
+    # --- Ad spend per page + cost per order --------------------------------
+    # Attribute each Meta ad's spend to the sales page(s) it drives, then show
+    # a cost-per-order for the page. Spend is synced for the SAME date range so
+    # the numbers match the period above (like the Coût-par-commande dashboard).
+    from .models import Ad as _Ad, SalesPage as _SP
+    from decimal import Decimal as _D
+    spend_by_page = defaultdict(lambda: _D("0"))
+    try:
+        if _cfg("META_ACCESS_TOKEN", "").strip():
+            _sync_ads_from_meta(start_date.isoformat(), end_date.isoformat())
+    except Exception:
+        pass
+    try:
+        _barats_sp = _SP.objects.filter(name__iexact="Barats.tn").first()
+        _barats_name = _barats_sp.name if _barats_sp else "Barats.tn"
+        for a in (_Ad.objects.filter(archived=False)
+                  .prefetch_related("links__sales_page")):
+            if not a.spend:
+                continue
+            if a.attribution == _Ad.ATTR_BARATS:
+                pages = [_barats_name]
+            else:
+                pages = sorted({lk.sales_page.name for lk in a.links.all()
+                                if lk.sales_page_id})
+            if not pages:
+                continue
+            share = a.spend / len(pages)   # split evenly if an ad drives 2 pages
+            for pn in pages:
+                spend_by_page[pn] += share
+    except Exception:
+        pass
+
+    def _attach_cost(row):
+        """Cost per order = spend / sortie. But once nothing is still 'en cours'
+        (every shipped order has resolved), the meaningful denominator is the
+        orders that actually earned money -> payée + livrée."""
+        sp = spend_by_page.get(row["page"], _D("0"))
+        row["ad_spend"] = sp
+        paid_delivered = row["payee"] + row["livree"]
+        if row["encours"] == 0 and paid_delivered > 0:
+            row["cpo_basis"] = "payée+livrée"
+            denom = paid_delivered
+        else:
+            row["cpo_basis"] = "sortie"
+            denom = row["sortie"]
+        row["cpo"] = (sp / denom) if denom else None
+
+    for row in per_page:
+        _attach_cost(row)
+
+    totals["ad_spend"] = sum((r["ad_spend"] for r in per_page), _D("0"))
+    _tot_pd = totals["payee"] + totals["livree"]
+    if totals["encours"] == 0 and _tot_pd > 0:
+        totals["cpo_basis"] = "payée+livrée"
+        _tot_denom = _tot_pd
+    else:
+        totals["cpo_basis"] = "sortie"
+        _tot_denom = totals["sortie"]
+    totals["cpo"] = (totals["ad_spend"] / _tot_denom) if _tot_denom else None
+
     return render(request, "inventory/stats_pages.html", {
         "per_page": per_page,
         "totals": dict(totals),

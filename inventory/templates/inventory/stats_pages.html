@@ -109,6 +109,8 @@ tr.totaux td{color:var(--text);}
           <th onclick="sortBy(7,true)">Annulée</th>
           <th onclick="sortBy(8,true)">Échange</th>
           <th onclick="sortBy(9,true)">Retour %</th>
+          <th onclick="sortBy(10,true)">Dépense pub</th>
+          <th onclick="sortBy(11,true)">Coût / cmd</th>
         </tr>
       </thead>
       <tbody id="modbody">
@@ -124,9 +126,11 @@ tr.totaux td{color:var(--text);}
           <td>{{ r.annulee }}</td>
           <td>{{ r.echange }}</td>
           <td class="{% if r.retour_pct >= 20 %}ret-high{% elif r.retour_pct >= 8 %}ret-mid{% else %}ret-low{% endif %}">{{ r.retour_pct }}%</td>
+          <td>{% if r.ad_spend %}{{ r.ad_spend|floatformat:2 }} DT{% else %}—{% endif %}</td>
+          <td>{% if r.cpo != None %}<b>{{ r.cpo|floatformat:3 }} DT</b><div style="font-size:10px;color:var(--muted);">/{{ r.cpo_basis }}</div>{% else %}—{% endif %}</td>
         </tr>
         {% empty %}
-        <tr><td class="modele" colspan="10" style="text-align:center;color:var(--muted);padding:26px;">Aucune commande sur la période.</td></tr>
+        <tr><td class="modele" colspan="12" style="text-align:center;color:var(--muted);padding:26px;">Aucune commande sur la période.</td></tr>
         {% endfor %}
       </tbody>
       {% if per_page %}
@@ -142,6 +146,8 @@ tr.totaux td{color:var(--text);}
           <td>{{ totals.annulee }}</td>
           <td>{{ totals.echange }}</td>
           <td>{{ totals.retour_pct }}%</td>
+          <td>{% if totals.ad_spend %}{{ totals.ad_spend|floatformat:2 }} DT{% else %}—{% endif %}</td>
+          <td>{% if totals.cpo != None %}<b>{{ totals.cpo|floatformat:3 }} DT</b><div style="font-size:10px;color:var(--muted);">/{{ totals.cpo_basis }}</div>{% else %}—{% endif %}</td>
         </tr>
       </tfoot>
       {% endif %}
