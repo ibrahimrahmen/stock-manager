@@ -17299,6 +17299,11 @@ def stats_pages(request):
     spend_start = start_date - _dt.timedelta(days=1)
     spend_end = end_date - _dt.timedelta(days=1)
     spend_by_page = defaultdict(lambda: _D("0"))
+    # Spend of ads NOT linked to any page — can't be placed under a page, so it
+    # is NOT in the per-page totals. Surfaced so the numbers are honest: a page
+    # only shows the ads that are linked to it; the rest sit here until linked.
+    unassigned_spend = _D("0")
+    unassigned_count = 0
     try:
         if _cfg("META_ACCESS_TOKEN", "").strip():
             _sync_ads_from_meta(spend_start.isoformat(), spend_end.isoformat())
@@ -17317,6 +17322,9 @@ def stats_pages(request):
                 pages = sorted({lk.sales_page.name for lk in a.links.all()
                                 if lk.sales_page_id})
             if not pages:
+                # An ad with spend but no page link — count it as unassigned.
+                unassigned_spend += a.spend
+                unassigned_count += 1
                 continue
             share = a.spend / len(pages)   # split evenly if an ad drives 2 pages
             for pn in pages:
@@ -17359,6 +17367,8 @@ def stats_pages(request):
         "to_date": end_date.isoformat(),
         "spend_from": spend_start.isoformat(),
         "spend_to": spend_end.isoformat(),
+        "unassigned_spend": unassigned_spend,
+        "unassigned_count": unassigned_count,
         "source_filter": source_filter,
     })
 
