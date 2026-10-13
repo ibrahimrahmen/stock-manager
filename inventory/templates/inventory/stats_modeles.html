@@ -114,7 +114,8 @@ tr.totaux td{color:var(--text);}
           <th onclick="sortBy(6,true)">Payée</th>
           <th onclick="sortBy(7,true)">Annulée</th>
           <th onclick="sortBy(8,true)">Échange</th>
-          <th onclick="sortBy(9,true)">Retour %</th>
+          <th onclick="sortBy(9,true)" title="Rappeler + Injoignable + Non sérieux">Rapp/Inj/NS</th>
+          <th onclick="sortBy(10,true)">Retour %</th>
         </tr>
       </thead>
       <tbody id="modbody">
@@ -129,6 +130,7 @@ tr.totaux td{color:var(--text);}
           <td>{{ r.payee }}</td>
           <td>{{ r.annulee }}</td>
           <td>{{ r.echange }}</td>
+          <td>{{ r.injrap }}</td>
           <td class="{% if r.retour_pct >= 20 %}ret-high{% elif r.retour_pct >= 8 %}ret-mid{% else %}ret-low{% endif %}">{{ r.retour_pct }}%</td>
         </tr>
         {% for pg in r.pages %}
@@ -142,11 +144,12 @@ tr.totaux td{color:var(--text);}
           <td>{{ pg.payee }}</td>
           <td>{{ pg.annulee }}</td>
           <td>{{ pg.echange }}</td>
+          <td>{{ pg.injrap }}</td>
           <td class="{% if pg.retour_pct >= 20 %}ret-high{% elif pg.retour_pct >= 8 %}ret-mid{% else %}ret-low{% endif %}">{{ pg.retour_pct }}%</td>
         </tr>
         {% endfor %}
         {% empty %}
-        <tr><td class="modele" colspan="10" style="text-align:center;color:var(--muted);padding:26px;">Aucune vente sur la période.</td></tr>
+        <tr><td class="modele" colspan="11" style="text-align:center;color:var(--muted);padding:26px;">Aucune vente sur la période.</td></tr>
         {% endfor %}
       </tbody>
       {% if per_model %}
@@ -161,6 +164,7 @@ tr.totaux td{color:var(--text);}
           <td>{{ totals.payee }}</td>
           <td>{{ totals.annulee }}</td>
           <td>{{ totals.echange }}</td>
+          <td>{{ totals.injrap }}</td>
           <td>{{ totals.retour_pct }}%</td>
         </tr>
       </tfoot>

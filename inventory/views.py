@@ -16985,14 +16985,18 @@ def stats_commandes(request):
             rows.append("payee")
         elif st == "annulee":
             rows.append("annulee")
+        elif st in ("injoignable", "pas_serieux", "rappeler_plus_tard"):
+            # Rappeler + Injoignable + Non sérieux grouped into one bucket.
+            rows.append("injrap")
         if o["id"] in sortie_ids:
             rows.append("sortie")
         return rows
 
-    ROW_KEYS = ["echange", "retour", "encours", "livree", "payee", "annulee", "sortie"]
+    ROW_KEYS = ["echange", "retour", "encours", "livree", "payee", "annulee", "injrap", "sortie"]
     ROW_LABELS = {
         "echange": "Echange", "retour": "Retour", "encours": "En Cours",
-        "livree": "Livrée", "payee": "Payée", "annulee": "Annulée", "sortie": "Sortie",
+        "livree": "Livrée", "payee": "Payée", "annulee": "Annulée",
+        "injrap": "Rappeler/Injoign./Non sérieux", "sortie": "Sortie",
     }
 
     # daily[row][day] = count
@@ -17030,8 +17034,9 @@ def stats_commandes(request):
     table = []
     for rk in ROW_KEYS:
         a = _agg(daily[rk])
-        if rk in ("sortie", "annulee"):
-            # Sortie (ship rate) and Annulée (never shipped) are vs ALL orders.
+        if rk in ("sortie", "annulee", "injrap"):
+            # Sortie (ship rate), Annulée and Rappeler/Injoign./Non sérieux
+            # (never shipped) are vs ALL orders.
             denom = tous_total
         else:
             # Other statuses are outcomes of shipped orders -> vs Sortie.
@@ -17126,6 +17131,8 @@ def stats_modeles(request):
             rows.append("payee")
         elif st == "annulee":
             rows.append("annulee")
+        elif st in ("injoignable", "pas_serieux", "rappeler_plus_tard"):
+            rows.append("injrap")   # Rappeler + Injoignable + Non sérieux
         if o["id"] in sortie_ids:
             rows.append("sortie")
         return rows
@@ -17179,6 +17186,7 @@ def stats_modeles(request):
             "total": c.get("total", 0), "sortie": sortie, "livree": c.get("livree", 0),
             "retour": retour, "encours": c.get("encours", 0), "payee": c.get("payee", 0),
             "annulee": c.get("annulee", 0), "echange": c.get("echange", 0),
+            "injrap": c.get("injrap", 0),
             "retour_pct": round(retour / sortie * 100, 1) if sortie else 0.0,
         }
 
@@ -17199,7 +17207,7 @@ def stats_modeles(request):
         row["id"] = pid
         row["product"] = names.get(pid, f"#{pid}")
         row["pages"] = pages_by_product.get(pid, [])
-        for k in ("total", "sortie", "livree", "retour", "encours", "payee", "annulee", "echange"):
+        for k in ("total", "sortie", "livree", "retour", "encours", "payee", "annulee", "echange", "injrap"):
             totals[k] += c.get(k, 0)
         per_model.append(row)
     per_model.sort(key=lambda r: -r["total"])
@@ -17273,6 +17281,8 @@ def stats_offres(request):
             rows.append("payee")
         elif st == "annulee":
             rows.append("annulee")
+        elif st in ("injoignable", "pas_serieux", "rappeler_plus_tard"):
+            rows.append("injrap")   # Rappeler + Injoignable + Non sérieux
         if o["id"] in sortie_ids:
             rows.append("sortie")
         return rows
@@ -17303,6 +17313,7 @@ def stats_offres(request):
             "total": c.get("total", 0), "sortie": sortie, "livree": c.get("livree", 0),
             "retour": retour, "encours": c.get("encours", 0), "payee": c.get("payee", 0),
             "annulee": c.get("annulee", 0), "echange": c.get("echange", 0),
+            "injrap": c.get("injrap", 0),
             "retour_pct": round(retour / sortie * 100, 1) if sortie else 0.0,
         }
 
@@ -17322,7 +17333,7 @@ def stats_offres(request):
         row["id"] = oid_
         row["offer"] = names.get(oid_, f"#{oid_}")
         row["pages"] = pages_by_offer.get(oid_, [])
-        for k in ("total", "sortie", "livree", "retour", "encours", "payee", "annulee", "echange"):
+        for k in ("total", "sortie", "livree", "retour", "encours", "payee", "annulee", "echange", "injrap"):
             totals[k] += c.get(k, 0)
         per_offer.append(row)
     per_offer.sort(key=lambda r: -r["total"])
