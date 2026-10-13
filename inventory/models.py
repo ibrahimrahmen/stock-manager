@@ -1252,6 +1252,15 @@ class Ad(models.Model):
         help_text="1 ou 2 paires (offre, page) liees a cette pub.")
     last_synced_at = models.DateTimeField(null=True, blank=True,
         help_text="Dernière synchronisation de la dépense depuis le Sheet.")
+    # Page de vente détectée automatiquement depuis Meta (destination de la pub
+    # + la page FB/IG sous laquelle elle tourne). Sert de repli pour l'attribution
+    # par page quand la pub n'a AUCUN lien manuel (les liens manuels gagnent, car
+    # eux gèrent les pubs qui servent 2 pages).
+    auto_sales_page = models.ForeignKey("inventory.SalesPage",
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="auto_ads",
+        help_text="Page détectée automatiquement depuis Meta.")
+    page_detected_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

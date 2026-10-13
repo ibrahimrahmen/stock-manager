@@ -72,6 +72,16 @@ MESSENGER_PAGE_TO_SALESPAGE = {
 }
 MESSENGER_DEFAULT_SALESPAGE = 3   # Barats (fallback for unmapped pages)
 
+# Ad account → sales page NAME for WEBSITE / pixel ads (destination is a site,
+# not a DM). A DM ad is instead mapped by the FB/IG page it runs under, via
+# MESSENGER_PAGE_TO_SALESPAGE. The owner confirmed: ads in the Ibrahim account
+# drive the Barats.tn Shopify store; ads in the ArrowConverty account drive
+# Converty. Used only to auto-fill Ad.auto_sales_page during detection.
+WEBSITE_ACCOUNT_TO_SALESPAGE_NAME = {
+    "1465987670445070": "Barats.tn",   # Ibrahim account (Shopify store)
+    "1865152710850959": "Converty",    # ArrowConverty account
+}
+
 
 def _extract_tn_phone(text):
     """Extract a valid Tunisian mobile (8 digits) from free text.
@@ -10387,6 +10397,147 @@ def _sync_ads_from_meta(start_date, end_date):
     return True, f"{n} publicité(s) synchronisée(s) depuis Meta.", n
 
 
+def _detect_ad_pages():
+    """Detect which SALES PAGE each ad belongs to, straight from Meta — no
+    reliance on the campaign name.
+
+    For every ad account we crawl its ads once and read, per ad:
+      * the ad set destination (MESSAGING_* = a DM ad; anything else = a
+        website / pixel ad), and
+      * the Facebook page it runs under (the prefix of the creative's
+        object_story_id, i.e. "<page_id>_<post_id>").
+
+    Then each campaign (our Ad row, keyed on campaign_id) gets an
+    auto_sales_page:
+      * DM ad      -> the sales page mapped from its FB/IG page
+                      (MESSENGER_PAGE_TO_SALESPAGE)
+      * website ad -> the sales page mapped from its AD ACCOUNT
+                      (WEBSITE_ACCOUNT_TO_SALESPAGE_NAME)
+
+    This is only a REPLI: the per-page attribution uses manual ad→page links
+    first (those handle ads that deliberately serve two pages) and falls back
+    to auto_sales_page when an ad has no manual link. Returns (ok, n_updated).
+    """
+    import urllib.request
+    from django.utils import timezone as _tz
+    from .models import Ad, SalesPage
+    token = _cfg("META_ACCESS_TOKEN", "").strip()
+    accounts_raw = _cfg("META_AD_ACCOUNT_ID", "").strip()
+    if not accounts_raw:
+        return False, 0
+    account_ids = [a.strip() for a in accounts_raw.split(",") if a.strip()]
+    per_account = {}
+    for pair in _cfg("META_AD_ACCOUNT_TOKENS", "").split(","):
+        pair = pair.strip()
+        if pair and ":" in pair:
+            aid, _, tok = pair.partition(":")
+            per_account[aid.strip().replace("act_", "")] = tok.strip()
+    if not token and not per_account:
+        return False, 0
+
+    # Resolve the website-account → sales page map to real SalesPage objects.
+    acct_to_sp = {}
+    for acct, spname in WEBSITE_ACCOUNT_TO_SALESPAGE_NAME.items():
+        sp = SalesPage.objects.filter(name__iexact=spname).first()
+        if sp:
+            acct_to_sp[acct] = sp
+
+    # campaign_id -> {"dm": bool|None, "page_id": str, "account": bare}
+    camp = {}
+    for account_id in account_ids:
+        bare = account_id.replace("act_", "")
+        acc_token = per_account.get(bare, token)
+        if not acc_token:
+            continue
+        acct = account_id if account_id.startswith("act_") else f"act_{account_id}"
+        url = (
+            f"https://graph.facebook.com/v18.0/{acct}/ads"
+            f"?fields=campaign_id,adset{{destination_type}},"
+            f"creative{{object_story_id,effective_object_story_id}}"
+            f"&limit=200&access_token={acc_token}"
+        )
+        pages_fetched = 0
+        while url and pages_fetched < 40:
+            try:
+                with urllib.request.urlopen(url, timeout=25) as resp:
+                    data = json.loads(resp.read().decode("utf-8", errors="replace"))
+            except Exception:
+                break
+            for ad in data.get("data", []):
+                cid = ad.get("campaign_id", "")
+                if not cid:
+                    continue
+                dest = ((ad.get("adset") or {}).get("destination_type") or "").upper()
+                cre = ad.get("creative") or {}
+                story = cre.get("object_story_id") or cre.get("effective_object_story_id") or ""
+                page_id = story.split("_", 1)[0] if "_" in story else ""
+                is_dm = dest.startswith("MESSAG")
+                info = camp.setdefault(cid, {"dm": None, "page_id": "", "account": bare})
+                if info["dm"] is None:
+                    info["dm"] = is_dm
+                if not info["page_id"] and page_id:
+                    info["page_id"] = page_id
+            url = (data.get("paging", {}) or {}).get("next")
+            pages_fetched += 1
+
+    if not camp:
+        return False, 0
+
+    now = _tz.now()
+    n = 0
+    # Cache SalesPage lookups for the DM (messenger) mapping.
+    sp_by_id = {}
+
+    def _sp(pk):
+        if pk not in sp_by_id:
+            sp_by_id[pk] = SalesPage.objects.filter(pk=pk).first()
+        return sp_by_id[pk]
+
+    for cid, info in camp.items():
+        ad = Ad.objects.filter(campaign_id=cid).first()
+        if ad is None:
+            continue
+        sp = None
+        if info["dm"]:
+            spid = MESSENGER_PAGE_TO_SALESPAGE.get(info["page_id"])
+            if spid:
+                sp = _sp(spid)
+        else:
+            sp = acct_to_sp.get(info["account"])
+        if sp and ad.auto_sales_page_id != sp.id:
+            ad.auto_sales_page = sp
+            ad.page_detected_at = now
+            ad.save(update_fields=["auto_sales_page", "page_detected_at"])
+            n += 1
+        elif sp and not ad.page_detected_at:
+            ad.page_detected_at = now
+            ad.save(update_fields=["page_detected_at"])
+    return True, n
+
+
+def _kickoff_page_detection():
+    """Run _detect_ad_pages() in the background at most once per 30 min, so a
+    page load never blocks on the Meta crawl. Safe no-op if already running /
+    run recently."""
+    try:
+        from django.core.cache import cache as _cl
+        if not _cl.add("ad_page_detect_lock", 1, 1800):
+            return
+    except Exception:
+        pass
+
+    def _run():
+        try:
+            _detect_ad_pages()
+        except Exception:
+            pass
+    try:
+        import threading as _thr
+        _thr.Thread(target=_run, daemon=True).start()
+    except Exception:
+        _run()
+
+
 @login_required(login_url="/login/")
 def ads_offers_dashboard(request):
     """Ads / cost-per-order dashboard over a date range (default: today).
@@ -17307,12 +17458,14 @@ def stats_pages(request):
     try:
         if _cfg("META_ACCESS_TOKEN", "").strip():
             _sync_ads_from_meta(spend_start.isoformat(), spend_end.isoformat())
+            _kickoff_page_detection()
     except Exception:
         pass
     try:
         _barats_sp = _SP.objects.filter(name__iexact="Barats.tn").first()
         _barats_name = _barats_sp.name if _barats_sp else "Barats.tn"
         for a in (_Ad.objects.filter(archived=False)
+                  .select_related("auto_sales_page")
                   .prefetch_related("links__sales_page")):
             if not a.spend:
                 continue
@@ -17321,6 +17474,10 @@ def stats_pages(request):
             else:
                 pages = sorted({lk.sales_page.name for lk in a.links.all()
                                 if lk.sales_page_id})
+                # No manual link? Fall back to the page auto-detected from Meta
+                # (destination + the FB/IG page the ad runs under).
+                if not pages and a.auto_sales_page_id:
+                    pages = [a.auto_sales_page.name]
             if not pages:
                 # An ad with spend but no page link — count it as unassigned.
                 unassigned_spend += a.spend
