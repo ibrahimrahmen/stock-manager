@@ -1888,6 +1888,10 @@ class ProductTest(models.Model):
     results = models.JSONField(null=True, blank=True)
     total_orders = models.IntegerField(default=0)
     amount_spent = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    # Running log of spending (ads etc.) added for this product, one entry per
+    # "Ajouter dépense": {amount, note, at, at_full, by}. amount_spent is the
+    # cached sum of these entries.
+    spending_log = models.JSONField(default=list, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
     # Production launch (only for products in Production):
     # production_plan = {"<colour>": {"<size>": qty, ...}, ...}
@@ -1960,6 +1964,50 @@ class ProductTest(models.Model):
     def priority_label(self):
         """Emoji + label for the current priority."""
         return self.PRIORITY_META.get(self.priority, "🟠 Moyenne")
+
+    def spending_entries(self):
+        """Spending rows, newest first, for display."""
+        out = []
+        for i, e in enumerate(self.spending_log or []):
+            if not isinstance(e, dict):
+                continue
+            try:
+                amt = float(e.get("amount", 0) or 0)
+            except (TypeError, ValueError):
+                amt = 0.0
+            out.append({"i": i, "amount": amt, "label": e.get("label", ""),
+                        "at": e.get("at", ""), "by": e.get("by", "")})
+        out.reverse()
+        return out
+
+    def spending_total(self):
+        """Sum of all spending entries (production cost)."""
+        tot = 0.0
+        for e in (self.spending_log or []):
+            try:
+                tot += float(e.get("amount", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+        return round(tot, 2)
+
+    def pieces_count(self):
+        """Number of pieces to produce = sum of the production plan quantities."""
+        n = 0
+        plan = self.production_plan or {}
+        if isinstance(plan, dict):
+            for sizes in plan.values():
+                if isinstance(sizes, dict):
+                    for q in sizes.values():
+                        try:
+                            n += int(q or 0)
+                        except (TypeError, ValueError):
+                            pass
+        return n
+
+    def cost_per_piece(self):
+        """Production cost per unit = total spending / pieces (None if unknown)."""
+        pcs = self.pieces_count()
+        return round(self.spending_total() / pcs, 3) if pcs else None
 
     def stage_timeline(self):
         """Production stages with the date each was reached, oldest first.

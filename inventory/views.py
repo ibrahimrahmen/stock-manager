@@ -5797,6 +5797,78 @@ def product_test_set_priority(request, pk):
                          "label": pt.priority_label()})
 
 
+def _pt_spending_payload(pt):
+    """Shared JSON shape for the spending card after any change."""
+    cpp = pt.cost_per_piece()
+    return {
+        "status": "ok",
+        "total": pt.spending_total(),
+        "pieces": pt.pieces_count(),
+        "cost_per_piece": cpp,
+        "entries": pt.spending_entries(),
+    }
+
+
+@login_required(login_url="/login/")
+@require_POST
+def product_test_add_spending(request, pk):
+    """Add a spending entry (production cost) to a product. The total of all
+    entries divided by the number of pieces (production plan) gives the cost
+    per unit."""
+    from decimal import Decimal, InvalidOperation
+    from .models import ProductTest
+    try:
+        pt = ProductTest.objects.get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    try:
+        data = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        data = {}
+    raw = str(data.get("amount", "")).replace(",", ".").strip()
+    try:
+        amount = Decimal(raw)
+    except (InvalidOperation, ValueError):
+        return JsonResponse({"status": "error", "message": "Montant invalide."}, status=400)
+    if amount <= 0:
+        return JsonResponse({"status": "error", "message": "Montant invalide."}, status=400)
+    label = (data.get("label") or "").strip()[:120]
+    now = timezone.now()
+    entry = {
+        "amount": float(round(amount, 2)),
+        "label": label,
+        "at": now.strftime("%d/%m/%Y"),
+        "at_full": now.strftime("%d/%m/%Y %H:%M"),
+        "by": request.user.username,
+    }
+    pt.spending_log = (pt.spending_log or []) + [entry]
+    pt.save(update_fields=["spending_log", "updated_at"])
+    return JsonResponse(_pt_spending_payload(pt))
+
+
+@login_required(login_url="/login/")
+@require_POST
+def product_test_delete_spending(request, pk):
+    """Remove one spending entry by its index."""
+    from decimal import Decimal
+    from .models import ProductTest
+    try:
+        pt = ProductTest.objects.get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    try:
+        data = json.loads(request.body.decode("utf-8") or "{}")
+        idx = int(data.get("index"))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return JsonResponse({"status": "error", "message": "Index invalide."}, status=400)
+    log = list(pt.spending_log or [])
+    if 0 <= idx < len(log):
+        log.pop(idx)
+        pt.spending_log = log
+        pt.save(update_fields=["spending_log", "updated_at"])
+    return JsonResponse(_pt_spending_payload(pt))
+
+
 @login_required(login_url="/login/")
 @require_POST
 def product_test_finish_production(request, pk):

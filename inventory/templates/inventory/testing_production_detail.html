@@ -85,6 +85,32 @@ h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bo
     {% empty %}<div class="hint">Aucune couleur.</div>{% endfor %}
   </div>
 
+  <!-- Production cost / spending -->
+  {% if pt.status != 'history' %}
+  <div class="card" id="spendingCard">
+    <h2>💸 Coût de production</h2>
+    <div class="rrow"><span>Dépense totale</span><b id="sp-total">{{ pt.spending_total|floatformat:2 }} DT</b></div>
+    <div class="rrow"><span>Pièces (plan)</span><b id="sp-pieces">{{ pt.pieces_count }}</b></div>
+    <div class="rrow"><span>Coût / pièce</span><b id="sp-cpp" style="color:var(--green);">{% if pt.cost_per_piece != None %}{{ pt.cost_per_piece|floatformat:3 }} DT{% else %}—{% endif %}</b></div>
+    <div id="sp-list" style="margin-top:12px;">
+      {% for e in pt.spending_entries %}
+      <div class="srow" style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:0.5px solid var(--border);font-size:13px;">
+        <span>{{ e.amount|floatformat:2 }} DT{% if e.label %} · {{ e.label }}{% endif %}</span>
+        <span style="color:var(--muted);">{{ e.at }}{% if e.by %} · {{ e.by }}{% endif %} <a href="#" onclick="delSpending('{{ pt.id }}',{{ e.i }});return false;" style="color:var(--red);margin-left:8px;text-decoration:none;">✕</a></span>
+      </div>
+      {% empty %}
+      <div class="hint">Aucune dépense ajoutée.</div>
+      {% endfor %}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+      <input id="sp-amount" type="number" step="0.01" min="0" placeholder="Montant (DT)" style="flex:1;min-width:110px;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:10px;padding:11px 13px;font-family:inherit;font-size:15px;">
+      <input id="sp-label" type="text" placeholder="Note (ex: Tissu, Coupe…)" style="flex:2;min-width:130px;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:10px;padding:11px 13px;font-family:inherit;font-size:15px;">
+      <button class="btn btn-green" onclick="addSpending('{{ pt.id }}')">➕ Ajouter dépense</button>
+    </div>
+    {% if not pt.production_plan %}<div class="hint" style="margin-top:8px;">Le coût par pièce s'affiche quand la production est démarrée (le nombre de pièces vient du plan).</div>{% endif %}
+  </div>
+  {% endif %}
+
   <!-- Test results -->
   {% if pt.finished_at %}
   <div class="card">
@@ -153,6 +179,45 @@ h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bo
 <div style="display:none">{% csrf_token %}</div>
 <script>
 function csrf(){const el=document.querySelector('[name=csrfmiddlewaretoken]');return el?el.value:'';}
+
+// ---- Production spending (cost per piece) ----
+var PT_ID = '{{ pt.id }}';
+function escHtml(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function renderSpending(j){
+  var t=document.getElementById('sp-total'); if(t) t.textContent=(Number(j.total)||0).toFixed(2)+' DT';
+  var p=document.getElementById('sp-pieces'); if(p) p.textContent=j.pieces||0;
+  var c=document.getElementById('sp-cpp'); if(c) c.textContent=(j.cost_per_piece!=null)?(Number(j.cost_per_piece).toFixed(3)+' DT'):'—';
+  var list=document.getElementById('sp-list'); if(!list) return;
+  if(!j.entries || !j.entries.length){ list.innerHTML='<div class="hint">Aucune dépense ajoutée.</div>'; return; }
+  list.innerHTML=j.entries.map(function(e){
+    return '<div class="srow" style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:0.5px solid var(--border);font-size:13px;">'
+      +'<span>'+Number(e.amount).toFixed(2)+' DT'+(e.label?(' · '+escHtml(e.label)):'')+'</span>'
+      +'<span style="color:var(--muted);">'+escHtml(e.at||'')+(e.by?(' · '+escHtml(e.by)):'')
+      +' <a href="#" onclick="delSpending(PT_ID,'+e.i+');return false;" style="color:var(--red);margin-left:8px;text-decoration:none;">✕</a></span>'
+      +'</div>';
+  }).join('');
+}
+function addSpending(id){
+  var a=document.getElementById('sp-amount'), l=document.getElementById('sp-label');
+  var amount=(a.value||'').trim();
+  if(!amount || parseFloat(amount)<=0){ a.focus(); return; }
+  fetch('/testing-production/'+id+'/add-spending/', {method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
+    body:JSON.stringify({amount:amount, label:l.value||''})})
+   .then(r=>r.json()).then(function(j){
+     if(j.status==='ok'){ a.value=''; l.value=''; renderSpending(j); }
+     else alert('Erreur: '+(j.message||''));
+   }).catch(function(e){ alert('Erreur: '+e); });
+}
+function delSpending(id, idx){
+  if(!confirm('Supprimer cette dépense ?')) return;
+  fetch('/testing-production/'+id+'/delete-spending/', {method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
+    body:JSON.stringify({index:idx})})
+   .then(r=>r.json()).then(function(j){ if(j.status==='ok') renderSpending(j); })
+   .catch(function(e){ alert('Erreur: '+e); });
+}
+
 function addAsProduct(id){
   const b=document.getElementById('addProdBtn');
   if(b){ b.disabled=true; b.textContent='⏳ Création…'; }
