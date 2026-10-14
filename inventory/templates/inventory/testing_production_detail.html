@@ -90,7 +90,7 @@ h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bo
   <div class="card" id="spendingCard">
     <h2>💸 Coût de production</h2>
     <div class="rrow"><span>Dépense totale</span><b id="sp-total">{{ pt.spending_total|floatformat:2 }} DT</b></div>
-    <div class="rrow"><span>Pièces (plan)</span><b id="sp-pieces">{{ pt.pieces_count }}</b></div>
+    <div class="rrow"><span>Pièces ({{ pt.pieces_source }})</span><b id="sp-pieces">{{ pt.pieces_count }}</b></div>
     <div class="rrow"><span>Coût / pièce</span><b id="sp-cpp" style="color:var(--green);">{% if pt.cost_per_piece != None %}{{ pt.cost_per_piece|floatformat:3 }} DT{% else %}—{% endif %}</b></div>
     <div id="sp-list" style="margin-top:12px;">
       {% for e in pt.spending_entries %}
@@ -114,7 +114,7 @@ h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bo
       <input id="sp-label" type="text" placeholder="Note (ex: Tissu, Coupe…)" style="flex:2;min-width:130px;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:10px;padding:11px 13px;font-family:inherit;font-size:15px;">
       <button class="btn btn-green" onclick="addSpending('{{ pt.id }}')">➕ Ajouter dépense</button>
     </div>
-    {% if not pt.production_plan %}<div class="hint" style="margin-top:8px;">Le coût par pièce s'affiche quand la production est démarrée (le nombre de pièces vient du plan).</div>{% endif %}
+    <div class="hint" style="margin-top:8px;">Pièces = unités scannées dans « Mes produits » (sinon, le plan de production). Le coût par pièce = dépense totale ÷ pièces.</div>
   </div>
   {% endif %}
 

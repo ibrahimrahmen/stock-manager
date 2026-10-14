@@ -6021,7 +6021,8 @@ def product_test_to_product(request, pk):
         code = (base[:8] + str(_n))[:10]
     try:
         with transaction.atomic():
-            p = Product.objects.create(name=(pt.name or "Produit")[:255], code=code)
+            p = Product.objects.create(name=(pt.name or "Produit")[:255], code=code,
+                                       source_test=pt)
             used = set()
             for v in pt.variants.all():
                 cl = (v.color_label or "").strip() or "Couleur"

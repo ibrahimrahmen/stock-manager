@@ -32,6 +32,13 @@ class Product(models.Model):
         related_name="versions",
         help_text="Si ce produit est une V2/V3 d'un autre produit (même SKU physique), choisir le produit parent ici."
     )
+    # Set when this catalogue product was created from a production test via
+    # "Ajouter à mes produits". Used to count produced/scanned pieces for the
+    # test's cost-per-unit.
+    source_test = models.ForeignKey(
+        "ProductTest", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="catalog_products",
+        help_text="Test de production d'où ce produit a été créé.")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -2000,7 +2007,14 @@ class ProductTest(models.Model):
         return round(tot, 2)
 
     def pieces_count(self):
-        """Number of pieces to produce = sum of the production plan quantities."""
+        """Number of pieces = units actually SCANNED into the linked catalogue
+        product(s) in Mes produits. Falls back to the production-plan quantities
+        when nothing has been scanned / linked yet."""
+        pids = list(self.catalog_products.values_list("id", flat=True))
+        if pids:
+            scanned = ProductUnit.objects.filter(variant__product_id__in=pids).count()
+            if scanned:
+                return scanned
         n = 0
         plan = self.production_plan or {}
         if isinstance(plan, dict):
@@ -2012,6 +2026,13 @@ class ProductTest(models.Model):
                         except (TypeError, ValueError):
                             pass
         return n
+
+    def pieces_source(self):
+        """'scannées' when the piece count comes from scanned units, else 'plan'."""
+        pids = list(self.catalog_products.values_list("id", flat=True))
+        if pids and ProductUnit.objects.filter(variant__product_id__in=pids).exists():
+            return "scannées"
+        return "plan"
 
     def cost_per_piece(self):
         """Production cost per unit = total spending / pieces (None if unknown)."""
