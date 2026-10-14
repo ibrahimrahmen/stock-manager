@@ -5921,16 +5921,21 @@ def product_test_scan_spending(request, pk):
     _tmp_is_temp = not bool(receipt_name) or (tmp_path and "spending_receipts" not in tmp_path)
 
     prompt = (
-        "Tu lis une FACTURE / un REÇU manuscrit d'une dépense de production de "
-        "vêtements en Tunisie (tissu, coupe, couture, broderie, accessoires...). "
-        "Montants en Dinar Tunisien (DT/TND), souvent des dizaines ou centaines.\n"
-        "- Le MONTANT TOTAL est dans la case 'TOTAL' en bas à droite (ou la "
-        "colonne 'الجملة / TOTAL'). Recopie-le EXACTEMENT comme écrit, "
-        "N'AJOUTE PAS de zéro (ex: '120' reste 120, pas 1200).\n"
-        "- La DESCRIPTION vient de la colonne 'Désignation / النوعية'. Recopie "
-        "le texte écrit. Si c'est illisible, laisse label vide — N'INVENTE RIEN.\n"
+        "Tu lis une FACTURE / un REÇU (parfois manuscrit, parfois pivoté) d'une "
+        "dépense de production de vêtements en Tunisie. L'image peut être "
+        "tournée : lis-la dans le bon sens.\n"
+        "MONTANT (amount) : prends la valeur de la colonne/case 'TOTAL' "
+        "(ou 'الجملة', sinon le montant final le plus grand). "
+        "FORMAT TUNISIEN : la VIRGULE est le séparateur DÉCIMAL et les montants "
+        "ont souvent 3 décimales (millimes). Donc '106,800' = 106.8 dinars, "
+        "'0,600' = 0.6, '120' = 120. Renvoie amount en dinars avec un POINT "
+        "décimal (ex: 106.8). N'ajoute jamais de zéros.\n"
+        "DESCRIPTION (label) : recopie le texte de la colonne 'ARTICLE' / "
+        "'Désignation' / 'النوعية' TEL QUEL, même si c'est un code ou une "
+        "abréviation (ex: 'DVT MIU'). Laisse vide SEULEMENT si la case est "
+        "réellement vide. N'invente rien.\n"
         "Réponds UNIQUEMENT en JSON, sans texte autour : "
-        '{"amount": <nombre>, "label": "<texte Désignation ou vide>"}. '
+        '{"amount": <nombre en dinars>, "label": "<texte ARTICLE ou vide>"}. '
         "Si tu ne lis aucun total, mets amount à 0."
     )
     # Use a STRONG, valid vision model for receipts (handwriting). The config
