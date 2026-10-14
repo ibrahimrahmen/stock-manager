@@ -2006,11 +2006,21 @@ class ProductTest(models.Model):
                 pass
         return round(tot, 2)
 
+    def _linked_product_ids(self):
+        """Catalogue products created from this test: by the source_test link,
+        or (for products added before that link existed) by matching the name."""
+        pids = list(self.catalog_products.values_list("id", flat=True))
+        if not pids and (self.name or "").strip():
+            pids = list(Product.objects
+                        .filter(name__iexact=self.name.strip(), archived=False)
+                        .values_list("id", flat=True))
+        return pids
+
     def pieces_count(self):
         """Number of pieces = units actually SCANNED into the linked catalogue
         product(s) in Mes produits. Falls back to the production-plan quantities
         when nothing has been scanned / linked yet."""
-        pids = list(self.catalog_products.values_list("id", flat=True))
+        pids = self._linked_product_ids()
         if pids:
             scanned = ProductUnit.objects.filter(variant__product_id__in=pids).count()
             if scanned:
@@ -2029,7 +2039,7 @@ class ProductTest(models.Model):
 
     def pieces_source(self):
         """'scannées' when the piece count comes from scanned units, else 'plan'."""
-        pids = list(self.catalog_products.values_list("id", flat=True))
+        pids = self._linked_product_ids()
         if pids and ProductUnit.objects.filter(variant__product_id__in=pids).exists():
             return "scannées"
         return "plan"
