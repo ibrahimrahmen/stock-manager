@@ -5682,8 +5682,16 @@ def product_test_detail(request, pk):
         vdata.append({"label": v.color_label, "image": v.image, "cells": cells})
     producers = list(User.objects.filter(is_active=True, profile__role="producer")
                      .order_by("username"))
+    # Products in Mes produits, for the "lier le produit" selector (so pieces =
+    # units scanned into the chosen product). Pre-resolve the current link.
+    from .models import Product
+    _lpids = pt._linked_product_ids()
+    linked_product = Product.objects.filter(id__in=_lpids).first() if _lpids else None
+    products = list(Product.objects.filter(archived=False)
+                    .order_by("name").values("id", "name", "code"))
     return render(request, "inventory/testing_production_detail.html", {
         "pt": pt, "vdata": vdata, "producers": producers,
+        "linked_product": linked_product, "products": products,
     })
 
 
@@ -5804,6 +5812,7 @@ def _pt_spending_payload(pt):
         "status": "ok",
         "total": pt.spending_total(),
         "pieces": pt.pieces_count(),
+        "pieces_source": pt.pieces_source(),
         "cost_per_piece": cpp,
         "entries": pt.spending_entries(),
     }
@@ -5869,6 +5878,37 @@ def product_test_delete_spending(request, pk):
         pt.spending_log = log
         pt.save(update_fields=["spending_log", "updated_at"])
     return JsonResponse(_pt_spending_payload(pt))
+
+
+@login_required(login_url="/login/")
+@require_POST
+def product_test_link_product(request, pk):
+    """Link this test to a catalogue product in Mes produits, so the piece
+    count = units scanned into that product. Pass product_id=0 to unlink."""
+    from .models import ProductTest, Product
+    try:
+        pt = ProductTest.objects.get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    try:
+        data = json.loads(request.body.decode("utf-8") or "{}")
+        product_id = int(data.get("product_id") or 0)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return JsonResponse({"status": "error", "message": "Produit invalide."}, status=400)
+    # Clear any previous explicit link, then set the chosen one.
+    Product.objects.filter(source_test=pt).update(source_test=None)
+    linked_name = ""
+    if product_id:
+        prod = Product.objects.filter(pk=product_id).first()
+        if not prod:
+            return JsonResponse({"status": "error", "message": "Produit introuvable."}, status=404)
+        prod.source_test = pt
+        prod.save(update_fields=["source_test"])
+        linked_name = "%s (%s)" % (prod.name, prod.code)
+    payload = _pt_spending_payload(pt)
+    payload["linked_name"] = linked_name
+    payload["pieces_source"] = pt.pieces_source()
+    return JsonResponse(payload)
 
 
 @login_required(login_url="/login/")

@@ -90,8 +90,16 @@ h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bo
   <div class="card" id="spendingCard">
     <h2>💸 Coût de production</h2>
     <div class="rrow"><span>Dépense totale</span><b id="sp-total">{{ pt.spending_total|floatformat:2 }} DT</b></div>
-    <div class="rrow"><span>Pièces ({{ pt.pieces_source }})</span><b id="sp-pieces">{{ pt.pieces_count }}</b></div>
+    <div class="rrow"><span>Pièces (<span id="sp-src">{{ pt.pieces_source }}</span>)</span><b id="sp-pieces">{{ pt.pieces_count }}</b></div>
     <div class="rrow"><span>Coût / pièce</span><b id="sp-cpp" style="color:var(--green);">{% if pt.cost_per_piece != None %}{{ pt.cost_per_piece|floatformat:3 }} DT{% else %}—{% endif %}</b></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0 4px;">
+      <span class="hint">Produit lié (Mes produits) :</span>
+      <select id="sp-product" onchange="linkProduct('{{ pt.id }}')" style="flex:1;min-width:160px;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:10px;padding:9px 11px;font-family:inherit;font-size:14px;">
+        <option value="0">— Aucun (utiliser le plan) —</option>
+        {% for p in products %}<option value="{{ p.id }}"{% if linked_product and linked_product.id == p.id %} selected{% endif %}>{{ p.name }} ({{ p.code }})</option>{% endfor %}
+      </select>
+    </div>
+    <div class="hint" style="margin-bottom:6px;">Les pièces = unités scannées dans ce produit. Choisissez le bon produit si le compte reste sur « plan ».</div>
     <div id="sp-list" style="margin-top:12px;">
       {% for e in pt.spending_entries %}
       <div class="srow" style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:0.5px solid var(--border);font-size:13px;">
@@ -190,9 +198,19 @@ function csrf(){const el=document.querySelector('[name=csrfmiddlewaretoken]');re
 // ---- Production spending (cost per piece) ----
 var PT_ID = '{{ pt.id }}';
 function escHtml(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function linkProduct(id){
+  var sel=document.getElementById('sp-product');
+  var pid=sel?(parseInt(sel.value)||0):0;
+  fetch('/testing-production/'+id+'/link-product/', {method:'POST',
+    headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
+    body:JSON.stringify({product_id:pid})})
+   .then(r=>r.json()).then(function(j){ if(j.status==='ok') renderSpending(j); else alert('Erreur: '+(j.message||'')); })
+   .catch(function(e){ alert('Erreur: '+e); });
+}
 function renderSpending(j){
   var t=document.getElementById('sp-total'); if(t) t.textContent=(Number(j.total)||0).toFixed(2)+' DT';
   var p=document.getElementById('sp-pieces'); if(p) p.textContent=j.pieces||0;
+  var s=document.getElementById('sp-src'); if(s && j.pieces_source) s.textContent=j.pieces_source;
   var c=document.getElementById('sp-cpp'); if(c) c.textContent=(j.cost_per_piece!=null)?(Number(j.cost_per_piece).toFixed(3)+' DT'):'—';
   var list=document.getElementById('sp-list'); if(!list) return;
   if(!j.entries || !j.entries.length){ list.innerHTML='<div class="hint">Aucune dépense ajoutée.</div>'; return; }
