@@ -5903,28 +5903,34 @@ def product_test_scan_spending(request, pk):
         return JsonResponse({"status": "error", "message": "Lecture image échouée."}, status=400)
 
     prompt = (
-        "Tu lis une FACTURE / un REÇU d'une dépense de production de vêtements "
-        "en Tunisie (tissu, coupe, couture, broderie, accessoires...). Les "
-        "montants sont en Dinar Tunisien (DT/TND). Extrais le MONTANT TOTAL payé "
-        "et une courte description (2-4 mots) de ce que c'était. "
+        "Tu lis une FACTURE / un REÇU manuscrit d'une dépense de production de "
+        "vêtements en Tunisie (tissu, coupe, couture, broderie, accessoires...). "
+        "Montants en Dinar Tunisien (DT/TND), souvent des dizaines ou centaines.\n"
+        "- Le MONTANT TOTAL est dans la case 'TOTAL' en bas à droite (ou la "
+        "colonne 'الجملة / TOTAL'). Recopie-le EXACTEMENT comme écrit, "
+        "N'AJOUTE PAS de zéro (ex: '120' reste 120, pas 1200).\n"
+        "- La DESCRIPTION vient de la colonne 'Désignation / النوعية'. Recopie "
+        "le texte écrit. Si c'est illisible, laisse label vide — N'INVENTE RIEN.\n"
         "Réponds UNIQUEMENT en JSON, sans texte autour : "
-        '{"amount": <nombre>, "label": "<description courte>"}. '
+        '{"amount": <nombre>, "label": "<texte Désignation ou vide>"}. '
         "Si tu ne lis aucun total, mets amount à 0."
     )
+    # Use a STRONG, valid vision model for receipts (handwriting). The config
+    # strong model wins unless it's the known-bad bare default.
+    scan_model = (_cfg("ANTHROPIC_VISION_STRONG_MODEL", "").strip()
+                  or "claude-sonnet-4-5-20250929")
+    if scan_model in ("claude-sonnet-5", "claude-sonnet-5-5"):
+        scan_model = "claude-sonnet-4-5-20250929"
     errbox = []
     raw = None
     try:
-        # Use the known-good base vision model (Haiku 4.5). Escalate to the
-        # configured strong model only if that produced nothing.
         raw = _claude_generate(prompt, max_tokens=300, temperature=0.0,
-                               local_images=[tmp_path], model=_vision_model(),
+                               local_images=[tmp_path], model=scan_model,
                                errbox=errbox)
-        if not raw:
-            _strong = _vision_model_strong()
-            if _strong and _strong != _vision_model():
-                raw = _claude_generate(prompt, max_tokens=300, temperature=0.0,
-                                       local_images=[tmp_path], model=_strong,
-                                       errbox=errbox)
+        if not raw:   # strong model unavailable -> fall back to base (Haiku)
+            raw = _claude_generate(prompt, max_tokens=300, temperature=0.0,
+                                   local_images=[tmp_path], model=_vision_model(),
+                                   errbox=errbox)
     except Exception as _e:
         errbox.append(str(_e)[:200])
         raw = None
