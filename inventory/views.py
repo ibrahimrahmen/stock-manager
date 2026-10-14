@@ -5911,12 +5911,22 @@ def product_test_scan_spending(request, pk):
         '{"amount": <nombre>, "label": "<description courte>"}. '
         "Si tu ne lis aucun total, mets amount à 0."
     )
+    errbox = []
     raw = None
     try:
+        # Use the known-good base vision model (Haiku 4.5). Escalate to the
+        # configured strong model only if that produced nothing.
         raw = _claude_generate(prompt, max_tokens=300, temperature=0.0,
-                               local_images=[tmp_path],
-                               model=_vision_model_strong())
-    except Exception:
+                               local_images=[tmp_path], model=_vision_model(),
+                               errbox=errbox)
+        if not raw:
+            _strong = _vision_model_strong()
+            if _strong and _strong != _vision_model():
+                raw = _claude_generate(prompt, max_tokens=300, temperature=0.0,
+                                       local_images=[tmp_path], model=_strong,
+                                       errbox=errbox)
+    except Exception as _e:
+        errbox.append(str(_e)[:200])
         raw = None
     finally:
         if tmp_path:
@@ -5935,8 +5945,12 @@ def product_test_scan_spending(request, pk):
         except (ValueError, TypeError):
             pass
     if amount <= 0 and not label:
+        _why = "pas de réponse de Claude" if not raw else "montant non lu"
+        if errbox:
+            _why = str(errbox[-1])[:160]
         return JsonResponse({"status": "error",
-                             "message": "Lecture impossible — saisissez manuellement."}, status=200)
+                             "message": "Lecture impossible (%s) — saisissez manuellement." % _why},
+                            status=200)
     return JsonResponse({"status": "ok", "amount": round(amount, 2), "label": label})
 
 
