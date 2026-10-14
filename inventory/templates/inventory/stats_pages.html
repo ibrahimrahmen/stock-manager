@@ -53,6 +53,11 @@ tr.totaux td{color:var(--text);}
 .ret-mid{color:var(--amber);}
 .ret-low{color:var(--green);}
 .modelrow:hover td{background:var(--surface2);}
+.modelrow{cursor:pointer;}
+.caret{display:inline-block;width:12px;color:var(--muted);font-size:10px;}
+.pagerow{display:none;}
+.pagerow td{background:var(--bg);font-size:13px;color:var(--muted);}
+.pagecell{padding-left:26px !important;text-align:left;}
 .n-info{font-size:12px;color:var(--muted);margin-bottom:10px;}
 </style>
 {% include "inventory/_tp_chrome.html" %}
@@ -119,8 +124,8 @@ tr.totaux td{color:var(--text);}
       </thead>
       <tbody id="modbody">
         {% for r in per_page %}
-        <tr class="modelrow">
-          <td class="modele">{{ r.page }}</td>
+        <tr class="modelrow modelrow-{{ r.idx }}"{% if r.offers %} onclick="togglePages({{ r.idx }})" title="Cliquer pour voir les offres"{% endif %}>
+          <td class="modele">{% if r.offers %}<span class="caret">▸</span> {% endif %}{{ r.page }}</td>
           <td>{{ r.total }}</td>
           <td>{{ r.sortie }}</td>
           <td>{{ r.livree }}</td>
@@ -133,6 +138,22 @@ tr.totaux td{color:var(--text);}
           <td>{% if r.ad_spend %}{{ r.ad_spend|floatformat:2 }} DT{% else %}—{% endif %}</td>
           <td>{% if r.cpo != None %}<b>{{ r.cpo|floatformat:3 }} DT</b><div style="font-size:10px;color:var(--muted);">/{{ r.cpo_basis }}</div>{% else %}—{% endif %}</td>
         </tr>
+        {% for of in r.offers %}
+        <tr class="pagerow pagerow-{{ r.idx }}">
+          <td class="modele pagecell">↳ {{ of.offer }}</td>
+          <td>{{ of.total }}</td>
+          <td>{{ of.sortie }}</td>
+          <td>{{ of.livree }}</td>
+          <td>{{ of.retour }}</td>
+          <td>{{ of.encours }}</td>
+          <td>{{ of.payee }}</td>
+          <td>{{ of.annulee }}</td>
+          <td>{{ of.echange }}</td>
+          <td class="{% if of.retour_pct >= 20 %}ret-high{% elif of.retour_pct >= 8 %}ret-mid{% else %}ret-low{% endif %}">{{ of.retour_pct }}%</td>
+          <td>—</td>
+          <td>—</td>
+        </tr>
+        {% endfor %}
         {% empty %}
         <tr><td class="modele" colspan="12" style="text-align:center;color:var(--muted);padding:26px;">Aucune commande sur la période.</td></tr>
         {% endfor %}
@@ -163,13 +184,33 @@ tr.totaux td{color:var(--text);}
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
 
+// A "group" = one page row (head) plus its offer sub-rows.
+function _groups(){
+  const body = document.getElementById('modbody');
+  const groups = []; let cur = null;
+  Array.from(body.children).forEach(function(tr){
+    if (tr.classList.contains('modelrow')){ cur = {head: tr, pages: []}; groups.push(cur); }
+    else if (tr.classList.contains('pagerow') && cur){ cur.pages.push(tr); }
+  });
+  return groups;
+}
+
+function togglePages(pid){
+  const rows = document.querySelectorAll('.pagerow-' + pid);
+  const caret = document.querySelector('.modelrow-' + pid + ' .caret');
+  let anyHidden = false;
+  rows.forEach(function(r){ if (getComputedStyle(r).display === 'none') anyHidden = true; });
+  rows.forEach(function(r){ r.style.display = anyHidden ? 'table-row' : 'none'; });
+  if (caret) caret.textContent = anyHidden ? '▾' : '▸';
+}
+
 function filterRows(){
   const q = (document.getElementById('search').value || '').toLowerCase();
-  Array.from(document.getElementById('modbody').children).forEach(function(tr){
-    const cell = tr.querySelector('.modele');
-    if (!cell) return;
-    const name = (cell.textContent || '').toLowerCase();
-    tr.style.display = name.includes(q) ? '' : 'none';
+  _groups().forEach(function(g){
+    const name = (g.head.querySelector('.modele').textContent || '').toLowerCase();
+    const match = name.includes(q);
+    g.head.style.display = match ? '' : 'none';
+    if (!match) g.pages.forEach(function(p){ p.style.display = 'none'; });
   });
 }
 
@@ -185,8 +226,13 @@ function sortBy(col, numeric){
     return asc ? av.localeCompare(bv) : bv.localeCompare(av);
   };
   const body = document.getElementById('modbody');
-  Array.from(body.children).filter(t => t.classList.contains('modelrow'))
-    .sort(cmp).forEach(t => body.appendChild(t));
+  const groups = _groups();
+  groups.sort((a, b) => cmp(a.head, b.head));
+  groups.forEach(function(g){
+    g.pages.sort(cmp);
+    body.appendChild(g.head);
+    g.pages.forEach(p => body.appendChild(p));
+  });
 }
 
 // Quick range links (?range=N) -> set dates and submit.

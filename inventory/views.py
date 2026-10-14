@@ -17382,7 +17382,7 @@ def stats_pages(request):
     Payée / Annulée / Échange orders, plus a return rate (Retour % vs Sortie)."""
     if not request.user.is_superuser:
         return redirect("home")
-    from .models import Order, ShippingOrder
+    from .models import Order, ShippingOrder, OrderOffer, Offer
     from collections import defaultdict
     import datetime as _dt
     try:
@@ -17447,6 +17447,24 @@ def stats_pages(request):
         for rk in rows:
             pc[page][rk] += 1
 
+    # Per-(page, offer) breakdown for the click-to-expand drill-down: under each
+    # page, which offers were ordered and how they resolved (one count per
+    # order↔offer line, same status rows as the page).
+    order_by_id = {o["id"]: o for o in orders}
+    po = defaultdict(lambda: defaultdict(int))   # (page, offer_id) -> row -> count
+    if order_ids:
+        for r in (OrderOffer.objects
+                  .filter(order_id__in=order_ids, offer_id__isnull=False)
+                  .values("order_id", "offer_id")):
+            o = order_by_id.get(r["order_id"])
+            if not o:
+                continue
+            page = o.get("sales_page__name") or "—"
+            key = (page, r["offer_id"])
+            po[key]["total"] += 1
+            for rk in _row_for(o):
+                po[key][rk] += 1
+
     def _mk_row(c):
         sortie = c.get("sortie", 0)
         retour = c.get("retour", 0)
@@ -17457,11 +17475,23 @@ def stats_pages(request):
             "retour_pct": round(retour / sortie * 100, 1) if sortie else 0.0,
         }
 
+    _offer_ids = {k[1] for k in po}
+    _onames = dict(Offer.objects.filter(id__in=_offer_ids).values_list("id", "name"))
+    offers_by_page = defaultdict(list)
+    for (page, oid), c in po.items():
+        d = _mk_row(c)
+        d["offer"] = _onames.get(oid, f"#{oid}")
+        offers_by_page[page].append(d)
+    for page in offers_by_page:
+        offers_by_page[page].sort(key=lambda r: -r["total"])
+
     per_page = []
     totals = defaultdict(int)
-    for name, c in pc.items():
+    for _i, (name, c) in enumerate(pc.items()):
         row = _mk_row(c)
         row["page"] = name
+        row["idx"] = _i
+        row["offers"] = offers_by_page.get(name, [])
         for k in ("total", "sortie", "livree", "retour", "encours", "payee", "annulee", "echange"):
             totals[k] += c.get(k, 0)
         per_page.append(row)
