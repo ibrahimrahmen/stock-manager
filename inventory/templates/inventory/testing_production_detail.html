@@ -95,7 +95,7 @@ h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bo
     <div id="sp-list" style="margin-top:12px;">
       {% for e in pt.spending_entries %}
       <div class="srow" style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:0.5px solid var(--border);font-size:13px;">
-        <span>{{ e.amount|floatformat:2 }} DT{% if e.label %} · {{ e.label }}{% endif %}</span>
+        <span>{{ e.amount|floatformat:2 }} DT{% if e.label %} · {{ e.label }}{% endif %}{% if e.receipt_url %} <a href="{{ e.receipt_url }}" target="_blank" style="color:var(--blue);text-decoration:none;" title="Voir la facture">📎</a>{% endif %}</span>
         <span style="color:var(--muted);">{{ e.at }}{% if e.by %} · {{ e.by }}{% endif %} <a href="#" onclick="delSpending('{{ pt.id }}',{{ e.i }});return false;" style="color:var(--red);margin-left:8px;text-decoration:none;">✕</a></span>
       </div>
       {% empty %}
@@ -104,6 +104,7 @@ h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bo
     </div>
     <div style="margin-top:14px;">
       <input id="sp-file" type="file" accept="image/*" capture="environment" style="display:none;" onchange="scanSpending('{{ pt.id }}', this)">
+      <input type="hidden" id="sp-receipt" value="">
       <button class="btn btn-grey" id="sp-scan-btn" onclick="document.getElementById('sp-file').click()">📷 Scanner / Importer une facture</button>
       <span id="sp-scan-status" class="hint" style="margin-left:10px;"></span>
     </div>
@@ -196,8 +197,9 @@ function renderSpending(j){
   var list=document.getElementById('sp-list'); if(!list) return;
   if(!j.entries || !j.entries.length){ list.innerHTML='<div class="hint">Aucune dépense ajoutée.</div>'; return; }
   list.innerHTML=j.entries.map(function(e){
+    var clip = e.receipt_url ? (' <a href="'+e.receipt_url+'" target="_blank" title="Voir la facture" style="color:var(--blue);text-decoration:none;">📎</a>') : '';
     return '<div class="srow" style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:0.5px solid var(--border);font-size:13px;">'
-      +'<span>'+Number(e.amount).toFixed(2)+' DT'+(e.label?(' · '+escHtml(e.label)):'')+'</span>'
+      +'<span>'+Number(e.amount).toFixed(2)+' DT'+(e.label?(' · '+escHtml(e.label)):'')+clip+'</span>'
       +'<span style="color:var(--muted);">'+escHtml(e.at||'')+(e.by?(' · '+escHtml(e.by)):'')
       +' <a href="#" onclick="delSpending(PT_ID,'+e.i+');return false;" style="color:var(--red);margin-left:8px;text-decoration:none;">✕</a></span>'
       +'</div>';
@@ -213,24 +215,32 @@ function scanSpending(id, input){
   fetch('/testing-production/'+id+'/scan-spending/', {method:'POST',
     headers:{'X-CSRFToken':csrf()}, body:fd})
    .then(r=>r.json()).then(function(j){
+     // Keep the saved receipt even if the reading failed, so it stays attached.
+     if(j.receipt) document.getElementById('sp-receipt').value=j.receipt;
      if(j.status==='ok'){
        if(j.amount) document.getElementById('sp-amount').value=j.amount;
        if(j.label) document.getElementById('sp-label').value=j.label;
-       if(st) st.textContent='✓ Lu — vérifiez puis Ajouter';
-     } else { if(st) st.textContent='⚠ '+(j.message||'Lecture impossible'); }
+       if(st) st.innerHTML='✓ Lu'+(j.receipt?' · 📎 facture jointe':'')+' — vérifiez puis Ajouter';
+     } else {
+       if(st) st.textContent=(j.receipt?'📎 facture jointe · ':'')+'⚠ '+(j.message||'Lecture impossible');
+     }
    }).catch(function(e){ if(st) st.textContent='⚠ Erreur: '+e; })
    .finally(function(){ if(btn) btn.disabled=false; input.value=''; });
 }
 function addSpending(id){
   var a=document.getElementById('sp-amount'), l=document.getElementById('sp-label');
+  var rc=document.getElementById('sp-receipt');
   var amount=(a.value||'').trim();
   if(!amount || parseFloat(amount)<=0){ a.focus(); return; }
   fetch('/testing-production/'+id+'/add-spending/', {method:'POST',
     headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
-    body:JSON.stringify({amount:amount, label:l.value||''})})
+    body:JSON.stringify({amount:amount, label:l.value||'', receipt:(rc?rc.value:'')})})
    .then(r=>r.json()).then(function(j){
-     if(j.status==='ok'){ a.value=''; l.value=''; renderSpending(j); }
-     else alert('Erreur: '+(j.message||''));
+     if(j.status==='ok'){
+       a.value=''; l.value=''; if(rc) rc.value='';
+       var st=document.getElementById('sp-scan-status'); if(st) st.textContent='';
+       renderSpending(j);
+     } else alert('Erreur: '+(j.message||''));
    }).catch(function(e){ alert('Erreur: '+e); });
 }
 function delSpending(id, idx){

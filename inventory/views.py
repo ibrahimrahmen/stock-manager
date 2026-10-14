@@ -5833,10 +5833,12 @@ def product_test_add_spending(request, pk):
     if amount <= 0:
         return JsonResponse({"status": "error", "message": "Montant invalide."}, status=400)
     label = (data.get("label") or "").strip()[:120]
+    receipt = (data.get("receipt") or "").strip()[:300]
     now = timezone.now()
     entry = {
         "amount": float(round(amount, 2)),
         "label": label,
+        "receipt": receipt,
         "at": now.strftime("%d/%m/%Y"),
         "at_full": now.strftime("%d/%m/%Y %H:%M"),
         "by": request.user.username,
@@ -5889,18 +5891,34 @@ def product_test_scan_spending(request, pk):
     if not _cfg("ANTHROPIC_API_KEY", "").strip():
         return JsonResponse({"status": "error",
                              "message": "Clé Claude manquante (Configuration → IA)."}, status=400)
-    # Persist to a temp file so _claude_generate can read + downscale it.
+    # Save the receipt to media (kept, so the entry can link to it) and get a
+    # filesystem path for Claude to read.
+    from django.core.files.storage import default_storage
+    from django.core.files.base import ContentFile
+    import uuid as _uuid
     _ext = (_os.path.splitext(f.name)[1] or ".jpg").lower()
     if _ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
         _ext = ".jpg"
+    receipt_name = receipt_url = ""
     tmp_path = None
     try:
-        with _tempfile.NamedTemporaryFile(delete=False, suffix=_ext) as _tf:
-            for chunk in f.chunks():
-                _tf.write(chunk)
-            tmp_path = _tf.name
+        _bytes = f.read()
+        rel = "spending_receipts/%s_%s%s" % (pk, _uuid.uuid4().hex[:10], _ext)
+        receipt_name = default_storage.save(rel, ContentFile(_bytes))
+        try:
+            receipt_url = default_storage.url(receipt_name)
+        except Exception:
+            receipt_url = ""
+        try:
+            tmp_path = default_storage.path(receipt_name)
+        except (NotImplementedError, Exception):
+            # Non-filesystem storage: fall back to a temp file for analysis.
+            with _tempfile.NamedTemporaryFile(delete=False, suffix=_ext) as _tf:
+                _tf.write(_bytes)
+                tmp_path = _tf.name
     except Exception:
         return JsonResponse({"status": "error", "message": "Lecture image échouée."}, status=400)
+    _tmp_is_temp = not bool(receipt_name) or (tmp_path and "spending_receipts" not in tmp_path)
 
     prompt = (
         "Tu lis une FACTURE / un REÇU manuscrit d'une dépense de production de "
@@ -5935,7 +5953,8 @@ def product_test_scan_spending(request, pk):
         errbox.append(str(_e)[:200])
         raw = None
     finally:
-        if tmp_path:
+        # Delete only the throwaway temp copy; keep the saved receipt.
+        if tmp_path and _tmp_is_temp:
             try:
                 _os.unlink(tmp_path)
             except Exception:
@@ -5954,10 +5973,13 @@ def product_test_scan_spending(request, pk):
         _why = "pas de réponse de Claude" if not raw else "montant non lu"
         if errbox:
             _why = str(errbox[-1])[:160]
-        return JsonResponse({"status": "error",
+        # The receipt is still saved and returned so it can be attached anyway.
+        return JsonResponse({"status": "error", "receipt": receipt_name,
+                             "receipt_url": receipt_url,
                              "message": "Lecture impossible (%s) — saisissez manuellement." % _why},
                             status=200)
-    return JsonResponse({"status": "ok", "amount": round(amount, 2), "label": label})
+    return JsonResponse({"status": "ok", "amount": round(amount, 2), "label": label,
+                         "receipt": receipt_name, "receipt_url": receipt_url})
 
 
 @login_required(login_url="/login/")

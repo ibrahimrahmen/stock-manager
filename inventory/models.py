@@ -1967,6 +1967,7 @@ class ProductTest(models.Model):
 
     def spending_entries(self):
         """Spending rows, newest first, for display."""
+        from django.core.files.storage import default_storage
         out = []
         for i, e in enumerate(self.spending_log or []):
             if not isinstance(e, dict):
@@ -1975,8 +1976,16 @@ class ProductTest(models.Model):
                 amt = float(e.get("amount", 0) or 0)
             except (TypeError, ValueError):
                 amt = 0.0
+            rc = e.get("receipt", "") or ""
+            rc_url = ""
+            if rc:
+                try:
+                    rc_url = default_storage.url(rc)
+                except Exception:
+                    rc_url = ""
             out.append({"i": i, "amount": amt, "label": e.get("label", ""),
-                        "at": e.get("at", ""), "by": e.get("by", "")})
+                        "at": e.get("at", ""), "by": e.get("by", ""),
+                        "receipt_url": rc_url})
         out.reverse()
         return out
 
