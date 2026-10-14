@@ -5871,6 +5871,77 @@ def product_test_delete_spending(request, pk):
 
 @login_required(login_url="/login/")
 @require_POST
+def product_test_scan_spending(request, pk):
+    """Read a receipt/invoice photo with Claude Vision and return the extracted
+    amount + a short label, so the user can confirm and add it as a spending
+    entry (instead of typing it). User-triggered — not the auto-reply bot."""
+    import json as _json
+    import os as _os
+    import tempfile as _tempfile
+    from .models import ProductTest
+    try:
+        pt = ProductTest.objects.get(pk=pk)
+    except ProductTest.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    f = request.FILES.get("image")
+    if not f:
+        return JsonResponse({"status": "error", "message": "Aucune image."}, status=400)
+    if not _cfg("ANTHROPIC_API_KEY", "").strip():
+        return JsonResponse({"status": "error",
+                             "message": "Clé Claude manquante (Configuration → IA)."}, status=400)
+    # Persist to a temp file so _claude_generate can read + downscale it.
+    _ext = (_os.path.splitext(f.name)[1] or ".jpg").lower()
+    if _ext not in (".jpg", ".jpeg", ".png", ".webp", ".gif"):
+        _ext = ".jpg"
+    tmp_path = None
+    try:
+        with _tempfile.NamedTemporaryFile(delete=False, suffix=_ext) as _tf:
+            for chunk in f.chunks():
+                _tf.write(chunk)
+            tmp_path = _tf.name
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Lecture image échouée."}, status=400)
+
+    prompt = (
+        "Tu lis une FACTURE / un REÇU d'une dépense de production de vêtements "
+        "en Tunisie (tissu, coupe, couture, broderie, accessoires...). Les "
+        "montants sont en Dinar Tunisien (DT/TND). Extrais le MONTANT TOTAL payé "
+        "et une courte description (2-4 mots) de ce que c'était. "
+        "Réponds UNIQUEMENT en JSON, sans texte autour : "
+        '{"amount": <nombre>, "label": "<description courte>"}. '
+        "Si tu ne lis aucun total, mets amount à 0."
+    )
+    raw = None
+    try:
+        raw = _claude_generate(prompt, max_tokens=300, temperature=0.0,
+                               local_images=[tmp_path],
+                               model=_vision_model_strong())
+    except Exception:
+        raw = None
+    finally:
+        if tmp_path:
+            try:
+                _os.unlink(tmp_path)
+            except Exception:
+                pass
+
+    amount, label = 0.0, ""
+    if raw:
+        try:
+            _s = raw[raw.index("{"): raw.rindex("}") + 1]
+            _d = _json.loads(_s)
+            amount = float(str(_d.get("amount", 0)).replace(",", ".") or 0)
+            label = (str(_d.get("label", "")) or "").strip()[:120]
+        except (ValueError, TypeError):
+            pass
+    if amount <= 0 and not label:
+        return JsonResponse({"status": "error",
+                             "message": "Lecture impossible — saisissez manuellement."}, status=200)
+    return JsonResponse({"status": "ok", "amount": round(amount, 2), "label": label})
+
+
+@login_required(login_url="/login/")
+@require_POST
 def product_test_finish_production(request, pk):
     """Finish production (from the Finition stage) -> move the product to History."""
     from .models import ProductTest

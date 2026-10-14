@@ -178,6 +178,7 @@ urlpatterns = [
     path("testing-production/<int:pk>/to-product/", views.product_test_to_product, name="product_test_to_product"),
     path("testing-production/<int:pk>/add-spending/", views.product_test_add_spending, name="product_test_add_spending"),
     path("testing-production/<int:pk>/delete-spending/", views.product_test_delete_spending, name="product_test_delete_spending"),
+    path("testing-production/<int:pk>/scan-spending/", views.product_test_scan_spending, name="product_test_scan_spending"),
     path("testing-production/<int:pk>/finish-production/", views.product_test_finish_production, name="product_test_finish_production"),
     path("testing-production/<int:pk>/reproduce/", views.product_test_reproduce, name="product_test_reproduce"),
     path("api/testing-products/", views.api_testing_products, name="api_testing_products"),
