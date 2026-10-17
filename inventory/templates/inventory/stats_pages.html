@@ -120,6 +120,7 @@ tr.totaux td{color:var(--text);}
           <th onclick="sortBy(9,true)">Retour %</th>
           <th onclick="sortBy(10,true)">Dépense pub</th>
           <th onclick="sortBy(11,true)">Coût / cmd</th>
+          <th onclick="sortBy(12,true)" title="Payée − coût d'achat − livraison − pub">Bénéfices</th>
         </tr>
       </thead>
       <tbody id="modbody">
@@ -137,6 +138,7 @@ tr.totaux td{color:var(--text);}
           <td class="{% if r.retour_pct >= 20 %}ret-high{% elif r.retour_pct >= 8 %}ret-mid{% else %}ret-low{% endif %}">{{ r.retour_pct }}%</td>
           <td>{% if r.ad_spend %}{{ r.ad_spend|floatformat:2 }} DT{% else %}—{% endif %}</td>
           <td>{% if r.cpo != None %}<b>{{ r.cpo|floatformat:3 }} DT</b><div style="font-size:10px;color:var(--muted);">/{{ r.cpo_basis }}</div>{% else %}—{% endif %}</td>
+          <td style="color:{% if r.benefit >= 0 %}var(--green){% else %}var(--red){% endif %};font-weight:700;">{{ r.benefit|floatformat:2 }} DT</td>
         </tr>
         {% for of in r.offers %}
         <tr class="pagerow pagerow-{{ r.idx }}">
@@ -152,10 +154,11 @@ tr.totaux td{color:var(--text);}
           <td class="{% if of.retour_pct >= 20 %}ret-high{% elif of.retour_pct >= 8 %}ret-mid{% else %}ret-low{% endif %}">{{ of.retour_pct }}%</td>
           <td>—</td>
           <td>—</td>
+          <td>—</td>
         </tr>
         {% endfor %}
         {% empty %}
-        <tr><td class="modele" colspan="12" style="text-align:center;color:var(--muted);padding:26px;">Aucune commande sur la période.</td></tr>
+        <tr><td class="modele" colspan="13" style="text-align:center;color:var(--muted);padding:26px;">Aucune commande sur la période.</td></tr>
         {% endfor %}
       </tbody>
       {% if per_page %}
@@ -173,6 +176,7 @@ tr.totaux td{color:var(--text);}
           <td>{{ totals.retour_pct }}%</td>
           <td>{% if totals.ad_spend %}{{ totals.ad_spend|floatformat:2 }} DT{% else %}—{% endif %}</td>
           <td>{% if totals.cpo != None %}<b>{{ totals.cpo|floatformat:3 }} DT</b><div style="font-size:10px;color:var(--muted);">/{{ totals.cpo_basis }}</div>{% else %}—{% endif %}</td>
+          <td style="color:{% if totals.benefit >= 0 %}var(--green){% else %}var(--red){% endif %};font-weight:700;">{{ totals.benefit|floatformat:2 }} DT</td>
         </tr>
       </tfoot>
       {% endif %}

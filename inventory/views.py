@@ -17767,6 +17767,48 @@ def stats_pages(request):
     except Exception:
         pass
 
+    # --- Bénéfices per page -------------------------------------------------
+    # For PAID (payée) orders of the page in the period:
+    #   bénéfice = Σ(total − frais de livraison − coût d'achat) − dépense pub
+    # i.e. product revenue of paid orders, minus the product cost (buy_price),
+    # minus the shipping fee, minus the day's ads (the J-1 spend above).
+    from .models import OrderLine as _OL, OrderOffer as _OO, OfferProduct as _OP
+    page_by_oid = {o["id"]: (o.get("sales_page__name") or "—") for o in orders}
+    payee_ids = [o["id"] for o in orders
+                 if o["status"] == "payee" and not o["exchange_of_id"]]
+    rev_ship_by_page = defaultdict(lambda: _D("0"))   # Σ(total − delivery_fee)
+    cogs_by_page = defaultdict(lambda: _D("0"))        # Σ product cost (buy_price)
+    if payee_ids:
+        for _o in Order.objects.filter(id__in=payee_ids).values(
+                "id", "total", "delivery_fee"):
+            pg = page_by_oid.get(_o["id"], "—")
+            rev_ship_by_page[pg] += (_o["total"] or _D("0")) - (_o["delivery_fee"] or _D("0"))
+        cogs_by_order = defaultdict(lambda: _D("0"))
+        for l in _OL.objects.filter(order_id__in=payee_ids, product__isnull=False).values(
+                "order_id", "product__buy_price", "quantity",
+                "order_offer_id", "order_offer__quantity"):
+            mult = (l["order_offer__quantity"] or 1) if l["order_offer_id"] else 1
+            units = (l["quantity"] or 1) * mult
+            cogs_by_order[l["order_id"]] += _D(str(l["product__buy_price"] or 0)) * units
+        # Offers with no explicit lines -> expand their pieces from OfferProduct.
+        _offers = list(_OO.objects.filter(order_id__in=payee_ids).values(
+                "id", "order_id", "offer_id", "quantity"))
+        _with = set(_OL.objects.filter(
+                order_offer_id__in=[o["id"] for o in _offers]
+            ).values_list("order_offer_id", flat=True))
+        _empty = [o for o in _offers if o["id"] not in _with and o["offer_id"]]
+        if _empty:
+            _opp = defaultdict(list)
+            for r in _OP.objects.filter(
+                    offer_id__in=[o["offer_id"] for o in _empty]).values(
+                    "offer_id", "product__buy_price", "quantity"):
+                _opp[r["offer_id"]].append((r["product__buy_price"] or 0, r["quantity"] or 1))
+            for o in _empty:
+                for bp, q in _opp.get(o["offer_id"], []):
+                    cogs_by_order[o["order_id"]] += _D(str(bp)) * (q * (o["quantity"] or 1))
+        for _oid, _c in cogs_by_order.items():
+            cogs_by_page[page_by_oid.get(_oid, "—")] += _c
+
     # Denominator for "Coût / commande" matures through the day:
     #   • TODAY before 17:30  -> total orders (still being confirmed, none out)
     #   • TODAY after 17:30    -> Sortie (orders have shipped)
@@ -17795,11 +17837,14 @@ def stats_pages(request):
                               row["payee"] + row["livree"])
         row["cpo_basis"] = basis
         row["cpo"] = (sp / denom) if denom else None
+        row["benefit"] = (rev_ship_by_page.get(row["page"], _D("0"))
+                          - cogs_by_page.get(row["page"], _D("0")) - sp)
 
     for row in per_page:
         _attach_cost(row)
 
     totals["ad_spend"] = sum((r["ad_spend"] for r in per_page), _D("0"))
+    totals["benefit"] = sum((r["benefit"] for r in per_page), _D("0"))
     _tb, _tot_denom = _denom(totals["total"], totals["sortie"],
                              totals["encours"], totals["payee"] + totals["livree"])
     totals["cpo_basis"] = _tb
