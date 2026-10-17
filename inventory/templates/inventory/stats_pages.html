@@ -154,7 +154,7 @@ tr.totaux td{color:var(--text);}
           <td class="{% if of.retour_pct >= 20 %}ret-high{% elif of.retour_pct >= 8 %}ret-mid{% else %}ret-low{% endif %}">{{ of.retour_pct }}%</td>
           <td>—</td>
           <td>—</td>
-          <td>—</td>
+          <td>{% if of.benefit != None %}<span style="color:{% if of.benefit >= 0 %}var(--green){% else %}var(--red){% endif %};font-weight:600;">{{ of.benefit|floatformat:2 }} DT</span>{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
         {% empty %}

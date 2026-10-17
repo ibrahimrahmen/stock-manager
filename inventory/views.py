@@ -17721,10 +17721,14 @@ def stats_pages(request):
     _offer_ids = {k[1] for k in po if k[1] is not None}
     _onames = dict(Offer.objects.filter(id__in=_offer_ids).values_list("id", "name"))
     offers_by_page = defaultdict(list)
+    offer_entry_by_key = {}   # (page, offer_id) -> entry dict, for benefit later
     for (page, oid), c in po.items():
         d = _mk_row(c)
         d["offer"] = "(Sans offre)" if oid is None else _onames.get(oid, f"#{oid}")
+        d["offer_id"] = oid
+        d["benefit"] = None
         offers_by_page[page].append(d)
+        offer_entry_by_key[(page, oid)] = d
     for page in offers_by_page:
         offers_by_page[page].sort(key=lambda r: -r["total"])
 
@@ -17778,18 +17782,38 @@ def stats_pages(request):
                  if o["status"] == "payee" and not o["exchange_of_id"]]
     rev_ship_by_page = defaultdict(lambda: _D("0"))   # Σ(total − delivery_fee)
     cogs_by_page = defaultdict(lambda: _D("0"))        # Σ product cost (buy_price)
+    # Per-offer product margin (revenue − cost) for the drill-down rows. Shipping
+    # & ads are per order/page and can't be split per offer, so an offer's
+    # Bénéfices = its revenue − its product cost.
+    offer_rev = defaultdict(lambda: _D("0"))    # (page, offer_id) -> Σ bundle revenue
+    offer_cogs = defaultdict(lambda: _D("0"))   # (page, offer_id) -> Σ product cost
+    payee_set = set(payee_ids)
     if payee_ids:
         for _o in Order.objects.filter(id__in=payee_ids).values(
                 "id", "total", "delivery_fee"):
             pg = page_by_oid.get(_o["id"], "—")
             rev_ship_by_page[pg] += (_o["total"] or _D("0")) - (_o["delivery_fee"] or _D("0"))
+        # Offer revenue + id map (payée orders).
+        oo_by_id = {}
+        for oo in _OO.objects.filter(order_id__in=payee_ids).values(
+                "id", "order_id", "offer_id", "quantity", "bundle_price"):
+            oo_by_id[oo["id"]] = oo
+            if oo["offer_id"]:
+                pg = page_by_oid.get(oo["order_id"], "—")
+                offer_rev[(pg, oo["offer_id"])] += (_D(str(oo["bundle_price"] or 0))
+                                                    * (oo["quantity"] or 1))
         cogs_by_order = defaultdict(lambda: _D("0"))
         for l in _OL.objects.filter(order_id__in=payee_ids, product__isnull=False).values(
                 "order_id", "product__buy_price", "quantity",
                 "order_offer_id", "order_offer__quantity"):
             mult = (l["order_offer__quantity"] or 1) if l["order_offer_id"] else 1
             units = (l["quantity"] or 1) * mult
-            cogs_by_order[l["order_id"]] += _D(str(l["product__buy_price"] or 0)) * units
+            c = _D(str(l["product__buy_price"] or 0)) * units
+            cogs_by_order[l["order_id"]] += c
+            _oo = oo_by_id.get(l["order_offer_id"])
+            if _oo and _oo["offer_id"]:
+                pg = page_by_oid.get(_oo["order_id"], "—")
+                offer_cogs[(pg, _oo["offer_id"])] += c
         # Offers with no explicit lines -> expand their pieces from OfferProduct.
         _offers = list(_OO.objects.filter(order_id__in=payee_ids).values(
                 "id", "order_id", "offer_id", "quantity"))
@@ -17804,10 +17828,20 @@ def stats_pages(request):
                     "offer_id", "product__buy_price", "quantity"):
                 _opp[r["offer_id"]].append((r["product__buy_price"] or 0, r["quantity"] or 1))
             for o in _empty:
+                pg = page_by_oid.get(o["order_id"], "—")
                 for bp, q in _opp.get(o["offer_id"], []):
-                    cogs_by_order[o["order_id"]] += _D(str(bp)) * (q * (o["quantity"] or 1))
+                    c = _D(str(bp)) * (q * (o["quantity"] or 1))
+                    cogs_by_order[o["order_id"]] += c
+                    offer_cogs[(pg, o["offer_id"])] += c
         for _oid, _c in cogs_by_order.items():
             cogs_by_page[page_by_oid.get(_oid, "—")] += _c
+        # Attach each offer's margin to its drill-down entry.
+        for _key, _entry in offer_entry_by_key.items():
+            if _key[1] is None:
+                continue
+            _b = offer_rev.get(_key, _D("0")) - offer_cogs.get(_key, _D("0"))
+            if offer_rev.get(_key) or offer_cogs.get(_key):
+                _entry["benefit"] = _b
 
     # Denominator for "Coût / commande" matures through the day:
     #   • TODAY before 17:30  -> total orders (still being confirmed, none out)
