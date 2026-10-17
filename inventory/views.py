@@ -17835,13 +17835,14 @@ def stats_pages(request):
                     offer_cogs[(pg, o["offer_id"])] += c
         for _oid, _c in cogs_by_order.items():
             cogs_by_page[page_by_oid.get(_oid, "—")] += _c
-        # Attach each offer's margin to its drill-down entry.
+        # Store each offer's product margin (revenue − cost). The ad cost
+        # (cost-per-order × the offer's paid orders) is deducted in _attach_cost,
+        # where the page's cost-per-order is known.
         for _key, _entry in offer_entry_by_key.items():
             if _key[1] is None:
                 continue
-            _b = offer_rev.get(_key, _D("0")) - offer_cogs.get(_key, _D("0"))
             if offer_rev.get(_key) or offer_cogs.get(_key):
-                _entry["benefit"] = _b
+                _entry["_margin"] = offer_rev.get(_key, _D("0")) - offer_cogs.get(_key, _D("0"))
 
     # Denominator for "Coût / commande" matures through the day:
     #   • TODAY before 17:30  -> total orders (still being confirmed, none out)
@@ -17873,6 +17874,14 @@ def stats_pages(request):
         row["cpo"] = (sp / denom) if denom else None
         row["benefit"] = (rev_ship_by_page.get(row["page"], _D("0"))
                           - cogs_by_page.get(row["page"], _D("0")) - sp)
+        # Per-offer Bénéfices = product margin − (cost per order × the offer's
+        # paid orders), so each offer also carries its share of the ad cost.
+        _cpo = row["cpo"] or _D("0")
+        for _of in row.get("offers", []):
+            _m = _of.get("_margin")
+            if _m is None:
+                continue
+            _of["benefit"] = _m - _cpo * _of.get("payee", 0)
 
     for row in per_page:
         _attach_cost(row)
