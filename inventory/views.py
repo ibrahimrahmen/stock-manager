@@ -2566,12 +2566,35 @@ def _capture_product_for_order_sync(order, conv):
         return res
 
 
+def _is_trivial_ack(text):
+    """True for a pure acknowledgement / emoji that never needs a reply, so the
+    bot can skip the Claude call entirely (it would only answer 'SKIP' anyway)."""
+    import re as _r
+    t = (text or "").strip().lower()
+    if not t:
+        return False
+    # Letters/digits only (emoji & punctuation stripped). Emoji-only -> empty.
+    core = _r.sub(r"[^\w]", "", t, flags=_r.UNICODE)
+    if core == "":
+        return True   # emoji / symbols only (👍 ❤️ 🔥 …)
+    ACKS = {"ok", "okk", "okey", "okay", "oki", "oki", "k", "cc", "top", "parfait",
+            "nickel", "bien", "merci", "mrc", "mercii", "merciii", "thanks", "thx",
+            "tnx", "👍", "👌", "🙏"}
+    return core in ACKS and len(t) <= 14
+
+
 def _bot_reply(conv):
     """Generate a short Tunisian-Arabic bot reply to the latest customer
     message, using the conversation so far. Returns the reply text or None.
     Best-effort; never raises. Simple Étape-1 version: Q&A only."""
     try:
         msgs = conv.messages or []
+        # Skip the Claude call for a throwaway ack / emoji-only last message.
+        _last_user = next((m for m in reversed(msgs)
+                           if m.get("from") == "user"), None)
+        if (_last_user and not _last_user.get("images")
+                and _is_trivial_ack(_last_user.get("text", ""))):
+            return None
         # Language: reply in Arabic SCRIPT when the customer writes in Arabic or
         # explicitly asks for it ("اكتب عربي" / "3arbi" / "عربي"). Some customers
         # can't read arabizi (latin) — forcing it just frustrates them. We look
@@ -2714,7 +2737,11 @@ def _bot_reply(conv):
                 last_is_photo_only = (m.get("from") == "user")
         if not lines:
             return None
-        transcript = "\n".join(lines)
+        # Only the recent turns matter for the next reply; sending a 100-message
+        # history re-bills the whole thread every message. Cap to the last ~18
+        # lines. (Order extraction uses the full conversation separately, so no
+        # order data is lost.)
+        transcript = "\n".join(lines[-18:])
 
         # Collect image URLs from the LAST customer message that carried photos,
         # so Claude Vision can actually see the product. We only send the most
@@ -18930,7 +18957,18 @@ def api_messenger_webhook(request):
                 # does NOT create orders in our system, so we DO extract.
                 if (not _external_agent) or _capture:
                     try:
-                        _try_extract_and_create_pending(conv)
+                        # Re-extract only while the order is still INCOMPLETE.
+                        # Once it has an address, further messages (chatter,
+                        # thanks) don't need another extraction call. The address
+                        # follow-up still works because we keep extracting until
+                        # the address is present.
+                        _po_now = conv.pending_order
+                        _addr_done = bool(_po_now and (
+                            (getattr(_po_now, "address", "") or "").strip()
+                            or (getattr(_po_now, "ville", "") or "").strip()
+                            or getattr(_po_now, "region_id", None)))
+                        if not _addr_done:
+                            _try_extract_and_create_pending(conv)
                     except Exception:
                         pass
 
