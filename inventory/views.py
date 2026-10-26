@@ -19049,9 +19049,139 @@ def _conversation_looks_complete(conv):
     return has_phone
 
 
+# Static extraction instructions — IDENTICAL on every call, so they are sent as
+# a CACHED system block (see _claude_generate): the first call writes the cache,
+# every following call within the window reads it at ~10% instead of re-paying
+# full input price. Kept large & stable on purpose (schema + rules + the 24
+# governorates + worked examples, which also sharpen accuracy) so it clears the
+# per-model cache minimum and actually caches. The dynamic conversation is the
+# only thing that changes, and it is sent separately in the user turn.
+EXTRACT_SYSTEM = (
+    "Tu es un assistant qui extrait une commande à partir d'une conversation "
+    "Messenger d'une boutique de vêtements tunisienne. La conversation est en "
+    "arabe tunisien (arabizi/latin ou script arabe), français ou anglais, "
+    "souvent mélangés.\n\n"
+    "Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ou après, "
+    "sans backticks. Schéma EXACT:\n"
+    "{\n"
+    '  "is_order": true/false,        // false si ce n\'est pas une vraie commande\n'
+    '  "customer_name": "",\n'
+    '  "phone": "",                    // 8 chiffres tunisiens, sans espaces ni +216\n'
+    '  "city": "",                     // gouvernorat/ville de livraison\n'
+    '  "address": "",\n'
+    '  "items": [\n'
+    '    {"product": "", "color": "", "size": "", "qty": 1}\n'
+    "  ]\n"
+    "}\n\n"
+    "RÈGLES:\n"
+    "- Si une info manque, mets une chaîne vide \"\" (ou 1 pour qty). Ne devine "
+    "jamais un produit, une couleur ou une taille qui n'est mentionné nulle part.\n"
+    "- Le PAGE (vendeur) propose souvent les produits et prix (ex: 'Pull 59dt, "
+    "Ensemble 99dt'); le CLIENT choisit ensuite. Extrais le produit que le CLIENT "
+    "veut réellement commander d'après tout l'échange, même si c'est le PAGE qui a "
+    "nommé le produit.\n"
+    "- phone: garde seulement 8 chiffres (un mobile tunisien commence par 2,4,5,7 "
+    "ou 9). Ignore les numéros qui viennent d'une URL ou d'un identifiant de post.\n"
+    "- Pour l'adresse/ville, utilise ce qu'écrit le CLIENT. city DOIT être un "
+    "gouvernorat tunisien quand c'est possible.\n"
+    "- size: garde la taille telle quelle (S, M, L, XL, XXL, ou une pointure comme "
+    "40, 41). color: la couleur en un mot (noir, blanc, bleu, beige, gris...).\n\n"
+    "MAPPER LA VILLE/DÉLÉGATION -> GOUVERNORAT (city = le gouvernorat). "
+    "Référence des 24 gouvernorats et de leurs principales délégations:\n"
+    "- Tunis: La Marsa, Le Bardo, Carthage, La Goulette, El Menzah, El Omrane, "
+    "Bab Bhar, Bab Souika, Sidi Bou Saïd, Le Kram, Sidi Hassine, Ezzouhour, "
+    "El Ouardia, Djebel Jelloud.\n"
+    "- Ariana: Ariana Ville, Raoued, La Soukra, Ettadhamen, Mnihla, Kalâat "
+    "el-Andalous, Sidi Thabet.\n"
+    "- Ben Arous: Ben Arous, Ezzahra, Radès, Hammam Lif, Hammam Chott, Mégrine, "
+    "El Mourouj, Mohamedia, Fouchana, Bou Mhel el-Bassatine, Mornag, Nouvelle "
+    "Medina.\n"
+    "- Manouba: Manouba, Douar Hicher, Oued Ellil, Tebourba, Mornaguia, Djedeida, "
+    "Borj El Amri, El Battan.\n"
+    "- Nabeul: Nabeul, Hammamet, Korba, Kelibia, Menzel Temime, Grombalia, "
+    "Soliman, Beni Khalled, Dar Chaabane, Menzel Bouzelfa, Takelsa, Bou Argoub, "
+    "El Haouaria, Menzel Horr.\n"
+    "- Zaghouan: Zaghouan, Zriba, Nadhour, Bir Mcherga, El Fahs, Saouaf.\n"
+    "- Bizerte: Bizerte, Menzel Bourguiba, Mateur, Ras Jebel, Menzel Jemil, "
+    "Sejnane, Tinja, Ghar El Melh, Utique, Joumine, Ghezala.\n"
+    "- Béja: Béja, Medjez el-Bab, Testour, Nefza, Téboursouk, Amdoun, Goubellat, "
+    "Thibar.\n"
+    "- Jendouba: Jendouba, Tabarka, Bou Salem, Ghardimaou, Aïn Draham, Fernana, "
+    "Oued Meliz, Balta-Bou Aouane.\n"
+    "- Le Kef: Le Kef, Dahmani, Tajerouine, Sakiet Sidi Youssef, Nebeur, Kalaat "
+    "Senan, Jérissa, Es-Sers, Le Sers, Kalâat Khasba.\n"
+    "- Siliana: Siliana, Makthar, Gaafour, Bou Arada, El Krib, Bargou, Rouhia, "
+    "Kesra, Sidi Bou Rouis.\n"
+    "- Kairouan: Kairouan, Haffouz, Sbikha, Oueslatia, Hajeb El Ayoun, Chebika, "
+    "Bou Hajla, Nasrallah, Echrarda, El Alâa.\n"
+    "- Kasserine: Kasserine, Sbeitla, Thala, Fériana, Foussana, Sbiba, Majel Bel "
+    "Abbès, Haïdra, Jedelienne, Hassi El Ferid.\n"
+    "- Sidi Bouzid: Sidi Bouzid, Regueb, Meknassy, Bir El Hafey, Jelma, Menzel "
+    "Bouzaiane, Ouled Haffouz, Sidi Ali Ben Aoun, Mezzouna, Souk Jedid.\n"
+    "- Sousse: Sousse, Msaken, Hammam Sousse, Akouda, Kalâa Kebira, Kalâa "
+    "Seghira, Enfidha, Bouficha, Hergla, Sidi Bou Ali, Sidi El Héni, Kondar, "
+    "Zaouiet Sousse.\n"
+    "- Monastir: Monastir, Moknine, Jemmal, Ksar Hellal, Sahline, Téboulba, "
+    "Bekalta, Ksibet el-Médiouni, Zéramdine, Bembla, Beni Hassen, Sayada.\n"
+    "- Mahdia: Mahdia, Ksour Essef, Chebba, El Jem, Bou Merdès, Melloulèche, Sidi "
+    "Alouane, Chorbane, Souassi, Hebira, Ouled Chamekh.\n"
+    "- Sfax: Sfax, Sfax Ville, Sakiet Ezzit, Sakiet Eddaïer, Chihia, Thyna, El "
+    "Ain, Agareb, Jebeniana, Kerkennah, Mahrès, El Hencha, Bir Ali Ben Khalifa, "
+    "Menzel Chaker, Ghraiba.\n"
+    "- Gabès: Gabès, Gabès Ville, Gabès Sud, Mareth, El Hamma, Métouia, "
+    "Ghannouch, Matmata, Nouvelle Matmata, Menzel El Habib, El Métouia.\n"
+    "- Médenine: Médenine, Houmt Souk, Midoun, Ajim (Djerba), Zarzis, Ben "
+    "Gardane, Beni Khedache, Sidi Makhlouf. (Djerba = Houmt Souk/Midoun/Ajim).\n"
+    "- Tataouine: Tataouine, Ghomrassen, Remada, Bir Lahmar, Dhehiba, Smâr.\n"
+    "- Gafsa: Gafsa, Métlaoui, El Ksar, Redeyef, Oum El Araies, Moularès, Sned, "
+    "Belkhir, El Guettar, Sidi Aïch, Mdhila.\n"
+    "- Tozeur: Tozeur, Nefta, Degache, Tameghza, Hazoua, Hamet Jerid.\n"
+    "- Kébili: Kébili, Douz, Souk Lahad, Faouar, Kébili Sud, Douz Nord.\n\n"
+    "EXEMPLES:\n"
+    "Conversation:\n"
+    "PAGE: Ensemble Icy Maze 99dt\n"
+    "CLIENT: nheb wa7da taille L kahla\n"
+    "CLIENT: Ahmed Ben Ali 20123456 Msaken Sousse\n"
+    "Réponse: {\"is_order\": true, \"customer_name\": \"Ahmed Ben Ali\", "
+    "\"phone\": \"20123456\", \"city\": \"Sousse\", \"address\": \"Msaken\", "
+    "\"items\": [{\"product\": \"Ensemble Icy Maze\", \"color\": \"noir\", "
+    "\"size\": \"L\", \"qty\": 1}]}\n\n"
+    "Conversation:\n"
+    "CLIENT: b9adeh el pull?\n"
+    "PAGE: 59dt khouya\n"
+    "Réponse: {\"is_order\": false, \"customer_name\": \"\", \"phone\": \"\", "
+    "\"city\": \"\", \"address\": \"\", \"items\": []}\n\n"
+    "VOCABULAIRE TUNISIEN UTILE (arabizi -> sens):\n"
+    "- 'nheb' / 'n7eb' / 'nehb' = je veux ; '3andi' = j'ai ; 'famma'/'fama' = il "
+    "y a ; 'chnowa'/'chniya' = quoi ; 'b9adeh'/'9adeh'/'9adech'/'chhal' = combien ; "
+    "'wa9tech'/'wa9t' = quand ; 'win' = où ; 'kifech' = comment.\n"
+    "- Couleurs: 'kahla'/'noir' = noir ; 'bidha'/'abyadh'/'blanc' = blanc ; "
+    "'zar9a'/'bleu' = bleu ; 'khadhra'/'vert' = vert ; 'hamra'/'rouge' = rouge ; "
+    "'safra'/'jaune' = jaune ; 'beige' = beige ; 'gris'/'ramadi' = gris ; "
+    "'marron'/'bonni' = marron.\n"
+    "- Tailles: S, M, L, XL, XXL, XXXL ; pointures 38-46 ; 'small'=S, 'medium'=M, "
+    "'large'=L. 'kbira' = grande, 'sghira' = petite.\n"
+    "- Commande: 'n7eb n3addi commande' / 'nchri' / 'commander' = commander ; "
+    "'livraison' / 'tawsil' = livraison ; '3inwen' / 'adresse' = adresse ; "
+    "'noumrou' / 'tel' = téléphone.\n"
+    "- Un mobile tunisien = 8 chiffres commençant par 2, 4, 5, 7 ou 9.\n\n"
+    "AUTRE EXEMPLE:\n"
+    "Conversation:\n"
+    "PAGE: Ensemble WaveLine 99dt, disponible vert et noir\n"
+    "CLIENT: nheb el akhdhar XL\n"
+    "CLIENT: Sarra Trabelsi, 55667788, Hammamet Nabeul, cité el bidha rue 3\n"
+    "Réponse: {\"is_order\": true, \"customer_name\": \"Sarra Trabelsi\", "
+    "\"phone\": \"55667788\", \"city\": \"Nabeul\", \"address\": \"Hammamet, cité "
+    "el bidha rue 3\", \"items\": [{\"product\": \"Ensemble WaveLine\", \"color\": "
+    "\"vert\", \"size\": \"XL\", \"qty\": 1}]}\n"
+)
+
+
 def _extract_order_from_conversation(conv):
-    """Send the conversation to Gemini and parse a structured order JSON.
-    Returns a dict or None. Tuned for Tunisian Arabic / French / English."""
+    """Send the conversation to Claude and parse a structured order JSON.
+    Returns a dict or None. Tuned for Tunisian Arabic / French / English.
+    The static instructions ride in a cached system block (EXTRACT_SYSTEM);
+    only the conversation changes, so repeat calls are billed at ~10% input."""
     import json as _json
     convo_text = "\n".join(
         f"{'CLIENT' if m.get('from') == 'user' else 'PAGE'}: {m.get('text','')}"
@@ -19059,32 +19189,9 @@ def _extract_order_from_conversation(conv):
     )
     if not convo_text.strip():
         return None
-    prompt = (
-        "Tu es un assistant qui extrait une commande à partir d'une conversation "
-        "Messenger d'une boutique de vêtements tunisienne. La conversation est en "
-        "arabe tunisien, français ou anglais (souvent mélangés).\n\n"
-        "Lis la conversation et réponds UNIQUEMENT avec un objet JSON valide, sans "
-        "texte avant ou après, sans backticks. Schéma:\n"
-        "{\n"
-        '  "is_order": true/false,        // false si ce n\'est pas une vraie commande\n'
-        '  "customer_name": "",\n'
-        '  "phone": "",                    // 8 chiffres tunisiens\n'
-        '  "city": "",                     // gouvernorat/ville de livraison\n'
-        '  "address": "",\n'
-        '  "items": [\n'
-        '    {"product": "", "color": "", "size": "", "qty": 1}\n'
-        "  ]\n"
-        "}\n\n"
-        "Règles: si une info manque, mets une chaîne vide \"\" (ou 1 pour qty). "
-        "Le PAGE (vendeur) propose souvent les produits et prix (ex: 'Pull 59dt, "
-        "Ensemble 99dt'); le CLIENT choisit ensuite. Extrais le produit que le "
-        "CLIENT veut réellement commander d'après tout l'échange, même si c'est "
-        "le PAGE qui a nommé le produit. Pour l'adresse/ville, utilise ce "
-        "qu'écrit le CLIENT (gouvernorat tunisien). Ne devine pas un produit qui "
-        "n'est mentionné nulle part.\n\n"
-        "Conversation:\n" + convo_text
-    )
-    raw = _gemini_generate(prompt, max_tokens=800, temperature=0.0)
+    prompt = "Conversation:\n" + convo_text + "\n\nRéponds avec le JSON:"
+    raw = _claude_generate(prompt, max_tokens=800, temperature=0.0,
+                           system=EXTRACT_SYSTEM)
     if not raw:
         return None
     # Strip accidental code fences.
