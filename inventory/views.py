@@ -6619,14 +6619,11 @@ def api_cache_selftest(request):
         return JsonResponse({"status": "error", "message": "ANTHROPIC_API_KEY manquant."})
     model = (_cfg("ANTHROPIC_MODEL", "")
              or os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")).strip()
-    # Try a BIG block (3×) to rule out the per-model minimum, and dump the full
-    # usage object so we see exactly what the API reports.
-    _big = (EXTRACT_SYSTEM + "\n\n") * 3
-    out = {"model": model, "block_chars": len(_big), "calls": []}
+    out = {"model": model, "system_chars": len(EXTRACT_SYSTEM), "calls": []}
     for _i in range(2):
         body = {
             "model": model, "max_tokens": 5, "temperature": 0.0,
-            "system": [{"type": "text", "text": _big,
+            "system": [{"type": "text", "text": EXTRACT_SYSTEM,
                         "cache_control": {"type": "ephemeral"}}],
             "messages": [{"role": "user", "content": "Réponds juste: OK"}],
         }
@@ -19227,7 +19224,50 @@ EXTRACT_SYSTEM = (
     "Réponse: {\"is_order\": true, \"customer_name\": \"Sarra Trabelsi\", "
     "\"phone\": \"55667788\", \"city\": \"Nabeul\", \"address\": \"Hammamet, cité "
     "el bidha rue 3\", \"items\": [{\"product\": \"Ensemble WaveLine\", \"color\": "
-    "\"vert\", \"size\": \"XL\", \"qty\": 1}]}\n"
+    "\"vert\", \"size\": \"XL\", \"qty\": 1}]}\n\n"
+    "EXEMPLE AVEC PLUSIEURS ARTICLES:\n"
+    "Conversation:\n"
+    "PAGE: Pull Icy Maze 59dt, Pantalon 49dt\n"
+    "CLIENT: n7eb pull M kahla w pantalon L\n"
+    "CLIENT: Yassine 22334455 sfax sakiet ezzit\n"
+    "Réponse: {\"is_order\": true, \"customer_name\": \"Yassine\", \"phone\": "
+    "\"22334455\", \"city\": \"Sfax\", \"address\": \"Sakiet Ezzit\", \"items\": "
+    "[{\"product\": \"Pull Icy Maze\", \"color\": \"noir\", \"size\": \"M\", "
+    "\"qty\": 1}, {\"product\": \"Pantalon\", \"color\": \"\", \"size\": \"L\", "
+    "\"qty\": 1}]}\n\n"
+    "EXEMPLE EN SCRIPT ARABE:\n"
+    "Conversation:\n"
+    "CLIENT: نحب نكومندي الطقم بـ XL لون كحلة\n"
+    "CLIENT: محمد الساسي 20112233 المنستير جمال\n"
+    "Réponse: {\"is_order\": true, \"customer_name\": \"Mohamed Sassi\", "
+    "\"phone\": \"20112233\", \"city\": \"Monastir\", \"address\": \"Jemmal\", "
+    "\"items\": [{\"product\": \"ensemble\", \"color\": \"noir\", \"size\": "
+    "\"XL\", \"qty\": 1}]}\n\n"
+    "RAPPELS IMPORTANTS POUR L'EXTRACTION:\n"
+    "- Ne crée JAMAIS une commande (is_order=true) sans au moins un produit "
+    "clairement voulu par le CLIENT. Un simple bonjour, une question de prix, un "
+    "remerciement ou un emoji => is_order=false et champs vides.\n"
+    "- Le numéro de téléphone: EXACTEMENT 8 chiffres. Retire l'indicatif +216 ou "
+    "00216 s'il est présent. Retire les espaces, points et tirets. Si le numéro a "
+    "moins de 8 chiffres, laisse phone vide.\n"
+    "- customer_name: le vrai nom/prénom de la personne, pas un pseudo Instagram "
+    "(ex: '@sarra.trb' n'est pas un nom). Nettoie les lettres stylisées et enlève "
+    "les emojis du nom.\n"
+    "- Quand le CLIENT change d'avis plus tard dans la conversation, garde le "
+    "DERNIER choix (produit, couleur, taille) qu'il a confirmé.\n"
+    "- Pour la couleur et la taille, ne les mets QUE si le client les a données; "
+    "sinon laisse-les vides, ne devine pas.\n"
+    "- address: le détail de livraison (délégation, cité, rue, repère) écrit par "
+    "le client, SANS le gouvernorat (le gouvernorat va dans city).\n"
+    "- Si le client donne seulement une ville sans gouvernorat, déduis le "
+    "gouvernorat avec la liste ci-dessus (ex: 'Msaken' => city 'Sousse').\n"
+    "- Si plusieurs numéros apparaissent, prends celui que le CLIENT présente "
+    "comme SON numéro de contact, pas un numéro cité dans une URL ou un post.\n"
+    "- qty: la quantité demandée pour chaque article (par défaut 1). '2 ensembles' "
+    "=> qty 2.\n"
+    "- N'ajoute aucun article que le CLIENT n'a pas explicitement voulu, même si "
+    "le PAGE a listé plusieurs produits.\n"
+    "- Réponds toujours avec le JSON complet et valide, rien d'autre.\n"
 )
 
 
