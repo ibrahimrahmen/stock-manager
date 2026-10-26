@@ -3921,7 +3921,7 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
         # block is below the cache minimum — it just isn't cached.
         body["system"] = [
             {"type": "text", "text": system,
-             "cache_control": {"type": "ephemeral"}},
+             "cache_control": {"type": "ephemeral", "ttl": "1h"}},
         ]
     data = _json.dumps(body).encode("utf-8")
     url = "https://api.anthropic.com/v1/messages"
@@ -3931,8 +3931,9 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
             req.add_header("Content-Type", "application/json")
             req.add_header("x-api-key", api_key)
             req.add_header("anthropic-version", "2023-06-01")
-            # Enable prompt caching (cache_control blocks). Harmless once GA.
-            req.add_header("anthropic-beta", "prompt-caching-2024-07-31")
+            # Enable prompt caching + the 1-hour extended cache TTL.
+            req.add_header("anthropic-beta",
+                           "prompt-caching-2024-07-31,extended-cache-ttl-2025-04-11")
             with _ureq.urlopen(req, timeout=15) as resp:
                 rd = _json.loads(resp.read().decode("utf-8"))
             blocks = rd.get("content") or []
@@ -6624,7 +6625,7 @@ def api_cache_selftest(request):
         body = {
             "model": model, "max_tokens": 5, "temperature": 0.0,
             "system": [{"type": "text", "text": EXTRACT_SYSTEM,
-                        "cache_control": {"type": "ephemeral"}}],
+                        "cache_control": {"type": "ephemeral", "ttl": "1h"}}],
             "messages": [{"role": "user", "content": "Réponds juste: OK"}],
         }
         try:
@@ -6633,7 +6634,8 @@ def api_cache_selftest(request):
             req.add_header("Content-Type", "application/json")
             req.add_header("x-api-key", key)
             req.add_header("anthropic-version", "2023-06-01")
-            req.add_header("anthropic-beta", "prompt-caching-2024-07-31")
+            req.add_header("anthropic-beta",
+                           "prompt-caching-2024-07-31,extended-cache-ttl-2025-04-11")
             with _ureq.urlopen(req, timeout=20) as resp:
                 rd = _json.loads(resp.read().decode("utf-8"))
             out["calls"].append({"usage": rd.get("usage", {})})
