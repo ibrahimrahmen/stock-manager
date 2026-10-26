@@ -6603,6 +6603,56 @@ def api_debug_capture(request, pk):
 
 
 @login_required(login_url="/login/")
+def api_cache_selftest(request):
+    """Superuser-only: fire TWO identical Claude calls with a cached system
+    block and report the cache token counts, to prove prompt caching works on
+    this deployment. Call 1 should show cache_creation>0; call 2 (seconds later)
+    should show cache_read>0. Costs a few cents."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    import urllib.request as _ureq
+    import json as _json
+    key = _cfg("ANTHROPIC_API_KEY", "").strip()
+    if not key:
+        return JsonResponse({"status": "error", "message": "ANTHROPIC_API_KEY manquant."})
+    model = (_cfg("ANTHROPIC_MODEL", "")
+             or os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")).strip()
+    out = {"model": model, "system_chars": len(EXTRACT_SYSTEM), "calls": []}
+    for _i in range(2):
+        body = {
+            "model": model, "max_tokens": 5, "temperature": 0.0,
+            "system": [{"type": "text", "text": EXTRACT_SYSTEM,
+                        "cache_control": {"type": "ephemeral"}}],
+            "messages": [{"role": "user", "content": "Réponds juste: OK"}],
+        }
+        try:
+            req = _ureq.Request("https://api.anthropic.com/v1/messages",
+                                data=_json.dumps(body).encode("utf-8"), method="POST")
+            req.add_header("Content-Type", "application/json")
+            req.add_header("x-api-key", key)
+            req.add_header("anthropic-version", "2023-06-01")
+            with _ureq.urlopen(req, timeout=20) as resp:
+                rd = _json.loads(resp.read().decode("utf-8"))
+            u = rd.get("usage", {})
+            out["calls"].append({
+                "input_tokens": u.get("input_tokens"),
+                "cache_creation_input_tokens": u.get("cache_creation_input_tokens"),
+                "cache_read_input_tokens": u.get("cache_read_input_tokens"),
+            })
+        except Exception as e:
+            es = str(e)
+            try:
+                if hasattr(e, "read"):
+                    es += " | " + e.read().decode("utf-8", "replace")[:300]
+            except Exception:
+                pass
+            out["calls"].append({"error": es[:400]})
+    c2 = out["calls"][1] if len(out["calls"]) > 1 else {}
+    out["caching_works"] = bool(c2.get("cache_read_input_tokens"))
+    return JsonResponse(out)
+
+
+@login_required(login_url="/login/")
 def api_debug_bot_reply(request, pk):
     """READ-ONLY: generate what the bot WOULD reply for this conversation right
     now — does NOT send anything. Superuser only. Lets us see the live reply

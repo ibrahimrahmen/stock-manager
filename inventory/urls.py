@@ -124,6 +124,7 @@ urlpatterns = [
     path("api/conversations/<int:pk>/extract/", views.api_extract_conversation, name="api_extract_conversation"),
     path("api/conversations/<int:pk>/capture-debug/", views.api_debug_capture, name="api_debug_capture"),
     path("api/conversations/<int:pk>/bot-reply-debug/", views.api_debug_bot_reply, name="api_debug_bot_reply"),
+    path("cache-selftest/", views.api_cache_selftest, name="api_cache_selftest"),
     path("api/debug/ai-health/", views.api_debug_ai_health, name="api_debug_ai_health"),
     path("api/debug/catalogue-health/", views.api_debug_catalogue_health, name="api_debug_catalogue_health"),
     path("api/conversations/<int:pk>/fb-referral/", views.api_debug_fb_referral, name="api_debug_fb_referral"),
