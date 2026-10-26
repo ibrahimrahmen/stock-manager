@@ -6619,11 +6619,14 @@ def api_cache_selftest(request):
         return JsonResponse({"status": "error", "message": "ANTHROPIC_API_KEY manquant."})
     model = (_cfg("ANTHROPIC_MODEL", "")
              or os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")).strip()
-    out = {"model": model, "system_chars": len(EXTRACT_SYSTEM), "calls": []}
+    # Try a BIG block (3×) to rule out the per-model minimum, and dump the full
+    # usage object so we see exactly what the API reports.
+    _big = (EXTRACT_SYSTEM + "\n\n") * 3
+    out = {"model": model, "block_chars": len(_big), "calls": []}
     for _i in range(2):
         body = {
             "model": model, "max_tokens": 5, "temperature": 0.0,
-            "system": [{"type": "text", "text": EXTRACT_SYSTEM,
+            "system": [{"type": "text", "text": _big,
                         "cache_control": {"type": "ephemeral"}}],
             "messages": [{"role": "user", "content": "Réponds juste: OK"}],
         }
@@ -6636,12 +6639,7 @@ def api_cache_selftest(request):
             req.add_header("anthropic-beta", "prompt-caching-2024-07-31")
             with _ureq.urlopen(req, timeout=20) as resp:
                 rd = _json.loads(resp.read().decode("utf-8"))
-            u = rd.get("usage", {})
-            out["calls"].append({
-                "input_tokens": u.get("input_tokens"),
-                "cache_creation_input_tokens": u.get("cache_creation_input_tokens"),
-                "cache_read_input_tokens": u.get("cache_read_input_tokens"),
-            })
+            out["calls"].append({"usage": rd.get("usage", {})})
         except Exception as e:
             es = str(e)
             try:
@@ -6650,8 +6648,11 @@ def api_cache_selftest(request):
             except Exception:
                 pass
             out["calls"].append({"error": es[:400]})
-    c2 = out["calls"][1] if len(out["calls"]) > 1 else {}
-    out["caching_works"] = bool(c2.get("cache_read_input_tokens"))
+    try:
+        c2u = out["calls"][1].get("usage", {})
+        out["caching_works"] = bool(c2u.get("cache_read_input_tokens"))
+    except Exception:
+        out["caching_works"] = False
     return JsonResponse(out)
 
 
