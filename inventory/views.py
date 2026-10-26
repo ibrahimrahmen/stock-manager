@@ -18618,24 +18618,32 @@ def api_messenger_webhook(request):
                     # than once (retries / duplicate deliveries). Without a guard
                     # each delivery spawns a reply → the bot answers twice. Skip
                     # if we've already handled this incoming message id (mid).
+                    # Dedup ACROSS workers: Meta often delivers the same event to
+                    # more than one gunicorn worker (especially on Instagram). An
+                    # in-process set can't see another worker's handling, so both
+                    # reply. Use the shared cache with an atomic add() — only the
+                    # first worker to claim this (conv, mid) proceeds.
                     _already_handled = False
-                    try:
-                        global _BOT_HANDLED_MIDS
+                    _key = f"bot_mid:{conv.id}:{mid}" if mid else ""
+                    if _key:
                         try:
-                            _BOT_HANDLED_MIDS
-                        except NameError:
-                            _BOT_HANDLED_MIDS = set()
-                        _key = f"{conv.id}:{mid}" if mid else ""
-                        if _key and _key in _BOT_HANDLED_MIDS:
-                            _already_handled = True
-                        elif _key:
-                            _BOT_HANDLED_MIDS.add(_key)
-                            # keep the set from growing unbounded
-                            if len(_BOT_HANDLED_MIDS) > 5000:
-                                _BOT_HANDLED_MIDS = set(
-                                    list(_BOT_HANDLED_MIDS)[-2000:])
-                    except Exception:
-                        _already_handled = False
+                            from django.core.cache import cache as _dc
+                            if not _dc.add(_key, 1, 900):  # 15-min window
+                                _already_handled = True
+                        except Exception:
+                            # Fallback: per-process set if the cache is unavailable.
+                            global _BOT_HANDLED_MIDS
+                            try:
+                                _BOT_HANDLED_MIDS
+                            except NameError:
+                                _BOT_HANDLED_MIDS = set()
+                            if _key in _BOT_HANDLED_MIDS:
+                                _already_handled = True
+                            else:
+                                _BOT_HANDLED_MIDS.add(_key)
+                                if len(_BOT_HANDLED_MIDS) > 5000:
+                                    _BOT_HANDLED_MIDS = set(
+                                        list(_BOT_HANDLED_MIDS)[-2000:])
                     if _already_handled:
                         continue
                     _bot_count = 0

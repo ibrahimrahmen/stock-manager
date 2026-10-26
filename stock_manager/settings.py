@@ -70,6 +70,18 @@ else:
         }
     }
 
+# Shared cache across gunicorn workers. The default (per-process LocMemCache)
+# meant cross-worker locks — webhook dedup, the order-confirmation lock — never
+# worked, so Meta delivering the same event to two of the 3 workers produced
+# DOUBLE bot replies. DatabaseCache uses the existing Postgres, shared by all
+# workers. The table is created by migration (inventory 0103).
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'django_cache_table',
+    }
+}
+
 LANGUAGE_CODE = 'fr-fr'
 TIME_ZONE = 'Africa/Tunis'
 USE_I18N = True
