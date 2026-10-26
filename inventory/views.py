@@ -18971,7 +18971,18 @@ def api_messenger_webhook(request):
                             (getattr(_po_now, "address", "") or "").strip()
                             or (getattr(_po_now, "ville", "") or "").strip()
                             or getattr(_po_now, "region_id", None)))
-                        if not _addr_done:
+                        # Skip the extraction call on messages that can't carry
+                        # order data — emoji-only, or a pure question with no
+                        # digits (price/colour/delay questions). The order is
+                        # still captured from the messages that DO carry a
+                        # phone/address/product (anything with a digit, or a
+                        # plain statement, still runs extraction).
+                        _tx = (text or "").strip()
+                        _no_order_data = (
+                            _is_trivial_ack(_tx)
+                            or (_looks_like_question(_tx)
+                                and not any(c.isdigit() for c in _tx)))
+                        if not _addr_done and not _no_order_data:
                             _try_extract_and_create_pending(conv)
                     except Exception:
                         pass
