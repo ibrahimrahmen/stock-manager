@@ -3931,6 +3931,8 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
             req.add_header("Content-Type", "application/json")
             req.add_header("x-api-key", api_key)
             req.add_header("anthropic-version", "2023-06-01")
+            # Enable prompt caching (cache_control blocks). Harmless once GA.
+            req.add_header("anthropic-beta", "prompt-caching-2024-07-31")
             with _ureq.urlopen(req, timeout=15) as resp:
                 rd = _json.loads(resp.read().decode("utf-8"))
             blocks = rd.get("content") or []
@@ -6631,6 +6633,7 @@ def api_cache_selftest(request):
             req.add_header("Content-Type", "application/json")
             req.add_header("x-api-key", key)
             req.add_header("anthropic-version", "2023-06-01")
+            req.add_header("anthropic-beta", "prompt-caching-2024-07-31")
             with _ureq.urlopen(req, timeout=20) as resp:
                 rd = _json.loads(resp.read().decode("utf-8"))
             u = rd.get("usage", {})
