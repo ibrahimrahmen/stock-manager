@@ -2567,20 +2567,16 @@ def _capture_product_for_order_sync(order, conv):
 
 
 def _is_trivial_ack(text):
-    """True for a pure acknowledgement / emoji that never needs a reply, so the
-    bot can skip the Claude call entirely (it would only answer 'SKIP' anyway)."""
+    """True only for an EMOJI/symbol-only message (👍 ❤️ 🔥 …), which never needs
+    a reply, so the bot can skip the Claude call. We deliberately do NOT skip
+    short words like 'ok' / 'cc' / 'merci' — those are often a real opener and
+    must still get answered."""
     import re as _r
-    t = (text or "").strip().lower()
+    t = (text or "").strip()
     if not t:
         return False
-    # Letters/digits only (emoji & punctuation stripped). Emoji-only -> empty.
-    core = _r.sub(r"[^\w]", "", t, flags=_r.UNICODE)
-    if core == "":
-        return True   # emoji / symbols only (👍 ❤️ 🔥 …)
-    ACKS = {"ok", "okk", "okey", "okay", "oki", "oki", "k", "cc", "top", "parfait",
-            "nickel", "bien", "merci", "mrc", "mercii", "merciii", "thanks", "thx",
-            "tnx", "👍", "👌", "🙏"}
-    return core in ACKS and len(t) <= 14
+    core = _r.sub(r"[^\w]", "", t, flags=_r.UNICODE)  # letters/digits only
+    return core == ""
 
 
 def _bot_reply(conv):
