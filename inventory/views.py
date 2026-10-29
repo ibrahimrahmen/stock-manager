@@ -8653,7 +8653,21 @@ def _unifunl_healthy():
 
     Each sync stamps `unifunl_last_ok` (API answered) or `unifunl_last_err` (API
     unreachable). Window defaults to 60 min; override UNIFUNL_HEALTH_MAX_AGE_MIN.
+
+    KILL-SWITCH: Unifunl has been retired. When `unifunl_enabled` is off (the
+    DEFAULT now), always report UNHEALTHY so every page set to "externe" fails
+    over to the internal bot (Aida), which both REPLIES and CAPTURES the order.
+    Without this, a page left on "externe" would get NO reply and NO capture:
+    nothing stamps a failed sync anymore (Unifunl is never called), so the old
+    logic below keeps returning True ("stay silent") and the conversation is
+    dropped. Set config `unifunl_enabled=1` only if Unifunl is ever put back.
     """
+    try:
+        if str(_cfg("unifunl_enabled", "0")).strip().lower() in (
+                "0", "off", "false", "no", "non", ""):
+            return False
+    except Exception:
+        return False
     try:
         from .models import AppKeyValue
         from django.utils import timezone as _tzh
