@@ -10105,6 +10105,35 @@ def api_create_order_inline(request):
 # (no login) and hardened: phone/size/address validation, a honeypot field, and
 # a per-phone hourly rate limit. Nothing auto-ships — staff confirm first.
 
+def _thumb(url, w, frame=False):
+    """Return a URL to a resized (and optionally 4:5-framed) version of a media
+    image, served by shop_img and cached on disk. Keeps the storefront fast."""
+    if not url:
+        return ""
+    rel = url.split("/media/", 1)[-1] if "/media/" in url else url.lstrip("/")
+    from urllib.parse import quote
+    u = "/shop/img/?src=%s&w=%d" % (quote(rel), int(w))
+    return u + "&frame=45" if frame else u
+
+
+def _fr_description(offer, colors, sizes):
+    """A clean French customer description, built from the offer's attributes.
+    (The stored description is internal AI text, so we don't show that.)"""
+    cat = (offer.category or "").lower()
+    kind = {"ensemble": "Ensemble", "veste": "Veste", "pull": "Pull",
+            "hoodie": "Hoodie", "pantalon": "Pantalon", "espadrille": "Espadrilles",
+            "claquette": "Claquettes", "sport": "Tenue de sport"}.get(cat, "Pièce")
+    parts = ["%s streetwear à la coupe moderne : matière douce et confortable, "
+             "finitions soignées, un style qui tient toute la saison." % kind]
+    if colors:
+        parts.append("Disponible en %s." % ", ".join(c.lower() for c in colors))
+    if sizes:
+        parts.append("Tailles : %s." % " · ".join(sizes))
+    parts.append("Livraison 7 DT partout en Tunisie · paiement à la livraison · "
+                 "ouvre et vérifie ton colis avant de payer.")
+    return "\n".join(parts)
+
+
 def _shop_sales_page():
     """Which SalesPage storefront orders are attributed to. Configurable via
     _cfg('shop_sales_page_id'); defaults to the Barats.tn page."""
@@ -10151,17 +10180,13 @@ def _shop_offer_payload(page):
             price = float(o.price_for_page(page))
         except Exception:
             price = float(o.bundle_price or 0)
-        # Descriptions in the DB are the INTERNAL AI/matching text (markdown,
-        # English, "# Identity Description"). Never show that to customers —
-        # hide anything that looks like internal copy; show only clean text.
-        _d = (o.description or "").strip()
-        if "#" in _d or "**" in _d or "identity description" in _d.lower():
-            _d = ""
         out.append({
             "id": o.id, "n": o.name, "p": price, "cat": (o.category or ""),
             "c": colors or ["Unique"], "sizes": sizes,
-            "desc": _d,
-            "img": imgs[0], "img2": imgs[1] if len(imgs) > 1 else "",
+            "url": "/shop/produit/%d/" % o.id,
+            "img": _thumb(imgs[0], 560, frame=True),
+            "img2": _thumb(imgs[1], 560, frame=True) if len(imgs) > 1 else "",
+            "big": _thumb(imgs[0], 1300),
         })
     return out
 
@@ -10295,6 +10320,145 @@ def api_shop_order(request):
     except Exception as e:
         return JsonResponse({"status": "error", "message": "Erreur: %s" % e}, status=400)
     return JsonResponse({"status": "ok", "order_id": order.id, "total": str(order.total)})
+
+
+def shop_img(request):
+    """Serve a resized (and optionally 4:5-framed) offer image, cached on disk.
+    Lets the storefront load small uniform thumbnails instead of full media."""
+    import os
+    import hashlib
+    from django.conf import settings
+    from django.http import FileResponse, Http404
+    src = (request.GET.get("src") or "").replace("\\", "/").lstrip("/")
+    if ".." in src or not src.startswith("offers/"):
+        raise Http404
+    try:
+        w = max(80, min(1500, int(request.GET.get("w", "600"))))
+    except (ValueError, TypeError):
+        w = 600
+    frame = request.GET.get("frame") == "45"
+    base = os.path.join(settings.MEDIA_ROOT, *src.split("/"))
+    if not os.path.isfile(base):
+        raise Http404
+    cache_dir = os.path.join(settings.MEDIA_ROOT, "_thumb")
+    key = hashlib.md5(("%s|%d|%d" % (src, w, 1 if frame else 0)).encode()).hexdigest() + ".jpg"
+    outp = os.path.join(cache_dir, key)
+    if not os.path.isfile(outp):
+        try:
+            from PIL import Image
+            os.makedirs(cache_dir, exist_ok=True)
+            im = Image.open(base)
+            if im.mode in ("RGBA", "LA", "P"):
+                im = im.convert("RGBA")
+                bgc = Image.new("RGB", im.size, (244, 243, 241))
+                bgc.paste(im, mask=im.split()[-1])
+                im = bgc
+            else:
+                im = im.convert("RGB")
+            if frame:
+                cw, ch = w, round(w * 5 / 4)
+                corners = [im.getpixel((3, 3)), im.getpixel((im.width - 4, 3)),
+                           im.getpixel((3, im.height - 4)),
+                           im.getpixel((im.width - 4, im.height - 4))]
+
+                def _med(vals):
+                    s = sorted(vals)
+                    return (s[1] + s[2]) // 2
+                col = tuple(_med([c[k] for c in corners]) for k in range(3))
+                canvas = Image.new("RGB", (cw, ch), col)
+                sc = min(cw * 0.99 / im.width, ch * 0.955 / im.height)
+                nw, nh = max(1, round(im.width * sc)), max(1, round(im.height * sc))
+                canvas.paste(im.resize((nw, nh), Image.LANCZOS), ((cw - nw) // 2, (ch - nh) // 2))
+                im = canvas
+            elif im.width > w:
+                im = im.resize((w, round(im.height * w / im.width)), Image.LANCZOS)
+            im.save(outp, "JPEG", quality=78, optimize=True)
+        except Exception:
+            return FileResponse(open(base, "rb"))
+    resp = FileResponse(open(outp, "rb"), content_type="image/jpeg")
+    resp["Cache-Control"] = "public, max-age=2592000"
+    return resp
+
+
+def shop_product(request, offer_id):
+    """H&M-style product page for one offer (its own URL)."""
+    import json as _json
+    from django.http import Http404
+    from .models import Offer
+    page = _shop_sales_page()
+    offer = (Offer.objects.filter(pk=offer_id, is_active=True, sales_pages=page)
+             .prefetch_related("images", "products__product__variants__units").first())
+    if offer is None:
+        raise Http404("Produit introuvable.")
+
+    imgs = [oi.image.url for oi in offer.images.all() if oi.image]
+    if offer.image:
+        imgs.append(offer.image.url)
+    gallery = [_thumb(u, 1000) for u in imgs]
+
+    colors, seen = [], set()
+    for oi in offer.images.all():
+        lbl = (oi.color_label or oi.color_name).strip()
+        if lbl and lbl.lower() not in seen and oi.image:
+            seen.add(lbl.lower())
+            colors.append({"label": lbl, "img": _thumb(oi.image.url, 150, frame=True)})
+    color_labels = [c["label"] for c in colors] or ["Unique"]
+
+    sizes = []
+    for op in offer.products.all():
+        for v in op.product.variants.all():
+            for u in v.units.all():
+                if u.size and u.size not in sizes:
+                    sizes.append(u.size)
+    _order = {s: i for i, s in enumerate(["XS", "S", "M", "L", "XL", "XXL", "XXXL"])}
+    sizes.sort(key=lambda s: _order.get(s, 99))
+    if not sizes:
+        sizes = ["S", "M", "L", "XL", "XXL"]
+
+    try:
+        price = float(offer.price_for_page(page))
+    except Exception:
+        price = float(offer.bundle_price or 0)
+
+    related = []
+    rel_qs = list(Offer.objects.filter(is_active=True, sales_pages=page)
+                  .exclude(pk=offer.id).prefetch_related("images").distinct())
+    same = [o for o in rel_qs if (o.category or "") == (offer.category or "") and offer.category]
+    for o in (same + [o for o in rel_qs if o not in same])[:8]:
+        ri = [oi.image.url for oi in o.images.all() if oi.image] or (
+            [o.image.url] if o.image else [])
+        if not ri:
+            continue
+        try:
+            rp = float(o.price_for_page(page))
+        except Exception:
+            rp = float(o.bundle_price or 0)
+        related.append({"n": o.name, "p": rp, "p_str": ("%.3f" % rp).replace(".", ","),
+                        "url": "/shop/produit/%d/" % o.id,
+                        "img": _thumb(ri[0], 460, frame=True)})
+        if len(related) >= 4:
+            break
+
+    product = {
+        "id": offer.id, "n": offer.name, "p": price,
+        "p_str": ("%.3f" % price).replace(".", ","), "cat": offer.category or "",
+        "gallery": gallery, "colors": colors, "color_labels": color_labels,
+        "sizes": sizes, "desc": _fr_description(offer, color_labels, sizes),
+    }
+    crumb = {"ensemble": "Ensembles", "veste": "Vestes", "pull": "Pulls",
+             "hoodie": "Hoodies", "pantalon": "Pantalons", "sport": "Sport",
+             "espadrille": "Chaussures", "claquette": "Chaussures"}.get(
+                 (offer.category or "").lower(), "Boutique")
+    return render(request, "inventory/shop_product.html", {
+        "product": product,
+        "product_json": _json.dumps(product, ensure_ascii=False),
+        "related": related,
+        "breadcrumb_cat": crumb,
+        "govs": ["Tunis", "Ariana", "Ben Arous", "Manouba", "Nabeul", "Zaghouan",
+                 "Bizerte", "Béja", "Jendouba", "Le Kef", "Siliana", "Kairouan",
+                 "Kasserine", "Sidi Bouzid", "Sousse", "Monastir", "Mahdia", "Sfax",
+                 "Gabès", "Médenine", "Tataouine", "Gafsa", "Tozeur", "Kébili"],
+    })
 
 
 # ---- AUTO-SAVE / DRAFT FLOW (Phase A) -------------------------------------

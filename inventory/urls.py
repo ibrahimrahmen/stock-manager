@@ -164,6 +164,8 @@ urlpatterns = [
 
     # Public storefront (served by us; point shop.barats.tn here later).
     path("shop/", views.shop_home, name="shop_home"),
+    path("shop/produit/<int:offer_id>/", views.shop_product, name="shop_product"),
+    path("shop/img/", views.shop_img, name="shop_img"),
     path("api/shop/order/", views.api_shop_order, name="api_shop_order"),
     # Push the catalogue to Google Drive (button + cron).
     path("api/drive-sync/", views.api_drive_sync, name="api_drive_sync"),

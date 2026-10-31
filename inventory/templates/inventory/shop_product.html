@@ -1,0 +1,168 @@
+{% extends "inventory/shop_base.html" %}
+{% block title %}{{ product.n }} — Barats{% endblock %}
+{% block style %}
+  .crumb{font-size:12px;color:var(--muted);letter-spacing:.04em;padding:16px 0}
+  .crumb a:hover{color:var(--fg)}
+  .pdp{display:grid;grid-template-columns:1.18fr .82fr;gap:0;align-items:start}
+  .pdp .gallery{display:grid;grid-template-columns:1fr 1fr;gap:3px;background:var(--surface)}
+  .pdp .gallery img{width:100%;aspect-ratio:4/5;object-fit:contain;background:var(--surface)}
+  .pdp .gallery img:only-child{grid-column:span 2;aspect-ratio:1/1}
+  .pdp .info{position:sticky;top:78px;align-self:start;padding:clamp(22px,3.4vw,54px);
+    display:flex;flex-direction:column;gap:18px}
+  .p-name{font-size:clamp(23px,2.3vw,32px);text-transform:uppercase;letter-spacing:-.01em}
+  .p-price{font-family:var(--display);font-weight:900;font-size:24px;color:var(--accent)}
+  .lbl{font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+  .scarce{display:flex;align-items:center;gap:8px;color:var(--accent);font-size:13px;font-weight:700}
+  .pulse{width:8px;height:8px;border-radius:999px;background:var(--accent);animation:pl 1.8s infinite}
+  @keyframes pl{0%{box-shadow:0 0 0 0 rgba(209,20,39,.5)}70%{box-shadow:0 0 0 9px transparent}100%{box-shadow:0 0 0 0 transparent}}
+  .swatches2{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .sw2{width:50px;height:62px;border:1px solid var(--line);overflow:hidden;background:var(--surface);padding:0}
+  .sw2.sel{outline:2px solid var(--fg);outline-offset:1px}
+  .sw2 img{width:100%;height:100%;object-fit:cover}
+  .sizes{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .sz{min-width:56px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:12px 14px;font-weight:600;font-size:14px}
+  .sz.sel{border-color:var(--fg);background:var(--fg);color:var(--bg)}
+  .qtyrow{display:inline-flex;border:1px solid var(--line);margin-top:10px}
+  .qtyrow button{width:44px;height:44px;border:0;background:var(--bg);color:var(--fg);font-size:18px}
+  .qtyrow span{min-width:48px;display:grid;place-items:center;font-weight:700;border-inline:1px solid var(--line)}
+  .formgrid{display:grid;gap:12px;margin-top:6px}
+  .inp{width:100%;background:var(--surface);border:1px solid var(--line);color:var(--fg);padding:14px;font-size:15px;font-family:inherit}
+  .inp:focus{outline:2px solid var(--accent);outline-offset:2px}
+  select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.6' fill='none'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
+  .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+  .summ{background:var(--surface);padding:15px 16px;font-size:14px;display:flex;flex-direction:column;gap:7px}
+  .summ .r{display:flex;justify-content:space-between}
+  .summ .tot{font-family:var(--display);font-weight:900;font-size:18px;border-top:1px solid var(--line);padding-top:9px;margin-top:2px}
+  .cta-big{width:100%;background:var(--fg);color:var(--bg);border:0;font-weight:700;font-size:14px;letter-spacing:.1em;
+    text-transform:uppercase;padding:18px}
+  .cta-big:disabled{opacity:.6}
+  .micro{display:flex;flex-direction:column;gap:9px;font-size:13px;color:var(--muted);margin-top:4px}
+  .micro div{display:flex;gap:9px;align-items:flex-start}
+  .micro svg{color:var(--ok);flex:none;margin-top:1px}
+  .acc{border-top:1px solid var(--line)}
+  .acc summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;
+    padding:17px 0;font-size:12.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+  .acc summary::-webkit-details-marker{display:none}
+  .acc .body{padding-bottom:18px;color:var(--muted);font-size:14px;white-space:pre-line;line-height:1.7}
+  .pm{font-size:18px;transition:transform .2s}
+  .acc[open] summary .pm{transform:rotate(45deg)}
+  .done{display:flex;flex-direction:column;gap:16px;align-items:center;text-align:center;padding:30px 4px}
+  .check{width:64px;height:64px;border-radius:999px;background:rgba(21,120,90,.16);color:var(--ok);display:grid;place-items:center}
+  .remind{background:var(--surface);border-left:3px solid var(--accent);padding:15px 16px;text-align:right;direction:rtl;
+    width:100%;font-size:14.5px;line-height:1.75}
+  .remind b{color:var(--accent)}
+  .related-wrap{padding:clamp(44px,6vw,84px) 0}
+  .related-wrap h2{font-size:clamp(26px,4vw,40px);margin-bottom:26px}
+  @media (max-width:900px){.pdp{grid-template-columns:1fr}.pdp .info{position:static}
+    .pdp .gallery img:only-child{aspect-ratio:4/5}}
+{% endblock %}
+{% block content %}
+<script id="product-data" type="application/json">{{ product_json|safe }}</script>
+<div class="wrap gut"><div class="crumb"><a href="/shop/">Accueil</a> / <a href="/shop/#new">{{ breadcrumb_cat }}</a> / {{ product.n }}</div></div>
+<section class="pdp wrap">
+  <div class="gallery">
+    {% for g in product.gallery %}<img src="{{ g }}" alt="{{ product.n }}" {% if forloop.first %}loading="eager"{% else %}loading="lazy"{% endif %}>{% endfor %}
+  </div>
+  <div class="info">
+    <h1 class="p-name">{{ product.n }}</h1>
+    <div class="p-price tnum">{{ product.p_str }} DT</div>
+    <div class="scarce"><span class="pulse"></span>Stock limité</div>
+    {% if product.colors %}
+    <div><div class="lbl">Couleur — <span id="colorName">{{ product.colors.0.label }}</span></div>
+      <div class="swatches2" id="colorOpts">
+        {% for c in product.colors %}<button class="sw2 {% if forloop.first %}sel{% endif %}" data-c="{{ forloop.counter0 }}" data-label="{{ c.label }}" title="{{ c.label }}"><img src="{{ c.img }}" alt="{{ c.label }}"></button>{% endfor %}
+      </div></div>
+    {% endif %}
+    <div><div class="lbl">Taille</div>
+      <div class="sizes" id="sizeOpts">{% for s in product.sizes %}<button class="sz" data-s="{{ s }}">{{ s }}</button>{% endfor %}</div></div>
+    <div><div class="lbl">Quantité</div>
+      <div class="qtyrow"><button data-q="-1" aria-label="moins">−</button><span id="qtyV">1</span><button data-q="1" aria-label="plus">+</button></div></div>
+    <div id="orderArea">
+      <div class="formgrid">
+        <input class="inp" id="f_name" placeholder="Nom et prénom" autocomplete="name">
+        <input class="inp" id="f_phone" inputmode="numeric" placeholder="Téléphone (8 chiffres)" autocomplete="tel">
+        <select class="inp" id="f_gov"><option value="">Gouvernorat</option>{% for g in govs %}<option>{{ g }}</option>{% endfor %}</select>
+        <input class="inp" id="f_addr" placeholder="Adresse complète (ville, rue…)" autocomplete="street-address">
+        <input class="inp hp" id="f_company" tabindex="-1" autocomplete="off" placeholder="Company">
+      </div>
+      <div class="summ tnum" style="margin-top:14px">
+        <div class="r"><span>Sous-total</span><span id="s_sub">{{ product.p_str }} DT</span></div>
+        <div class="r"><span>Livraison</span><span>7,000 DT</span></div>
+        <div class="r tot"><span>Total à payer</span><span id="s_tot">—</span></div>
+      </div>
+      <button class="cta-big" id="orderBtn" style="margin-top:14px">Commander — Paiement à la livraison</button>
+      <div class="micro">
+        <div><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Tu ouvres et vérifies le colis avant de payer.</div>
+        <div><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Échange possible si la taille ne va pas.</div>
+        <div><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Livraison 24–48h partout en Tunisie.</div>
+      </div>
+    </div>
+    <details class="acc" open><summary>Description <span class="pm">+</span></summary><div class="body">{{ product.desc }}</div></details>
+    <details class="acc"><summary>Livraison & paiement <span class="pm">+</span></summary><div class="body">Livraison 7 DT partout en Tunisie · 24–48h.
+Paiement à la livraison (cash).
+Tu ouvres et vérifies ton colis avant de payer.
+Échange possible si la taille ne va pas.</div></details>
+    <details class="acc"><summary>Détails & entretien <span class="pm">+</span></summary><div class="body">Matière douce et confortable, finitions soignées.
+Lavage à 30°C · ne pas sécher au sèche-linge · repasser à basse température.</div></details>
+  </div>
+</section>
+{% if related %}
+<section class="related-wrap wrap gut">
+  <h2>Vous aimerez aussi</h2>
+  <div class="grid">
+    {% for r in related %}
+    <a class="card" href="{{ r.url }}">
+      <div class="thumb"><img class="main" src="{{ r.img }}" alt="{{ r.n }}" loading="lazy"></div>
+      <div class="meta"><div class="pname">{{ r.n }}</div><div class="prow"><span class="price tnum">{{ r.p_str }} DT</span></div></div>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+{% block script %}
+<script>
+const PD=JSON.parse(document.getElementById('product-data').textContent);
+{% verbatim %}
+let sel={color:0,colorLabel:(PD.color_labels&&PD.color_labels[0])||'Unique',size:null,qty:1};
+const money=n=>Number(n).toFixed(3).replace('.',',');
+function updTot(){document.getElementById('s_sub').textContent=money(PD.p*sel.qty)+' DT';
+  document.getElementById('s_tot').textContent=money(PD.p*sel.qty+7)+' DT';}
+updTot();
+document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{sel.color=+b.dataset.c;sel.colorLabel=b.dataset.label;
+  document.querySelectorAll('[data-c]').forEach(e=>e.classList.remove('sel'));b.classList.add('sel');
+  const cn=document.getElementById('colorName');if(cn)cn.textContent=b.dataset.label;});
+document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{sel.size=b.dataset.s;
+  document.querySelectorAll('[data-s]').forEach(e=>e.classList.remove('sel'));b.classList.add('sel');});
+document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{sel.qty=Math.max(1,sel.qty+ +b.dataset.q);
+  document.getElementById('qtyV').textContent=sel.qty;updTot();});
+document.getElementById('orderBtn').onclick=placeOrder;
+async function placeOrder(){
+  const v=id=>document.getElementById(id).value.trim();
+  const name=v('f_name'),phone=v('f_phone'),gov=v('f_gov'),addr=v('f_addr'),company=v('f_company');
+  if(!sel.size)return toast('Choisis une taille');
+  if(name.length<3)return toast('Entre ton nom');
+  if(!/^[2-57-9]\d{7}$/.test(phone.replace(/\s/g,'')))return toast('Numéro invalide (8 chiffres)');
+  if(!gov)return toast('Choisis ton gouvernorat');
+  if(addr.length<5)return toast('Entre ton adresse');
+  const btn=document.getElementById('orderBtn');btn.disabled=true;btn.textContent='Envoi…';
+  try{
+    const r=await fetch('/api/shop/order/',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({offer_id:PD.id,color:sel.colorLabel,size:sel.size,qty:sel.qty,name,phone,gov,address:addr,company})});
+    const j=await r.json();
+    if(!r.ok||j.status!=='ok'){btn.disabled=false;btn.textContent='Commander — Paiement à la livraison';return toast(j.message||'Erreur, réessaie');}
+    document.getElementById('orderArea').innerHTML=`<div class="done">
+      <div class="check"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg></div>
+      <h3 style="font-size:24px">Commande reçue</h3>
+      <p style="color:var(--muted);margin:0">${PD.n} · ${sel.colorLabel} · Taille ${sel.size} · ×${sel.qty}<br>Total : <b>${money(PD.p*sel.qty+7)} DT</b> à payer à la livraison</p>
+      <div class="remind"><b>باش يوصلك الكوموند بالسلامة 🚚</b><br>نبعثولك SMS من <b>Barats</b> قبل ما يكلمك الليفرور.<br>كي يكلمك من نمرة جديدة — <b>جاوب</b> باش نوصلولك، إلا ما جاوبتش الكوموند ترجع 🤍</div>
+      <a class="btn block" href="/shop/">Continuer mes achats</a></div>`;
+    window.scrollTo({top:0,behavior:'smooth'});toast('Commande enregistrée 🤍');
+  }catch(e){btn.disabled=false;btn.textContent='Commander — Paiement à la livraison';toast('Connexion impossible, réessaie');}
+}
+let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
+  clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2800);}
+{% endverbatim %}
+</script>
+{% endblock %}
