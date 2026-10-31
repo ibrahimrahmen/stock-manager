@@ -10113,6 +10113,26 @@ SHOP_GOVERNORATES = [
 ]
 
 
+# Internal size codes 1–5 are NOT customer-facing — show them as S..XXL.
+# Shoe pointures (38–46) and real letter sizes are shown as-is.
+_SIZE_MAP = {"1": "S", "2": "M", "3": "L", "4": "XL", "5": "XXL", "6": "XXXL"}
+_SIZE_ORDER = {s: i for i, s in enumerate(["XS", "S", "M", "L", "XL", "XXL", "XXXL"])}
+
+
+def _disp_size(s):
+    s = (s or "").strip()
+    return _SIZE_MAP.get(s, s)
+
+
+def _size_key(s):
+    if s in _SIZE_ORDER:
+        return (0, _SIZE_ORDER[s])
+    try:
+        return (1, int(s))
+    except (ValueError, TypeError):
+        return (2, s)
+
+
 def _thumb(url, w, frame=False):
     """Return a URL to a resized (and optionally 4:5-framed) version of a media
     image, served by shop_img and cached on disk. Keeps the storefront fast."""
@@ -10162,7 +10182,6 @@ def _shop_offer_payload(page):
     offers = (Offer.objects.filter(is_active=True, sales_pages=page)
               .prefetch_related("images", "products__product__variants__units")
               .distinct().order_by("name"))
-    _size_order = {s: i for i, s in enumerate(["XS", "S", "M", "L", "XL", "XXL", "XXXL"])}
     out = []
     for o in offers:
         imgs = [oi.image.url for oi in o.images.all() if oi.image]
@@ -10179,9 +10198,10 @@ def _shop_offer_payload(page):
         for op in o.products.all():
             for v in op.product.variants.all():
                 for u in v.units.all():
-                    if u.size and u.size not in sizes:
-                        sizes.append(u.size)
-        sizes.sort(key=lambda s: _size_order.get(s, 99))
+                    s = _disp_size(u.size)
+                    if s and s not in sizes:
+                        sizes.append(s)
+        sizes.sort(key=_size_key)
         if not sizes:
             sizes = ["S", "M", "L", "XL", "XXL"]
         try:
@@ -10427,10 +10447,10 @@ def shop_product(request, offer_id):
     for op in offer.products.all():
         for v in op.product.variants.all():
             for u in v.units.all():
-                if u.size and u.size not in sizes:
-                    sizes.append(u.size)
-    _order = {s: i for i, s in enumerate(["XS", "S", "M", "L", "XL", "XXL", "XXXL"])}
-    sizes.sort(key=lambda s: _order.get(s, 99))
+                s = _disp_size(u.size)
+                if s and s not in sizes:
+                    sizes.append(s)
+    sizes.sort(key=_size_key)
     if not sizes:
         sizes = ["S", "M", "L", "XL", "XXL"]
 
