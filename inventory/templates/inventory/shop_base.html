@@ -166,9 +166,8 @@
   window.BaratsCart={add:it=>{
     const c=get();let e=c.find(x=>x.id===it.id&&x.color===it.color&&x.size===it.size),idx;
     if(e){e.qty+=it.qty;idx=c.indexOf(e);}else{c.push(it);idx=c.length-1;}
-    save(c);open();
+    save(c);
     document.querySelectorAll('[data-cart-open]').forEach(b=>{b.classList.remove('bump');void b.offsetWidth;b.classList.add('bump');setTimeout(()=>b.classList.remove('bump'),600);});
-    const rows=document.querySelectorAll('#cartItems .ci');if(rows[idx])rows[idx].classList.add('flash');
   },get:get,clear:()=>save([]),render:render,open:open};
   const cc=document.getElementById('cartClose');if(cc)cc.onclick=close;
   if(scrim)scrim.onclick=close;
