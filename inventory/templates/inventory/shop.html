@@ -51,25 +51,16 @@
     margin-left:-8px;margin-top:-11px;position:relative}
   @media (max-width:800px){.hrow{grid-template-columns:auto 1fr auto}nav.main{display:none}
     .brand{text-align:left;font-size:22px}}
-  .hero{position:relative;height:clamp(480px,72vh,720px);overflow:hidden;background:#111}
-  .hero .bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
-    filter:blur(30px) brightness(.5);transform:scale(1.15)}
-  .hero .fg{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
-    object-position:right center;padding:clamp(14px,3vw,48px)}
-  .hero .scrim{position:absolute;inset:0;background:linear-gradient(90deg,
-    rgba(0,0,0,.74) 0%,rgba(0,0,0,.38) 42%,rgba(0,0,0,0) 72%)}
-  .hero .inner{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;
-    gap:18px;align-items:flex-start;color:#fff}
-  .hero .eyebrow{color:#fff;opacity:.9}
-  .hero h1{font-size:clamp(46px,8.5vw,112px);color:#fff;letter-spacing:-.03em;line-height:.88}
-  .hero p{margin:0;max-width:30ch;font-size:16px;color:rgba(255,255,255,.9)}
+  .hero{position:relative;height:clamp(480px,78vh,760px);overflow:hidden;background:#111}
+  .hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center}
+  .hero .scrim{position:absolute;inset:0;background:linear-gradient(180deg,
+    rgba(0,0,0,.34) 0%,rgba(0,0,0,.05) 30%,rgba(0,0,0,.12) 56%,rgba(0,0,0,.78) 100%)}
+  .hero .inner{position:absolute;inset:auto 0 0 0;padding-bottom:clamp(36px,6vw,74px);color:#fff;
+    display:flex;flex-direction:column;gap:18px;align-items:flex-start}
+  .hero .eyebrow{color:#fff;opacity:.92}
+  .hero h1{font-size:clamp(54px,13vw,150px);color:#fff;letter-spacing:-.03em;line-height:.86}
+  .hero p{margin:0;max-width:36ch;font-size:16px;color:rgba(255,255,255,.9)}
   .hero .cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:4px}
-  @media (max-width:760px){
-    .hero{height:clamp(540px,88vh,780px)}
-    .hero .fg{object-position:center 24%;padding-bottom:50%}
-    .hero .scrim{background:linear-gradient(180deg,rgba(0,0,0,.2) 0%,rgba(0,0,0,0) 28%,
-      rgba(0,0,0,.25) 52%,rgba(0,0,0,.82) 100%)}
-    .hero .inner{justify-content:flex-end;padding-bottom:clamp(30px,7vw,56px)}}
   .cats{display:grid;grid-template-columns:1fr 1fr;gap:0}
   .cat{position:relative;aspect-ratio:4/4.4;overflow:hidden;display:block;background:var(--surface);border:0;padding:0}
   .cat img{width:100%;height:100%;object-fit:cover;transition:transform .7s ease}
@@ -245,14 +236,13 @@ function buildHome(){
   if(!P.length){document.getElementById('new').innerHTML='<div class="empty">Boutique bientôt disponible.</div>';return;}
   const hi=(C.hero>=0?C.hero:0);const h=P[hi];
   document.getElementById('hero').innerHTML=`
-    <img class="bg" src="${h.img}" alt="" aria-hidden="true">
-    <img class="fg" src="${h.img}" alt="${h.n}">
+    <img src="${h.img}" alt="${h.n}">
     <div class="scrim"></div>
     <div class="inner wrap gut">
-      <span class="eyebrow">Nouvelle collection · Hiver 2026</span>
+      <span class="eyebrow">Nouvelle collection</span>
       <h1>HIVER<br>2026</h1>
-      <p>${h.n} · ${money(h.p)} DT · paiement à la livraison.</p>
-      <div class="cta"><button class="btn light" data-open="${hi}">Commander</button>
+      <p>Le streetwear qui tient la saison. Livré chez toi, payé à la livraison.</p>
+      <div class="cta"><button class="btn light" data-open="${hi}">Commander · ${money(h.p)} DT</button>
         <a class="btn outline-w" href="#new">Voir la collection</a></div>
     </div>`;
   if(C.catE>=0&&C.catV>=0){
