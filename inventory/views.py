@@ -10097,6 +10097,165 @@ def api_create_order_inline(request):
         return JsonResponse({"status": "error", "message": str(e)}, status=400)
 
 
+# ---- PUBLIC STOREFRONT (shop.barats.tn) ------------------------------------
+# A customer-facing store served by our own Django app. It lists real Offers for
+# the shop's sales page and creates REAL orders (status non_confirmee) through
+# the same pipeline as everything else, so storefront orders land in the
+# dashboard and the stats like any other order. The order endpoint is PUBLIC
+# (no login) and hardened: phone/size/address validation, a honeypot field, and
+# a per-phone hourly rate limit. Nothing auto-ships — staff confirm first.
+
+def _shop_sales_page():
+    """Which SalesPage storefront orders are attributed to. Configurable via
+    _cfg('shop_sales_page_id'); defaults to the Barats.tn page."""
+    from .models import SalesPage
+    sid = str(_cfg("shop_sales_page_id", "")).strip()
+    if sid.isdigit():
+        sp = SalesPage.objects.filter(pk=int(sid)).first()
+        if sp:
+            return sp
+    return (SalesPage.objects.filter(name__iexact="Barats.tn").first()
+            or SalesPage.objects.filter(name__icontains="barats").first()
+            or SalesPage.objects.filter(is_active=True).first())
+
+
+def _shop_offer_payload(page):
+    """Build the product list the storefront renders, from real Offers."""
+    from .models import Offer
+    offers = (Offer.objects.filter(is_active=True, sales_pages=page)
+              .prefetch_related("images", "products__product__variants__units")
+              .distinct().order_by("name"))
+    _size_order = {s: i for i, s in enumerate(["XS", "S", "M", "L", "XL", "XXL", "XXXL"])}
+    out = []
+    for o in offers:
+        imgs = [oi.image.url for oi in o.images.all() if oi.image]
+        if o.image:
+            imgs.append(o.image.url)
+        if not imgs:
+            continue  # no photo -> don't show on the storefront
+        colors = [(oi.color_label or oi.color_name).strip() for oi in o.images.all()
+                  if (oi.color_label or oi.color_name).strip()]
+        sizes = []
+        for op in o.products.all():
+            for v in op.product.variants.all():
+                for u in v.units.all():
+                    if u.size and u.size not in sizes:
+                        sizes.append(u.size)
+        sizes.sort(key=lambda s: _size_order.get(s, 99))
+        if not sizes:
+            sizes = ["S", "M", "L", "XL", "XXL"]
+        try:
+            price = float(o.price_for_page(page))
+        except Exception:
+            price = float(o.bundle_price or 0)
+        out.append({
+            "id": o.id, "n": o.name, "p": price,
+            "c": colors or ["Unique"], "sizes": sizes,
+            "desc": (o.description or "").strip(),
+            "img": imgs[0], "img2": imgs[1] if len(imgs) > 1 else "",
+        })
+    return out
+
+
+def shop_home(request):
+    import json as _json
+    page = _shop_sales_page()
+    if page is None:
+        return HttpResponse("Boutique indisponible.", status=503)
+    offers = _shop_offer_payload(page)
+    return render(request, "inventory/shop.html", {
+        "offers_json": _json.dumps(offers, ensure_ascii=False),
+        "page_name": page.name,
+    })
+
+
+@csrf_exempt
+@require_POST
+def api_shop_order(request):
+    """PUBLIC order creation from the storefront. Creates a non_confirmee order
+    (staff confirm it). Hardened against bots/abuse; never auto-ships."""
+    import json as _json
+    from .models import Offer, Order, OrderOffer, OrderLine, Customer, Region
+    from django.core.cache import cache as _cache
+    try:
+        data = _json.loads(request.body or "{}")
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Requête invalide."}, status=400)
+
+    # Honeypot — a hidden field real customers never fill. Silently accept so a
+    # bot can't tell it was blocked, but create nothing.
+    if (data.get("company") or "").strip():
+        return JsonResponse({"status": "ok", "order_id": 0})
+
+    phone = _extract_tn_phone(data.get("phone") or "")
+    if not phone:
+        return JsonResponse({"status": "error", "message": "Numéro invalide (8 chiffres)."}, status=400)
+    name = (data.get("name") or "").strip()
+    gov = (data.get("gov") or "").strip()
+    address = (data.get("address") or "").strip()
+    size = (data.get("size") or "").strip()
+    color = (data.get("color") or "").strip()
+    try:
+        qty = max(1, min(5, int(data.get("qty") or 1)))
+    except (ValueError, TypeError):
+        qty = 1
+    if len(name) < 2:
+        return JsonResponse({"status": "error", "message": "Nom obligatoire."}, status=400)
+    if not gov:
+        return JsonResponse({"status": "error", "message": "Gouvernorat obligatoire."}, status=400)
+    if len(address) < 5:
+        return JsonResponse({"status": "error", "message": "Adresse obligatoire."}, status=400)
+    if not size:
+        return JsonResponse({"status": "error", "message": "Taille obligatoire."}, status=400)
+
+    page = _shop_sales_page()
+    offer = Offer.objects.filter(pk=data.get("offer_id"), is_active=True,
+                                 sales_pages=page).first()
+    if offer is None:
+        return JsonResponse({"status": "error", "message": "Produit indisponible."}, status=400)
+
+    rk = "shop_order_rl:%s" % phone
+    try:
+        n = _cache.get(rk, 0)
+        if n >= 4:
+            return JsonResponse({"status": "error", "message": "Trop de commandes. Réessaie plus tard."}, status=429)
+        _cache.set(rk, n + 1, 3600)
+    except Exception:
+        pass
+
+    region = Region.objects.filter(name__iexact=gov).first()
+    customer, _ = Customer.objects.get_or_create(phone=phone, defaults={"name": name})
+    if name and customer.name != name:
+        customer.name = name
+        customer.save(update_fields=["name"])
+
+    okw = dict(
+        customer=customer, customer_name=name, sales_page=page, region=region,
+        ville=gov, address=address, delivery_fee=Decimal("7"),
+        status=Order.NON_CONFIRMEE,
+        notes="[Boutique en ligne shop.barats.tn] Couleur: %s · Taille: %s" % (color or "—", size),
+    )
+    if any(getattr(f, "name", "") == "source" for f in Order._meta.get_fields()):
+        okw["source"] = getattr(Order, "SOURCE_WEBFORM", "web_form")
+    try:
+        with transaction.atomic():
+            order = Order.objects.create(**okw)
+            order_offer = OrderOffer.objects.create(
+                order=order, offer=offer, offer_name=offer.name,
+                bundle_price=offer.price_for_page(page), quantity=qty,
+            )
+            for op in offer.products.all():
+                OrderLine.objects.create(
+                    order=order, order_offer=order_offer,
+                    product_id=op.product_id, variant_id=None,
+                    size=size, quantity=max(1, op.quantity) * qty, unit_price=0,
+                )
+            order.recalc_total()
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": "Erreur: %s" % e}, status=400)
+    return JsonResponse({"status": "ok", "order_id": order.id, "total": str(order.total)})
+
+
 # ---- AUTO-SAVE / DRAFT FLOW (Phase A) -------------------------------------
 # These let the frontend save the order progressively as the user fills it in,
 # instead of waiting for a "Save" button. The order is created as soon as the

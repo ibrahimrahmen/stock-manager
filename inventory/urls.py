@@ -161,6 +161,10 @@ urlpatterns = [
     path("catalog/barats/", views.catalog_barats, name="catalog_barats"),
     # Condensed text catalogue (<8000 chars) for Meta AI knowledge base.
     path("catalog/barats.txt", views.catalog_barats_txt, name="catalog_barats_txt"),
+
+    # Public storefront (served by us; point shop.barats.tn here later).
+    path("shop/", views.shop_home, name="shop_home"),
+    path("api/shop/order/", views.api_shop_order, name="api_shop_order"),
     # Push the catalogue to Google Drive (button + cron).
     path("api/drive-sync/", views.api_drive_sync, name="api_drive_sync"),
     path("cron/drive-sync/", views.cron_drive_sync, name="cron_drive_sync"),
