@@ -123,6 +123,8 @@ document.getElementById('addBtn').onclick=()=>{
   if(!sel.size){toast('Choisis une taille');return;}
   BaratsCart.add({id:PD.id,n:PD.n,color:sel.colorLabel,size:sel.size,qty:sel.qty,p:PD.p,
     img:PD.cart_img||(PD.gallery&&PD.gallery[0])||''});
+  const b=document.getElementById('addBtn');b.classList.add('added');b.textContent='✓ Ajouté au panier';
+  clearTimeout(b._t);b._t=setTimeout(()=>{b.classList.remove('added');b.textContent='Ajouter au panier';},1500);
 };
 let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
   clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2800);}

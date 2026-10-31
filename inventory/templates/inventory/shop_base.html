@@ -81,7 +81,7 @@
   .empty{padding:100px 20px;text-align:center;color:var(--muted)}
   .cart-scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:80;opacity:0;pointer-events:none;transition:opacity .25s}
   .cart-scrim.open{opacity:1;pointer-events:auto}
-  .cart{position:fixed;top:0;right:0;height:100%;width:min(420px,100%);background:var(--bg);z-index:81;
+  .cart{position:fixed;top:0;right:0;height:100%;height:100dvh;width:min(420px,100%);background:var(--bg);z-index:81;
     transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;
     box-shadow:-20px 0 70px rgba(0,0,0,.3)}
   .cart.open{transform:none}
@@ -98,8 +98,14 @@
   .ci-q button{width:26px;height:26px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:14px;cursor:pointer}
   .ci-rm{border:0;background:none;color:var(--muted);text-decoration:underline;margin-left:6px;cursor:pointer;font-size:12px}
   .ci-p{font-family:var(--display);font-weight:800;font-size:14px}
-  .cart-foot{border-top:1px solid var(--line);padding:18px;display:flex;flex-direction:column;gap:14px}
+  .cart-foot{border-top:1px solid var(--line);padding:18px;padding-bottom:max(18px,env(safe-area-inset-bottom,18px));
+    display:flex;flex-direction:column;gap:14px;background:var(--bg)}
   .cart-sub{display:flex;justify-content:space-between;font-family:var(--display);font-weight:800;font-size:17px}
+  @keyframes bump{0%,100%{transform:none}28%{transform:scale(1.34)}55%{transform:scale(.9)}}
+  .iconbtn.bump svg{animation:bump .5s ease}
+  .cta-big.added{background:var(--ok)!important;border-color:var(--ok)!important;color:#fff!important}
+  @keyframes flashrow{from{background:color-mix(in srgb,var(--accent) 15%,transparent)}to{background:transparent}}
+  .ci.flash{animation:flashrow 1.2s ease}
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
   {% block style %}{% endblock %}
 </style>
@@ -157,7 +163,13 @@
     box.querySelectorAll('[data-dec]').forEach(b=>b.onclick=()=>{const c=get();const i=c[+b.dataset.dec];i.qty=Math.max(1,i.qty-1);save(c);});
     box.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{const c=get();c.splice(+b.dataset.rm,1);save(c);});
   }
-  window.BaratsCart={add:it=>{const c=get();const e=c.find(x=>x.id===it.id&&x.color===it.color&&x.size===it.size);if(e)e.qty+=it.qty;else c.push(it);save(c);open();},get:get,clear:()=>save([]),render:render,open:open};
+  window.BaratsCart={add:it=>{
+    const c=get();let e=c.find(x=>x.id===it.id&&x.color===it.color&&x.size===it.size),idx;
+    if(e){e.qty+=it.qty;idx=c.indexOf(e);}else{c.push(it);idx=c.length-1;}
+    save(c);open();
+    document.querySelectorAll('[data-cart-open]').forEach(b=>{b.classList.remove('bump');void b.offsetWidth;b.classList.add('bump');setTimeout(()=>b.classList.remove('bump'),600);});
+    const rows=document.querySelectorAll('#cartItems .ci');if(rows[idx])rows[idx].classList.add('flash');
+  },get:get,clear:()=>save([]),render:render,open:open};
   const cc=document.getElementById('cartClose');if(cc)cc.onclick=close;
   if(scrim)scrim.onclick=close;
   document.querySelectorAll('[data-cart-open]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();open();}));
