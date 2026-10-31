@@ -10188,7 +10188,8 @@ def shop_home(request):
         hero = _pick(lambda o: cat(o) == "veste" or "veste" in nm(o))
     if hero < 0:
         hero = 0 if offers else -1
-    cat_ensemble = _pick(lambda o: cat(o) == "ensemble" or "ensemble" in nm(o))
+    cat_ensemble = _pick(lambda o: (cat(o) == "ensemble" or "ensemble" in nm(o))
+                         and "multicolor" not in nm(o))
     cat_veste = _pick(lambda o: (cat(o) == "veste" or any(
         k in nm(o) for k in ("veste", "bomber", "doudoune", "gillet"))) and
         offers.index(o) != hero)
