@@ -10133,8 +10133,11 @@ def _shop_offer_payload(page):
             imgs.append(o.image.url)
         if not imgs:
             continue  # no photo -> don't show on the storefront
-        colors = [(oi.color_label or oi.color_name).strip() for oi in o.images.all()
-                  if (oi.color_label or oi.color_name).strip()]
+        colors = []
+        for oi in o.images.all():
+            lbl = (oi.color_label or oi.color_name).strip()
+            if lbl and lbl.lower() not in [c.lower() for c in colors]:
+                colors.append(lbl)
         sizes = []
         for op in o.products.all():
             for v in op.product.variants.all():
@@ -10148,10 +10151,16 @@ def _shop_offer_payload(page):
             price = float(o.price_for_page(page))
         except Exception:
             price = float(o.bundle_price or 0)
+        # Descriptions in the DB are the INTERNAL AI/matching text (markdown,
+        # English, "# Identity Description"). Never show that to customers —
+        # hide anything that looks like internal copy; show only clean text.
+        _d = (o.description or "").strip()
+        if "#" in _d or "**" in _d or "identity description" in _d.lower():
+            _d = ""
         out.append({
-            "id": o.id, "n": o.name, "p": price,
+            "id": o.id, "n": o.name, "p": price, "cat": (o.category or ""),
             "c": colors or ["Unique"], "sizes": sizes,
-            "desc": (o.description or "").strip(),
+            "desc": _d,
             "img": imgs[0], "img2": imgs[1] if len(imgs) > 1 else "",
         })
     return out
@@ -10163,8 +10172,39 @@ def shop_home(request):
     if page is None:
         return HttpResponse("Boutique indisponible.", status=503)
     offers = _shop_offer_payload(page)
+
+    # Curate the "faces" of the store by what products actually ARE (via the
+    # offer category/name), instead of alphabetical order. Returns indices into
+    # `offers`, or -1 when nothing matches.
+    def _pick(pred):
+        for i, o in enumerate(offers):
+            if pred(o):
+                return i
+        return -1
+    nm = lambda o: o["n"].lower()
+    cat = lambda o: (o.get("cat") or "").lower()
+    hero = _pick(lambda o: "ferrari" in nm(o))
+    if hero < 0:
+        hero = _pick(lambda o: cat(o) == "veste" or "veste" in nm(o))
+    if hero < 0:
+        hero = 0 if offers else -1
+    cat_ensemble = _pick(lambda o: cat(o) == "ensemble" or "ensemble" in nm(o))
+    cat_veste = _pick(lambda o: (cat(o) == "veste" or any(
+        k in nm(o) for k in ("veste", "bomber", "doudoune", "gillet"))) and
+        offers.index(o) != hero)
+    if cat_veste < 0:
+        cat_veste = _pick(lambda o: cat(o) == "veste" or "veste" in nm(o))
+    featured = _pick(lambda o: any(k in nm(o) for k in ("5 pieces", "5 pièces", "sport profit")))
+    if featured < 0:
+        featured = _pick(lambda o: cat(o) == "ensemble" and "multicolor" not in nm(o))
+    if featured < 0:
+        featured = hero
+    curated = {"hero": hero, "featured": featured,
+               "catE": cat_ensemble, "catV": cat_veste}
+
     return render(request, "inventory/shop.html", {
         "offers_json": _json.dumps(offers, ensure_ascii=False),
+        "curated_json": _json.dumps(curated),
         "page_name": page.name,
     })
 

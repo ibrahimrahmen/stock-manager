@@ -185,6 +185,7 @@
 </head>
 <body>
 <script id="offers-data" type="application/json">{{ offers_json|safe }}</script>
+<script id="curated-data" type="application/json">{{ curated_json|safe }}</script>
 {% verbatim %}
 <div class="announce">Livraison 7 DT · Paiement à la livraison · Ouvre & vérifie avant de payer · Échange possible</div>
 <header><div class="wrap gut hrow">
@@ -224,6 +225,7 @@
 
 <script>
 const P=JSON.parse(document.getElementById('offers-data').textContent||'[]');
+const C=JSON.parse(document.getElementById('curated-data').textContent||'{}');
 const COLORS={noir:"#161616",blanc:"#eceae4",gris:"#9a9a9a",bleu:"#294a8f",rouge:"#c8102e",vert:"#375c3a",
   beige:"#cdbda0",marron:"#6b4a2f",jaune:"#e5c34a",orange:"#d2691e",rose:"#d98aa8",violet:"#6b4a8f",unique:"#c9c6c0"};
 const GOVS=["Tunis","Ariana","Ben Arous","Manouba","Nabeul","Zaghouan","Bizerte","Béja","Jendouba","Le Kef","Siliana","Kairouan","Kasserine","Sidi Bouzid","Sousse","Monastir","Mahdia","Sfax","Gabès","Médenine","Tataouine","Gafsa","Tozeur","Kébili"];
@@ -232,7 +234,7 @@ const dot=c=>COLORS[(c||"").toLowerCase()]||"#b9b6b0";
 
 function buildHome(){
   if(!P.length){document.getElementById('new').innerHTML='<div class="empty">Boutique bientôt disponible.</div>';return;}
-  const h=P[0];
+  const hi=(C.hero>=0?C.hero:0);const h=P[hi];
   document.getElementById('hero').innerHTML=`
     <img src="${h.img}" alt="${h.n}">
     <div class="scrim"></div>
@@ -240,13 +242,13 @@ function buildHome(){
       <span class="eyebrow">Nouvelle collection</span>
       <h1>HIVER<br>2026</h1>
       <p>Le streetwear qui tient la saison. Livré chez toi, payé à la livraison.</p>
-      <div class="cta"><button class="btn light" data-open="0">Commander · ${money(h.p)} DT</button>
+      <div class="cta"><button class="btn light" data-open="${hi}">Commander · ${money(h.p)} DT</button>
         <a class="btn outline-w" href="#new">Voir la collection</a></div>
     </div>`;
-  if(P.length>=3){
+  if(C.catE>=0&&C.catV>=0){
     document.getElementById('cats').innerHTML=`
-      <button class="cat" data-open="1"><img src="${P[1].img2||P[1].img}" alt="${P[1].n}"><div class="lab"><h3>Ensembles</h3><span class="sh">Découvrir</span></div></button>
-      <button class="cat" data-open="2"><img src="${P[2].img2||P[2].img}" alt="${P[2].n}"><div class="lab"><h3>Vestes</h3><span class="sh">Découvrir</span></div></button>`;
+      <button class="cat" data-open="${C.catE}"><img src="${P[C.catE].img}" alt="${P[C.catE].n}"><div class="lab"><h3>Ensembles</h3><span class="sh">Découvrir</span></div></button>
+      <button class="cat" data-open="${C.catV}"><img src="${P[C.catV].img}" alt="${P[C.catV].n}"><div class="lab"><h3>Vestes</h3><span class="sh">Découvrir</span></div></button>`;
   }
   document.getElementById('grid').innerHTML=P.map((x,i)=>`
     <button class="card" data-open="${i}">
@@ -262,7 +264,7 @@ function buildHome(){
         <span class="addq">Commander</span>
       </div>
     </button>`).join('');
-  const f=P.length>3?P[3]:P[0];const fi=P.indexOf(f);
+  const fi=(C.featured>=0?C.featured:0);const f=P[fi];
   document.getElementById('feature').innerHTML=`
     <img src="${f.img}" alt="${f.n}">
     <div class="fx wrap gut">
