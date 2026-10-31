@@ -51,19 +51,16 @@
     margin-left:-8px;margin-top:-11px;position:relative}
   @media (max-width:800px){.hrow{grid-template-columns:auto 1fr auto}nav.main{display:none}
     .brand{text-align:left;font-size:22px}}
-  .hero{display:grid;grid-template-columns:1.04fr .96fr;min-height:clamp(470px,70vh,700px);
-    background:var(--surface);border-bottom:1px solid var(--line);overflow:hidden}
-  .hero .copy{display:flex;flex-direction:column;gap:18px;justify-content:center;
-    padding:clamp(28px,5vw,72px);align-items:flex-start}
-  .hero .media{position:relative;background:var(--surface)}
-  .hero .media img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
-    padding:clamp(10px,2vw,30px)}
-  .hero .eyebrow{color:var(--accent)}
-  .hero h1{font-size:clamp(40px,6.5vw,86px);letter-spacing:-.025em;line-height:.92}
-  .hero p{margin:0;max-width:34ch;font-size:16px;color:var(--muted)}
+  .hero{position:relative;height:clamp(480px,80vh,780px);overflow:hidden;background:var(--surface)}
+  .hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 32%}
+  .hero .scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.30) 0%,
+    rgba(0,0,0,0) 30%,rgba(0,0,0,.12) 58%,rgba(0,0,0,.74) 100%)}
+  .hero .inner{position:absolute;inset:auto 0 0 0;padding-bottom:clamp(36px,6vw,74px);color:#fff;
+    display:flex;flex-direction:column;gap:18px;align-items:flex-start}
+  .hero .eyebrow{color:#fff;opacity:.92}
+  .hero h1{font-size:clamp(54px,13vw,150px);color:#fff;letter-spacing:-.03em;line-height:.86}
+  .hero p{margin:0;max-width:36ch;font-size:16px;color:rgba(255,255,255,.9)}
   .hero .cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:4px}
-  @media (max-width:860px){.hero{grid-template-columns:1fr}
-    .hero .media{order:-1;min-height:84vw}}
   .cats{display:grid;grid-template-columns:1fr 1fr;gap:0}
   .cat{position:relative;aspect-ratio:4/4.4;overflow:hidden;display:block;background:var(--surface);border:0;padding:0}
   .cat img{width:100%;height:100%;object-fit:cover;transition:transform .7s ease}
@@ -239,14 +236,15 @@ function buildHome(){
   if(!P.length){document.getElementById('new').innerHTML='<div class="empty">Boutique bientôt disponible.</div>';return;}
   const hi=(C.hero>=0?C.hero:0);const h=P[hi];
   document.getElementById('hero').innerHTML=`
-    <div class="copy gut">
-      <span class="eyebrow">Nouvelle collection · Hiver 2026</span>
-      <h1>${h.n}</h1>
-      <p>${money(h.p)} DT · livraison 7 DT · paiement à la livraison. Ouvre & vérifie avant de payer.</p>
-      <div class="cta"><button class="btn red" data-open="${hi}">Commander maintenant</button>
-        <a class="btn" href="#new">Voir la collection</a></div>
-    </div>
-    <div class="media"><img src="${h.img}" alt="${h.n}"></div>`;
+    <img src="${h.img}" alt="${h.n}">
+    <div class="scrim"></div>
+    <div class="inner wrap gut">
+      <span class="eyebrow">Nouvelle collection</span>
+      <h1>HIVER<br>2026</h1>
+      <p>Le streetwear qui tient la saison. Livré chez toi, payé à la livraison.</p>
+      <div class="cta"><button class="btn light" data-open="${hi}">Commander · ${money(h.p)} DT</button>
+        <a class="btn outline-w" href="#new">Voir la collection</a></div>
+    </div>`;
   if(C.catE>=0&&C.catV>=0){
     document.getElementById('cats').innerHTML=`
       <button class="cat" data-open="${C.catE}"><img src="${P[C.catE].img}" alt="${P[C.catE].n}"><div class="lab"><h3>Ensembles</h3><span class="sh">Découvrir</span></div></button>
