@@ -10105,6 +10105,14 @@ def api_create_order_inline(request):
 # (no login) and hardened: phone/size/address validation, a honeypot field, and
 # a per-phone hourly rate limit. Nothing auto-ships — staff confirm first.
 
+SHOP_GOVERNORATES = [
+    "Tunis", "Ariana", "Ben Arous", "Manouba", "Nabeul", "Zaghouan", "Bizerte",
+    "Béja", "Jendouba", "Le Kef", "Siliana", "Kairouan", "Kasserine",
+    "Sidi Bouzid", "Sousse", "Monastir", "Mahdia", "Sfax", "Gabès", "Médenine",
+    "Tataouine", "Gafsa", "Tozeur", "Kébili",
+]
+
+
 def _thumb(url, w, frame=False):
     """Return a URL to a resized (and optionally 4:5-framed) version of a media
     image, served by shop_img and cached on disk. Keeps the storefront fast."""
@@ -10238,8 +10246,8 @@ def shop_home(request):
 @csrf_exempt
 @require_POST
 def api_shop_order(request):
-    """PUBLIC order creation from the storefront. Creates a non_confirmee order
-    (staff confirm it). Hardened against bots/abuse; never auto-ships."""
+    """PUBLIC checkout from the storefront cart. Creates ONE non_confirmee order
+    with one or more offers. Hardened against bots/abuse; never auto-ships."""
     import json as _json
     from .models import Offer, Order, OrderOffer, OrderLine, Customer, Region
     from django.core.cache import cache as _cache
@@ -10248,8 +10256,7 @@ def api_shop_order(request):
     except Exception:
         return JsonResponse({"status": "error", "message": "Requête invalide."}, status=400)
 
-    # Honeypot — a hidden field real customers never fill. Silently accept so a
-    # bot can't tell it was blocked, but create nothing.
+    # Honeypot — a hidden field real customers never fill.
     if (data.get("company") or "").strip():
         return JsonResponse({"status": "ok", "order_id": 0})
 
@@ -10259,31 +10266,42 @@ def api_shop_order(request):
     name = (data.get("name") or "").strip()
     gov = (data.get("gov") or "").strip()
     address = (data.get("address") or "").strip()
-    size = (data.get("size") or "").strip()
-    color = (data.get("color") or "").strip()
-    try:
-        qty = max(1, min(5, int(data.get("qty") or 1)))
-    except (ValueError, TypeError):
-        qty = 1
     if len(name) < 2:
         return JsonResponse({"status": "error", "message": "Nom obligatoire."}, status=400)
     if not gov:
         return JsonResponse({"status": "error", "message": "Gouvernorat obligatoire."}, status=400)
     if len(address) < 5:
         return JsonResponse({"status": "error", "message": "Adresse obligatoire."}, status=400)
-    if not size:
-        return JsonResponse({"status": "error", "message": "Taille obligatoire."}, status=400)
+
+    # Cart items: [{offer_id, color, size, qty}]. Accept the legacy single shape.
+    items = data.get("items")
+    if not isinstance(items, list) or not items:
+        items = [{"offer_id": data.get("offer_id"), "color": data.get("color"),
+                  "size": data.get("size"), "qty": data.get("qty")}]
 
     page = _shop_sales_page()
-    offer = Offer.objects.filter(pk=data.get("offer_id"), is_active=True,
-                                 sales_pages=page).first()
-    if offer is None:
-        return JsonResponse({"status": "error", "message": "Produit indisponible."}, status=400)
+    parsed = []
+    for it in items[:20]:
+        offer = Offer.objects.filter(pk=it.get("offer_id"), is_active=True,
+                                     sales_pages=page).first()
+        if offer is None:
+            continue
+        try:
+            q = max(1, min(10, int(it.get("qty") or 1)))
+        except (ValueError, TypeError):
+            q = 1
+        sz = (it.get("size") or "").strip()
+        cl = (it.get("color") or "").strip()
+        if not sz:
+            return JsonResponse({"status": "error", "message": "Taille manquante pour « %s »." % offer.name}, status=400)
+        parsed.append((offer, q, sz, cl))
+    if not parsed:
+        return JsonResponse({"status": "error", "message": "Panier vide ou produits indisponibles."}, status=400)
 
     rk = "shop_order_rl:%s" % phone
     try:
         n = _cache.get(rk, 0)
-        if n >= 4:
+        if n >= 5:
             return JsonResponse({"status": "error", "message": "Trop de commandes. Réessaie plus tard."}, status=429)
         _cache.set(rk, n + 1, 3600)
     except Exception:
@@ -10295,27 +10313,28 @@ def api_shop_order(request):
         customer.name = name
         customer.save(update_fields=["name"])
 
+    note_items = "; ".join("%s (%s / %s ×%d)" % (o.name, cl or "—", sz, q)
+                           for o, q, sz, cl in parsed)
     okw = dict(
         customer=customer, customer_name=name, sales_page=page, region=region,
         ville=gov, address=address, delivery_fee=Decimal("7"),
         status=Order.NON_CONFIRMEE,
-        notes="[Boutique en ligne shop.barats.tn] Couleur: %s · Taille: %s" % (color or "—", size),
+        notes="[Boutique en ligne shop.barats.tn] " + note_items,
     )
     if any(getattr(f, "name", "") == "source" for f in Order._meta.get_fields()):
         okw["source"] = getattr(Order, "SOURCE_WEBFORM", "web_form")
     try:
         with transaction.atomic():
             order = Order.objects.create(**okw)
-            order_offer = OrderOffer.objects.create(
-                order=order, offer=offer, offer_name=offer.name,
-                bundle_price=offer.price_for_page(page), quantity=qty,
-            )
-            for op in offer.products.all():
-                OrderLine.objects.create(
-                    order=order, order_offer=order_offer,
-                    product_id=op.product_id, variant_id=None,
-                    size=size, quantity=max(1, op.quantity) * qty, unit_price=0,
-                )
+            for offer, q, sz, cl in parsed:
+                oo = OrderOffer.objects.create(
+                    order=order, offer=offer, offer_name=offer.name,
+                    bundle_price=offer.price_for_page(page), quantity=q)
+                for op in offer.products.all():
+                    OrderLine.objects.create(
+                        order=order, order_offer=oo, product_id=op.product_id,
+                        variant_id=None, size=sz,
+                        quantity=max(1, op.quantity) * q, unit_price=0)
             order.recalc_total()
     except Exception as e:
         return JsonResponse({"status": "error", "message": "Erreur: %s" % e}, status=400)
@@ -10444,6 +10463,7 @@ def shop_product(request, offer_id):
         "p_str": ("%.3f" % price).replace(".", ","), "cat": offer.category or "",
         "gallery": gallery, "colors": colors, "color_labels": color_labels,
         "sizes": sizes, "desc": _fr_description(offer, color_labels, sizes),
+        "cart_img": _thumb(imgs[0], 220, frame=True) if imgs else "",
     }
     crumb = {"ensemble": "Ensembles", "veste": "Vestes", "pull": "Pulls",
              "hoodie": "Hoodies", "pantalon": "Pantalons", "sport": "Sport",
@@ -10454,11 +10474,12 @@ def shop_product(request, offer_id):
         "product_json": _json.dumps(product, ensure_ascii=False),
         "related": related,
         "breadcrumb_cat": crumb,
-        "govs": ["Tunis", "Ariana", "Ben Arous", "Manouba", "Nabeul", "Zaghouan",
-                 "Bizerte", "Béja", "Jendouba", "Le Kef", "Siliana", "Kairouan",
-                 "Kasserine", "Sidi Bouzid", "Sousse", "Monastir", "Mahdia", "Sfax",
-                 "Gabès", "Médenine", "Tataouine", "Gafsa", "Tozeur", "Kébili"],
     })
+
+
+def shop_checkout(request):
+    """Cart checkout page — order summary (from the browser cart) + COD form."""
+    return render(request, "inventory/shop_checkout.html", {"govs": SHOP_GOVERNORATES})
 
 
 # ---- AUTO-SAVE / DRAFT FLOW (Phase A) -------------------------------------

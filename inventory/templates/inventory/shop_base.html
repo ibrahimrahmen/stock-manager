@@ -79,6 +79,27 @@
     padding:12px 20px;border-radius:999px;font-size:14px;font-weight:600;z-index:90;opacity:0;pointer-events:none;transition:.3s}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .empty{padding:100px 20px;text-align:center;color:var(--muted)}
+  .cart-scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:80;opacity:0;pointer-events:none;transition:opacity .25s}
+  .cart-scrim.open{opacity:1;pointer-events:auto}
+  .cart{position:fixed;top:0;right:0;height:100%;width:min(420px,100%);background:var(--bg);z-index:81;
+    transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;
+    box-shadow:-20px 0 70px rgba(0,0,0,.3)}
+  .cart.open{transform:none}
+  .cart-top{display:flex;justify-content:space-between;align-items:center;padding:18px;border-bottom:1px solid var(--line)}
+  .cart-top b{font-family:var(--display);letter-spacing:.2em;font-size:14px}
+  .cart .x{background:none;border:0;font-size:26px;line-height:1;color:var(--fg);cursor:pointer}
+  .cart-items{flex:1;overflow-y:auto;padding:4px 18px}
+  .cart-empty{padding:60px 10px;text-align:center;color:var(--muted)}
+  .ci{display:grid;grid-template-columns:62px 1fr auto;gap:12px;padding:16px 0;border-bottom:1px solid var(--line);align-items:start}
+  .ci img{width:62px;height:78px;object-fit:cover;background:var(--surface)}
+  .ci-n{font-weight:600;font-size:14px;line-height:1.25}
+  .ci-m{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .ci-q{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px}
+  .ci-q button{width:26px;height:26px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:14px;cursor:pointer}
+  .ci-rm{border:0;background:none;color:var(--muted);text-decoration:underline;margin-left:6px;cursor:pointer;font-size:12px}
+  .ci-p{font-family:var(--display);font-weight:800;font-size:14px}
+  .cart-foot{border-top:1px solid var(--line);padding:18px;display:flex;flex-direction:column;gap:14px}
+  .cart-sub{display:flex;justify-content:space-between;font-family:var(--display);font-weight:800;font-size:17px}
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
   {% block style %}{% endblock %}
 </style>
@@ -90,7 +111,7 @@
   <a class="brand" href="/shop/">BARATS</a>
   <div class="icons">
     <button class="iconbtn" aria-label="Recherche"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button>
-    <a class="iconbtn" href="/shop/" aria-label="Panier"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 016 0"/></svg></a>
+    <button class="iconbtn" data-cart-open aria-label="Panier"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 016 0"/></svg><span class="cartcount" id="cartCount" style="display:none">0</span></button>
   </div>
 </div></header>
 
@@ -105,6 +126,45 @@
   <div class="fbar"><span>© 2026 Barats — Tunisie</span><span>Livraison 7 DT · Paiement à la livraison</span></div>
 </div></footer>
 <div class="toast" id="toast"></div>
+<div class="cart-scrim" id="cartScrim"></div>
+<aside class="cart" id="cartDrawer" aria-hidden="true">
+  <div class="cart-top"><b>Panier</b><button class="x" id="cartClose" aria-label="Fermer">×</button></div>
+  <div class="cart-items" id="cartItems"></div>
+  <div class="cart-foot" id="cartFoot">
+    <div class="cart-sub"><span>Sous-total</span><span id="cartSub">0,000 DT</span></div>
+    <a class="btn block" href="/shop/commande/">Commander</a>
+  </div>
+</aside>
+<script>{% verbatim %}
+(function(){
+  const LS='barats_cart';
+  const get=()=>{try{return JSON.parse(localStorage.getItem(LS)||'[]')}catch(e){return[]}};
+  const save=c=>{try{localStorage.setItem(LS,JSON.stringify(c))}catch(e){}render();};
+  const money=n=>Number(n).toFixed(3).replace('.',',');
+  const drawer=document.getElementById('cartDrawer'),scrim=document.getElementById('cartScrim');
+  const open=()=>{drawer.classList.add('open');scrim.classList.add('open');drawer.setAttribute('aria-hidden','false');};
+  const close=()=>{drawer.classList.remove('open');scrim.classList.remove('open');drawer.setAttribute('aria-hidden','true');};
+  function render(){
+    const c=get(),cnt=c.reduce((s,i)=>s+i.qty,0);
+    document.querySelectorAll('.cartcount').forEach(e=>{e.textContent=cnt;e.style.display=cnt?'inline-grid':'none';});
+    const box=document.getElementById('cartItems'); if(!box)return;
+    const foot=document.getElementById('cartFoot');
+    if(!c.length){box.innerHTML='<div class="cart-empty">Ton panier est vide.</div>';if(foot)foot.style.display='none';return;}
+    if(foot)foot.style.display='';
+    box.innerHTML=c.map((i,idx)=>`<div class="ci"><img src="${i.img||''}" alt=""><div><div class="ci-n">${i.n}</div><div class="ci-m">${i.color} · ${i.size}</div><div class="ci-q"><button data-dec="${idx}">−</button><span>${i.qty}</span><button data-inc="${idx}">+</button><button class="ci-rm" data-rm="${idx}">Retirer</button></div></div><div class="ci-p">${money(i.p*i.qty)} DT</div></div>`).join('');
+    document.getElementById('cartSub').textContent=money(c.reduce((s,i)=>s+i.p*i.qty,0))+' DT';
+    box.querySelectorAll('[data-inc]').forEach(b=>b.onclick=()=>{const c=get();c[+b.dataset.inc].qty++;save(c);});
+    box.querySelectorAll('[data-dec]').forEach(b=>b.onclick=()=>{const c=get();const i=c[+b.dataset.dec];i.qty=Math.max(1,i.qty-1);save(c);});
+    box.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{const c=get();c.splice(+b.dataset.rm,1);save(c);});
+  }
+  window.BaratsCart={add:it=>{const c=get();const e=c.find(x=>x.id===it.id&&x.color===it.color&&x.size===it.size);if(e)e.qty+=it.qty;else c.push(it);save(c);open();},get:get,clear:()=>save([]),render:render,open:open};
+  const cc=document.getElementById('cartClose');if(cc)cc.onclick=close;
+  if(scrim)scrim.onclick=close;
+  document.querySelectorAll('[data-cart-open]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();open();}));
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
+  render();
+})();
+{% endverbatim %}</script>
 {% block script %}{% endblock %}
 </body>
 </html>

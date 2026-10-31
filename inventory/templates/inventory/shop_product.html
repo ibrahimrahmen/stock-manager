@@ -78,25 +78,11 @@
       <div class="sizes" id="sizeOpts">{% for s in product.sizes %}<button class="sz" data-s="{{ s }}">{{ s }}</button>{% endfor %}</div></div>
     <div><div class="lbl">Quantité</div>
       <div class="qtyrow"><button data-q="-1" aria-label="moins">−</button><span id="qtyV">1</span><button data-q="1" aria-label="plus">+</button></div></div>
-    <div id="orderArea">
-      <div class="formgrid">
-        <input class="inp" id="f_name" placeholder="Nom et prénom" autocomplete="name">
-        <input class="inp" id="f_phone" inputmode="numeric" placeholder="Téléphone (8 chiffres)" autocomplete="tel">
-        <select class="inp" id="f_gov"><option value="">Gouvernorat</option>{% for g in govs %}<option>{{ g }}</option>{% endfor %}</select>
-        <input class="inp" id="f_addr" placeholder="Adresse complète (ville, rue…)" autocomplete="street-address">
-        <input class="inp hp" id="f_company" tabindex="-1" autocomplete="off" placeholder="Company">
-      </div>
-      <div class="summ tnum" style="margin-top:14px">
-        <div class="r"><span>Sous-total</span><span id="s_sub">{{ product.p_str }} DT</span></div>
-        <div class="r"><span>Livraison</span><span>7,000 DT</span></div>
-        <div class="r tot"><span>Total à payer</span><span id="s_tot">—</span></div>
-      </div>
-      <button class="cta-big" id="orderBtn" style="margin-top:14px">Commander — Paiement à la livraison</button>
-      <div class="micro">
-        <div><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Tu ouvres et vérifies le colis avant de payer.</div>
-        <div><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Échange possible si la taille ne va pas.</div>
-        <div><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Livraison 24–48h partout en Tunisie.</div>
-      </div>
+    <button class="cta-big" id="addBtn" style="margin-top:6px">Ajouter au panier</button>
+    <div class="micro">
+      <div><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Paiement à la livraison — ouvre & vérifie avant de payer.</div>
+      <div><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Échange possible si la taille ne va pas.</div>
+      <div><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Livraison 7 DT · 24–48h partout en Tunisie.</div>
     </div>
     <details class="acc" open><summary>Description <span class="pm">+</span></summary><div class="body">{{ product.desc }}</div></details>
     <details class="acc"><summary>Livraison & paiement <span class="pm">+</span></summary><div class="body">Livraison 7 DT partout en Tunisie · 24–48h.
@@ -126,41 +112,18 @@ Lavage à 30°C · ne pas sécher au sèche-linge · repasser à basse températ
 const PD=JSON.parse(document.getElementById('product-data').textContent);
 {% verbatim %}
 let sel={color:0,colorLabel:(PD.color_labels&&PD.color_labels[0])||'Unique',size:null,qty:1};
-const money=n=>Number(n).toFixed(3).replace('.',',');
-function updTot(){document.getElementById('s_sub').textContent=money(PD.p*sel.qty)+' DT';
-  document.getElementById('s_tot').textContent=money(PD.p*sel.qty+7)+' DT';}
-updTot();
 document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{sel.color=+b.dataset.c;sel.colorLabel=b.dataset.label;
   document.querySelectorAll('[data-c]').forEach(e=>e.classList.remove('sel'));b.classList.add('sel');
   const cn=document.getElementById('colorName');if(cn)cn.textContent=b.dataset.label;});
 document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{sel.size=b.dataset.s;
   document.querySelectorAll('[data-s]').forEach(e=>e.classList.remove('sel'));b.classList.add('sel');});
 document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{sel.qty=Math.max(1,sel.qty+ +b.dataset.q);
-  document.getElementById('qtyV').textContent=sel.qty;updTot();});
-document.getElementById('orderBtn').onclick=placeOrder;
-async function placeOrder(){
-  const v=id=>document.getElementById(id).value.trim();
-  const name=v('f_name'),phone=v('f_phone'),gov=v('f_gov'),addr=v('f_addr'),company=v('f_company');
-  if(!sel.size)return toast('Choisis une taille');
-  if(name.length<3)return toast('Entre ton nom');
-  if(!/^[2-57-9]\d{7}$/.test(phone.replace(/\s/g,'')))return toast('Numéro invalide (8 chiffres)');
-  if(!gov)return toast('Choisis ton gouvernorat');
-  if(addr.length<5)return toast('Entre ton adresse');
-  const btn=document.getElementById('orderBtn');btn.disabled=true;btn.textContent='Envoi…';
-  try{
-    const r=await fetch('/api/shop/order/',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({offer_id:PD.id,color:sel.colorLabel,size:sel.size,qty:sel.qty,name,phone,gov,address:addr,company})});
-    const j=await r.json();
-    if(!r.ok||j.status!=='ok'){btn.disabled=false;btn.textContent='Commander — Paiement à la livraison';return toast(j.message||'Erreur, réessaie');}
-    document.getElementById('orderArea').innerHTML=`<div class="done">
-      <div class="check"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg></div>
-      <h3 style="font-size:24px">Commande reçue</h3>
-      <p style="color:var(--muted);margin:0">${PD.n} · ${sel.colorLabel} · Taille ${sel.size} · ×${sel.qty}<br>Total : <b>${money(PD.p*sel.qty+7)} DT</b> à payer à la livraison</p>
-      <div class="remind"><b>باش يوصلك الكوموند بالسلامة 🚚</b><br>نبعثولك SMS من <b>Barats</b> قبل ما يكلمك الليفرور.<br>كي يكلمك من نمرة جديدة — <b>جاوب</b> باش نوصلولك، إلا ما جاوبتش الكوموند ترجع 🤍</div>
-      <a class="btn block" href="/shop/">Continuer mes achats</a></div>`;
-    window.scrollTo({top:0,behavior:'smooth'});toast('Commande enregistrée 🤍');
-  }catch(e){btn.disabled=false;btn.textContent='Commander — Paiement à la livraison';toast('Connexion impossible, réessaie');}
-}
+  document.getElementById('qtyV').textContent=sel.qty;});
+document.getElementById('addBtn').onclick=()=>{
+  if(!sel.size){toast('Choisis une taille');return;}
+  BaratsCart.add({id:PD.id,n:PD.n,color:sel.colorLabel,size:sel.size,qty:sel.qty,p:PD.p,
+    img:PD.cart_img||(PD.gallery&&PD.gallery[0])||''});
+};
 let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
   clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2800);}
 {% endverbatim %}
