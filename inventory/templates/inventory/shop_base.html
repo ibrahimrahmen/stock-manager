@@ -106,6 +106,21 @@
   .cta-big.added{background:var(--ok)!important;border-color:var(--ok)!important;color:#fff!important}
   @keyframes flashrow{from{background:color-mix(in srgb,var(--accent) 15%,transparent)}to{background:transparent}}
   .ci.flash{animation:flashrow 1.2s ease}
+  .addpop{position:fixed;top:calc(78px + env(safe-area-inset-top,0px));right:max(16px,env(safe-area-inset-right,0px));
+    z-index:95;width:min(340px,calc(100vw - 32px));background:var(--bg);border:1px solid var(--line);
+    box-shadow:0 22px 55px rgba(0,0,0,.20);transform:translateY(-16px) scale(.98);opacity:0;pointer-events:none;
+    transition:transform .32s cubic-bezier(.2,.8,.2,1),opacity .28s}
+  .addpop.show{transform:none;opacity:1;pointer-events:auto}
+  .addpop .ap-top{display:flex;gap:8px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);
+    font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ok)}
+  .addpop .ap-body{display:flex;gap:12px;padding:14px}
+  .addpop .ap-body img{width:54px;height:68px;object-fit:cover;background:var(--surface);flex:none}
+  .addpop .ap-n{font-weight:600;font-size:14px;line-height:1.25}
+  .addpop .ap-m{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .addpop .ap-act{display:flex;gap:8px;padding:0 14px 14px}
+  .addpop .ap-act a,.addpop .ap-act button{flex:1;text-align:center;font-size:11px;font-weight:700;letter-spacing:.1em;
+    text-transform:uppercase;padding:11px 8px;border:1px solid var(--fg);background:var(--bg);color:var(--fg);cursor:pointer}
+  .addpop .ap-act .prim{background:var(--fg);color:var(--bg)}
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
   {% block style %}{% endblock %}
 </style>
@@ -132,6 +147,7 @@
   <div class="fbar"><span>© 2026 Barats — Tunisie</span><span>Livraison 7 DT · Paiement à la livraison</span></div>
 </div></footer>
 <div class="toast" id="toast"></div>
+<div class="addpop" id="addPop" aria-live="polite"></div>
 <div class="cart-scrim" id="cartScrim"></div>
 <aside class="cart" id="cartDrawer" aria-hidden="true">
   <div class="cart-top"><b>Panier</b><button class="x" id="cartClose" aria-label="Fermer">×</button></div>
@@ -163,10 +179,18 @@
     box.querySelectorAll('[data-dec]').forEach(b=>b.onclick=()=>{const c=get();const i=c[+b.dataset.dec];i.qty=Math.max(1,i.qty-1);save(c);});
     box.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{const c=get();c.splice(+b.dataset.rm,1);save(c);});
   }
+  const pop=document.getElementById('addPop');
+  const hidePop=()=>{if(pop)pop.classList.remove('show');};
+  function showAddPop(it){
+    if(!pop)return;
+    pop.innerHTML=`<div class="ap-top"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Ajouté au panier</div><div class="ap-body"><img src="${it.img||''}" alt=""><div><div class="ap-n">${it.n}</div><div class="ap-m">${it.color} · ${it.size} · ×${it.qty}</div></div></div><div class="ap-act"><button type="button" id="apView">Voir le panier</button><a class="prim" href="/shop/commande/">Commander</a></div>`;
+    const vb=pop.querySelector('#apView');if(vb)vb.onclick=()=>{open();hidePop();};
+    void pop.offsetWidth;pop.classList.add('show');clearTimeout(pop._t);pop._t=setTimeout(hidePop,4200);
+  }
   window.BaratsCart={add:it=>{
     const c=get();let e=c.find(x=>x.id===it.id&&x.color===it.color&&x.size===it.size),idx;
     if(e){e.qty+=it.qty;idx=c.indexOf(e);}else{c.push(it);idx=c.length-1;}
-    save(c);
+    save(c);showAddPop(it);
     document.querySelectorAll('[data-cart-open]').forEach(b=>{b.classList.remove('bump');void b.offsetWidth;b.classList.add('bump');setTimeout(()=>b.classList.remove('bump'),600);});
   },get:get,clear:()=>save([]),render:render,open:open};
   const cc=document.getElementById('cartClose');if(cc)cc.onclick=close;
