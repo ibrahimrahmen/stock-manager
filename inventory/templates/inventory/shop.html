@@ -43,7 +43,6 @@
 <script id="offers-data" type="application/json">{{ offers_json|safe }}</script>
 <script id="curated-data" type="application/json">{{ curated_json|safe }}</script>
 <section class="hero" id="hero"></section>
-<section class="cats" id="cats"></section>
 <section class="sec wrap gut" id="new">
   <div class="sechead"><h2>Nouveautés</h2><a class="link" href="/shop/produits/">Tout voir</a></div>
   <div class="grid" id="grid"></div>
@@ -72,14 +71,8 @@ const money=n=>Number(n).toFixed(3).replace(".",",");
       <span class="eyebrow">Nouvelle collection</span>
       <h1>HIVER<br>2026</h1>
       <p>Le streetwear qui tient la saison. Livré chez toi, payé à la livraison.</p>
-      <div class="cta"><a class="btn light" href="${h.url}">Commander · ${money(h.p)} DT</a>
-        <a class="btn outline-w" href="#new">Voir la collection</a></div>
+      <div class="cta"><a class="btn light" href="${h.url}">Commander · ${money(h.p)} DT</a></div>
     </div>`;
-  if(C.catE>=0&&C.catV>=0){
-    document.getElementById('cats').innerHTML=`
-      <a class="cat" href="${P[C.catE].url}"><img src="${P[C.catE].big||P[C.catE].img}" alt="${P[C.catE].n}"><div class="lab"><h3>Ensembles</h3><span class="sh">Découvrir</span></div></a>
-      <a class="cat" href="${P[C.catV].url}"><img src="${P[C.catV].big||P[C.catV].img}" alt="${P[C.catV].n}"><div class="lab"><h3>Vestes</h3><span class="sh">Découvrir</span></div></a>`;
-  }
   document.getElementById('grid').innerHTML=P.slice(0,8).map((x,i)=>`
     <a class="card" href="${x.url}">
       <div class="thumb">
