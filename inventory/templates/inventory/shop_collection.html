@@ -1,0 +1,31 @@
+{% extends "inventory/shop_base.html" %}
+{% block title %}Tous les produits — Barats{% endblock %}
+{% block style %}
+  .lead{padding:18px 0 4px}
+  .lead .crumb{font-size:12px;color:var(--muted);letter-spacing:.04em}
+  .lead .crumb a:hover{color:var(--fg)}
+  .sec{padding-block:clamp(24px,4vw,52px)}
+  .sechead{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:clamp(22px,3vw,36px)}
+  .sechead h1{font-size:clamp(30px,5vw,54px)}
+  .sechead span{color:var(--muted);font-size:13px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;white-space:nowrap}
+{% endblock %}
+{% block content %}
+<script id="offers-data" type="application/json">{{ offers_json|safe }}</script>
+<div class="wrap gut lead"><div class="crumb"><a href="/shop/">Accueil</a> / Tous les produits</div></div>
+<section class="sec wrap gut">
+  <div class="sechead"><h1>Tous les produits</h1><span id="count"></span></div>
+  <div class="grid" id="grid"></div>
+</section>
+{% endblock %}
+{% block script %}
+<script>{% verbatim %}
+const P=JSON.parse(document.getElementById('offers-data').textContent||'[]');
+const money=n=>Number(n).toFixed(3).replace('.',',');
+document.getElementById('count').textContent=P.length+' articles';
+document.getElementById('grid').innerHTML=P.map(x=>`
+  <a class="card" href="${x.url}">
+    <div class="thumb"><img class="main" src="${x.img}" alt="${x.n}" loading="lazy">${x.img2?`<img class="alt" src="${x.img2}" alt="" loading="lazy">`:''}</div>
+    <div class="meta"><div class="pname">${x.n}</div><div class="prow"><span class="price tnum">${money(x.p)} DT</span></div>${x.c.length>1?`<span class="ccount">${x.c.length} couleurs</span>`:''}</div>
+  </a>`).join('');
+{% endverbatim %}</script>
+{% endblock %}

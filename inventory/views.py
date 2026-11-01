@@ -10502,6 +10502,16 @@ def shop_checkout(request):
     return render(request, "inventory/shop_checkout.html", {"govs": SHOP_GOVERNORATES})
 
 
+def shop_collection(request):
+    """Full product listing ('Tout voir') — the whole catalogue in a grid."""
+    import json as _json
+    page = _shop_sales_page()
+    offers = _shop_offer_payload(page)
+    return render(request, "inventory/shop_collection.html", {
+        "offers_json": _json.dumps(offers, ensure_ascii=False),
+    })
+
+
 # ---- AUTO-SAVE / DRAFT FLOW (Phase A) -------------------------------------
 # These let the frontend save the order progressively as the user fills it in,
 # instead of waiting for a "Save" button. The order is created as soon as the

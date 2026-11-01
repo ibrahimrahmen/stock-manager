@@ -45,8 +45,9 @@
 <section class="hero" id="hero"></section>
 <section class="cats" id="cats"></section>
 <section class="sec wrap gut" id="new">
-  <div class="sechead"><h2>Nouveautés</h2><a class="link" href="#new">Tout voir</a></div>
+  <div class="sechead"><h2>Nouveautés</h2><a class="link" href="/shop/produits/">Tout voir</a></div>
   <div class="grid" id="grid"></div>
+  <div style="text-align:center;margin-top:clamp(34px,4vw,52px)"><a class="btn" href="/shop/produits/">Voir tous les produits</a></div>
 </section>
 <section class="feature gut" id="feature"></section>
 <div class="trust">
@@ -79,7 +80,7 @@ const money=n=>Number(n).toFixed(3).replace(".",",");
       <a class="cat" href="${P[C.catE].url}"><img src="${P[C.catE].big||P[C.catE].img}" alt="${P[C.catE].n}"><div class="lab"><h3>Ensembles</h3><span class="sh">Découvrir</span></div></a>
       <a class="cat" href="${P[C.catV].url}"><img src="${P[C.catV].big||P[C.catV].img}" alt="${P[C.catV].n}"><div class="lab"><h3>Vestes</h3><span class="sh">Découvrir</span></div></a>`;
   }
-  document.getElementById('grid').innerHTML=P.map((x,i)=>`
+  document.getElementById('grid').innerHTML=P.slice(0,8).map((x,i)=>`
     <a class="card" href="${x.url}">
       <div class="thumb">
         ${i<2?'<span class="tag red">Best-seller</span>':''}

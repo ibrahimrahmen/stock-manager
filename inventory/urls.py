@@ -165,6 +165,7 @@ urlpatterns = [
     # Public storefront (served by us; point shop.barats.tn here later).
     path("shop/", views.shop_home, name="shop_home"),
     path("shop/produit/<int:offer_id>/", views.shop_product, name="shop_product"),
+    path("shop/produits/", views.shop_collection, name="shop_collection"),
     path("shop/commande/", views.shop_checkout, name="shop_checkout"),
     path("shop/img/", views.shop_img, name="shop_img"),
     path("api/shop/order/", views.api_shop_order, name="api_shop_order"),
