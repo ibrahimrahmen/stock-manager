@@ -11,16 +11,17 @@
   .hero h1{font-size:clamp(54px,13vw,150px);color:#fff;letter-spacing:-.03em;line-height:.86}
   .hero p{margin:0;max-width:36ch;font-size:16px;color:rgba(255,255,255,.9)}
   .hero .cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:4px}
-  .cats{display:grid;grid-template-columns:1fr 1fr;gap:0}
-  .cat{position:relative;aspect-ratio:4/4.4;overflow:hidden;display:block;background:var(--surface)}
+  .cats-sec{padding-block:clamp(46px,6vw,84px)}
+  .cats{display:grid;grid-template-columns:1fr 1fr;gap:clamp(14px,2vw,26px)}
+  .cat{position:relative;aspect-ratio:3/2.15;overflow:hidden;display:block;background:var(--surface)}
   .cat img{width:100%;height:100%;object-fit:cover;transition:transform .7s ease}
   .cat:hover img{transform:scale(1.04)}
   .cat .lab{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;gap:10px;
     padding:clamp(20px,3vw,40px);color:#fff;background:linear-gradient(180deg,rgba(0,0,0,0) 45%,rgba(0,0,0,.6) 100%)}
-  .cat h3{font-size:clamp(28px,5vw,56px);color:#fff;text-align:left}
+  .cat h3{font-size:clamp(24px,4vw,46px);color:#fff;text-align:left}
   .cat .sh{font-size:12px;letter-spacing:.2em;text-transform:uppercase;font-weight:700;border-bottom:1.5px solid #fff;
     padding-bottom:3px;align-self:flex-start}
-  @media (max-width:640px){.cat{aspect-ratio:3/3.6}}
+  @media (max-width:640px){.cats{grid-template-columns:1fr;gap:16px}.cat{aspect-ratio:16/10}}
   .sec{padding-block:clamp(52px,7vw,92px)}
   .sechead{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:clamp(26px,3vw,42px)}
   .sechead h2{font-size:clamp(34px,6vw,64px)}
@@ -43,6 +44,7 @@
 <script id="offers-data" type="application/json">{{ offers_json|safe }}</script>
 <script id="curated-data" type="application/json">{{ curated_json|safe }}</script>
 <section class="hero" id="hero"></section>
+<section class="cats-sec wrap gut"><div class="cats" id="cats"></div></section>
 <section class="sec wrap gut" id="new">
   <div class="sechead"><h2>Nouveautés</h2><a class="link" href="/shop/produits/">Tout voir</a></div>
   <div class="grid" id="grid"></div>
@@ -73,6 +75,11 @@ const money=n=>Number(n).toFixed(3).replace(".",",");
       <p>Le streetwear qui tient la saison. Livré chez toi, payé à la livraison.</p>
       <div class="cta"><a class="btn light" href="${h.url}">Commander · ${money(h.p)} DT</a></div>
     </div>`;
+  if(C.catE>=0&&C.catV>=0){
+    document.getElementById('cats').innerHTML=`
+      <a class="cat" href="${P[C.catE].url}"><img src="${P[C.catE].big||P[C.catE].img}" alt="${P[C.catE].n}"><div class="lab"><h3>Ensembles</h3><span class="sh">Découvrir</span></div></a>
+      <a class="cat" href="${P[C.catV].url}"><img src="${P[C.catV].big||P[C.catV].img}" alt="${P[C.catV].n}"><div class="lab"><h3>Vestes</h3><span class="sh">Découvrir</span></div></a>`;
+  }
   document.getElementById('grid').innerHTML=P.slice(0,8).map((x,i)=>`
     <a class="card" href="${x.url}">
       <div class="thumb">
