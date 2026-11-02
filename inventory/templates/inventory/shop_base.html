@@ -128,8 +128,8 @@
 <body>
 <div class="announce">Livraison 7 DT · Paiement à la livraison · Ouvre & vérifie avant de payer · Échange possible</div>
 <header><div class="wrap gut hrow">
-  <nav class="main"><a href="/shop/#new">Nouveautés</a><a href="/shop/#new">Ensembles</a><a href="/shop/#new">Vestes</a><a href="/shop/#new">Sport</a></nav>
-  <a class="brand" href="/shop/">BARATS</a>
+  <nav class="main"><a href="{{ shop_base }}/#new">Nouveautés</a><a href="{{ shop_base }}/produits/?cat=ensemble">Ensembles</a><a href="{{ shop_base }}/produits/?cat=veste">Vestes</a><a href="{{ shop_base }}/produits/">Tout</a></nav>
+  <a class="brand" href="{{ shop_base }}/">BARATS</a>
   <div class="icons">
     <button class="iconbtn" aria-label="Recherche"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button>
     <button class="iconbtn" data-cart-open aria-label="Panier"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 016 0"/></svg><span class="cartcount" id="cartCount" style="display:none">0</span></button>
@@ -141,7 +141,7 @@
 <footer><div class="wrap gut">
   <div class="fcols">
     <div><div class="brand">BARATS</div><p>Streetwear tunisien. Des pièces qui durent, livrées chez toi, payées à la livraison. Ouvre ton colis et vérifie avant de payer.</p></div>
-    <div class="fcol"><h4>Boutique</h4><a href="/shop/#new">Nouveautés</a><a href="/shop/#new">Ensembles</a><a href="/shop/#new">Vestes</a></div>
+    <div class="fcol"><h4>Boutique</h4><a href="{{ shop_base }}/produits/">Nouveautés</a><a href="{{ shop_base }}/produits/?cat=ensemble">Ensembles</a><a href="{{ shop_base }}/produits/?cat=veste">Vestes</a></div>
     <div class="fcol"><h4>Aide</h4><a href="#">Livraison & retours</a><a href="#">Guide des tailles</a><a href="#">Contact</a></div>
   </div>
   <div class="fbar"><span>© 2026 Barats — Tunisie</span><span>Livraison 7 DT · Paiement à la livraison</span></div>
@@ -154,9 +154,10 @@
   <div class="cart-items" id="cartItems"></div>
   <div class="cart-foot" id="cartFoot">
     <div class="cart-sub"><span>Sous-total</span><span id="cartSub">0,000 DT</span></div>
-    <a class="btn block" href="/shop/commande/">Commander</a>
+    <a class="btn block" href="{{ shop_base }}/commande/">Commander</a>
   </div>
 </aside>
+<script>window.SHOP_BASE="{{ shop_base }}";</script>
 <script>{% verbatim %}
 (function(){
   const LS='barats_cart';
@@ -183,7 +184,7 @@
   const hidePop=()=>{if(pop)pop.classList.remove('show');};
   function showAddPop(it){
     if(!pop)return;
-    pop.innerHTML=`<div class="ap-top"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Ajouté au panier</div><div class="ap-body"><img src="${it.img||''}" alt=""><div><div class="ap-n">${it.n}</div><div class="ap-m">${it.color} · ${it.size} · ×${it.qty}</div></div></div><div class="ap-act"><button type="button" id="apView">Voir le panier</button><a class="prim" href="/shop/commande/">Commander</a></div>`;
+    pop.innerHTML=`<div class="ap-top"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>Ajouté au panier</div><div class="ap-body"><img src="${it.img||''}" alt=""><div><div class="ap-n">${it.n}</div><div class="ap-m">${it.color} · ${it.size} · ×${it.qty}</div></div></div><div class="ap-act"><button type="button" id="apView">Voir le panier</button><a class="prim" href="${window.SHOP_BASE}/commande/">Commander</a></div>`;
     const vb=pop.querySelector('#apView');if(vb)vb.onclick=()=>{open();hidePop();};
     void pop.offsetWidth;pop.classList.add('show');clearTimeout(pop._t);pop._t=setTimeout(hidePop,4200);
   }

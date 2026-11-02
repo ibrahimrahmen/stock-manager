@@ -11,7 +11,7 @@
 {% endblock %}
 {% block content %}
 <script id="offers-data" type="application/json">{{ offers_json|safe }}</script>
-<div class="wrap gut lead"><div class="crumb"><a href="/shop/">Accueil</a> / {{ title }}</div></div>
+<div class="wrap gut lead"><div class="crumb"><a href="{{ shop_base }}/">Accueil</a> / {{ title }}</div></div>
 <section class="sec wrap gut">
   <div class="sechead"><h1>{{ title }}</h1><span id="count"></span></div>
   <div class="grid" id="grid"></div>

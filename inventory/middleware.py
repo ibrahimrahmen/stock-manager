@@ -73,12 +73,11 @@ class RoleAccessMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        # On a public storefront domain, the root path is the shop home — serve
-        # it directly, bypassing the admin login the root view normally needs.
+        # On a public storefront domain, use the clean store URL map (store at
+        # the domain root, no admin login). Set before URL resolution runs.
         host = (request.get_host() or "").split(":")[0].lower()
-        if host in SHOP_HOSTS and request.path == "/":
-            from .views import shop_home
-            return shop_home(request)
+        if host in SHOP_HOSTS:
+            request.urlconf = "inventory.shop_urls"
 
         user = getattr(request, "user", None)
 

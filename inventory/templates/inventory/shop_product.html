@@ -64,7 +64,7 @@
 {% endblock %}
 {% block content %}
 <script id="product-data" type="application/json">{{ product_json|safe }}</script>
-<div class="wrap gut"><div class="crumb"><a href="/shop/">Accueil</a> / <a href="/shop/#new">{{ breadcrumb_cat }}</a> / {{ product.n }}</div></div>
+<div class="wrap gut"><div class="crumb"><a href="{{ shop_base }}/">Accueil</a> / <a href="{{ shop_base }}/produits/">{{ breadcrumb_cat }}</a> / {{ product.n }}</div></div>
 <section class="pdp wrap">
   <div class="gallery" id="gallery">
     <div class="gal-track" id="galTrack">

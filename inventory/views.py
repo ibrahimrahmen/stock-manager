@@ -10226,12 +10226,21 @@ def _shop_offer_scores():
     return scores
 
 
-def _shop_offer_payload(page, include_hidden=False):
+def _shop_base(request):
+    """URL prefix for storefront PAGE links. Empty on a public store domain
+    (clean URLs like /produit/5/), '/shop' on the admin/Railway host."""
+    from .middleware import SHOP_HOSTS
+    host = (request.get_host() or "").split(":")[0].lower()
+    return "" if host in SHOP_HOSTS else "/shop"
+
+
+def _shop_offer_payload(page, base="/shop", include_hidden=False):
     """Build the product list the storefront renders, from real Offers.
     Order: products pinned by hand (sort_order) first, then the rest by best
     sellers with the fewest returns, then by name. Hidden products are left out
     of the public store; the admin editor passes include_hidden=True to list
-    them (with a 'hidden' flag) so they can be shown again."""
+    them (with a 'hidden' flag) so they can be shown again. `base` is the page
+    URL prefix ('' on the store domain, '/shop' on the admin host)."""
     from .models import Offer
     offers = (Offer.objects.filter(is_active=True, sales_pages=page)
               .prefetch_related("images", "products__product__variants__units")
@@ -10275,7 +10284,7 @@ def _shop_offer_payload(page, include_hidden=False):
         out.append({
             "id": o.id, "n": o.name, "p": price, "cat": (o.category or ""),
             "c": colors or ["Unique"], "sizes": sizes,
-            "url": "/shop/produit/%d/" % o.id,
+            "url": "%s/produit/%d/" % (base, o.id),
             "img": _thumb(imgs[0], 560),
             "img2": _thumb(imgs[1], 560) if len(imgs) > 1 else "",
             "big": _thumb(imgs[0], 1300),
@@ -10298,7 +10307,8 @@ def shop_home(request):
     page = _shop_sales_page()
     if page is None:
         return HttpResponse("Boutique indisponible.", status=503)
-    offers = _shop_offer_payload(page)
+    base = _shop_base(request)
+    offers = _shop_offer_payload(page, base=base)
 
     # Curate the "faces" of the store by what products actually ARE (via the
     # offer category/name), instead of alphabetical order. Returns indices into
@@ -10357,6 +10367,7 @@ def shop_home(request):
         "offers_json": _json.dumps(offers, ensure_ascii=False),
         "curated_json": _json.dumps(curated),
         "page_name": page.name,
+        "shop_base": base,
     })
 
 
@@ -10522,6 +10533,7 @@ def shop_product(request, offer_id):
     from django.http import Http404
     from .models import Offer
     page = _shop_sales_page()
+    base = _shop_base(request)
     offer = (Offer.objects.filter(pk=offer_id, is_active=True, sales_pages=page)
              .exclude(shop_hidden=True)
              .prefetch_related("images", "products__product__variants__units").first())
@@ -10615,7 +10627,7 @@ def shop_product(request, offer_id):
         except Exception:
             rp = float(o.bundle_price or 0)
         related.append({"n": o.name, "p": rp, "p_str": ("%.3f" % rp).replace(".", ","),
-                        "url": "/shop/produit/%d/" % o.id,
+                        "url": "%s/produit/%d/" % (base, o.id),
                         "img": _thumb(ri[0], 460)})
         if len(related) >= 4:
             break
@@ -10637,12 +10649,14 @@ def shop_product(request, offer_id):
         "product_json": _json.dumps(product, ensure_ascii=False),
         "related": related,
         "breadcrumb_cat": crumb,
+        "shop_base": base,
     })
 
 
 def shop_checkout(request):
     """Cart checkout page — order summary (from the browser cart) + COD form."""
-    return render(request, "inventory/shop_checkout.html", {"govs": SHOP_GOVERNORATES})
+    return render(request, "inventory/shop_checkout.html", {
+        "govs": SHOP_GOVERNORATES, "shop_base": _shop_base(request)})
 
 
 def shop_collection(request):
@@ -10651,7 +10665,8 @@ def shop_collection(request):
     it shows only that category."""
     import json as _json
     page = _shop_sales_page()
-    offers = _shop_offer_payload(page)
+    base = _shop_base(request)
+    offers = _shop_offer_payload(page, base=base)
     # group key -> (matching categories, name keywords, display title)
     GROUPS = {
         "ensemble": ({"ensemble", "sport"}, ("ensemble",), "Ensembles"),
@@ -10673,6 +10688,7 @@ def shop_collection(request):
         "offers_json": _json.dumps(offers, ensure_ascii=False),
         "title": title,
         "active_cat": cat if cat in GROUPS else "",
+        "shop_base": base,
     })
 
 

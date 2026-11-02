@@ -34,7 +34,7 @@
 {% block content %}
 <section class="checkout wrap gut">
   <h1 class="co-h">Commande</h1>
-  <div id="coEmpty" class="empty" style="display:none">Ton panier est vide. <a href="/shop/" style="text-decoration:underline">Retour à la boutique</a></div>
+  <div id="coEmpty" class="empty" style="display:none">Ton panier est vide. <a href="{{ shop_base }}/" style="text-decoration:underline">Retour à la boutique</a></div>
   <div class="co-grid" id="coGrid">
     <div class="co-form">
       <h2 class="co-sec">Livraison</h2>
@@ -98,7 +98,7 @@ document.getElementById('confirmBtn').onclick=async()=>{
       <h3 style="font-size:26px">Commande reçue 🤍</h3>
       <p style="color:var(--muted);margin:0">Merci ${name} ! On te contacte pour confirmer ta commande.</p>
       <div class="remind"><b>باش يوصلك الكوموند بالسلامة 🚚</b><br>نبعثولك SMS من <b>Barats</b> قبل ما يكلمك الليفرور.<br>كي يكلمك من نمرة جديدة — <b>جاوب</b> باش نوصلولك، إلا ما جاوبتش الكوموند ترجع 🤍</div>
-      <a class="btn block" href="/shop/">Continuer mes achats</a></div>`;
+      <a class="btn block" href="${window.SHOP_BASE}/">Continuer mes achats</a></div>`;
     window.scrollTo({top:0,behavior:'smooth'});
   }catch(e){btn.disabled=false;btn.textContent='Confirmer la commande';toast('Connexion impossible, réessaie');}
 };
