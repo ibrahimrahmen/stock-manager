@@ -10435,11 +10435,22 @@ def api_shop_order(request):
     except Exception:
         pass
 
+    # optional email (storefront 5%-next-time incentive); keep it only if valid
+    email = (data.get("email") or "").strip().lower()
+    if email and ("@" not in email or "." not in email.split("@")[-1] or len(email) > 254):
+        email = ""
+
     region = Region.objects.filter(name__iexact=gov).first()
     customer, _ = Customer.objects.get_or_create(phone=phone, defaults={"name": name})
+    _upd = []
     if name and customer.name != name:
         customer.name = name
-        customer.save(update_fields=["name"])
+        _upd.append("name")
+    if email and customer.email != email:
+        customer.email = email
+        _upd.append("email")
+    if _upd:
+        customer.save(update_fields=_upd)
 
     note_items = "; ".join("%s (%s / %s ×%d)" % (o.name, cl or "—", sz, q)
                            for o, q, sz, cl in parsed)

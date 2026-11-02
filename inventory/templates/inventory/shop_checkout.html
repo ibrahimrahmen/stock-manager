@@ -11,6 +11,12 @@
   .inp:focus{outline:2px solid var(--accent);outline-offset:2px}
   .inp.err{border-color:var(--accent);background:rgba(228,0,43,.05)}
   .inp.err:focus{outline-color:var(--accent)}
+  .epromo{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);
+    padding:14px 16px;margin-bottom:22px;display:flex;flex-direction:column;gap:10px}
+  .epromo-t{font-size:14px;line-height:1.5}
+  .epromo-t b{color:var(--accent)}
+  .epromo-badge{display:inline-block;background:var(--accent);color:#fff;font-weight:800;font-size:12px;
+    padding:2px 8px;border-radius:999px;margin-right:5px;letter-spacing:.02em}
   select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.6' fill='none'/%3E%3C/svg%3E");
     background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
   .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
@@ -39,6 +45,10 @@
   <div id="coEmpty" class="empty" style="display:none">Ton panier est vide. <a href="{{ shop_base }}/" style="text-decoration:underline">Retour à la boutique</a></div>
   <div class="co-grid" id="coGrid">
     <div class="co-form">
+      <div class="epromo">
+        <div class="epromo-t"><span class="epromo-badge">−5%</span>Laisse ton email et reçois <b>5% de réduction</b> sur ta prochaine commande.</div>
+        <input class="inp" id="f_email" type="email" inputmode="email" placeholder="Ton email (optionnel)" autocomplete="email">
+      </div>
       <h2 class="co-sec">Livraison</h2>
       <div class="formgrid">
         <input class="inp" id="f_name" placeholder="Nom et prénom" autocomplete="name">
@@ -98,16 +108,17 @@ function normPhone(s){
 document.getElementById('confirmBtn').onclick=async()=>{
   const c=cart(); if(!c.length){toast('Ton panier est vide');return;}
   const v=id=>document.getElementById(id).value.trim();
-  const name=v('f_name'),gov=v('f_gov'),addr=v('f_addr'),company=v('f_company');
+  const name=v('f_name'),gov=v('f_gov'),addr=v('f_addr'),company=v('f_company'),email=v('f_email');
   const phone=normPhone(v('f_phone'));
   if(name.length<3)return bad('f_name','Entre ton nom complet');
   if(!/^[2-57-9]\d{7}$/.test(phone))return bad('f_phone','Numéro invalide — 8 chiffres (ou +216 suivi de 8 chiffres)');
   if(!gov)return bad('f_gov','Choisis ton gouvernorat');
   if(addr.length<5)return bad('f_addr','Entre ton adresse complète');
+  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return bad('f_email','Email invalide (ou laisse-le vide)');
   const btn=document.getElementById('confirmBtn');btn.disabled=true;btn.textContent='Envoi…';
   try{
     const r=await fetch('/api/shop/order/',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({items:c.map(i=>({offer_id:i.id,color:i.color,size:i.size,qty:i.qty})),name,phone,gov,address:addr,company})});
+      body:JSON.stringify({items:c.map(i=>({offer_id:i.id,color:i.color,size:i.size,qty:i.qty})),name,phone,gov,address:addr,email,company})});
     const j=await r.json();
     if(!r.ok||j.status!=='ok'){btn.disabled=false;btn.textContent='Confirmer la commande';return toast(j.message||'Erreur, réessaie');}
     try{localStorage.setItem('barats_cart','[]')}catch(e){}

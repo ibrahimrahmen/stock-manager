@@ -537,6 +537,8 @@ class Customer(models.Model):
     phone2 = models.CharField(max_length=20, blank=True, default="",
         help_text="Numéro secondaire optionnel (ex: domicile, conjoint). Envoyé à Navex comme tel2.")
     name = models.CharField(max_length=120, blank=True, default="")
+    email = models.EmailField(blank=True, default="",
+        help_text="Email optionnel donné à la commande (storefront). Sert aux offres/réductions.")
     notes = models.TextField(blank=True, default="")
     # Messenger Page-Scoped ID. Permanent linking key for DM conversations.
     # Kept forever (it is tiny); NOT subject to the 10-day conversation purge.
