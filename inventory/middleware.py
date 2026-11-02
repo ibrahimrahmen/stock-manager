@@ -8,6 +8,16 @@ Superusers always bypass.
 from django.shortcuts import redirect
 
 
+# Public storefront domains. On these hosts the site root is the shop home page
+# (no admin login), so customers reach the store at the domain root while the
+# admin app keeps living on the Railway URL. Point a domain here by adding it
+# to this set and as a Railway custom domain + a DNS CNAME.
+SHOP_HOSTS = {
+    "arrowsportwear.barats.tn",
+    "shop.barats.tn",
+}
+
+
 # URL prefixes Messages Team users are allowed to access.
 # Anything else → redirected to the bubble page with a flash msg.
 MESSAGES_TEAM_ALLOWED_PREFIXES = (
@@ -63,6 +73,13 @@ class RoleAccessMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        # On a public storefront domain, the root path is the shop home — serve
+        # it directly, bypassing the admin login the root view normally needs.
+        host = (request.get_host() or "").split(":")[0].lower()
+        if host in SHOP_HOSTS and request.path == "/":
+            from .views import shop_home
+            return shop_home(request)
+
         user = getattr(request, "user", None)
 
         # Anonymous / pre-auth requests — pass through.
