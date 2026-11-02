@@ -76,7 +76,9 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .orderlist{display:flex;flex-direction:column;gap:8px;max-width:640px}
 .orow{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 12px;user-select:none}
 .orow.drag{opacity:.45}
-.orow .handle{color:var(--muted);cursor:grab;font-size:16px;user-select:none}
+.orow .handle{color:var(--muted);cursor:grab;font-size:18px;user-select:none;touch-action:none;padding:4px 2px}
+.orow.drag{box-shadow:0 10px 24px rgba(0,0,0,.14);border-color:#bbb}
+.orow img{-webkit-user-drag:none;user-drag:none}
 .orow img{width:46px;height:46px;object-fit:cover;border-radius:8px;background:var(--surface);flex:none}
 .orow .oname{font-size:14px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .orow .rank{font-size:12px;font-weight:700;color:var(--muted);min-width:22px;text-align:center}
@@ -155,7 +157,7 @@ h1,h2,h3{margin:0;text-wrap:balance}
     </div>
     <div class="orderlist" id="orderList">
       {% for it in items %}
-      <div class="orow{% if it.hidden %} hid{% endif %}" draggable="true" data-id="{{ it.id }}" data-hidden="{{ it.hidden|yesno:'1,0' }}">
+      <div class="orow{% if it.hidden %} hid{% endif %}" data-id="{{ it.id }}" data-hidden="{{ it.hidden|yesno:'1,0' }}">
         <span class="handle">⋮⋮</span>
         <img src="{{ it.img }}" alt="">
         <span class="oname">{{ it.n }}</span>
@@ -248,14 +250,28 @@ h1,h2,h3{margin:0;text-wrap:balance}
     else if(b.dataset.mv==='down'&&row.nextElementSibling){list.insertBefore(row.nextElementSibling,row);}
     reindex();
   };});
+  // pointer-based drag from the ⋮⋮ handle — works on touch (phone) and mouse
   var dragEl=null;
-  list.querySelectorAll('.orow').forEach(function(r){
-    r.addEventListener('dragstart',function(){dragEl=r;r.classList.add('drag');});
-    r.addEventListener('dragend',function(){r.classList.remove('drag');reindex();});
-    r.addEventListener('dragover',function(e){e.preventDefault();if(!dragEl||dragEl===r)return;
-      var a=r.getBoundingClientRect();var after=(e.clientY-a.top)/a.height>0.5;
-      list.insertBefore(dragEl, after?r.nextElementSibling:r);});
+  list.querySelectorAll('.handle').forEach(function(h){
+    h.addEventListener('pointerdown',function(e){
+      dragEl=h.closest('.orow'); dragEl.classList.add('drag');
+      try{h.setPointerCapture(e.pointerId);}catch(_){}
+      e.preventDefault();
+    });
   });
+  document.addEventListener('pointermove',function(e){
+    if(!dragEl) return;
+    var rows=[].slice.call(list.querySelectorAll('.orow')).filter(function(r){return r!==dragEl;});
+    var before=null;
+    for(var i=0;i<rows.length;i++){
+      var b=rows[i].getBoundingClientRect();
+      if(e.clientY < b.top + b.height/2){ before=rows[i]; break; }
+    }
+    if(before){ list.insertBefore(dragEl, before); } else { list.appendChild(dragEl); }
+  });
+  function endDrag(){ if(!dragEl) return; dragEl.classList.remove('drag'); dragEl=null; reindex(); }
+  document.addEventListener('pointerup',endDrag);
+  document.addEventListener('pointercancel',endDrag);
   // double-click a product to hide it / show it again
   list.querySelectorAll('.orow').forEach(function(r){
     r.addEventListener('dblclick',function(e){

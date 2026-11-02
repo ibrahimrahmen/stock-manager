@@ -10283,41 +10283,51 @@ def shop_home(request):
     # Curate the "faces" of the store by what products actually ARE (via the
     # offer category/name), instead of alphabetical order. Returns indices into
     # `offers`, or -1 when nothing matches.
-    def _pick(pred):
-        for i, o in enumerate(offers):
-            if pred(o):
-                return i
-        return -1
+    # Pick the four "faces" of the home page (hero, featured banner, Ensembles
+    # tile, Vestes tile) so each is a DIFFERENT product — `used` tracks what's
+    # already taken. Owner choices in the Vitrine editor win for hero/featured.
     nm = lambda o: o["n"].lower()
     cat = lambda o: (o.get("cat") or "").lower()
-    hero = _pick(lambda o: "ferrari" in nm(o))
+    id2idx = {str(o["id"]): i for i, o in enumerate(offers)}
+    used = set()
+
+    def _pick(pred):
+        for i, o in enumerate(offers):
+            if i not in used and pred(o):
+                return i
+        return -1
+
+    # HERO: owner override, else Ferrari, else any veste, else the top product.
+    hero = id2idx.get(str(_cfg("shop_hero_offer_id", "")).strip(), -1)
+    if hero < 0:
+        hero = _pick(lambda o: "ferrari" in nm(o))
     if hero < 0:
         hero = _pick(lambda o: cat(o) == "veste" or "veste" in nm(o))
     if hero < 0:
         hero = 0 if offers else -1
+    if hero >= 0:
+        used.add(hero)
+
+    # FEATURED: owner override, else the 5-pièces pack, else a strong ensemble.
+    featured = id2idx.get(str(_cfg("shop_featured_offer_id", "")).strip(), -1)
+    if featured < 0:
+        featured = _pick(lambda o: any(
+            k in nm(o) for k in ("5 pieces", "5 pièces", "sport profit")))
+    if featured < 0:
+        featured = _pick(lambda o: (cat(o) == "ensemble" or "ensemble" in nm(o))
+                         and "multicolor" not in nm(o))
+    if featured < 0:
+        featured = _pick(lambda o: True)  # anything left
+    if featured >= 0:
+        used.add(featured)
+
+    # Category tiles — again, different products.
     cat_ensemble = _pick(lambda o: (cat(o) == "ensemble" or "ensemble" in nm(o))
                          and "multicolor" not in nm(o))
-    cat_veste = _pick(lambda o: (cat(o) == "veste" or any(
-        k in nm(o) for k in ("veste", "bomber", "doudoune", "gillet"))) and
-        offers.index(o) != hero)
-    if cat_veste < 0:
-        cat_veste = _pick(lambda o: cat(o) == "veste" or "veste" in nm(o))
-    featured = _pick(lambda o: any(k in nm(o) for k in ("5 pieces", "5 pièces", "sport profit")))
-    if featured < 0:
-        featured = _pick(lambda o: cat(o) == "ensemble" and "multicolor" not in nm(o))
-    if featured < 0:
-        featured = hero
-
-    # Owner overrides from the admin "Éditeur de boutique": if a hero / featured
-    # product was chosen there, it wins over the automatic pick. Falls back to
-    # the automatic choice when unset or the product is no longer on the page.
-    id2idx = {str(o["id"]): i for i, o in enumerate(offers)}
-    hero_id = str(_cfg("shop_hero_offer_id", "")).strip()
-    feat_id = str(_cfg("shop_featured_offer_id", "")).strip()
-    if hero_id in id2idx:
-        hero = id2idx[hero_id]
-    if feat_id in id2idx:
-        featured = id2idx[feat_id]
+    if cat_ensemble >= 0:
+        used.add(cat_ensemble)
+    cat_veste = _pick(lambda o: cat(o) == "veste" or any(
+        k in nm(o) for k in ("veste", "bomber", "doudoune", "gillet")))
 
     curated = {"hero": hero, "featured": featured,
                "catE": cat_ensemble, "catV": cat_veste}
