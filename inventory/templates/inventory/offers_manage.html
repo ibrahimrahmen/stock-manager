@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Gérer les offres — Stock Manager</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.6/Sortable.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 :root{
@@ -247,7 +248,8 @@ function offerImageRowHTML(oi){
   oi = oi || {};
   return `
     <div class="offer-img-row" data-oid="${oi.id||''}" data-chosenvid="" style="background:var(--surface2);padding:8px;border-radius:8px;margin-bottom:8px;">
-      <div style="display:grid;grid-template-columns:90px 1fr 140px 40px;gap:8px;align-items:center;">
+      <div style="display:grid;grid-template-columns:22px 90px 1fr 140px 40px;gap:8px;align-items:center;">
+        <span class="oi-drag" title="Glisser pour réordonner les photos" style="cursor:grab;color:var(--muted);user-select:none;font-size:17px;line-height:1;text-align:center;">⠿</span>
         <input type="text" class="oi-cname" placeholder="Code (WHT)" value="${(oi.color_name||'').replace(/"/g,'&quot;')}" style="text-transform:uppercase;">
         <input type="text" class="oi-clabel" placeholder="Couleur (Blanc)" value="${(oi.color_label||'').replace(/"/g,'&quot;')}">
         <div style="display:flex;align-items:center;gap:6px;">
@@ -275,6 +277,18 @@ function refreshAllOfferRowChoices(){
 function addOfferImageRow(oi){
   document.getElementById('of-images-wrap').insertAdjacentHTML('beforeend', offerImageRowHTML(oi));
   refreshAllOfferRowChoices();
+  ensureOfferImagesSortable();
+}
+var _offerImagesSortable = null;
+function ensureOfferImagesSortable(){
+  // drag the photo rows to set the order they appear in (saved via `sort`);
+  // within a colour this is the swipe order on the storefront.
+  if (_offerImagesSortable || !window.Sortable) return;
+  var wrap = document.getElementById('of-images-wrap');
+  if (!wrap) return;
+  _offerImagesSortable = Sortable.create(wrap, {
+    handle: '.oi-drag', draggable: '.offer-img-row', animation: 150
+  });
 }
 function chooseOfferRowPhoto(imgEl, vid, url){
   const row = imgEl.closest('.offer-img-row');
