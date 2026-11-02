@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Éditeur de vitrine — Barats</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.6/Sortable.min.js"></script>
 <style>
 :root{--bg:#fff;--ink:#111214;--muted:#8a8d93;--line:#ececec;--surface:#f6f6f6;--accent:#e4002b;
   --ok:#0a7d32;--sans:"Archivo","Segoe UI",system-ui,-apple-system,sans-serif;color-scheme:light}
@@ -73,24 +74,25 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .reset{background:none;border:0;color:var(--muted);font-size:13px;font-family:inherit;cursor:pointer;text-decoration:underline}
 .note{color:var(--muted);font-size:13px}
 .ordsec{border-top:1px solid var(--line);margin-top:10px;padding-block:22px 44px}
-.orderlist{display:flex;flex-direction:column;gap:8px;max-width:640px}
-.orow{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 12px;user-select:none}
-.orow.drag{opacity:.45}
-.orow .handle{color:var(--muted);cursor:grab;font-size:18px;user-select:none;touch-action:none;padding:4px 2px}
-.orow.drag{box-shadow:0 10px 24px rgba(0,0,0,.14);border-color:#bbb}
-.orow img{-webkit-user-drag:none;user-drag:none}
-.orow img{width:46px;height:46px;object-fit:cover;border-radius:8px;background:var(--surface);flex:none}
-.orow .oname{font-size:14px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.orow .rank{font-size:12px;font-weight:700;color:var(--muted);min-width:22px;text-align:center}
-.orow .moves{display:flex;gap:4px}
-.orow .moves button{width:30px;height:30px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;font-size:12px;line-height:1}
-.orow .moves button:hover{background:var(--surface)}
-.orow.hid{opacity:.6}
-.orow.hid img{filter:grayscale(1)}
-.orow.hid .oname{text-decoration:line-through;color:var(--muted)}
-.vbadge{display:none;font-size:11px;font-weight:800;letter-spacing:.04em;padding:4px 9px;
-  border-radius:999px;background:#fdeaea;color:#c0392b;white-space:nowrap}
-.orow.hid .vbadge{display:inline-block}
+.ogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:12px}
+.ocard{position:relative;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;
+  cursor:grab;user-select:none;transition:box-shadow .12s ease}
+.ocard:active{cursor:grabbing}
+.ocard .oph{aspect-ratio:1/1;background:var(--surface)}
+.ocard .oph img{width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;-webkit-user-drag:none}
+.ocard .oname{font-size:12px;font-weight:600;padding:7px 8px 9px;line-height:1.25;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ocard .orank{position:absolute;top:6px;left:6px;z-index:2;background:var(--ink);color:#fff;
+  font-size:11px;font-weight:800;min-width:20px;height:20px;border-radius:999px;display:flex;
+  align-items:center;justify-content:center;padding:0 5px}
+.ocard.hid{opacity:.6}
+.ocard.hid .oph img{filter:grayscale(1)}
+.ocard.hid .oname{text-decoration:line-through;color:var(--muted)}
+.ovbadge{display:none;position:absolute;top:6px;right:6px;z-index:2;background:#fdeaea;color:#c0392b;
+  font-size:10px;font-weight:800;padding:3px 7px;border-radius:999px}
+.ocard.hid .ovbadge{display:block}
+.sortable-ghost{opacity:.35}
+.sortable-chosen{box-shadow:0 12px 26px rgba(0,0,0,.18)}
 </style>
 </head>
 <body>
@@ -153,17 +155,15 @@ h1,h2,h3{margin:0;text-wrap:balance}
   <div class="ordsec">
     <div class="bar" style="border:0;padding-top:0;margin-top:0">
       <h2>Ordre des produits</h2>
-      <span class="hint">Glisse ⋮⋮ (ou ▲▼) pour ranger · <b>double-clique</b> un produit pour le masquer / afficher, puis Enregistrer.</span>
+      <span class="hint"><b>Glisse une photo</b> pour la ranger · <b>double-clique</b> une photo pour la masquer / afficher, puis Enregistrer.</span>
     </div>
-    <div class="orderlist" id="orderList">
+    <div class="ogrid" id="orderList">
       {% for it in items %}
-      <div class="orow{% if it.hidden %} hid{% endif %}" data-id="{{ it.id }}" data-hidden="{{ it.hidden|yesno:'1,0' }}">
-        <span class="handle">⋮⋮</span>
-        <img src="{{ it.img }}" alt="">
-        <span class="oname">{{ it.n }}</span>
-        <span class="vbadge">Masqué</span>
-        <span class="rank">{{ forloop.counter }}</span>
-        <span class="moves"><button type="button" data-mv="up" aria-label="monter">▲</button><button type="button" data-mv="down" aria-label="descendre">▼</button></span>
+      <div class="ocard{% if it.hidden %} hid{% endif %}" data-id="{{ it.id }}" data-hidden="{{ it.hidden|yesno:'1,0' }}">
+        <span class="orank">{{ forloop.counter }}</span>
+        <span class="ovbadge">Masqué</span>
+        <div class="oph"><img src="{{ it.img }}" alt=""></div>
+        <div class="oname">{{ it.n }}</div>
       </div>
       {% endfor %}
     </div>
@@ -240,52 +240,35 @@ h1,h2,h3{margin:0;text-wrap:balance}
   paint();
 })();
 
-// --- product order: drag ⋮⋮ or ▲▼, then save the new order ---
+// --- product order: drag the photos to rearrange, double-click to hide ---
 (function(){
-  var list=document.getElementById('orderList'); if(!list) return;
-  function reindex(){var i=1;list.querySelectorAll('.orow').forEach(function(r){r.querySelector('.rank').textContent=i++;});}
-  list.querySelectorAll('[data-mv]').forEach(function(b){b.onclick=function(){
-    var row=b.closest('.orow');
-    if(b.dataset.mv==='up'&&row.previousElementSibling){list.insertBefore(row,row.previousElementSibling);}
-    else if(b.dataset.mv==='down'&&row.nextElementSibling){list.insertBefore(row.nextElementSibling,row);}
-    reindex();
-  };});
-  // pointer-based drag from the ⋮⋮ handle — works on touch (phone) and mouse
-  var dragEl=null;
-  list.querySelectorAll('.handle').forEach(function(h){
-    h.addEventListener('pointerdown',function(e){
-      dragEl=h.closest('.orow'); dragEl.classList.add('drag');
-      try{h.setPointerCapture(e.pointerId);}catch(_){}
-      e.preventDefault();
+  var grid=document.getElementById('orderList'); if(!grid) return;
+  function reindex(){var i=1;grid.querySelectorAll('.ocard').forEach(function(c){
+    c.querySelector('.orank').textContent=i++;});}
+
+  // SortableJS: drag the pictures to rearrange. On touch, a short press starts
+  // the drag so ordinary swipes still scroll the page.
+  if(window.Sortable){
+    Sortable.create(grid,{
+      animation:150, delay:160, delayOnTouchOnly:true, touchStartThreshold:6,
+      ghostClass:'sortable-ghost', chosenClass:'sortable-chosen', onEnd:reindex
+    });
+  }
+
+  // double-click a photo to hide it / show it again
+  grid.querySelectorAll('.ocard').forEach(function(c){
+    c.addEventListener('dblclick',function(){
+      var hid=c.dataset.hidden==='1'?'0':'1';
+      c.dataset.hidden=hid;
+      c.classList.toggle('hid',hid==='1');
     });
   });
-  document.addEventListener('pointermove',function(e){
-    if(!dragEl) return;
-    var rows=[].slice.call(list.querySelectorAll('.orow')).filter(function(r){return r!==dragEl;});
-    var before=null;
-    for(var i=0;i<rows.length;i++){
-      var b=rows[i].getBoundingClientRect();
-      if(e.clientY < b.top + b.height/2){ before=rows[i]; break; }
-    }
-    if(before){ list.insertBefore(dragEl, before); } else { list.appendChild(dragEl); }
-  });
-  function endDrag(){ if(!dragEl) return; dragEl.classList.remove('drag'); dragEl=null; reindex(); }
-  document.addEventListener('pointerup',endDrag);
-  document.addEventListener('pointercancel',endDrag);
-  // double-click a product to hide it / show it again
-  list.querySelectorAll('.orow').forEach(function(r){
-    r.addEventListener('dblclick',function(e){
-      if(e.target.closest('button')) return;  // ignore ▲▼ buttons
-      var hid=r.dataset.hidden==='1'?'0':'1';
-      r.dataset.hidden=hid;
-      r.classList.toggle('hid',hid==='1');
-    });
-  });
+
   document.getElementById('orderForm').addEventListener('submit',function(){
-    var rows=list.querySelectorAll('.orow');
-    var ids=[].map.call(rows,function(r){return r.dataset.id;});
-    var hidden=[].filter.call(rows,function(r){return r.dataset.hidden==='1';})
-                 .map(function(r){return r.dataset.id;});
+    var cards=grid.querySelectorAll('.ocard');
+    var ids=[].map.call(cards,function(c){return c.dataset.id;});
+    var hidden=[].filter.call(cards,function(c){return c.dataset.hidden==='1';})
+                 .map(function(c){return c.dataset.id;});
     document.getElementById('orderField').value=JSON.stringify(ids);
     document.getElementById('hiddenField').value=JSON.stringify(hidden);
   });
