@@ -74,7 +74,7 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .note{color:var(--muted);font-size:13px}
 .ordsec{border-top:1px solid var(--line);margin-top:10px;padding-block:22px 44px}
 .orderlist{display:flex;flex-direction:column;gap:8px;max-width:640px}
-.orow{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.orow{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 12px;user-select:none}
 .orow.drag{opacity:.45}
 .orow .handle{color:var(--muted);cursor:grab;font-size:16px;user-select:none}
 .orow img{width:46px;height:46px;object-fit:cover;border-radius:8px;background:var(--surface);flex:none}
@@ -84,10 +84,11 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .orow .moves button{width:30px;height:30px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;font-size:12px;line-height:1}
 .orow .moves button:hover{background:var(--surface)}
 .orow.hid{opacity:.6}
+.orow.hid img{filter:grayscale(1)}
 .orow.hid .oname{text-decoration:line-through;color:var(--muted)}
-.vis{border:1px solid var(--line);background:#eafaf0;color:var(--ok);border-radius:999px;
-  padding:6px 12px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap}
-.vis.off{background:#fdeaea;color:#c0392b}
+.vbadge{display:none;font-size:11px;font-weight:800;letter-spacing:.04em;padding:4px 9px;
+  border-radius:999px;background:#fdeaea;color:#c0392b;white-space:nowrap}
+.orow.hid .vbadge{display:inline-block}
 </style>
 </head>
 <body>
@@ -150,7 +151,7 @@ h1,h2,h3{margin:0;text-wrap:balance}
   <div class="ordsec">
     <div class="bar" style="border:0;padding-top:0;margin-top:0">
       <h2>Ordre des produits</h2>
-      <span class="hint">Les mieux vendus (et les moins retournés) d'abord. Glisse ⋮⋮ ou utilise ▲▼ pour changer, puis Enregistrer.</span>
+      <span class="hint">Glisse ⋮⋮ (ou ▲▼) pour ranger · <b>double-clique</b> un produit pour le masquer / afficher, puis Enregistrer.</span>
     </div>
     <div class="orderlist" id="orderList">
       {% for it in items %}
@@ -158,7 +159,7 @@ h1,h2,h3{margin:0;text-wrap:balance}
         <span class="handle">⋮⋮</span>
         <img src="{{ it.img }}" alt="">
         <span class="oname">{{ it.n }}</span>
-        <button type="button" class="vis{% if it.hidden %} off{% endif %}" data-vis>{% if it.hidden %}Masqué{% else %}Visible{% endif %}</button>
+        <span class="vbadge">Masqué</span>
         <span class="rank">{{ forloop.counter }}</span>
         <span class="moves"><button type="button" data-mv="up" aria-label="monter">▲</button><button type="button" data-mv="down" aria-label="descendre">▼</button></span>
       </div>
@@ -255,15 +256,15 @@ h1,h2,h3{margin:0;text-wrap:balance}
       var a=r.getBoundingClientRect();var after=(e.clientY-a.top)/a.height>0.5;
       list.insertBefore(dragEl, after?r.nextElementSibling:r);});
   });
-  // show / hide toggle per product
-  list.querySelectorAll('[data-vis]').forEach(function(btn){btn.onclick=function(){
-    var row=btn.closest('.orow');
-    var hid=row.dataset.hidden==='1'?'0':'1';
-    row.dataset.hidden=hid;
-    row.classList.toggle('hid',hid==='1');
-    btn.classList.toggle('off',hid==='1');
-    btn.textContent=hid==='1'?'Masqué':'Visible';
-  };});
+  // double-click a product to hide it / show it again
+  list.querySelectorAll('.orow').forEach(function(r){
+    r.addEventListener('dblclick',function(e){
+      if(e.target.closest('button')) return;  // ignore ▲▼ buttons
+      var hid=r.dataset.hidden==='1'?'0':'1';
+      r.dataset.hidden=hid;
+      r.classList.toggle('hid',hid==='1');
+    });
+  });
   document.getElementById('orderForm').addEventListener('submit',function(){
     var rows=list.querySelectorAll('.orow');
     var ids=[].map.call(rows,function(r){return r.dataset.id;});
