@@ -10772,7 +10772,7 @@ def api_shop_track(request):
     from .models import StoreHit
     s = (request.GET.get("s") or "")[:40].strip()
     e = (request.GET.get("e") or "").strip()
-    if s and e in ("pageview", "add_to_cart", "checkout", "purchase"):
+    if s and e in ("pageview", "ping", "add_to_cart", "checkout", "purchase"):
         v = request.GET.get("v")
         try:
             val = Decimal(v) if v else None
@@ -10782,10 +10782,20 @@ def api_shop_track(request):
         try:
             from django.core.cache import cache as _c
             dk = "sh:%s:%s:%s" % (s, e, path)
-            if not (e == "pageview" and _c.get(dk)):
+            if not (e in ("pageview", "ping") and _c.get(dk)):
                 StoreHit.objects.create(session=s, event=e, path=path, value=val)
-                if e == "pageview":
+                if e in ("pageview", "ping"):
                     _c.set(dk, 1, 8)
+        except Exception:
+            pass
+        # keep the table bounded: occasionally drop hits older than 3 days
+        try:
+            import random
+            if random.random() < 0.01:
+                from datetime import timedelta
+                from django.utils import timezone
+                StoreHit.objects.filter(
+                    created_at__lt=timezone.now() - timedelta(days=3)).delete()
         except Exception:
             pass
     gif = _b64.b64decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
@@ -10806,7 +10816,8 @@ def _shop_live_stats():
 
     hits = StoreHit.objects.all()
     return {
-        "visitors_now": _sessions(hits.filter(created_at__gte=now - timedelta(minutes=5))),
+        # near-live: sessions seen in the last ~70s (store heartbeats every ~25s)
+        "visitors_now": _sessions(hits.filter(created_at__gte=now - timedelta(seconds=70))),
         "visits_today": _sessions(hits.filter(event="pageview", created_at__gte=day0)),
         "carts": _sessions(hits.filter(event="add_to_cart", created_at__gte=day0)),
         "checkouts": _sessions(hits.filter(event="checkout", created_at__gte=day0)),

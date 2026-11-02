@@ -194,6 +194,8 @@ src="https://www.facebook.com/tr?id={{ pixel_id }}&ev=PageView&noscript=1"/></no
     new Image().src=u;
   }catch(e){}};
   window.ShopTrack('pageview');
+  // heartbeat so "visiteurs maintenant" stays live while a tab is open
+  setInterval(function(){try{if(document.visibilityState==='visible')window.ShopTrack('ping');}catch(e){}},25000);
 })();
 </script>
 <script>
