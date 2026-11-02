@@ -10176,17 +10176,26 @@ def _shop_sales_page():
             or SalesPage.objects.filter(is_active=True).first())
 
 
+#: how hard returns count against a product's rank (0 = ignore returns,
+#: 1 = a 100%-return product scores zero). 0.5 = "lightly penalised".
+_SHOP_RETURN_PENALTY = 0.5
+
+
 def _shop_offer_scores():
-    """Net delivered per offer = delivered units − returned units, from real
-    orders. Higher means it sells more and comes back less.
+    """Storefront ranking score per offer, from real orders.
+
+    Blend: led by how much a product gets PAID (delivered + paid units), with a
+    light demotion for a high return rate:
+        score = paid × (1 − 0.5 × return_rate),  return_rate = returned/(paid+returned)
+    So the best sellers stay on top, but a product that comes back a lot is
+    nudged down. Returns-only or paid-only products are handled by the formula.
 
     Window: the 2nd and 3rd weeks back (orders created 7–21 days ago). The most
     recent week is skipped on purpose — those orders are still in transit, so
-    their returns haven't landed yet and would make a product look better than
-    it is. Same method as the stats analysis. Cached in the DB cache (~30 min).
-    Returns {offer_id: int}."""
+    their returns haven't landed yet and would flatter the product. Same method
+    as the stats page. Cached in the DB cache (~30 min). Returns {offer_id: float}."""
     from django.core.cache import cache
-    key = "shop_offer_scores_v2"
+    key = "shop_offer_scores_v3"
     cached = cache.get(key)
     if cached is not None:
         return cached
@@ -10201,12 +10210,16 @@ def _shop_offer_scores():
         end = now - timedelta(days=7)      # skip the last week
         window = Q(order__created_at__gte=start, order__created_at__lt=end)
         rows = (OrderOffer.objects.filter(window).values("offer_id").annotate(
-            delivered=Sum("quantity", filter=Q(
+            paid=Sum("quantity", filter=Q(
                 order__status__in=[Order.LIVREE, Order.PAYEE])),
             returned=Sum("quantity", filter=Q(order__status=Order.RETURNED)),
         ))
         for r in rows:
-            scores[r["offer_id"]] = (r["delivered"] or 0) - (r["returned"] or 0)
+            paid = r["paid"] or 0
+            ret = r["returned"] or 0
+            denom = paid + ret
+            rr = (ret / denom) if denom else 0.0
+            scores[r["offer_id"]] = paid * (1 - _SHOP_RETURN_PENALTY * rr)
     except Exception:
         scores = {}
     cache.set(key, scores, 1800)
@@ -10308,11 +10321,8 @@ def shop_home(request):
     if hero >= 0:
         used.add(hero)
 
-    # FEATURED: owner override, else the 5-pièces pack, else a strong ensemble.
+    # FEATURED: owner override, else the best-ranked ensemble, else anything.
     featured = id2idx.get(str(_cfg("shop_featured_offer_id", "")).strip(), -1)
-    if featured < 0:
-        featured = _pick(lambda o: any(
-            k in nm(o) for k in ("5 pieces", "5 pièces", "sport profit")))
     if featured < 0:
         featured = _pick(lambda o: (cat(o) == "ensemble" or "ensemble" in nm(o))
                          and "multicolor" not in nm(o))
