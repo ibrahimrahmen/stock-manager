@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Éditeur de vitrine — Barats</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap">
+<style>
+:root{--bg:#fff;--ink:#111214;--muted:#8a8d93;--line:#ececec;--surface:#f6f6f6;--accent:#e4002b;
+  --ok:#0a7d32;--sans:"Archivo","Segoe UI",system-ui,-apple-system,sans-serif;color-scheme:light}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);margin:0;line-height:1.45}
+a{color:inherit}
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px}
+h1,h2,h3{margin:0;text-wrap:balance}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  padding:16px 0;border-bottom:1px solid var(--line)}
+.top .back{font-size:13px;color:var(--muted);text-decoration:none}
+.top .back:hover{color:var(--ink)}
+.lede{padding-block:20px 4px}
+.lede h1{font-size:clamp(21px,3.5vw,28px);font-weight:800;letter-spacing:-.01em}
+.lede p{color:var(--muted);margin:6px 0 0;font-size:14px;max-width:64ch}
+.flash{margin:16px 0 0;background:#eafaf0;border:1px solid #bfe8cf;color:var(--ok);
+  border-radius:10px;padding:11px 14px;font-size:14px;font-weight:600}
+.previews{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding-block:18px}
+@media(max-width:720px){.previews{grid-template-columns:1fr}}
+.pv{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--surface)}
+.pv .cap{display:flex;align-items:center;gap:8px;padding:11px 14px;font-size:12px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line);background:#fff}
+.pv .cap b{color:var(--ink);letter-spacing:.04em}
+.hero{position:relative;height:300px;overflow:hidden;background:#111}
+.hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.hero .scrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.3) 0%,rgba(0,0,0,.05) 34%,rgba(0,0,0,.14) 58%,rgba(0,0,0,.8) 100%)}
+.hero .in{position:absolute;inset:auto 0 0 0;padding:20px;color:#fff;display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.hero .eye{font-size:11px;letter-spacing:.18em;text-transform:uppercase;opacity:.92}
+.hero .big{font-size:44px;line-height:.86;letter-spacing:-.03em;font-weight:800}
+.hero .btn{background:#fff;color:#111;border:0;border-radius:999px;padding:9px 16px;font-weight:700;font-size:13px;font-family:inherit}
+.feat{position:relative;height:300px;overflow:hidden;background:#111;display:flex;align-items:center}
+.feat img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 30%}
+.feat .fx{position:relative;z-index:1;padding:20px;color:#fff;max-width:72%;height:100%;
+  display:flex;flex-direction:column;justify-content:center;gap:8px;
+  background:linear-gradient(90deg,rgba(0,0,0,.62) 0%,rgba(0,0,0,.12) 80%,transparent 100%)}
+.feat .eye{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.feat .ttl{font-size:28px;line-height:.95;font-weight:800;letter-spacing:-.02em}
+.feat .pr{font-size:14px;opacity:.92}
+.feat .btn{align-self:flex-start;background:var(--accent);color:#fff;border:0;border-radius:999px;padding:9px 16px;font-weight:700;font-size:13px;font-family:inherit}
+.bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:10px 0 16px;padding-top:18px;border-top:1px solid var(--line)}
+.bar h2{font-size:16px;font-weight:800}
+.seg{display:inline-flex;border:1px solid #ddd;border-radius:999px;overflow:hidden;font-weight:700;font-size:13px}
+.seg button{border:0;background:#fff;color:#666;padding:9px 18px;cursor:pointer;font-family:inherit}
+.seg button.on{background:var(--ink);color:#fff}
+.hint{color:var(--muted);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+@media(max-width:860px){.grid{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:640px){.grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:420px){.grid{grid-template-columns:repeat(2,1fr)}}
+.card{cursor:pointer;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff;
+  padding:0;text-align:left;font-family:inherit;position:relative;transition:transform .12s ease,box-shadow .12s ease}
+.card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.08)}
+.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.card .ph{aspect-ratio:1/1;background:var(--surface)}
+.card .ph img{width:100%;height:100%;object-fit:cover;display:block}
+.card .nm{font-size:12px;font-weight:600;padding:8px 9px 10px;line-height:1.3}
+.badge{position:absolute;top:7px;left:7px;display:flex;gap:5px}
+.badge span{font-size:10px;font-weight:800;letter-spacing:.06em;padding:3px 7px;border-radius:999px;color:#fff}
+.badge .h{background:var(--ink)}
+.badge .f{background:var(--accent)}
+.actions{position:sticky;bottom:0;background:linear-gradient(180deg,transparent,#fff 40%);
+  padding:22px 0 28px;margin-top:20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.save{background:var(--ink);color:#fff;border:0;border-radius:999px;padding:13px 26px;font-weight:800;
+  font-size:15px;font-family:inherit;cursor:pointer}
+.save:hover{background:#000}
+.reset{background:none;border:0;color:var(--muted);font-size:13px;font-family:inherit;cursor:pointer;text-decoration:underline}
+.note{color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <strong>BARATS · Éditeur de vitrine</strong>
+    <a class="back" href="/shop/" target="_blank">Voir la boutique ↗</a>
+  </div>
+
+  {% if messages %}{% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}{% endif %}
+
+  <div class="lede">
+    <h1>Choisis tes produits vedettes</h1>
+    <p>Clique un produit plus bas pour le placer dans le grand bandeau (Hero) ou la bannière coup de cœur,
+    puis Enregistrer. La boutique se met à jour tout de suite — aucun déploiement.</p>
+  </div>
+
+  <div class="previews">
+    <div class="pv">
+      <div class="cap">Grand bandeau · <b>Hero</b></div>
+      <div class="hero">
+        <img id="heroImg" alt="">
+        <div class="scrim"></div>
+        <div class="in"><span class="eye">Nouvelle collection</span>
+          <div class="big">HIVER<br>2026</div>
+          <button class="btn" id="heroBtn" type="button"></button></div>
+      </div>
+    </div>
+    <div class="pv">
+      <div class="cap">Bannière · <b>Coup de cœur</b></div>
+      <div class="feat">
+        <img id="featImg" alt="">
+        <div class="fx"><span class="eye">Coup de cœur</span>
+          <div class="ttl" id="featTtl"></div><div class="pr" id="featPr"></div>
+          <button class="btn" type="button">Commander</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <h2>Tes produits</h2>
+    <div class="seg">
+      <button id="mHero" class="on" type="button">Définir le Hero</button>
+      <button id="mFeat" type="button">Définir le coup de cœur</button>
+    </div>
+    <span class="hint" id="hint">Clique un produit pour le placer dans le grand bandeau.</span>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <form method="post" class="actions" id="saveForm">
+    {% csrf_token %}
+    <input type="hidden" name="hero_offer_id" id="heroField" value="{{ cur_hero }}">
+    <input type="hidden" name="feat_offer_id" id="featField" value="{{ cur_feat }}">
+    <button class="save" type="submit">Enregistrer la vitrine</button>
+    <button class="reset" type="button" id="resetBtn">Revenir au choix automatique</button>
+    <span class="note">Astuce : « automatique » laisse la boutique choisir seule.</span>
+  </form>
+</div>
+
+<script id="data" type="application/json">{{ items_json|safe }}</script>
+<script>
+(function(){
+  var items = JSON.parse(document.getElementById('data').textContent || '[]');
+  var byId = {}; items.forEach(function(it,i){ byId[String(it.id)] = i; });
+  var sel = {hero: "{{ cur_hero }}", feat: "{{ cur_feat }}"};
+  var mode = 'hero';
+  function money(p){ return String(p).replace('.',',') + ' DT'; }
+  function idx(which){ var id = sel[which]; return (id && byId[id]!=null) ? byId[id] : -1; }
+
+  function paint(){
+    var hi = idx('hero'), fi = idx('feat');
+    var h = hi>=0 ? items[hi] : items[0];
+    var f = fi>=0 ? items[fi] : items[0];
+    if(h){ document.getElementById('heroImg').src=h.img;
+           document.getElementById('heroBtn').textContent='Commander · '+money(h.p); }
+    if(f){ document.getElementById('featImg').src=f.img;
+           document.getElementById('featTtl').textContent=f.n;
+           document.getElementById('featPr').textContent=money(f.p)+' · livraison 7 DT'; }
+    document.getElementById('heroField').value = sel.hero || '';
+    document.getElementById('featField').value = sel.feat || '';
+    document.querySelectorAll('.card').forEach(function(el){
+      var id = el.dataset.id, t='';
+      if(id===sel.hero) t+='<span class="h">HERO</span>';
+      if(id===sel.feat) t+='<span class="f">★ COUP DE CŒUR</span>';
+      el.querySelector('.badge').innerHTML=t;
+    });
+  }
+  function setMode(m){ mode=m;
+    document.getElementById('mHero').classList.toggle('on',m==='hero');
+    document.getElementById('mFeat').classList.toggle('on',m==='feat');
+    document.getElementById('hint').textContent = m==='hero'
+      ? 'Clique un produit pour le placer dans le grand bandeau.'
+      : 'Clique un produit pour le placer dans la bannière coup de cœur.';
+  }
+  document.getElementById('mHero').onclick=function(){setMode('hero');};
+  document.getElementById('mFeat').onclick=function(){setMode('feat');};
+  document.getElementById('resetBtn').onclick=function(){ sel.hero=''; sel.feat=''; paint(); };
+
+  var grid=document.getElementById('grid');
+  grid.innerHTML=items.map(function(it){
+    return '<button class="card" type="button" data-id="'+it.id+'"><div class="badge"></div>'
+      +'<div class="ph"><img src="'+it.img+'" alt="" loading="lazy"></div>'
+      +'<div class="nm">'+it.n+'</div></button>';
+  }).join('');
+  grid.querySelectorAll('.card').forEach(function(el){
+    el.onclick=function(){
+      var id=el.dataset.id;
+      if(mode==='hero') sel.hero=id; else sel.feat=id;
+      paint();
+      document.querySelector('.previews').scrollIntoView({behavior:'smooth',block:'start'});
+    };
+  });
+  paint();
+})();
+</script>
+</body>
+</html>

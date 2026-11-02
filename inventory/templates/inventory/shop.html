@@ -77,8 +77,8 @@ const money=n=>Number(n).toFixed(3).replace(".",",");
     </div>`;
   if(C.catE>=0&&C.catV>=0){
     document.getElementById('cats').innerHTML=`
-      <a class="cat" href="${P[C.catE].url}"><img src="${P[C.catE].big||P[C.catE].img}" alt="${P[C.catE].n}"><div class="lab"><h3>Ensembles</h3><span class="sh">Découvrir</span></div></a>
-      <a class="cat" href="${P[C.catV].url}"><img src="${P[C.catV].big||P[C.catV].img}" alt="${P[C.catV].n}"><div class="lab"><h3>Vestes</h3><span class="sh">Découvrir</span></div></a>`;
+      <a class="cat" href="/shop/produits/?cat=ensemble"><img src="${P[C.catE].big||P[C.catE].img}" alt="Ensembles"><div class="lab"><h3>Ensembles</h3><span class="sh">Découvrir</span></div></a>
+      <a class="cat" href="/shop/produits/?cat=veste"><img src="${P[C.catV].big||P[C.catV].img}" alt="Vestes"><div class="lab"><h3>Vestes</h3><span class="sh">Découvrir</span></div></a>`;
   }
   document.getElementById('grid').innerHTML=P.slice(0,8).map((x,i)=>`
     <a class="card" href="${x.url}">

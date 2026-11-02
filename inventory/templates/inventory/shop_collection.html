@@ -1,5 +1,5 @@
 {% extends "inventory/shop_base.html" %}
-{% block title %}Tous les produits — Barats{% endblock %}
+{% block title %}{{ title }} — Barats{% endblock %}
 {% block style %}
   .lead{padding:18px 0 4px}
   .lead .crumb{font-size:12px;color:var(--muted);letter-spacing:.04em}
@@ -11,9 +11,9 @@
 {% endblock %}
 {% block content %}
 <script id="offers-data" type="application/json">{{ offers_json|safe }}</script>
-<div class="wrap gut lead"><div class="crumb"><a href="/shop/">Accueil</a> / Tous les produits</div></div>
+<div class="wrap gut lead"><div class="crumb"><a href="/shop/">Accueil</a> / {{ title }}</div></div>
 <section class="sec wrap gut">
-  <div class="sechead"><h1>Tous les produits</h1><span id="count"></span></div>
+  <div class="sechead"><h1>{{ title }}</h1><span id="count"></span></div>
   <div class="grid" id="grid"></div>
 </section>
 {% endblock %}

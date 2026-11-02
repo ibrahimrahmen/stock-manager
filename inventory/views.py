@@ -10253,6 +10253,18 @@ def shop_home(request):
         featured = _pick(lambda o: cat(o) == "ensemble" and "multicolor" not in nm(o))
     if featured < 0:
         featured = hero
+
+    # Owner overrides from the admin "Éditeur de boutique": if a hero / featured
+    # product was chosen there, it wins over the automatic pick. Falls back to
+    # the automatic choice when unset or the product is no longer on the page.
+    id2idx = {str(o["id"]): i for i, o in enumerate(offers)}
+    hero_id = str(_cfg("shop_hero_offer_id", "")).strip()
+    feat_id = str(_cfg("shop_featured_offer_id", "")).strip()
+    if hero_id in id2idx:
+        hero = id2idx[hero_id]
+    if feat_id in id2idx:
+        featured = id2idx[feat_id]
+
     curated = {"hero": hero, "featured": featured,
                "catE": cat_ensemble, "catV": cat_veste}
 
@@ -10503,12 +10515,69 @@ def shop_checkout(request):
 
 
 def shop_collection(request):
-    """Full product listing ('Tout voir') — the whole catalogue in a grid."""
+    """Product listing ('Tout voir' / category 'Découvrir') — a grid.
+    Without ?cat= it shows the whole catalogue; with ?cat=ensemble|veste|pull
+    it shows only that category."""
     import json as _json
     page = _shop_sales_page()
     offers = _shop_offer_payload(page)
+    # group key -> (matching categories, name keywords, display title)
+    GROUPS = {
+        "ensemble": ({"ensemble", "sport"}, ("ensemble",), "Ensembles"),
+        "veste": ({"veste"}, ("veste", "bomber", "doudoune", "gillet"), "Vestes"),
+        "pull": ({"pull"}, ("pull",), "Pulls"),
+    }
+    cat = (request.GET.get("cat") or "").strip().lower()
+    title = "Tous les produits"
+    if cat in GROUPS:
+        cats, kws, title = GROUPS[cat]
+
+        def _match(o):
+            c = (o.get("cat") or "").lower()
+            n = o["n"].lower()
+            return c in cats or any(k in n for k in kws)
+
+        offers = [o for o in offers if _match(o)]
     return render(request, "inventory/shop_collection.html", {
         "offers_json": _json.dumps(offers, ensure_ascii=False),
+        "title": title,
+        "active_cat": cat if cat in GROUPS else "",
+    })
+
+
+@login_required(login_url="/login/")
+def shop_admin_vitrine(request):
+    """Owner's visual storefront editor: pick which product is the home-page
+    HERO and which is the FEATURED banner, by clicking. Saves to the app config
+    (shop_hero_offer_id / shop_featured_offer_id); the live store reads those on
+    the next page load — no deploy needed. Superuser only."""
+    import json as _json
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Accès refusé.")
+    page = _shop_sales_page()
+    if page is None:
+        return HttpResponse("Boutique indisponible.", status=503)
+    offers = _shop_offer_payload(page)
+    valid_ids = {str(o["id"]) for o in offers}
+
+    if request.method == "POST":
+        hero_id = (request.POST.get("hero_offer_id") or "").strip()
+        feat_id = (request.POST.get("feat_offer_id") or "").strip()
+        # only store ids that really exist on the page; empty clears the override
+        _set_cfg("shop_hero_offer_id", hero_id if hero_id in valid_ids else "")
+        _set_cfg("shop_featured_offer_id", feat_id if feat_id in valid_ids else "")
+        messages.success(request, "✅ Vitrine enregistrée. La boutique est à jour.")
+        return redirect("shop_admin_vitrine")
+
+    cur_hero = str(_cfg("shop_hero_offer_id", "")).strip()
+    cur_feat = str(_cfg("shop_featured_offer_id", "")).strip()
+    # light payload for the editor grid (id, name, price, image)
+    items = [{"id": o["id"], "n": o["n"], "p": o["p"],
+              "img": o.get("big") or o.get("img", "")} for o in offers]
+    return render(request, "inventory/shop_admin_vitrine.html", {
+        "items_json": _json.dumps(items, ensure_ascii=False),
+        "cur_hero": cur_hero if cur_hero in valid_ids else "",
+        "cur_feat": cur_feat if cur_feat in valid_ids else "",
     })
 
 
