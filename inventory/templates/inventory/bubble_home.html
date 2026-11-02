@@ -239,6 +239,18 @@
       </a>
 
       {% if request.user.is_superuser %}
+      <!-- SITE WEB / BOUTIQUE -->
+      <div class="bubble siteweb">
+        <div class="bubble-icon" style="background:rgba(74,222,154,0.15);">🛍️</div>
+        <h2>Site web</h2>
+        <div class="subtitle">Ta boutique en ligne</div>
+        <div class="bubble-links">
+          <a class="bubble-link" href="{% url 'shop_admin_vitrine' %}">🎛️ Éditeur de vitrine (hero) <span class="arrow">→</span></a>
+          <a class="bubble-link" href="{% url 'offers_manage' %}">🖼️ Produits &amp; photos <span class="arrow">→</span></a>
+          <a class="bubble-link" href="/shop/" target="_blank">👁️ Voir la boutique <span class="arrow">↗</span></a>
+        </div>
+      </div>
+
       <!-- CONFIGURATION -->
       <a href="{% url 'connect_settings' %}" class="bubble config" style="text-decoration:none;color:inherit;display:block;">
         <div class="bubble-icon" style="background:rgba(91,157,255,0.15);">⚙️</div>
