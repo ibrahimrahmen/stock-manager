@@ -10178,18 +10178,29 @@ def _shop_sales_page():
 
 def _shop_offer_scores():
     """Net delivered per offer = delivered units − returned units, from real
-    orders. Higher means it sells more and comes back less. Cached in the DB
-    cache (~30 min) so storefront pages stay fast. Returns {offer_id: int}."""
+    orders. Higher means it sells more and comes back less.
+
+    Window: the 2nd and 3rd weeks back (orders created 7–21 days ago). The most
+    recent week is skipped on purpose — those orders are still in transit, so
+    their returns haven't landed yet and would make a product look better than
+    it is. Same method as the stats analysis. Cached in the DB cache (~30 min).
+    Returns {offer_id: int}."""
     from django.core.cache import cache
-    key = "shop_offer_scores_v1"
+    key = "shop_offer_scores_v2"
     cached = cache.get(key)
     if cached is not None:
         return cached
     scores = {}
     try:
+        from datetime import timedelta
+        from django.utils import timezone
         from django.db.models import Sum, Q
         from .models import OrderOffer, Order
-        rows = (OrderOffer.objects.values("offer_id").annotate(
+        now = timezone.now()
+        start = now - timedelta(days=21)   # 3 weeks ago
+        end = now - timedelta(days=7)      # skip the last week
+        window = Q(order__created_at__gte=start, order__created_at__lt=end)
+        rows = (OrderOffer.objects.filter(window).values("offer_id").annotate(
             delivered=Sum("quantity", filter=Q(
                 order__status__in=[Order.LIVREE, Order.PAYEE])),
             returned=Sum("quantity", filter=Q(order__status=Order.RETURNED)),
