@@ -126,14 +126,15 @@ a{color:inherit;text-decoration:none}
   </div>
 </div>
 
+<script id="d_period" type="application/json">{{ period_json|safe }}</script>
 <script id="d_gov" type="application/json">{{ by_gov_json|safe }}</script>
 <script id="d_top" type="application/json">{{ top_json|safe }}</script>
 <script id="d_recent" type="application/json">{{ recent_json|safe }}</script>
 <script id="d_live" type="application/json">{{ live_json|safe }}</script>
 <script>
 (function(){
-  var P={sales:{{ total_sales }},orders:{{ orders_count }},aov:{{ aov }},new:{{ new_c }},ret:{{ ret_c }}};
   function J(id){try{return JSON.parse(document.getElementById(id).textContent||'null')}catch(e){return null}}
+  var P=J('d_period')||{sales:0,orders:0,aov:0,new:0,ret:0};
   function money(n){return Math.round(Number(n)||0).toLocaleString('fr-FR')+' DT';}
   function num(n){return (Number(n)||0).toLocaleString('fr-FR');}
 

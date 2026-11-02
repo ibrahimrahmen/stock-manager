@@ -10887,8 +10887,8 @@ def shop_admin_stats(request):
 
     ctx = {
         "rng": rng,
-        "total_sales": total_sales, "orders_count": orders_count, "aov": aov,
-        "new_c": new_c, "ret_c": ret_c,
+        "period_json": _json.dumps({"sales": total_sales, "orders": orders_count,
+                                    "aov": aov, "new": new_c, "ret": ret_c}),
         "by_gov_json": _json.dumps(by_gov, ensure_ascii=False),
         "top_json": _json.dumps(top, ensure_ascii=False),
         "recent_json": _json.dumps(recent, ensure_ascii=False),
