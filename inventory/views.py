@@ -10470,7 +10470,7 @@ def api_shop_order(request):
         customer=customer, customer_name=name, sales_page=page, region=region,
         ville=gov, address=address, delivery_fee=Decimal("7"),
         status=Order.NON_CONFIRMEE,
-        notes="[Boutique en ligne shop.barats.tn] " + note_items,
+        notes="[Boutique %s] %s" % (page.name if page else "en ligne", note_items),
     )
     if any(getattr(f, "name", "") == "source" for f in Order._meta.get_fields()):
         okw["source"] = getattr(Order, "SOURCE_WEBFORM", "web_form")
