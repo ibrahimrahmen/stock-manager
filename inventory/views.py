@@ -10464,21 +10464,33 @@ def shop_product(request, offer_id):
             gmap[k]["imgs"].append(oi.image.url)
         else:
             common.append(oi.image.url)
-    if offer.image:
+    # The offer's own main photo is normally a copy of one colour's photo, so it
+    # is only a fallback when nothing is tagged — never stacked on top of the
+    # colour groups (that produced duplicate photos in the gallery).
+    if groups:
+        if common:  # genuine unlabelled extra photos go under the first colour
+            groups[0]["imgs"].extend(common)
+    elif offer.image:
         common.append(offer.image.url)
-    if groups and common:
-        groups[0]["imgs"].extend(common)
+
+    def _dedup(seq):
+        seen, out = set(), []
+        for u in seq:
+            if u not in seen:
+                seen.add(u)
+                out.append(u)
+        return out
 
     color_groups = [{
         "label": g["label"],
-        "swatch": _thumb(g["imgs"][0], 150, frame=True),
-        "imgs": [_thumb(u, 1000) for u in g["imgs"]],
+        "swatch": _thumb(_dedup(g["imgs"])[0], 150, frame=True),
+        "imgs": [_thumb(u, 1000) for u in _dedup(g["imgs"])],
     } for g in groups if g["imgs"]]
     colors = [{"label": g["label"], "img": g["swatch"]} for g in color_groups]
     color_labels = [g["label"] for g in color_groups] or ["Unique"]
     # first colour's photos; fallback to every photo when nothing is tagged
     gallery = color_groups[0]["imgs"] if color_groups else [
-        _thumb(u, 1000) for u in all_urls]
+        _thumb(u, 1000) for u in _dedup(common or all_urls)]
 
     sizes = []
     for op in offer.products.all():
