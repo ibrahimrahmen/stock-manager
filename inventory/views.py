@@ -10276,8 +10276,8 @@ def _shop_offer_payload(page, include_hidden=False):
             "id": o.id, "n": o.name, "p": price, "cat": (o.category or ""),
             "c": colors or ["Unique"], "sizes": sizes,
             "url": "/shop/produit/%d/" % o.id,
-            "img": _thumb(imgs[0], 560, frame=True),
-            "img2": _thumb(imgs[1], 560, frame=True) if len(imgs) > 1 else "",
+            "img": _thumb(imgs[0], 560),
+            "img2": _thumb(imgs[1], 560) if len(imgs) > 1 else "",
             "big": _thumb(imgs[0], 1300),
             "hidden": bool(o.shop_hidden),
             "_so": o.sort_order, "_sc": scores.get(o.id, 0),
@@ -10612,7 +10612,7 @@ def shop_product(request, offer_id):
             rp = float(o.bundle_price or 0)
         related.append({"n": o.name, "p": rp, "p_str": ("%.3f" % rp).replace(".", ","),
                         "url": "/shop/produit/%d/" % o.id,
-                        "img": _thumb(ri[0], 460, frame=True)})
+                        "img": _thumb(ri[0], 460)})
         if len(related) >= 4:
             break
 
