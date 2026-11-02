@@ -10124,6 +10124,18 @@ def _disp_size(s):
     return _SIZE_MAP.get(s, s)
 
 
+_SIZE_RMAP = {v: k for k, v in _SIZE_MAP.items()}
+
+
+def _undisp_size(s):
+    """Reverse of _disp_size: turn the customer-facing label (S/M/L/XL/XXL) back
+    into the internal size code (1/2/3/4/5), so storefront orders are stored the
+    same way as Shopify/Converty orders and the warehouse units. Shoe pointures
+    (40-44) and anything already internal pass through unchanged."""
+    k = (s or "").strip()
+    return _SIZE_RMAP.get(k.upper(), k)
+
+
 def _size_key(s):
     if s in _SIZE_ORDER:
         return (0, _SIZE_ORDER[s])
@@ -10472,7 +10484,7 @@ def api_shop_order(request):
                 for op in offer.products.all():
                     OrderLine.objects.create(
                         order=order, order_offer=oo, product_id=op.product_id,
-                        variant_id=None, size=sz,
+                        variant_id=None, size=_undisp_size(sz),
                         quantity=max(1, op.quantity) * q, unit_price=0)
             order.recalc_total()
     except Exception as e:
