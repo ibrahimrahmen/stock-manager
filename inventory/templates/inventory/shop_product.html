@@ -28,6 +28,10 @@
   .sizes{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .sz{min-width:56px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:12px 14px;font-weight:600;font-size:14px}
   .sz.sel{border-color:var(--fg);background:var(--fg);color:var(--bg)}
+  #sizeOpts.err .sz{border-color:var(--accent);color:var(--accent)}
+  #sizeOpts.err{animation:shk .36s}
+  .lbl.err{color:var(--accent)}
+  @keyframes shk{10%,90%{transform:translateX(-1px)}30%,70%{transform:translateX(-4px)}50%{transform:translateX(4px)}}
   .qtyrow{display:inline-flex;border:1px solid var(--line);margin-top:10px}
   .qtyrow button{width:44px;height:44px;border:0;background:var(--bg);color:var(--fg);font-size:18px}
   .qtyrow span{min-width:48px;display:grid;place-items:center;font-weight:700;border-inline:1px solid var(--line)}
@@ -83,7 +87,7 @@
         {% for c in product.colors %}<button class="sw2 {% if forloop.first %}sel{% endif %}" data-c="{{ forloop.counter0 }}" data-label="{{ c.label }}" title="{{ c.label }}"><img src="{{ c.img }}" alt="{{ c.label }}"></button>{% endfor %}
       </div></div>
     {% endif %}
-    <div><div class="lbl">Taille</div>
+    <div><div class="lbl" id="sizeLbl">Taille</div>
       <div class="sizes" id="sizeOpts">{% for s in product.sizes %}<button class="sz" data-s="{{ s }}">{{ s }}</button>{% endfor %}</div></div>
     <div><div class="lbl">Quantité</div>
       <div class="qtyrow"><button data-q="-1" aria-label="moins">−</button><span id="qtyV">1</span><button data-q="1" aria-label="plus">+</button></div></div>
@@ -149,11 +153,19 @@ document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{sel.color=+b.dat
   const cn=document.getElementById('colorName');if(cn)cn.textContent=b.dataset.label;
   renderGallery();});
 document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{sel.size=b.dataset.s;
-  document.querySelectorAll('[data-s]').forEach(e=>e.classList.remove('sel'));b.classList.add('sel');});
+  document.querySelectorAll('[data-s]').forEach(e=>e.classList.remove('sel'));b.classList.add('sel');
+  document.getElementById('sizeOpts').classList.remove('err');
+  document.getElementById('sizeLbl').classList.remove('err');});
 document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{sel.qty=Math.max(1,sel.qty+ +b.dataset.q);
   document.getElementById('qtyV').textContent=sel.qty;});
 document.getElementById('addBtn').onclick=()=>{
-  if(!sel.size){toast('Choisis une taille');return;}
+  if(!sel.size){
+    const so=document.getElementById('sizeOpts');
+    so.classList.remove('err');void so.offsetWidth;  // restart the shake each time
+    so.classList.add('err');document.getElementById('sizeLbl').classList.add('err');
+    so.scrollIntoView({behavior:'smooth',block:'center'});
+    toast('Choisis ta taille');return;
+  }
   BaratsCart.add({id:PD.id,n:PD.n,color:sel.colorLabel,size:sel.size,qty:sel.qty,p:PD.p,
     img:PD.cart_img||(PD.gallery&&PD.gallery[0])||''});
   const b=document.getElementById('addBtn');b.classList.add('added');b.textContent='✓ Ajouté au panier';
