@@ -45,10 +45,6 @@
   <div id="coEmpty" class="empty" style="display:none">Ton panier est vide. <a href="{{ shop_base }}/" style="text-decoration:underline">Retour à la boutique</a></div>
   <div class="co-grid" id="coGrid">
     <div class="co-form">
-      <div class="epromo">
-        <div class="epromo-t"><span class="epromo-badge">−5%</span>Laisse ton email et reçois <b>5% de réduction</b> sur ta prochaine commande.</div>
-        <input class="inp" id="f_email" type="email" inputmode="email" placeholder="Ton email (optionnel)" autocomplete="email">
-      </div>
       <h2 class="co-sec">Livraison</h2>
       <div class="formgrid">
         <input class="inp" id="f_name" placeholder="Nom et prénom" autocomplete="name">
@@ -108,17 +104,16 @@ function normPhone(s){
 document.getElementById('confirmBtn').onclick=async()=>{
   const c=cart(); if(!c.length){toast('Ton panier est vide');return;}
   const v=id=>document.getElementById(id).value.trim();
-  const name=v('f_name'),gov=v('f_gov'),addr=v('f_addr'),company=v('f_company'),email=v('f_email');
+  const name=v('f_name'),gov=v('f_gov'),addr=v('f_addr'),company=v('f_company');
   const phone=normPhone(v('f_phone'));
   if(name.length<3)return bad('f_name','Entre ton nom complet');
   if(!/^[2-57-9]\d{7}$/.test(phone))return bad('f_phone','Numéro invalide — 8 chiffres (ou +216 suivi de 8 chiffres)');
   if(!gov)return bad('f_gov','Choisis ton gouvernorat');
   if(addr.length<5)return bad('f_addr','Entre ton adresse complète');
-  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return bad('f_email','Email invalide (ou laisse-le vide)');
   const btn=document.getElementById('confirmBtn');btn.disabled=true;btn.textContent='Envoi…';
   try{
     const r=await fetch('/api/shop/order/',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({items:c.map(i=>({offer_id:i.id,color:i.color,size:i.size,qty:i.qty})),name,phone,gov,address:addr,email,company})});
+      body:JSON.stringify({items:c.map(i=>({offer_id:i.id,color:i.color,size:i.size,qty:i.qty})),name,phone,gov,address:addr,company})});
     const j=await r.json();
     if(!r.ok||j.status!=='ok'){btn.disabled=false;btn.textContent='Confirmer la commande';return toast(j.message||'Erreur, réessaie');}
     try{localStorage.setItem('barats_cart','[]')}catch(e){}
