@@ -666,6 +666,7 @@ _CONFIG_SECTIONS = [
     ]),
     ("Boutique Arrow.tn", "🛍️", [
         ("shop_pixel_id", "Pixel Meta — ID du Pixel Facebook de la boutique (Events Manager → ton pixel → ID). Vide = pas de pixel.", False),
+        ("shop_capi_token", "Token API Conversions (Meta CAPI) — pour envoyer l'achat depuis le serveur. Events Manager → Paramètres → API Conversions → Générer un token. Vide = désactivé.", True),
     ]),
     ("Système", "⚙️", [
         ("CRON_TOKEN", "Token de protection des crons", True),
@@ -10387,6 +10388,72 @@ def shop_home(request):
     })
 
 
+def _capi_purchase(request, email, phone, value, content_ids, event_id):
+    """Send a server-side Purchase to the Meta Conversions API, deduplicated
+    with the browser pixel via the shared event_id. Fire-and-forget in a daemon
+    thread so it never delays or breaks the order response. No-op unless both the
+    pixel id and the CAPI token are configured. Customer data is SHA-256 hashed."""
+    pixel_id = str(_cfg("shop_pixel_id", "")).strip()
+    token = str(_cfg("shop_capi_token", "")).strip()
+    if not (pixel_id and token):
+        return
+    import hashlib
+
+    def _h(s):
+        s = (s or "").strip().lower()
+        return hashlib.sha256(s.encode()).hexdigest() if s else None
+
+    user_data = {}
+    em = _h(email)
+    if em:
+        user_data["em"] = [em]
+    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    if digits:
+        if not digits.startswith("216"):
+            digits = "216" + digits
+        user_data["ph"] = [hashlib.sha256(digits.encode()).hexdigest()]
+    xff = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    ip = (xff.split(",")[0].strip() if xff else request.META.get("REMOTE_ADDR", "")) or ""
+    if ip:
+        user_data["client_ip_address"] = ip
+    ua = request.META.get("HTTP_USER_AGENT", "")
+    if ua:
+        user_data["client_user_agent"] = ua
+    for ck in ("_fbp", "_fbc"):
+        val = request.COOKIES.get(ck)
+        if val:
+            user_data[ck[1:]] = val
+    src = request.build_absolute_uri("/commande/")
+
+    import json as _json
+    import time as _time
+    import threading
+    import urllib.request
+
+    def _send():
+        try:
+            payload = {"data": [{
+                "event_name": "Purchase",
+                "event_time": int(_time.time()),
+                "action_source": "website",
+                "event_source_url": src,
+                "event_id": event_id,
+                "user_data": user_data,
+                "custom_data": {"currency": "TND", "value": float(value),
+                                "content_ids": [str(c) for c in content_ids],
+                                "content_type": "product"},
+            }], "access_token": token}
+            url = "https://graph.facebook.com/v21.0/%s/events" % pixel_id
+            req = urllib.request.Request(
+                url, data=_json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=6)
+        except Exception:
+            pass
+
+    threading.Thread(target=_send, daemon=True).start()
+
+
 @csrf_exempt
 @require_POST
 def api_shop_order(request):
@@ -10493,7 +10560,16 @@ def api_shop_order(request):
             order.recalc_total()
     except Exception as e:
         return JsonResponse({"status": "error", "message": "Erreur: %s" % e}, status=400)
-    return JsonResponse({"status": "ok", "order_id": order.id, "total": str(order.total)})
+    # Server-side Purchase to Meta (CAPI), deduplicated with the browser pixel
+    # via this shared event_id. Fire-and-forget; never blocks the response.
+    event_id = "purchase.%d" % order.id
+    try:
+        _capi_purchase(request, email, phone, float(order.total),
+                       [o.id for o, q, sz, cl in parsed], event_id)
+    except Exception:
+        pass
+    return JsonResponse({"status": "ok", "order_id": order.id,
+                         "total": str(order.total), "event_id": event_id})
 
 
 def shop_img(request):

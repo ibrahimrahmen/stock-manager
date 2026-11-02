@@ -122,7 +122,7 @@ document.getElementById('confirmBtn').onclick=async()=>{
       body:JSON.stringify({items:c.map(i=>({offer_id:i.id,color:i.color,size:i.size,qty:i.qty})),name,phone,gov,address:addr,email,company})});
     const j=await r.json();
     if(!r.ok||j.status!=='ok'){btn.disabled=false;btn.textContent='Confirmer la commande';return toast(j.message||'Erreur, réessaie');}
-    try{if(window.fbq)fbq('track','Purchase',{value:c.reduce((s,i)=>s+i.p*i.qty,0)+7,currency:'TND',num_items:c.reduce((s,i)=>s+i.qty,0),content_ids:c.map(i=>i.id),content_type:'product'});}catch(e){}
+    try{if(window.fbq)fbq('track','Purchase',{value:c.reduce((s,i)=>s+i.p*i.qty,0)+7,currency:'TND',num_items:c.reduce((s,i)=>s+i.qty,0),content_ids:c.map(i=>i.id),content_type:'product'},j.event_id?{eventID:j.event_id}:undefined);}catch(e){}
     try{localStorage.setItem('barats_cart','[]')}catch(e){}
     if(window.BaratsCart)BaratsCart.render();
     document.getElementById('coGrid').style.display='none';
