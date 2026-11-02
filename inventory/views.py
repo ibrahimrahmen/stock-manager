@@ -664,6 +664,9 @@ _CONFIG_SECTIONS = [
         ("GOOGLE_DRIVE_FOLDER_ID", "ID du dossier Drive (partagé avec le compte de service)", False),
         ("SITE_URL", "URL publique du site (liens images)", False),
     ]),
+    ("Boutique Arrow.tn", "🛍️", [
+        ("shop_pixel_id", "Pixel Meta — ID du Pixel Facebook de la boutique (Events Manager → ton pixel → ID). Vide = pas de pixel.", False),
+    ]),
     ("Système", "⚙️", [
         ("CRON_TOKEN", "Token de protection des crons", True),
     ]),
@@ -10380,6 +10383,7 @@ def shop_home(request):
         "curated_json": _json.dumps(curated),
         "page_name": page.name,
         "shop_base": base,
+        "pixel_id": _cfg("shop_pixel_id", ""),
     })
 
 
@@ -10673,13 +10677,15 @@ def shop_product(request, offer_id):
         "related": related,
         "breadcrumb_cat": crumb,
         "shop_base": base,
+        "pixel_id": _cfg("shop_pixel_id", ""),
     })
 
 
 def shop_checkout(request):
     """Cart checkout page — order summary (from the browser cart) + COD form."""
     return render(request, "inventory/shop_checkout.html", {
-        "govs": SHOP_GOVERNORATES, "shop_base": _shop_base(request)})
+        "govs": SHOP_GOVERNORATES, "shop_base": _shop_base(request),
+        "pixel_id": _cfg("shop_pixel_id", "")})
 
 
 def shop_collection(request):
@@ -10712,6 +10718,7 @@ def shop_collection(request):
         "title": title,
         "active_cat": cat if cat in GROUPS else "",
         "shop_base": base,
+        "pixel_id": _cfg("shop_pixel_id", ""),
     })
 
 

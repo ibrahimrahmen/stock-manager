@@ -129,6 +129,18 @@
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
   {% block style %}{% endblock %}
 </style>
+{% if pixel_id %}
+<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init','{{ pixel_id }}');fbq('track','PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none" alt=""
+src="https://www.facebook.com/tr?id={{ pixel_id }}&ev=PageView&noscript=1"/></noscript>
+{% endif %}
 </head>
 <body>
 <div class="announce">Livraison 7 DT · Paiement à la livraison · Ouvre & vérifie avant de payer · Échange possible</div>
@@ -218,6 +230,7 @@ document.addEventListener('keydown',function(e){
     const c=get();let e=c.find(x=>x.id===it.id&&x.color===it.color&&x.size===it.size),idx;
     if(e){e.qty+=it.qty;idx=c.indexOf(e);}else{c.push(it);idx=c.length-1;}
     save(c);showAddPop(it);
+    try{if(window.fbq)fbq('track','AddToCart',{content_ids:[it.id],content_type:'product',value:(it.p*it.qty)||it.p||0,currency:'TND'});}catch(e){}
     document.querySelectorAll('[data-cart-open]').forEach(b=>{b.classList.remove('bump');void b.offsetWidth;b.classList.add('bump');setTimeout(()=>b.classList.remove('bump'),600);});
   },get:get,clear:()=>save([]),render:render,open:open};
   const cc=document.getElementById('cartClose');if(cc)cc.onclick=close;
