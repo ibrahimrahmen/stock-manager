@@ -9,6 +9,8 @@
   .formgrid{display:grid;gap:12px}
   .inp{width:100%;background:var(--surface);border:1px solid var(--line);color:var(--fg);padding:15px;font-size:15px;font-family:inherit}
   .inp:focus{outline:2px solid var(--accent);outline-offset:2px}
+  .inp.err{border-color:var(--accent);background:rgba(228,0,43,.05)}
+  .inp.err:focus{outline-color:var(--accent)}
   select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.6' fill='none'/%3E%3C/svg%3E");
     background-repeat:no-repeat;background-position:right 14px center;padding-right:36px}
   .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
@@ -40,7 +42,7 @@
       <h2 class="co-sec">Livraison</h2>
       <div class="formgrid">
         <input class="inp" id="f_name" placeholder="Nom et prénom" autocomplete="name">
-        <input class="inp" id="f_phone" inputmode="numeric" placeholder="Téléphone (8 chiffres)" autocomplete="tel">
+        <input class="inp" id="f_phone" inputmode="tel" placeholder="Téléphone (8 chiffres ou +216…)" autocomplete="tel">
         <select class="inp" id="f_gov"><option value="">Gouvernorat</option>{% for g in govs %}<option>{{ g }}</option>{% endfor %}</select>
         <input class="inp" id="f_addr" placeholder="Adresse complète (ville, rue…)" autocomplete="street-address">
         <input class="inp hp" id="f_company" tabindex="-1" autocomplete="off" placeholder="Company">
@@ -76,14 +78,32 @@ function renderSummary(){
 }
 renderSummary();
 let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2800);}
+// point the customer straight at the missing / wrong field
+function bad(id,msg){
+  document.querySelectorAll('.inp.err').forEach(e=>e.classList.remove('err'));
+  const el=document.getElementById(id);
+  if(el){el.classList.add('err');el.scrollIntoView({behavior:'smooth',block:'center'});
+    setTimeout(()=>{try{el.focus({preventScroll:true});}catch(_){el.focus();}},150);}
+  toast(msg); return false;
+}
+// clear the red highlight as soon as they start fixing the field
+document.querySelectorAll('.inp').forEach(el=>el.addEventListener('input',()=>el.classList.remove('err')));
+document.getElementById('f_gov').addEventListener('change',function(){this.classList.remove('err');});
+// accept 8 local digits, or +216 / 00216 followed by 8 digits -> store 8 digits
+function normPhone(s){
+  let p=(s||'').replace(/[\s\-.()]/g,'');
+  p=p.replace(/^\+216/,'').replace(/^00216/,'').replace(/^216(?=[2-57-9]\d{7}$)/,'');
+  return p;
+}
 document.getElementById('confirmBtn').onclick=async()=>{
   const c=cart(); if(!c.length){toast('Ton panier est vide');return;}
   const v=id=>document.getElementById(id).value.trim();
-  const name=v('f_name'),phone=v('f_phone'),gov=v('f_gov'),addr=v('f_addr'),company=v('f_company');
-  if(name.length<3)return toast('Entre ton nom');
-  if(!/^[2-57-9]\d{7}$/.test(phone.replace(/\s/g,'')))return toast('Numéro invalide (8 chiffres)');
-  if(!gov)return toast('Choisis ton gouvernorat');
-  if(addr.length<5)return toast('Entre ton adresse');
+  const name=v('f_name'),gov=v('f_gov'),addr=v('f_addr'),company=v('f_company');
+  const phone=normPhone(v('f_phone'));
+  if(name.length<3)return bad('f_name','Entre ton nom complet');
+  if(!/^[2-57-9]\d{7}$/.test(phone))return bad('f_phone','Numéro invalide — 8 chiffres (ou +216 suivi de 8 chiffres)');
+  if(!gov)return bad('f_gov','Choisis ton gouvernorat');
+  if(addr.length<5)return bad('f_addr','Entre ton adresse complète');
   const btn=document.getElementById('confirmBtn');btn.disabled=true;btn.textContent='Envoi…';
   try{
     const r=await fetch('/api/shop/order/',{method:'POST',headers:{'Content-Type':'application/json'},
