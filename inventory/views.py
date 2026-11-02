@@ -10245,7 +10245,14 @@ def _shop_offer_payload(page, include_hidden=False):
         if o.image:
             imgs.append(o.image.url)
         if not imgs:
-            continue  # no photo -> don't show on the storefront
+            # no offer-level photo -> fall back to the products' variant photos
+            # so the offer still shows instead of being silently dropped
+            for op in o.products.all():
+                for v in op.product.variants.all():
+                    if v.image:
+                        imgs.append(v.image.url)
+        if not imgs:
+            continue  # truly no photo anywhere -> can't show it
         colors = []
         for oi in o.images.all():
             lbl = (oi.color_label or oi.color_name).strip()
@@ -10525,6 +10532,12 @@ def shop_product(request, offer_id):
     all_urls = [oi.image.url for oi in offer.images.all() if oi.image]
     if offer.image:
         all_urls.append(offer.image.url)
+    if not all_urls:
+        # no offer-level photo -> fall back to the products' variant photos
+        for op in offer.products.all():
+            for v in op.product.variants.all():
+                if v.image:
+                    all_urls.append(v.image.url)
 
     groups, gmap, common = [], {}, []
     for oi in offer.images.all():
