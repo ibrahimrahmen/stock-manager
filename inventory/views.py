@@ -10442,18 +10442,43 @@ def shop_product(request, offer_id):
     if offer is None:
         raise Http404("Produit introuvable.")
 
-    imgs = [oi.image.url for oi in offer.images.all() if oi.image]
+    # Group photos by colour (H&M-style): selecting a colour shows only that
+    # colour's photos. An OfferImage carries one photo + a colour label; several
+    # images sharing a label = several photos of that colour. Images with no
+    # label (and the offer's main image) are "common" shots, shown under the
+    # first colour so none are lost.
+    all_urls = [oi.image.url for oi in offer.images.all() if oi.image]
     if offer.image:
-        imgs.append(offer.image.url)
-    gallery = [_thumb(u, 1000) for u in imgs]
+        all_urls.append(offer.image.url)
 
-    colors, seen = [], set()
+    groups, gmap, common = [], {}, []
     for oi in offer.images.all():
-        lbl = (oi.color_label or oi.color_name).strip()
-        if lbl and lbl.lower() not in seen and oi.image:
-            seen.add(lbl.lower())
-            colors.append({"label": lbl, "img": _thumb(oi.image.url, 150, frame=True)})
-    color_labels = [c["label"] for c in colors] or ["Unique"]
+        if not oi.image:
+            continue
+        lbl = (oi.color_label or oi.color_name or "").strip()
+        if lbl:
+            k = lbl.lower()
+            if k not in gmap:
+                gmap[k] = {"label": lbl, "imgs": []}
+                groups.append(gmap[k])
+            gmap[k]["imgs"].append(oi.image.url)
+        else:
+            common.append(oi.image.url)
+    if offer.image:
+        common.append(offer.image.url)
+    if groups and common:
+        groups[0]["imgs"].extend(common)
+
+    color_groups = [{
+        "label": g["label"],
+        "swatch": _thumb(g["imgs"][0], 150, frame=True),
+        "imgs": [_thumb(u, 1000) for u in g["imgs"]],
+    } for g in groups if g["imgs"]]
+    colors = [{"label": g["label"], "img": g["swatch"]} for g in color_groups]
+    color_labels = [g["label"] for g in color_groups] or ["Unique"]
+    # first colour's photos; fallback to every photo when nothing is tagged
+    gallery = color_groups[0]["imgs"] if color_groups else [
+        _thumb(u, 1000) for u in all_urls]
 
     sizes = []
     for op in offer.products.all():
@@ -10494,8 +10519,9 @@ def shop_product(request, offer_id):
         "id": offer.id, "n": offer.name, "p": price,
         "p_str": ("%.3f" % price).replace(".", ","), "cat": offer.category or "",
         "gallery": gallery, "colors": colors, "color_labels": color_labels,
+        "color_groups": color_groups,
         "sizes": sizes, "desc": _fr_description(offer, color_labels, sizes),
-        "cart_img": _thumb(imgs[0], 220, frame=True) if imgs else "",
+        "cart_img": _thumb(all_urls[0], 220, frame=True) if all_urls else "",
     }
     crumb = {"ensemble": "Ensembles", "veste": "Vestes", "pull": "Pulls",
              "hoodie": "Hoodies", "pantalon": "Pantalons", "sport": "Sport",

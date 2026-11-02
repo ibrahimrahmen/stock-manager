@@ -4,9 +4,15 @@
   .crumb{font-size:12px;color:var(--muted);letter-spacing:.04em;padding:16px 0}
   .crumb a:hover{color:var(--fg)}
   .pdp{display:grid;grid-template-columns:1.18fr .82fr;gap:0;align-items:start}
-  .pdp .gallery{display:grid;grid-template-columns:1fr 1fr;gap:3px;background:var(--surface)}
-  .pdp .gallery img{width:100%;aspect-ratio:4/5;object-fit:contain;background:var(--surface)}
-  .pdp .gallery img:only-child{grid-column:span 2;aspect-ratio:1/1}
+  .pdp .gallery{position:relative;background:var(--surface)}
+  .gal-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none}
+  .gal-track::-webkit-scrollbar{display:none}
+  .gal-track img{flex:0 0 100%;width:100%;aspect-ratio:4/5;object-fit:contain;background:var(--surface);scroll-snap-align:center}
+  .gal-count{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:12px;
+    font-weight:600;padding:3px 9px;border-radius:999px;pointer-events:none}
+  .gal-dots{display:flex;gap:7px;justify-content:center;padding:12px 0 2px;flex-wrap:wrap}
+  .gal-dots button{width:7px;height:7px;border-radius:999px;border:0;background:var(--line);padding:0;cursor:pointer;transition:width .2s,background .2s}
+  .gal-dots button.on{background:var(--fg);width:18px}
   .pdp .info{position:sticky;top:78px;align-self:start;padding:clamp(22px,3.4vw,54px);
     display:flex;flex-direction:column;gap:18px}
   .p-name{font-size:clamp(23px,2.3vw,32px);text-transform:uppercase;letter-spacing:-.01em}
@@ -54,15 +60,18 @@
   .remind b{color:var(--accent)}
   .related-wrap{padding:clamp(44px,6vw,84px) 0}
   .related-wrap h2{font-size:clamp(26px,4vw,40px);margin-bottom:26px}
-  @media (max-width:900px){.pdp{grid-template-columns:1fr}.pdp .info{position:static}
-    .pdp .gallery img:only-child{aspect-ratio:4/5}}
+  @media (max-width:900px){.pdp{grid-template-columns:1fr}.pdp .info{position:static}}
 {% endblock %}
 {% block content %}
 <script id="product-data" type="application/json">{{ product_json|safe }}</script>
 <div class="wrap gut"><div class="crumb"><a href="/shop/">Accueil</a> / <a href="/shop/#new">{{ breadcrumb_cat }}</a> / {{ product.n }}</div></div>
 <section class="pdp wrap">
-  <div class="gallery">
-    {% for g in product.gallery %}<img src="{{ g }}" alt="{{ product.n }}" {% if forloop.first %}loading="eager"{% else %}loading="lazy"{% endif %}>{% endfor %}
+  <div class="gallery" id="gallery">
+    <div class="gal-track" id="galTrack">
+      {% for g in product.gallery %}<img src="{{ g }}" alt="{{ product.n }}" {% if forloop.first %}loading="eager"{% else %}loading="lazy"{% endif %}>{% endfor %}
+    </div>
+    <span class="gal-count" id="galCount"></span>
+    <div class="gal-dots" id="galDots"></div>
   </div>
   <div class="info">
     <h1 class="p-name">{{ product.n }}</h1>
@@ -111,10 +120,34 @@ Lavage à 30°C · ne pas sécher au sèche-linge · repasser à basse températ
 <script>
 const PD=JSON.parse(document.getElementById('product-data').textContent);
 {% verbatim %}
+const CG=PD.color_groups||[];
 let sel={color:0,colorLabel:(PD.color_labels&&PD.color_labels[0])||'Unique',size:null,qty:1};
+
+// --- gallery carousel: shows only the selected colour's photos, swipeable ---
+const track=document.getElementById('galTrack');
+const dots=document.getElementById('galDots');
+const countEl=document.getElementById('galCount');
+function curImgs(){return (CG[sel.color]&&CG[sel.color].imgs)||PD.gallery||[];}
+function renderGallery(){
+  const imgs=curImgs();
+  track.innerHTML=imgs.map((u,i)=>'<img src="'+u+'" alt="'+PD.n+'" '+(i?'loading="lazy"':'loading="eager"')+'>').join('');
+  dots.innerHTML=imgs.length>1?imgs.map((_,i)=>'<button data-d="'+i+'" class="'+(i===0?'on':'')+'" aria-label="photo '+(i+1)+'"></button>').join(''):'';
+  countEl.textContent=imgs.length>1?('1/'+imgs.length):'';
+  track.scrollLeft=0;
+  dots.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{
+    track.scrollTo({left:(+b.dataset.d)*track.clientWidth,behavior:'smooth'});});
+}
+track.addEventListener('scroll',()=>{
+  const n=curImgs().length;if(n<2)return;
+  const i=Math.max(0,Math.min(n-1,Math.round(track.scrollLeft/track.clientWidth)));
+  dots.querySelectorAll('[data-d]').forEach((b,j)=>b.classList.toggle('on',j===i));
+  countEl.textContent=(i+1)+'/'+n;
+},{passive:true});
+
 document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{sel.color=+b.dataset.c;sel.colorLabel=b.dataset.label;
   document.querySelectorAll('[data-c]').forEach(e=>e.classList.remove('sel'));b.classList.add('sel');
-  const cn=document.getElementById('colorName');if(cn)cn.textContent=b.dataset.label;});
+  const cn=document.getElementById('colorName');if(cn)cn.textContent=b.dataset.label;
+  renderGallery();});
 document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{sel.size=b.dataset.s;
   document.querySelectorAll('[data-s]').forEach(e=>e.classList.remove('sel'));b.classList.add('sel');});
 document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{sel.qty=Math.max(1,sel.qty+ +b.dataset.q);
@@ -128,6 +161,7 @@ document.getElementById('addBtn').onclick=()=>{
 };
 let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
   clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2800);}
+renderGallery();
 {% endverbatim %}
 </script>
 {% endblock %}
