@@ -1,5 +1,5 @@
 {% extends "inventory/shop_base.html" %}
-{% block title %}Commande — Barats{% endblock %}
+{% block title %}Commande — Arrow Sportwear{% endblock %}
 {% block style %}
   .checkout{padding-block:clamp(30px,5vw,56px)}
   .co-h{font-size:clamp(30px,5vw,52px);margin-bottom:28px}
@@ -128,7 +128,7 @@ document.getElementById('confirmBtn').onclick=async()=>{
     done.innerHTML=`<div class="done"><div class="check"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg></div>
       <h3 style="font-size:26px">Commande reçue 🤍</h3>
       <p style="color:var(--muted);margin:0">Merci ${name} ! On te contacte pour confirmer ta commande.</p>
-      <div class="remind"><b>باش يوصلك الكوموند بالسلامة 🚚</b><br>نبعثولك SMS من <b>Barats</b> قبل ما يكلمك الليفرور.<br>كي يكلمك من نمرة جديدة — <b>جاوب</b> باش نوصلولك، إلا ما جاوبتش الكوموند ترجع 🤍</div>
+      <div class="remind"><b>باش يوصلك الكوموند بالسلامة 🚚</b><br>نبعثولك SMS من <b>Arrow Sportwear</b> قبل ما يكلمك الليفرور.<br>كي يكلمك من نمرة جديدة — <b>جاوب</b> باش نوصلولك، إلا ما جاوبتش الكوموند ترجع 🤍</div>
       <a class="btn block" href="${window.SHOP_BASE}/">Continuer mes achats</a></div>`;
     window.scrollTo({top:0,behavior:'smooth'});
   }catch(e){btn.disabled=false;btn.textContent='Confirmer la commande';toast('Connexion impossible, réessaie');}
