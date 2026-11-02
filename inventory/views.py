@@ -10764,6 +10764,140 @@ def shop_checkout(request):
         "pixel_id": _cfg("shop_pixel_id", "")})
 
 
+@csrf_exempt
+def api_shop_track(request):
+    """Public analytics beacon for the storefront. Logs one StoreHit per tracked
+    action (pageview / add_to_cart / checkout / purchase). Returns a 1x1 gif."""
+    import base64 as _b64
+    from .models import StoreHit
+    s = (request.GET.get("s") or "")[:40].strip()
+    e = (request.GET.get("e") or "").strip()
+    if s and e in ("pageview", "add_to_cart", "checkout", "purchase"):
+        v = request.GET.get("v")
+        try:
+            val = Decimal(v) if v else None
+        except Exception:
+            val = None
+        path = (request.GET.get("p") or "")[:220]
+        try:
+            from django.core.cache import cache as _c
+            dk = "sh:%s:%s:%s" % (s, e, path)
+            if not (e == "pageview" and _c.get(dk)):
+                StoreHit.objects.create(session=s, event=e, path=path, value=val)
+                if e == "pageview":
+                    _c.set(dk, 1, 8)
+        except Exception:
+            pass
+    gif = _b64.b64decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+    return HttpResponse(gif, content_type="image/gif")
+
+
+def _shop_live_stats():
+    """Real-time storefront numbers from StoreHit: visitors now, visits today,
+    and the cart -> checkout -> purchase funnel (distinct sessions today)."""
+    from datetime import timedelta
+    from django.utils import timezone
+    from .models import StoreHit
+    now = timezone.now()
+    day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def _sessions(qs):
+        return qs.values("session").distinct().count()
+
+    hits = StoreHit.objects.all()
+    return {
+        "visitors_now": _sessions(hits.filter(created_at__gte=now - timedelta(minutes=5))),
+        "visits_today": _sessions(hits.filter(event="pageview", created_at__gte=day0)),
+        "carts": _sessions(hits.filter(event="add_to_cart", created_at__gte=day0)),
+        "checkouts": _sessions(hits.filter(event="checkout", created_at__gte=day0)),
+        "purchases": _sessions(hits.filter(event="purchase", created_at__gte=day0)),
+    }
+
+
+@login_required(login_url="/login/")
+def shop_admin_stats_live(request):
+    """JSON of the live numbers, polled by the dashboard every few seconds."""
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Accès refusé.")
+    import json as _json
+    from datetime import timedelta
+    from django.utils import timezone
+    from .models import Order
+    page = _shop_sales_page()
+    day0 = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    live = _shop_live_stats()
+    todays = Order.objects.filter(sales_page=page, created_at__gte=day0).exclude(
+        status=Order.ANNULEE)
+    live["orders_today"] = todays.count()
+    live["sales_today"] = float(sum((o.total or 0) for o in todays))
+    return HttpResponse(_json.dumps(live), content_type="application/json")
+
+
+@login_required(login_url="/login/")
+def shop_admin_stats(request):
+    """Live Arrow.tn dashboard — real-time traffic + sales analytics."""
+    import json as _json
+    from datetime import timedelta
+    from django.utils import timezone
+    from django.db.models import Sum, Count, F
+    from .models import Order, OrderOffer
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Accès refusé.")
+    page = _shop_sales_page()
+    now = timezone.now()
+    rng = (request.GET.get("range") or "7").strip()
+    if rng == "today":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        days = {"7": 7, "30": 30, "90": 90, "all": 3650}.get(rng, 7)
+        start = now - timedelta(days=days)
+
+    valid = (Order.objects.filter(sales_page=page, created_at__gte=start)
+             .exclude(status=Order.ANNULEE))
+    orders_count = valid.count()
+    total_sales = float(sum((o.total or 0) for o in valid))
+    aov = (total_sales / orders_count) if orders_count else 0.0
+
+    # new vs returning (a customer is "returning" if they ordered before `start`)
+    new_c = ret_c = 0
+    for cid in set(valid.values_list("customer_id", flat=True)):
+        if cid is None:
+            continue
+        if Order.objects.filter(customer_id=cid, sales_page=page,
+                                created_at__lt=start).exists():
+            ret_c += 1
+        else:
+            new_c += 1
+
+    by_gov = list(valid.exclude(ville="").values("ville")
+                  .annotate(n=Count("id")).order_by("-n")[:8])
+    top = list(OrderOffer.objects.filter(
+        order__sales_page=page, order__created_at__gte=start)
+        .exclude(order__status=Order.ANNULEE).values("offer_name")
+        .annotate(sales=Sum(F("bundle_price") * F("quantity")),
+                  qty=Sum("quantity")).order_by("-sales")[:6])
+    for t in top:
+        t["sales"] = float(t["sales"] or 0)
+    recent = [{
+        "id": o.id, "name": o.customer_name or (o.customer.name if o.customer else ""),
+        "ville": o.ville, "total": float(o.total or 0),
+        "status": o.get_status_display(),
+        "when": o.created_at.strftime("%d/%m %H:%M"),
+    } for o in valid.order_by("-created_at")[:12]]
+
+    ctx = {
+        "rng": rng,
+        "total_sales": total_sales, "orders_count": orders_count, "aov": aov,
+        "new_c": new_c, "ret_c": ret_c,
+        "by_gov_json": _json.dumps(by_gov, ensure_ascii=False),
+        "top_json": _json.dumps(top, ensure_ascii=False),
+        "recent_json": _json.dumps(recent, ensure_ascii=False),
+        "live_json": _json.dumps(_shop_live_stats()),
+        "page_name": page.name if page else "Arrow.tn",
+    }
+    return render(request, "inventory/shop_admin_stats.html", ctx)
+
+
 def shop_collection(request):
     """Product listing ('Tout voir' / category 'Découvrir') — a grid.
     Without ?cat= it shows the whole catalogue; with ?cat=ensemble|veste|pull

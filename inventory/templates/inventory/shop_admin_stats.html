@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard Arrow.tn</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800;900&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0f0f0d;--surface:#1a1a17;--surface2:#222220;--line:rgba(255,255,255,.08);
+  --text:#f0ede6;--muted:#8a887f;--green:#4ade9a;--blue:#5b9dff;--purple:#a78bfa;--amber:#f5a623;--red:#f87171;
+  --sans:"DM Sans",system-ui,sans-serif;--display:"Archivo",system-ui,sans-serif;color-scheme:dark}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.45;
+  padding:0 0 60px;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1200px;margin:0 auto;padding:0 20px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  padding:20px 0;border-bottom:.5px solid var(--line);margin-bottom:22px}
+.top h1{font-family:var(--display);font-size:22px;font-weight:800;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+.live-dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 1.6s infinite}
+@keyframes pulse{0%{opacity:1}50%{opacity:.35}100%{opacity:1}}
+.top .links{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.pill{font-size:12px;color:var(--muted);padding:7px 13px;border:.5px solid var(--line);border-radius:20px}
+.pill:hover{color:var(--text)}
+.seg{display:inline-flex;border:.5px solid var(--line);border-radius:20px;overflow:hidden}
+.seg a{font-size:12px;padding:7px 13px;color:var(--muted)}
+.seg a.on{background:var(--surface2);color:var(--text);font-weight:600}
+.grid{display:grid;gap:14px}
+.c4{grid-template-columns:repeat(4,1fr)}.c3{grid-template-columns:repeat(3,1fr)}.c2{grid-template-columns:repeat(2,1fr)}
+@media(max-width:860px){.c4{grid-template-columns:repeat(2,1fr)}.c3{grid-template-columns:1fr}.c2{grid-template-columns:1fr}}
+.card{background:var(--surface);border:.5px solid var(--line);border-radius:18px;padding:18px 20px}
+.kpi .lab{font-size:12.5px;color:var(--muted);font-weight:500;margin-bottom:8px;display:flex;align-items:center;gap:7px}
+.kpi .val{font-family:var(--display);font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.kpi .sub{font-size:12px;color:var(--muted);margin-top:6px}
+.sec{margin-top:22px}
+.sec h2{font-family:var(--display);font-size:15px;font-weight:700;margin-bottom:14px;color:var(--text)}
+.funnel{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:.5px solid var(--line);border-radius:14px;overflow:hidden}
+.funnel .f{padding:16px 18px;border-right:.5px solid var(--line);position:relative}
+.funnel .f:last-child{border-right:0}
+.funnel .f .n{font-family:var(--display);font-size:26px;font-weight:800}
+.funnel .f .l{font-size:12px;color:var(--muted);margin-top:3px}
+.funnel .bar{height:8px;border-radius:6px;background:var(--surface2);margin-top:12px;overflow:hidden}
+.funnel .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--green));border-radius:6px}
+.row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:.5px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .name{flex:1;min-width:0;font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .amt{font-family:var(--display);font-weight:700;font-size:14px;white-space:nowrap}
+.gbar{flex:1;height:10px;background:var(--surface2);border-radius:6px;overflow:hidden;min-width:60px}
+.gbar i{display:block;height:100%;background:var(--blue);border-radius:6px}
+.gname{width:140px;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gval{width:46px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums}
+.nr{display:flex;height:34px;border-radius:9px;overflow:hidden;background:var(--surface2);margin-top:6px}
+.nr .new{background:var(--blue)}.nr .ret{background:var(--purple)}
+.nrleg{display:flex;gap:18px;font-size:13px;margin-top:10px}
+.nrleg b{font-family:var(--display)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.ord{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:.5px solid var(--line)}
+.ord:last-child{border-bottom:0}
+.ord .who{flex:1;min-width:0}
+.ord .who b{font-size:13.5px;font-weight:600}
+.ord .who span{display:block;font-size:12px;color:var(--muted)}
+.ord .tot{font-family:var(--display);font-weight:700;font-size:14px}
+.badge{font-size:10.5px;padding:3px 8px;border-radius:20px;background:var(--surface2);color:var(--muted);white-space:nowrap}
+.empty{color:var(--muted);font-size:13px;padding:14px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1><span class="live-dot"></span>Dashboard · {{ page_name }}</h1>
+    <div class="links">
+      <div class="seg">
+        <a href="?range=today" class="{% if rng == 'today' %}on{% endif %}">Aujourd'hui</a>
+        <a href="?range=7" class="{% if rng == '7' %}on{% endif %}">7 j</a>
+        <a href="?range=30" class="{% if rng == '30' %}on{% endif %}">30 j</a>
+        <a href="?range=all" class="{% if rng == 'all' %}on{% endif %}">Tout</a>
+      </div>
+      <a class="pill" href="/shop/" target="_blank">Voir la boutique ↗</a>
+      <a class="pill" href="/shop/admin/vitrine/">Éditeur</a>
+    </div>
+  </div>
+
+  <!-- LIVE (today, auto-refresh) -->
+  <div class="grid c4">
+    <div class="card kpi"><div class="lab"><span class="live-dot"></span>Visiteurs maintenant</div><div class="val" id="k_now">—</div><div class="sub">5 dernières minutes</div></div>
+    <div class="card kpi"><div class="lab">Visites aujourd'hui</div><div class="val" id="k_visits">—</div><div class="sub">sessions uniques</div></div>
+    <div class="card kpi"><div class="lab">Commandes aujourd'hui</div><div class="val" id="k_orders">—</div></div>
+    <div class="card kpi"><div class="lab">Ventes aujourd'hui</div><div class="val" id="k_sales">—</div></div>
+  </div>
+
+  <!-- FUNNEL (today) -->
+  <div class="sec">
+    <h2>Comportement des clients · aujourd'hui</h2>
+    <div class="funnel" id="funnel">
+      <div class="f"><div class="n" id="f_cart">—</div><div class="l">Paniers actifs</div><div class="bar"><i id="fb_cart" style="width:0"></i></div></div>
+      <div class="f"><div class="n" id="f_co">—</div><div class="l">Au paiement</div><div class="bar"><i id="fb_co" style="width:0"></i></div></div>
+      <div class="f"><div class="n" id="f_buy">—</div><div class="l">Achat effectué</div><div class="bar"><i id="fb_buy" style="width:0"></i></div></div>
+    </div>
+  </div>
+
+  <!-- PERIOD ANALYTICS -->
+  <div class="sec grid c4">
+    <div class="card kpi"><div class="lab">Ventes totales</div><div class="val" id="p_sales"></div></div>
+    <div class="card kpi"><div class="lab">Commandes</div><div class="val" id="p_orders"></div></div>
+    <div class="card kpi"><div class="lab">Panier moyen</div><div class="val" id="p_aov"></div></div>
+    <div class="card kpi"><div class="lab">Clients</div>
+      <div class="nr"><div class="new" id="nr_new" style="flex:1"></div><div class="ret" id="nr_ret" style="flex:0"></div></div>
+      <div class="nrleg"><span><span class="dot" style="background:var(--blue)"></span>Nouveaux <b id="nr_newn">0</b></span><span><span class="dot" style="background:var(--purple)"></span>Récurrents <b id="nr_retn">0</b></span></div>
+    </div>
+  </div>
+
+  <div class="sec grid c2">
+    <div class="card">
+      <h2>Commandes par gouvernorat</h2>
+      <div id="govbox"></div>
+    </div>
+    <div class="card">
+      <h2>Ventes par produit</h2>
+      <div id="topbox"></div>
+    </div>
+  </div>
+
+  <div class="sec card">
+    <h2>Commandes récentes</h2>
+    <div id="recentbox"></div>
+  </div>
+</div>
+
+<script id="d_gov" type="application/json">{{ by_gov_json|safe }}</script>
+<script id="d_top" type="application/json">{{ top_json|safe }}</script>
+<script id="d_recent" type="application/json">{{ recent_json|safe }}</script>
+<script id="d_live" type="application/json">{{ live_json|safe }}</script>
+<script>
+(function(){
+  var P={sales:{{ total_sales }},orders:{{ orders_count }},aov:{{ aov }},new:{{ new_c }},ret:{{ ret_c }}};
+  function J(id){try{return JSON.parse(document.getElementById(id).textContent||'null')}catch(e){return null}}
+  function money(n){return Math.round(Number(n)||0).toLocaleString('fr-FR')+' DT';}
+  function num(n){return (Number(n)||0).toLocaleString('fr-FR');}
+
+  // period KPIs
+  document.getElementById('p_sales').textContent=money(P.sales);
+  document.getElementById('p_orders').textContent=num(P.orders);
+  document.getElementById('p_aov').textContent=money(P.aov);
+  var tot=P.new+P.ret||1;
+  document.getElementById('nr_new').style.flex=P.new/tot;
+  document.getElementById('nr_ret').style.flex=P.ret/tot;
+  document.getElementById('nr_newn').textContent=P.new;
+  document.getElementById('nr_retn').textContent=P.ret;
+
+  // governorates
+  var gov=J('d_gov')||[], gmax=Math.max(1,Math.max.apply(null,gov.map(function(g){return g.n;}).concat([1])));
+  document.getElementById('govbox').innerHTML=gov.length?gov.map(function(g){
+    return '<div class="row"><span class="gname">'+(g.ville||'—')+'</span><span class="gbar"><i style="width:'+(100*g.n/gmax)+'%"></i></span><span class="gval">'+g.n+'</span></div>';
+  }).join(''):'<div class="empty">Aucune commande sur la période.</div>';
+
+  // top products
+  var top=J('d_top')||[];
+  document.getElementById('topbox').innerHTML=top.length?top.map(function(t){
+    return '<div class="row"><span class="name">'+(t.offer_name||'—')+'</span><span class="amt">'+money(t.sales)+'</span></div>';
+  }).join(''):'<div class="empty">Aucune vente sur la période.</div>';
+
+  // recent orders
+  var rec=J('d_recent')||[];
+  document.getElementById('recentbox').innerHTML=rec.length?rec.map(function(o){
+    return '<div class="ord"><div class="who"><b>'+(o.name||'Client')+'</b><span>'+(o.ville||'—')+' · '+o.when+'</span></div><span class="badge">'+o.status+'</span><span class="tot">'+money(o.total)+'</span></div>';
+  }).join(''):'<div class="empty">Aucune commande récente.</div>';
+
+  // LIVE section (initial + polling)
+  function paintLive(d){
+    if(!d)return;
+    document.getElementById('k_now').textContent=num(d.visitors_now);
+    document.getElementById('k_visits').textContent=num(d.visits_today);
+    document.getElementById('k_orders').textContent=num(d.orders_today);
+    document.getElementById('k_sales').textContent=money(d.sales_today);
+    var m=Math.max(1,d.carts||0,d.checkouts||0,d.purchases||0);
+    document.getElementById('f_cart').textContent=num(d.carts);
+    document.getElementById('f_co').textContent=num(d.checkouts);
+    document.getElementById('f_buy').textContent=num(d.purchases);
+    document.getElementById('fb_cart').style.width=(100*(d.carts||0)/m)+'%';
+    document.getElementById('fb_co').style.width=(100*(d.checkouts||0)/m)+'%';
+    document.getElementById('fb_buy').style.width=(100*(d.purchases||0)/m)+'%';
+  }
+  paintLive(J('d_live'));
+  function poll(){fetch('/shop/admin/stats/live/',{credentials:'same-origin'}).then(function(r){return r.json();}).then(paintLive).catch(function(){});}
+  setInterval(poll,8000);
+})();
+</script>
+</body>
+</html>

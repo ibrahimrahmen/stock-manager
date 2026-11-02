@@ -555,6 +555,30 @@ class Customer(models.Model):
         return f"{self.name} ({self.phone})" if self.name else self.phone
 
 
+class StoreHit(models.Model):
+    """Lightweight storefront analytics event (one row per tracked action).
+    Powers the live Arrow.tn dashboard: page views, cart, checkout, purchase."""
+    PAGEVIEW = "pageview"
+    ADD_TO_CART = "add_to_cart"
+    CHECKOUT = "checkout"
+    PURCHASE = "purchase"
+    session = models.CharField(max_length=40, db_index=True)
+    event = models.CharField(max_length=20, db_index=True)
+    path = models.CharField(max_length=220, blank=True, default="")
+    value = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["created_at"]),
+            models.Index(fields=["event", "created_at"]),
+            models.Index(fields=["session", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.event} @ {self.created_at:%H:%M} ({self.session[:6]})"
+
+
 class Region(models.Model):
     """A Tunisian governorate. Seeded by a data migration with the standard 24."""
     name = models.CharField(max_length=80, unique=True)

@@ -84,7 +84,8 @@ function renderSummary(){
   const sub=c.reduce((s,i)=>s+i.p*i.qty,0);
   document.getElementById('coSub').textContent=money(sub)+' DT';
   document.getElementById('coTot').textContent=money(sub+7)+' DT';
-  if(!window._ic){window._ic=1;try{if(window.fbq)fbq('track','InitiateCheckout',{value:sub+7,currency:'TND',num_items:c.reduce((s,i)=>s+i.qty,0),content_ids:c.map(i=>i.id)});}catch(e){}}
+  if(!window._ic){window._ic=1;try{if(window.fbq)fbq('track','InitiateCheckout',{value:sub+7,currency:'TND',num_items:c.reduce((s,i)=>s+i.qty,0),content_ids:c.map(i=>i.id)});}catch(e){}
+    try{if(window.ShopTrack)ShopTrack('checkout',sub+7);}catch(e){}}
   return true;
 }
 renderSummary();
@@ -125,6 +126,7 @@ document.getElementById('confirmBtn').onclick=async()=>{
     // advanced matching: feed the pixel the customer's email+phone (it hashes them) for the best Purchase match
     try{if(window.fbq&&window.SHOP_PIXEL)fbq('init',window.SHOP_PIXEL,{em:(email||'').toLowerCase()||undefined,ph:phone?('216'+phone):undefined});}catch(e){}
     try{if(window.fbq)fbq('track','Purchase',{value:c.reduce((s,i)=>s+i.p*i.qty,0)+7,currency:'TND',num_items:c.reduce((s,i)=>s+i.qty,0),content_ids:c.map(i=>i.id),content_type:'product'},j.event_id?{eventID:j.event_id}:undefined);}catch(e){}
+    try{if(window.ShopTrack)ShopTrack('purchase',c.reduce((s,i)=>s+i.p*i.qty,0)+7);}catch(e){}
     try{localStorage.setItem('barats_cart','[]')}catch(e){}
     if(window.BaratsCart)BaratsCart.render();
     document.getElementById('coGrid').style.display='none';
