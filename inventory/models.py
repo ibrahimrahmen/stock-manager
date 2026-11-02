@@ -1127,6 +1127,9 @@ class Offer(models.Model):
     # sellers with the lowest returns first). A number pins the product to that
     # place, set by dragging in the Vitrine editor.
     sort_order = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    # Hide this product from the public storefront without deleting it (it still
+    # exists for orders, Converty, etc.). Toggled in the Vitrine editor.
+    shop_hidden = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

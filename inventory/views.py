@@ -10213,14 +10213,18 @@ def _shop_offer_scores():
     return scores
 
 
-def _shop_offer_payload(page):
+def _shop_offer_payload(page, include_hidden=False):
     """Build the product list the storefront renders, from real Offers.
     Order: products pinned by hand (sort_order) first, then the rest by best
-    sellers with the fewest returns, then by name."""
+    sellers with the fewest returns, then by name. Hidden products are left out
+    of the public store; the admin editor passes include_hidden=True to list
+    them (with a 'hidden' flag) so they can be shown again."""
     from .models import Offer
     offers = (Offer.objects.filter(is_active=True, sales_pages=page)
               .prefetch_related("images", "products__product__variants__units")
               .distinct())
+    if not include_hidden:
+        offers = offers.exclude(shop_hidden=True)
     scores = _shop_offer_scores()
     out = []
     for o in offers:
@@ -10255,6 +10259,7 @@ def _shop_offer_payload(page):
             "img": _thumb(imgs[0], 560, frame=True),
             "img2": _thumb(imgs[1], 560, frame=True) if len(imgs) > 1 else "",
             "big": _thumb(imgs[0], 1300),
+            "hidden": bool(o.shop_hidden),
             "_so": o.sort_order, "_sc": scores.get(o.id, 0),
         })
     # pinned (sort_order set) first in that order; then best-sellers / low
@@ -10487,6 +10492,7 @@ def shop_product(request, offer_id):
     from .models import Offer
     page = _shop_sales_page()
     offer = (Offer.objects.filter(pk=offer_id, is_active=True, sales_pages=page)
+             .exclude(shop_hidden=True)
              .prefetch_related("images", "products__product__variants__units").first())
     if offer is None:
         raise Http404("Produit introuvable.")
@@ -10559,7 +10565,8 @@ def shop_product(request, offer_id):
 
     related = []
     rel_qs = list(Offer.objects.filter(is_active=True, sales_pages=page)
-                  .exclude(pk=offer.id).prefetch_related("images").distinct())
+                  .exclude(pk=offer.id).exclude(shop_hidden=True)
+                  .prefetch_related("images").distinct())
     same = [o for o in rel_qs if (o.category or "") == (offer.category or "") and offer.category]
     for o in (same + [o for o in rel_qs if o not in same])[:8]:
         ri = [oi.image.url for oi in o.images.all() if oi.image] or (
@@ -10644,24 +10651,32 @@ def shop_admin_vitrine(request):
     page = _shop_sales_page()
     if page is None:
         return HttpResponse("Boutique indisponible.", status=503)
-    offers = _shop_offer_payload(page)
+    offers = _shop_offer_payload(page)                      # visible only
+    all_offers = _shop_offer_payload(page, include_hidden=True)  # + hidden
     valid_ids = {str(o["id"]) for o in offers}
+    all_valid_ids = {str(o["id"]) for o in all_offers}
 
     if request.method == "POST":
         from .models import Offer
         action = request.POST.get("action", "vitrine")
         if action == "order":
-            # manual drag order: pin each product to its position in the list
+            # manual drag order + show/hide, saved together
             try:
                 order_ids = _json.loads(request.POST.get("product_order") or "[]")
             except Exception:
                 order_ids = []
+            try:
+                hidden_ids = {str(x) for x in _json.loads(
+                    request.POST.get("hidden_ids") or "[]")}
+            except Exception:
+                hidden_ids = set()
             pos = 0
             for oid in order_ids:
-                if str(oid) in valid_ids:
-                    Offer.objects.filter(pk=int(oid)).update(sort_order=pos)
+                if str(oid) in all_valid_ids:
+                    Offer.objects.filter(pk=int(oid)).update(
+                        sort_order=pos, shop_hidden=(str(oid) in hidden_ids))
                     pos += 1
-            messages.success(request, "✅ Ordre des produits enregistré.")
+            messages.success(request, "✅ Ordre et visibilité enregistrés.")
             return redirect("shop_admin_vitrine")
         if action == "order_reset":
             # clear all manual pins -> back to automatic (best sellers first)
@@ -10679,12 +10694,16 @@ def shop_admin_vitrine(request):
 
     cur_hero = str(_cfg("shop_hero_offer_id", "")).strip()
     cur_feat = str(_cfg("shop_featured_offer_id", "")).strip()
-    # light payload for the editor grid (id, name, price, image)
+    # hero/featured grid uses only VISIBLE products (you can't feature a hidden one)
     items = [{"id": o["id"], "n": o["n"], "p": o["p"],
               "img": o.get("big") or o.get("img", "")} for o in offers]
+    # order + visibility list uses ALL products, carrying each one's hidden flag
+    order_items = [{"id": o["id"], "n": o["n"],
+                    "img": o.get("img", ""), "hidden": o.get("hidden", False)}
+                   for o in all_offers]
     return render(request, "inventory/shop_admin_vitrine.html", {
         "items_json": _json.dumps(items, ensure_ascii=False),
-        "items": items,
+        "items": order_items,
         "cur_hero": cur_hero if cur_hero in valid_ids else "",
         "cur_feat": cur_feat if cur_feat in valid_ids else "",
     })

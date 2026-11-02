@@ -83,6 +83,11 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .orow .moves{display:flex;gap:4px}
 .orow .moves button{width:30px;height:30px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;font-size:12px;line-height:1}
 .orow .moves button:hover{background:var(--surface)}
+.orow.hid{opacity:.6}
+.orow.hid .oname{text-decoration:line-through;color:var(--muted)}
+.vis{border:1px solid var(--line);background:#eafaf0;color:var(--ok);border-radius:999px;
+  padding:6px 12px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap}
+.vis.off{background:#fdeaea;color:#c0392b}
 </style>
 </head>
 <body>
@@ -149,10 +154,11 @@ h1,h2,h3{margin:0;text-wrap:balance}
     </div>
     <div class="orderlist" id="orderList">
       {% for it in items %}
-      <div class="orow" draggable="true" data-id="{{ it.id }}">
+      <div class="orow{% if it.hidden %} hid{% endif %}" draggable="true" data-id="{{ it.id }}" data-hidden="{{ it.hidden|yesno:'1,0' }}">
         <span class="handle">⋮⋮</span>
         <img src="{{ it.img }}" alt="">
         <span class="oname">{{ it.n }}</span>
+        <button type="button" class="vis{% if it.hidden %} off{% endif %}" data-vis>{% if it.hidden %}Masqué{% else %}Visible{% endif %}</button>
         <span class="rank">{{ forloop.counter }}</span>
         <span class="moves"><button type="button" data-mv="up" aria-label="monter">▲</button><button type="button" data-mv="down" aria-label="descendre">▼</button></span>
       </div>
@@ -163,7 +169,8 @@ h1,h2,h3{margin:0;text-wrap:balance}
         {% csrf_token %}
         <input type="hidden" name="action" value="order">
         <input type="hidden" name="product_order" id="orderField">
-        <button class="save" type="submit">Enregistrer l'ordre</button>
+        <input type="hidden" name="hidden_ids" id="hiddenField">
+        <button class="save" type="submit">Enregistrer l'ordre &amp; la visibilité</button>
       </form>
       <form method="post" style="display:contents" onsubmit="return confirm('Rétablir l'ordre automatique (meilleures ventes) ?')">
         {% csrf_token %}
@@ -248,9 +255,22 @@ h1,h2,h3{margin:0;text-wrap:balance}
       var a=r.getBoundingClientRect();var after=(e.clientY-a.top)/a.height>0.5;
       list.insertBefore(dragEl, after?r.nextElementSibling:r);});
   });
+  // show / hide toggle per product
+  list.querySelectorAll('[data-vis]').forEach(function(btn){btn.onclick=function(){
+    var row=btn.closest('.orow');
+    var hid=row.dataset.hidden==='1'?'0':'1';
+    row.dataset.hidden=hid;
+    row.classList.toggle('hid',hid==='1');
+    btn.classList.toggle('off',hid==='1');
+    btn.textContent=hid==='1'?'Masqué':'Visible';
+  };});
   document.getElementById('orderForm').addEventListener('submit',function(){
-    var ids=[].map.call(list.querySelectorAll('.orow'),function(r){return r.dataset.id;});
+    var rows=list.querySelectorAll('.orow');
+    var ids=[].map.call(rows,function(r){return r.dataset.id;});
+    var hidden=[].filter.call(rows,function(r){return r.dataset.hidden==='1';})
+                 .map(function(r){return r.dataset.id;});
     document.getElementById('orderField').value=JSON.stringify(ids);
+    document.getElementById('hiddenField').value=JSON.stringify(hidden);
   });
 })();
 </script>
