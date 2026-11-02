@@ -10176,12 +10176,41 @@ def _shop_sales_page():
             or SalesPage.objects.filter(is_active=True).first())
 
 
+def _shop_offer_scores():
+    """Net delivered per offer = delivered units − returned units, from real
+    orders. Higher means it sells more and comes back less. Cached in the DB
+    cache (~30 min) so storefront pages stay fast. Returns {offer_id: int}."""
+    from django.core.cache import cache
+    key = "shop_offer_scores_v1"
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+    scores = {}
+    try:
+        from django.db.models import Sum, Q
+        from .models import OrderOffer, Order
+        rows = (OrderOffer.objects.values("offer_id").annotate(
+            delivered=Sum("quantity", filter=Q(
+                order__status__in=[Order.LIVREE, Order.PAYEE])),
+            returned=Sum("quantity", filter=Q(order__status=Order.RETURNED)),
+        ))
+        for r in rows:
+            scores[r["offer_id"]] = (r["delivered"] or 0) - (r["returned"] or 0)
+    except Exception:
+        scores = {}
+    cache.set(key, scores, 1800)
+    return scores
+
+
 def _shop_offer_payload(page):
-    """Build the product list the storefront renders, from real Offers."""
+    """Build the product list the storefront renders, from real Offers.
+    Order: products pinned by hand (sort_order) first, then the rest by best
+    sellers with the fewest returns, then by name."""
     from .models import Offer
     offers = (Offer.objects.filter(is_active=True, sales_pages=page)
               .prefetch_related("images", "products__product__variants__units")
-              .distinct().order_by("name"))
+              .distinct())
+    scores = _shop_offer_scores()
     out = []
     for o in offers:
         imgs = [oi.image.url for oi in o.images.all() if oi.image]
@@ -10215,7 +10244,16 @@ def _shop_offer_payload(page):
             "img": _thumb(imgs[0], 560, frame=True),
             "img2": _thumb(imgs[1], 560, frame=True) if len(imgs) > 1 else "",
             "big": _thumb(imgs[0], 1300),
+            "_so": o.sort_order, "_sc": scores.get(o.id, 0),
         })
+    # pinned (sort_order set) first in that order; then best-sellers / low
+    # returns (higher net delivered first); then alphabetical as a tie-break.
+    out.sort(key=lambda x: (
+        x["_so"] is None, x["_so"] if x["_so"] is not None else 0,
+        -x["_sc"], x["n"].lower()))
+    for x in out:
+        x.pop("_so", None)
+        x.pop("_sc", None)
     return out
 
 
@@ -10599,6 +10637,27 @@ def shop_admin_vitrine(request):
     valid_ids = {str(o["id"]) for o in offers}
 
     if request.method == "POST":
+        from .models import Offer
+        action = request.POST.get("action", "vitrine")
+        if action == "order":
+            # manual drag order: pin each product to its position in the list
+            try:
+                order_ids = _json.loads(request.POST.get("product_order") or "[]")
+            except Exception:
+                order_ids = []
+            pos = 0
+            for oid in order_ids:
+                if str(oid) in valid_ids:
+                    Offer.objects.filter(pk=int(oid)).update(sort_order=pos)
+                    pos += 1
+            messages.success(request, "✅ Ordre des produits enregistré.")
+            return redirect("shop_admin_vitrine")
+        if action == "order_reset":
+            # clear all manual pins -> back to automatic (best sellers first)
+            Offer.objects.filter(sales_pages=page).update(sort_order=None)
+            messages.success(request, "✅ Ordre automatique rétabli (meilleures ventes).")
+            return redirect("shop_admin_vitrine")
+        # default: hero / featured banner
         hero_id = (request.POST.get("hero_offer_id") or "").strip()
         feat_id = (request.POST.get("feat_offer_id") or "").strip()
         # only store ids that really exist on the page; empty clears the override
@@ -10614,6 +10673,7 @@ def shop_admin_vitrine(request):
               "img": o.get("big") or o.get("img", "")} for o in offers]
     return render(request, "inventory/shop_admin_vitrine.html", {
         "items_json": _json.dumps(items, ensure_ascii=False),
+        "items": items,
         "cur_hero": cur_hero if cur_hero in valid_ids else "",
         "cur_feat": cur_feat if cur_feat in valid_ids else "",
     })

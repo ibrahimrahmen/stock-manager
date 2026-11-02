@@ -1123,6 +1123,10 @@ class Offer(models.Model):
     image = models.ImageField(upload_to="offers/", blank=True, null=True,
         help_text="Photo représentative de l'offre.")
     sales_pages = models.ManyToManyField(SalesPage, related_name="offers", blank=True)
+    # Manual storefront position. NULL = let the automatic order decide (best
+    # sellers with the lowest returns first). A number pins the product to that
+    # place, set by dragging in the Vitrine editor.
+    sort_order = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

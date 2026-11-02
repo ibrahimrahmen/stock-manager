@@ -72,6 +72,17 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .save:hover{background:#000}
 .reset{background:none;border:0;color:var(--muted);font-size:13px;font-family:inherit;cursor:pointer;text-decoration:underline}
 .note{color:var(--muted);font-size:13px}
+.ordsec{border-top:1px solid var(--line);margin-top:10px;padding-block:22px 44px}
+.orderlist{display:flex;flex-direction:column;gap:8px;max-width:640px}
+.orow{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.orow.drag{opacity:.45}
+.orow .handle{color:var(--muted);cursor:grab;font-size:16px;user-select:none}
+.orow img{width:46px;height:46px;object-fit:cover;border-radius:8px;background:var(--surface);flex:none}
+.orow .oname{font-size:14px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.orow .rank{font-size:12px;font-weight:700;color:var(--muted);min-width:22px;text-align:center}
+.orow .moves{display:flex;gap:4px}
+.orow .moves button{width:30px;height:30px;border:1px solid var(--line);background:#fff;border-radius:8px;cursor:pointer;font-size:12px;line-height:1}
+.orow .moves button:hover{background:var(--surface)}
 </style>
 </head>
 <body>
@@ -130,6 +141,37 @@ h1,h2,h3{margin:0;text-wrap:balance}
     <button class="reset" type="button" id="resetBtn">Revenir au choix automatique</button>
     <span class="note">Astuce : « automatique » laisse la boutique choisir seule.</span>
   </form>
+
+  <div class="ordsec">
+    <div class="bar" style="border:0;padding-top:0;margin-top:0">
+      <h2>Ordre des produits</h2>
+      <span class="hint">Les mieux vendus (et les moins retournés) d'abord. Glisse ⋮⋮ ou utilise ▲▼ pour changer, puis Enregistrer.</span>
+    </div>
+    <div class="orderlist" id="orderList">
+      {% for it in items %}
+      <div class="orow" draggable="true" data-id="{{ it.id }}">
+        <span class="handle">⋮⋮</span>
+        <img src="{{ it.img }}" alt="">
+        <span class="oname">{{ it.n }}</span>
+        <span class="rank">{{ forloop.counter }}</span>
+        <span class="moves"><button type="button" data-mv="up" aria-label="monter">▲</button><button type="button" data-mv="down" aria-label="descendre">▼</button></span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="actions">
+      <form method="post" id="orderForm" style="display:contents">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="order">
+        <input type="hidden" name="product_order" id="orderField">
+        <button class="save" type="submit">Enregistrer l'ordre</button>
+      </form>
+      <form method="post" style="display:contents" onsubmit="return confirm('Rétablir l'ordre automatique (meilleures ventes) ?')">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="order_reset">
+        <button class="reset" type="submit">Revenir à l'ordre automatique</button>
+      </form>
+    </div>
+  </div>
 </div>
 
 <script id="data" type="application/json">{{ items_json|safe }}</script>
@@ -186,6 +228,30 @@ h1,h2,h3{margin:0;text-wrap:balance}
     };
   });
   paint();
+})();
+
+// --- product order: drag ⋮⋮ or ▲▼, then save the new order ---
+(function(){
+  var list=document.getElementById('orderList'); if(!list) return;
+  function reindex(){var i=1;list.querySelectorAll('.orow').forEach(function(r){r.querySelector('.rank').textContent=i++;});}
+  list.querySelectorAll('[data-mv]').forEach(function(b){b.onclick=function(){
+    var row=b.closest('.orow');
+    if(b.dataset.mv==='up'&&row.previousElementSibling){list.insertBefore(row,row.previousElementSibling);}
+    else if(b.dataset.mv==='down'&&row.nextElementSibling){list.insertBefore(row.nextElementSibling,row);}
+    reindex();
+  };});
+  var dragEl=null;
+  list.querySelectorAll('.orow').forEach(function(r){
+    r.addEventListener('dragstart',function(){dragEl=r;r.classList.add('drag');});
+    r.addEventListener('dragend',function(){r.classList.remove('drag');reindex();});
+    r.addEventListener('dragover',function(e){e.preventDefault();if(!dragEl||dragEl===r)return;
+      var a=r.getBoundingClientRect();var after=(e.clientY-a.top)/a.height>0.5;
+      list.insertBefore(dragEl, after?r.nextElementSibling:r);});
+  });
+  document.getElementById('orderForm').addEventListener('submit',function(){
+    var ids=[].map.call(list.querySelectorAll('.orow'),function(r){return r.dataset.id;});
+    document.getElementById('orderField').value=JSON.stringify(ids);
+  });
 })();
 </script>
 </body>
