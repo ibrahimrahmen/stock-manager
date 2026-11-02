@@ -45,6 +45,13 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .feat .ttl{font-size:28px;line-height:.95;font-weight:800;letter-spacing:-.02em}
 .feat .pr{font-size:14px;opacity:.92}
 .feat .btn{align-self:flex-start;background:var(--accent);color:#fff;border:0;border-radius:999px;padding:9px 16px;font-weight:700;font-size:13px;font-family:inherit}
+.cattile{position:relative;height:300px;overflow:hidden;background:#111}
+.cattile img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.catlab{position:absolute;inset:auto 0 0 0;padding:18px;color:#fff;display:flex;flex-direction:column;gap:8px;
+  background:linear-gradient(180deg,transparent 42%,rgba(0,0,0,.6) 100%)}
+.catlab span{font-size:26px;font-weight:800}
+.catlab em{font-style:normal;font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;
+  border-bottom:1.5px solid #fff;align-self:flex-start;padding-bottom:2px}
 .bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:10px 0 16px;padding-top:18px;border-top:1px solid var(--line)}
 .bar h2{font-size:16px;font-weight:800}
 .seg{display:inline-flex;border:1px solid #ddd;border-radius:999px;overflow:hidden;font-weight:700;font-size:13px}
@@ -66,6 +73,8 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .badge span{font-size:10px;font-weight:800;letter-spacing:.06em;padding:3px 7px;border-radius:999px;color:#fff}
 .badge .h{background:var(--ink)}
 .badge .f{background:var(--accent)}
+.badge .e{background:#2563eb}
+.badge .v{background:#7c3aed}
 .actions{position:sticky;bottom:0;background:linear-gradient(180deg,transparent,#fff 40%);
   padding:22px 0 28px;margin-top:20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 .save{background:var(--ink);color:#fff;border:0;border-radius:999px;padding:13px 26px;font-weight:800;
@@ -130,13 +139,25 @@ h1,h2,h3{margin:0;text-wrap:balance}
           <button class="btn" type="button">Commander</button></div>
       </div>
     </div>
+    <div class="pv">
+      <div class="cap">Tuile · <b>Ensembles</b></div>
+      <div class="cattile"><img id="cateImg" alt="">
+        <div class="catlab"><span>Ensembles</span><em>Découvrir</em></div></div>
+    </div>
+    <div class="pv">
+      <div class="cap">Tuile · <b>Vestes</b></div>
+      <div class="cattile"><img id="catvImg" alt="">
+        <div class="catlab"><span>Vestes</span><em>Découvrir</em></div></div>
+    </div>
   </div>
 
   <div class="bar">
     <h2>Tes produits</h2>
     <div class="seg">
-      <button id="mHero" class="on" type="button">Définir le Hero</button>
-      <button id="mFeat" type="button">Définir le coup de cœur</button>
+      <button id="mHero" class="on" type="button">Hero</button>
+      <button id="mFeat" type="button">Coup de cœur</button>
+      <button id="mCate" type="button">Tuile Ensembles</button>
+      <button id="mCatv" type="button">Tuile Vestes</button>
     </div>
     <span class="hint" id="hint">Clique un produit pour le placer dans le grand bandeau.</span>
   </div>
@@ -147,6 +168,8 @@ h1,h2,h3{margin:0;text-wrap:balance}
     {% csrf_token %}
     <input type="hidden" name="hero_offer_id" id="heroField" value="{{ cur_hero }}">
     <input type="hidden" name="feat_offer_id" id="featField" value="{{ cur_feat }}">
+    <input type="hidden" name="cate_offer_id" id="cateField" value="{{ cur_cate }}">
+    <input type="hidden" name="catv_offer_id" id="catvField" value="{{ cur_catv }}">
     <button class="save" type="submit">Enregistrer la vitrine</button>
     <button class="reset" type="button" id="resetBtn">Revenir au choix automatique</button>
     <span class="note">Astuce : « automatique » laisse la boutique choisir seule.</span>
@@ -175,7 +198,7 @@ h1,h2,h3{margin:0;text-wrap:balance}
         <input type="hidden" name="hidden_ids" id="hiddenField">
         <button class="save" type="submit">Enregistrer l'ordre &amp; la visibilité</button>
       </form>
-      <form method="post" style="display:contents" onsubmit="return confirm('Rétablir l'ordre automatique (meilleures ventes) ?')">
+      <form method="post" style="display:contents" data-msg="Rétablir l'ordre automatique (meilleures ventes) ?" onsubmit="return confirm(this.dataset.msg)">
         {% csrf_token %}
         <input type="hidden" name="action" value="order_reset">
         <button class="reset" type="submit">Revenir à l'ordre automatique</button>
@@ -189,39 +212,50 @@ h1,h2,h3{margin:0;text-wrap:balance}
 (function(){
   var items = JSON.parse(document.getElementById('data').textContent || '[]');
   var byId = {}; items.forEach(function(it,i){ byId[String(it.id)] = i; });
-  var sel = {hero: "{{ cur_hero }}", feat: "{{ cur_feat }}"};
+  var sel = {hero: "{{ cur_hero }}", feat: "{{ cur_feat }}",
+             cate: "{{ cur_cate }}", catv: "{{ cur_catv }}"};
   var mode = 'hero';
   function money(p){ return String(p).replace('.',',') + ' DT'; }
   function idx(which){ var id = sel[which]; return (id && byId[id]!=null) ? byId[id] : -1; }
+  function pick(which){ var i=idx(which); return i>=0 ? items[i] : items[0]; }
 
   function paint(){
-    var hi = idx('hero'), fi = idx('feat');
-    var h = hi>=0 ? items[hi] : items[0];
-    var f = fi>=0 ? items[fi] : items[0];
+    var h=pick('hero'), f=pick('feat'), e=pick('cate'), v=pick('catv');
     if(h){ document.getElementById('heroImg').src=h.img;
            document.getElementById('heroBtn').textContent='Commander · '+money(h.p); }
     if(f){ document.getElementById('featImg').src=f.img;
            document.getElementById('featTtl').textContent=f.n;
            document.getElementById('featPr').textContent=money(f.p)+' · livraison 7 DT'; }
+    if(e){ document.getElementById('cateImg').src=e.img; }
+    if(v){ document.getElementById('catvImg').src=v.img; }
     document.getElementById('heroField').value = sel.hero || '';
     document.getElementById('featField').value = sel.feat || '';
+    document.getElementById('cateField').value = sel.cate || '';
+    document.getElementById('catvField').value = sel.catv || '';
     document.querySelectorAll('.card').forEach(function(el){
       var id = el.dataset.id, t='';
       if(id===sel.hero) t+='<span class="h">HERO</span>';
-      if(id===sel.feat) t+='<span class="f">★ COUP DE CŒUR</span>';
+      if(id===sel.feat) t+='<span class="f">★</span>';
+      if(id===sel.cate) t+='<span class="e">ENS</span>';
+      if(id===sel.catv) t+='<span class="v">VESTE</span>';
       el.querySelector('.badge').innerHTML=t;
     });
   }
+  var HINTS={hero:'Clique un produit pour le grand bandeau (Hero).',
+    feat:'Clique un produit pour la bannière coup de cœur.',
+    cate:'Clique un produit : sa photo devient la tuile « Ensembles ».',
+    catv:'Clique un produit : sa photo devient la tuile « Vestes ».'};
+  var MBTN={hero:'mHero',feat:'mFeat',cate:'mCate',catv:'mCatv'};
   function setMode(m){ mode=m;
-    document.getElementById('mHero').classList.toggle('on',m==='hero');
-    document.getElementById('mFeat').classList.toggle('on',m==='feat');
-    document.getElementById('hint').textContent = m==='hero'
-      ? 'Clique un produit pour le placer dans le grand bandeau.'
-      : 'Clique un produit pour le placer dans la bannière coup de cœur.';
+    for(var k in MBTN){ document.getElementById(MBTN[k]).classList.toggle('on',k===m); }
+    document.getElementById('hint').textContent = HINTS[m];
   }
   document.getElementById('mHero').onclick=function(){setMode('hero');};
   document.getElementById('mFeat').onclick=function(){setMode('feat');};
-  document.getElementById('resetBtn').onclick=function(){ sel.hero=''; sel.feat=''; paint(); };
+  document.getElementById('mCate').onclick=function(){setMode('cate');};
+  document.getElementById('mCatv').onclick=function(){setMode('catv');};
+  document.getElementById('resetBtn').onclick=function(){
+    sel.hero=''; sel.feat=''; sel.cate=''; sel.catv=''; paint(); };
 
   var grid=document.getElementById('grid');
   grid.innerHTML=items.map(function(it){
@@ -231,8 +265,7 @@ h1,h2,h3{margin:0;text-wrap:balance}
   }).join('');
   grid.querySelectorAll('.card').forEach(function(el){
     el.onclick=function(){
-      var id=el.dataset.id;
-      if(mode==='hero') sel.hero=id; else sel.feat=id;
+      sel[mode]=el.dataset.id;
       paint();
       document.querySelector('.previews').scrollIntoView({behavior:'smooth',block:'start'});
     };

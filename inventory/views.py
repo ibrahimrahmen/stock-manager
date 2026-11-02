@@ -10338,13 +10338,17 @@ def shop_home(request):
     if featured >= 0:
         used.add(featured)
 
-    # Category tiles — again, different products.
-    cat_ensemble = _pick(lambda o: (cat(o) == "ensemble" or "ensemble" in nm(o))
-                         and "multicolor" not in nm(o))
+    # Category tiles — owner override per tile, else a different product.
+    cat_ensemble = id2idx.get(str(_cfg("shop_cat_ensemble_offer_id", "")).strip(), -1)
+    if cat_ensemble < 0:
+        cat_ensemble = _pick(lambda o: (cat(o) == "ensemble" or "ensemble" in nm(o))
+                             and "multicolor" not in nm(o))
     if cat_ensemble >= 0:
         used.add(cat_ensemble)
-    cat_veste = _pick(lambda o: cat(o) == "veste" or any(
-        k in nm(o) for k in ("veste", "bomber", "doudoune", "gillet")))
+    cat_veste = id2idx.get(str(_cfg("shop_cat_veste_offer_id", "")).strip(), -1)
+    if cat_veste < 0:
+        cat_veste = _pick(lambda o: cat(o) == "veste" or any(
+            k in nm(o) for k in ("veste", "bomber", "doudoune", "gillet")))
 
     curated = {"hero": hero, "featured": featured,
                "catE": cat_ensemble, "catV": cat_veste}
@@ -10719,14 +10723,20 @@ def shop_admin_vitrine(request):
         # default: hero / featured banner
         hero_id = (request.POST.get("hero_offer_id") or "").strip()
         feat_id = (request.POST.get("feat_offer_id") or "").strip()
+        cate_id = (request.POST.get("cate_offer_id") or "").strip()
+        catv_id = (request.POST.get("catv_offer_id") or "").strip()
         # only store ids that really exist on the page; empty clears the override
         _set_cfg("shop_hero_offer_id", hero_id if hero_id in valid_ids else "")
         _set_cfg("shop_featured_offer_id", feat_id if feat_id in valid_ids else "")
+        _set_cfg("shop_cat_ensemble_offer_id", cate_id if cate_id in valid_ids else "")
+        _set_cfg("shop_cat_veste_offer_id", catv_id if catv_id in valid_ids else "")
         messages.success(request, "✅ Vitrine enregistrée. La boutique est à jour.")
         return redirect("shop_admin_vitrine")
 
     cur_hero = str(_cfg("shop_hero_offer_id", "")).strip()
     cur_feat = str(_cfg("shop_featured_offer_id", "")).strip()
+    cur_cate = str(_cfg("shop_cat_ensemble_offer_id", "")).strip()
+    cur_catv = str(_cfg("shop_cat_veste_offer_id", "")).strip()
     # hero/featured grid uses only VISIBLE products (you can't feature a hidden one)
     items = [{"id": o["id"], "n": o["n"], "p": o["p"],
               "img": o.get("big") or o.get("img", "")} for o in offers]
@@ -10739,6 +10749,8 @@ def shop_admin_vitrine(request):
         "items": order_items,
         "cur_hero": cur_hero if cur_hero in valid_ids else "",
         "cur_feat": cur_feat if cur_feat in valid_ids else "",
+        "cur_cate": cur_cate if cur_cate in valid_ids else "",
+        "cur_catv": cur_catv if cur_catv in valid_ids else "",
     })
 
 
