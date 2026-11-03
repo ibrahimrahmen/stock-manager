@@ -21453,6 +21453,17 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
             conv.save(update_fields=["extracted", "matched_ad", "updated_at"])
             return
 
+    # Serialise creation per customer so two concurrent runs (a Facebook webhook
+    # delivered twice, or the poller racing the webhook) cannot both pass the
+    # checks below and each create an order — the cause of duplicate DM orders
+    # created in the same second. The DB cache is shared across all gunicorn
+    # workers; if we cannot take the lock, another run is already handling this
+    # customer, so skip and let the next poll attach this conversation to it.
+    from django.core.cache import cache as _dmcache
+    _dm_lock = "dm_order_lock:%s:%s" % (sp_id, (shaped.get("phone") or "").strip())
+    if not _dmcache.add(_dm_lock, 1, 45):
+        return
+
     # BUSINESS RULE: a customer may only have ONE active order at a time. A new
     # order is allowed only once every previous order is finished (delivered,
     # paid, returned, or cancelled). If this customer (matched by phone) still
@@ -21542,6 +21553,12 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
         pass
     conv.save(update_fields=["extracted", "matched_ad", "pending_order",
                              "status", "updated_at"])
+    # Release the per-customer lock now the order exists, so later messages can
+    # be attached without waiting for the lock to expire.
+    try:
+        _dmcache.delete(_dm_lock)
+    except Exception:
+        pass
 
 
 @csrf_exempt
