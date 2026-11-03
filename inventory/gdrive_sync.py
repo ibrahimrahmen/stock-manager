@@ -18,7 +18,7 @@ import html as _html
 import json as _json
 
 
-_DEFAULT_SITE = "https://web-production-1391c5.up.railway.app"
+_DEFAULT_SITE = "https://app.barats.tn"
 _DOC_NAME = "Catalogue Barats"
 
 

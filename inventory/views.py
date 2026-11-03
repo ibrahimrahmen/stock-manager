@@ -3784,7 +3784,7 @@ def _build_category_carousel(text, sales_page_id=None, limit=10):
     cards = []
     base = os.environ.get(
         "PUBLIC_BASE_URL",
-        "https://web-production-1391c5.up.railway.app").rstrip("/")
+        "https://app.barats.tn").rstrip("/")
     for p in qs.distinct()[:limit * 3]:  # over-fetch, we filter to offer-linked
         # Only show products that have an ACTIVE linked offer — otherwise there's
         # no real customer price and the card is noise.
@@ -8394,7 +8394,7 @@ Les produits suivants ont un stock bas (alerte si moins de {ALERT_DAYS} jours de
 
 {lines}
 
-Connectez-vous pour voir les détails : https://web-production-1391c5.up.railway.app/products/
+Connectez-vous pour voir les détails : https://app.barats.tn/products/
 """
     return _send_email(
         subject=f"⚠ Stock bas — {len(low_items)} produit(s) à réapprovisionner",
@@ -8459,7 +8459,7 @@ def _send_daily_summary_email():
 
 ⚠ Ordres en retard de livraison : {verifier_count}
 
-Connectez-vous pour voir les détails : https://web-production-1391c5.up.railway.app/
+Connectez-vous pour voir les détails : https://app.barats.tn/
 """
     return _send_email(
         subject=f"📊 Résumé du {today.strftime('%d/%m/%Y')} — {correct} ordres scannés",
@@ -8489,7 +8489,7 @@ def _send_a_verifier_email():
 
 {lines}
 
-Vérifiez ces ordres : https://web-production-1391c5.up.railway.app/a-verifier/
+Vérifiez ces ordres : https://app.barats.tn/a-verifier/
 """
     return _send_email(
         subject=f"⚠ {len(late_orders)} ordre(s) en retard de livraison",
