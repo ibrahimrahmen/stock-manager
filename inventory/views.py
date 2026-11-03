@@ -10454,6 +10454,47 @@ def _capi_purchase(request, email, phone, value, content_ids, event_id):
     threading.Thread(target=_send, daemon=True).start()
 
 
+# French<->English colour synonyms, so a storefront label ("BLACK") still
+# matches a variant saved in the other language ("Noir"), and vice-versa.
+_COLOUR_SYNONYMS = {
+    "black": "noir", "noir": "black",
+    "white": "blanc", "blanc": "white",
+    "red": "rouge", "rouge": "red",
+    "blue": "bleu", "bleu": "blue",
+    "green": "vert", "vert": "green",
+    "gray": "gris", "grey": "gris", "gris": "gray",
+    "yellow": "jaune", "jaune": "yellow",
+    "pink": "rose", "rose": "pink",
+    "brown": "marron", "marron": "brown",
+    "purple": "violet", "violet": "purple",
+}
+
+
+def _resolve_variant_colour(product, chosen):
+    """Best-effort map a storefront colour choice to one of the product's
+    ProductVariants. Tolerant of case/spacing/punctuation and FR<->EN naming.
+    Returns the matching variant, or (when the product has only one colour)
+    that one, else None."""
+    import re
+
+    def norm(x):
+        return re.sub(r"[^a-z0-9]", "", (x or "").lower())
+
+    pvs = list(product.variants.all())
+    key = norm(chosen)
+    if key:
+        keys = {key}
+        alt = _COLOUR_SYNONYMS.get(key)
+        if alt:
+            keys.add(alt)
+        for v in pvs:
+            if keys & {norm(v.color_name), norm(v.color_label)}:
+                return v
+    if len(pvs) == 1:
+        return pvs[0]
+    return None
+
+
 @csrf_exempt
 @require_POST
 def api_shop_order(request):
@@ -10553,9 +10594,16 @@ def api_shop_order(request):
                     order=order, offer=offer, offer_name=offer.name,
                     bundle_price=offer.price_for_page(page), quantity=q)
                 for op in offer.products.all():
+                    # Resolve the chosen colour to this product's matching
+                    # variant so the order stores the real colour (not just a
+                    # note). Match the chosen label against each variant's code
+                    # or display label, tolerant of case/spacing/punctuation
+                    # and FR<->EN naming ("BLACK" == "Black" == "Noir"). If the
+                    # product has a single colour, use it.
+                    variant = _resolve_variant_colour(op.product, cl)
                     OrderLine.objects.create(
                         order=order, order_offer=oo, product_id=op.product_id,
-                        variant_id=None, size=_undisp_size(sz),
+                        variant=variant, size=_undisp_size(sz),
                         quantity=max(1, op.quantity) * q, unit_price=0)
             order.recalc_total()
     except Exception as e:
