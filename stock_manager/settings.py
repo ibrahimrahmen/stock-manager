@@ -13,6 +13,7 @@ ALLOWED_HOSTS = ['*']
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 CSRF_TRUSTED_ORIGINS = [
     'https://web-production-1391c5.up.railway.app',
+    'https://app.barats.tn',
     'https://arrowsportwear.barats.tn',
     'https://shop.barats.tn',
 ]
