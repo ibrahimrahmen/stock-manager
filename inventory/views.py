@@ -10788,14 +10788,15 @@ def api_shop_track(request):
                     _c.set(dk, 1, 8)
         except Exception:
             pass
-        # keep the table bounded: occasionally drop hits older than 3 days
+        # keep the table bounded: occasionally drop hits older than 90 days
+        # (kept long enough to review a past ad campaign's funnel)
         try:
             import random
             if random.random() < 0.01:
                 from datetime import timedelta
                 from django.utils import timezone
                 StoreHit.objects.filter(
-                    created_at__lt=timezone.now() - timedelta(days=3)).delete()
+                    created_at__lt=timezone.now() - timedelta(days=90)).delete()
         except Exception:
             pass
     gif = _b64.b64decode("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
@@ -10822,6 +10823,26 @@ def _shop_live_stats():
         "carts": _sessions(hits.filter(event="add_to_cart", created_at__gte=day0)),
         "checkouts": _sessions(hits.filter(event="checkout", created_at__gte=day0)),
         "purchases": _sessions(hits.filter(event="purchase", created_at__gte=day0)),
+    }
+
+
+def _shop_funnel(start, end=None):
+    """Distinct-session funnel over a window: how many unique visitors reached
+    each step (pageview -> add_to_cart -> checkout -> purchase). Session-based,
+    so it measures real drop-off even when a visitor never finishes an order."""
+    from .models import StoreHit
+    hits = StoreHit.objects.filter(created_at__gte=start)
+    if end is not None:
+        hits = hits.filter(created_at__lt=end)
+
+    def _sess(ev):
+        return hits.filter(event=ev).values("session").distinct().count()
+
+    return {
+        "visits": _sess("pageview"),
+        "carts": _sess("add_to_cart"),
+        "checkouts": _sess("checkout"),
+        "purchases": _sess("purchase"),
     }
 
 
@@ -10862,6 +10883,9 @@ def shop_admin_stats(request):
     else:
         days = {"7": 7, "30": 30, "90": 90, "all": 3650}.get(rng, 7)
         start = now - timedelta(days=days)
+    range_label = {"today": "aujourd'hui", "7": "7 derniers jours",
+                   "30": "30 derniers jours", "90": "90 derniers jours",
+                   "all": "depuis le début"}.get(rng, "7 derniers jours")
 
     valid = (Order.objects.filter(sales_page=page, created_at__gte=start)
              .exclude(status=Order.ANNULEE))
@@ -10898,8 +10922,10 @@ def shop_admin_stats(request):
 
     ctx = {
         "rng": rng,
+        "range_label": range_label,
         "period_json": _json.dumps({"sales": total_sales, "orders": orders_count,
                                     "aov": aov, "new": new_c, "ret": ret_c}),
+        "funnel_json": _json.dumps(_shop_funnel(start)),
         "by_gov_json": _json.dumps(by_gov, ensure_ascii=False),
         "top_json": _json.dumps(top, ensure_ascii=False),
         "recent_json": _json.dumps(recent, ensure_ascii=False),

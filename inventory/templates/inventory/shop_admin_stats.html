@@ -34,13 +34,19 @@ a{color:inherit;text-decoration:none}
 .kpi .sub{font-size:12px;color:var(--muted);margin-top:6px}
 .sec{margin-top:22px}
 .sec h2{font-family:var(--display);font-size:15px;font-weight:700;margin-bottom:14px;color:var(--text)}
-.funnel{display:grid;grid-template-columns:repeat(3,1fr);gap:0;border:.5px solid var(--line);border-radius:14px;overflow:hidden}
+.funnel{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border:.5px solid var(--line);border-radius:14px;overflow:hidden}
 .funnel .f{padding:16px 18px;border-right:.5px solid var(--line);position:relative}
 .funnel .f:last-child{border-right:0}
 .funnel .f .n{font-family:var(--display);font-size:26px;font-weight:800}
 .funnel .f .l{font-size:12px;color:var(--muted);margin-top:3px}
+.funnel .f .pc{font-size:11.5px;color:var(--green);margin-top:4px;font-weight:600}
 .funnel .bar{height:8px;border-radius:6px;background:var(--surface2);margin-top:12px;overflow:hidden}
-.funnel .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--green));border-radius:6px}
+.funnel .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--blue),var(--green));border-radius:6px;transition:width .5s ease}
+@media(max-width:620px){.funnel{grid-template-columns:repeat(2,1fr)}
+  .funnel .f:nth-child(2){border-right:0}.funnel .f:nth-child(1),.funnel .f:nth-child(2){border-bottom:.5px solid var(--line)}}
+.cr{display:flex;align-items:baseline;gap:10px;margin-top:12px;padding:12px 16px;background:var(--surface);border:.5px solid var(--line);border-radius:12px}
+.cr b{font-family:var(--display);font-size:22px;font-weight:800;color:var(--green)}
+.cr span{font-size:12.5px;color:var(--muted)}
 .row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:.5px solid var(--line)}
 .row:last-child{border-bottom:0}
 .row .name{flex:1;min-width:0;font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -88,14 +94,16 @@ a{color:inherit;text-decoration:none}
     <div class="card kpi"><div class="lab">Ventes aujourd'hui</div><div class="val" id="k_sales">—</div></div>
   </div>
 
-  <!-- FUNNEL (today) -->
+  <!-- FUNNEL (selected period) -->
   <div class="sec">
-    <h2>Comportement des clients · aujourd'hui</h2>
+    <h2>Parcours des visiteurs · {{ range_label }}</h2>
     <div class="funnel" id="funnel">
-      <div class="f"><div class="n" id="f_cart">—</div><div class="l">Paniers actifs</div><div class="bar"><i id="fb_cart" style="width:0"></i></div></div>
-      <div class="f"><div class="n" id="f_co">—</div><div class="l">Au paiement</div><div class="bar"><i id="fb_co" style="width:0"></i></div></div>
-      <div class="f"><div class="n" id="f_buy">—</div><div class="l">Achat effectué</div><div class="bar"><i id="fb_buy" style="width:0"></i></div></div>
+      <div class="f"><div class="n" id="f_vis">—</div><div class="l">Visiteurs</div><div class="pc" id="pc_vis">&nbsp;</div><div class="bar"><i id="fb_vis" style="width:0"></i></div></div>
+      <div class="f"><div class="n" id="f_cart">—</div><div class="l">Ajout au panier</div><div class="pc" id="pc_cart">&nbsp;</div><div class="bar"><i id="fb_cart" style="width:0"></i></div></div>
+      <div class="f"><div class="n" id="f_co">—</div><div class="l">Au paiement</div><div class="pc" id="pc_co">&nbsp;</div><div class="bar"><i id="fb_co" style="width:0"></i></div></div>
+      <div class="f"><div class="n" id="f_buy">—</div><div class="l">Achat effectué</div><div class="pc" id="pc_buy">&nbsp;</div><div class="bar"><i id="fb_buy" style="width:0"></i></div></div>
     </div>
+    <div class="cr"><b id="cr_val">—</b><span>taux de conversion — visiteurs qui ont commandé (<span id="cr_det">—</span>)</span></div>
   </div>
 
   <!-- PERIOD ANALYTICS -->
@@ -127,6 +135,7 @@ a{color:inherit;text-decoration:none}
 </div>
 
 <script id="d_period" type="application/json">{{ period_json|safe }}</script>
+<script id="d_funnel" type="application/json">{{ funnel_json|safe }}</script>
 <script id="d_gov" type="application/json">{{ by_gov_json|safe }}</script>
 <script id="d_top" type="application/json">{{ top_json|safe }}</script>
 <script id="d_recent" type="application/json">{{ recent_json|safe }}</script>
@@ -166,20 +175,31 @@ a{color:inherit;text-decoration:none}
     return '<div class="ord"><div class="who"><b>'+(o.name||'Client')+'</b><span>'+(o.ville||'—')+' · '+o.when+'</span></div><span class="badge">'+o.status+'</span><span class="tot">'+money(o.total)+'</span></div>';
   }).join(''):'<div class="empty">Aucune commande récente.</div>';
 
-  // LIVE section (initial + polling)
+  // FUNNEL for the selected period (visitors -> cart -> checkout -> purchase)
+  var F=J('d_funnel')||{visits:0,carts:0,checkouts:0,purchases:0};
+  var vmax=Math.max(1,F.visits);
+  function setF(idN,idP,idBar,n){
+    document.getElementById(idN).textContent=num(n);
+    document.getElementById(idP).textContent=F.visits?Math.round(100*n/F.visits)+'% des visiteurs':'';
+    document.getElementById(idBar).style.width=(100*n/vmax)+'%';
+  }
+  document.getElementById('f_vis').textContent=num(F.visits);
+  document.getElementById('pc_vis').textContent=F.visits?'100%':'aucune visite';
+  document.getElementById('fb_vis').style.width='100%';
+  setF('f_cart','pc_cart','fb_cart',F.carts);
+  setF('f_co','pc_co','fb_co',F.checkouts);
+  setF('f_buy','pc_buy','fb_buy',F.purchases);
+  var cr=F.visits?(100*F.purchases/F.visits):0;
+  document.getElementById('cr_val').textContent=(Math.round(cr*10)/10).toLocaleString('fr-FR')+'%';
+  document.getElementById('cr_det').textContent=num(F.purchases)+' / '+num(F.visits);
+
+  // LIVE tiles (initial + polling) — top row only, funnel stays period-based
   function paintLive(d){
     if(!d)return;
     document.getElementById('k_now').textContent=num(d.visitors_now);
     document.getElementById('k_visits').textContent=num(d.visits_today);
     document.getElementById('k_orders').textContent=num(d.orders_today);
     document.getElementById('k_sales').textContent=money(d.sales_today);
-    var m=Math.max(1,d.carts||0,d.checkouts||0,d.purchases||0);
-    document.getElementById('f_cart').textContent=num(d.carts);
-    document.getElementById('f_co').textContent=num(d.checkouts);
-    document.getElementById('f_buy').textContent=num(d.purchases);
-    document.getElementById('fb_cart').style.width=(100*(d.carts||0)/m)+'%';
-    document.getElementById('fb_co').style.width=(100*(d.checkouts||0)/m)+'%';
-    document.getElementById('fb_buy').style.width=(100*(d.purchases||0)/m)+'%';
   }
   paintLive(J('d_live'));
   function poll(){fetch('/shop/admin/stats/live/',{credentials:'same-origin'}).then(function(r){return r.json();}).then(paintLive).catch(function(){});}
