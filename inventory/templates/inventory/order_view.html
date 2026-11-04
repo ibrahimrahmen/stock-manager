@@ -172,6 +172,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
       <div class="field-display"><label>Gouvernorat</label><div class="val">{{ order.region.name|default:"—" }}</div></div>
       <div class="field-display"><label>Ville</label><div class="val">{{ order.ville|default:"—" }}</div></div>
       {% if order.localite %}<div class="field-display"><label>Localité</label><div class="val">{{ order.localite }}</div></div>{% endif %}
+      {% if order.customer.email %}<div class="field-display"><label>Email <span style="display:inline-block;background:#16a34a;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;vertical-align:middle;">−5%</span></label><div class="val"><a href="mailto:{{ order.customer.email }}" style="color:inherit;">{{ order.customer.email }}</a></div></div>{% endif %}
     </div>
     {% if order.address %}
     <div class="field-display" style="margin-top:14px;">
