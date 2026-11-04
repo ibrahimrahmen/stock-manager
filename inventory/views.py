@@ -16764,10 +16764,34 @@ def order_view(request, pk):
     from .models import Order
     order = get_object_or_404(
         Order.objects.select_related("customer", "region", "sales_page", "created_by")
-                     .prefetch_related("lines__product", "lines__variant"),
+                     .prefetch_related("lines__product", "lines__variant",
+                                       "order_offers__lines__product",
+                                       "order_offers__lines__variant"),
         pk=pk,
     )
-    return render(request, "inventory/order_view.html", {"order": order})
+    # Expand each bundle into ONE display block PER COPY, so an order that holds
+    # the same set twice shows two separate "Ensemble 3pcs NK" lines instead of
+    # one "×2" line. Each block keeps its OrderOffer id so the 🗑 button removes
+    # exactly one copy. Component quantities are shown per copy (stored qty / N).
+    article_blocks = []
+    for oo in order.order_offers.all():
+        q = oo.quantity or 1
+        copy_lines = [{
+            "product_name": l.product.name,
+            "color": (l.variant.color_label if l.variant_id else ""),
+            "size": l.size,
+            "qty": (l.quantity // q) if q else l.quantity,
+        } for l in oo.lines.all()]
+        for _ in range(q):
+            article_blocks.append({
+                "offer_id": oo.id,
+                "name": oo.offer_name or "Offre",
+                "bundle_price": oo.bundle_price,
+                "lines": copy_lines,
+            })
+    editable = (not order.bordereau_barcode) and order.status != "annulee"
+    return render(request, "inventory/order_view.html",
+                  {"order": order, "article_blocks": article_blocks, "editable": editable})
 
 
 @csrf_exempt
