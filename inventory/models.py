@@ -933,25 +933,33 @@ class Order(models.Model):
         """Text summary for list display: shows the PRODUCTS inside each offer
         with their colour and size (not just the offer name), plus any
         standalone product lines."""
-        def _line_label(line):
-            bits = [line.product.name]
+        def _line_label(line, mult=1):
+            label = line.product.name
             detail = []
             if line.variant and line.variant.color_label:
                 detail.append(line.variant.color_label)
             if line.size:
                 detail.append(line.size)
-            label = line.product.name
             if detail:
                 label += " (" + ", ".join(detail) + ")"
-            if line.quantity and line.quantity > 1:
-                label = f"{line.quantity}× " + label
+            # Effective units = the piece's own quantity times how many copies of
+            # the offer are in the order. Component qty is stored either per
+            # bundle or already multiplied by the copy count, so only treat it as
+            # pre-multiplied when it is a clean multiple of the copy count.
+            lq = line.quantity or 1
+            if mult > 1 and lq >= mult and lq % mult == 0:
+                eff = lq
+            else:
+                eff = lq * (mult or 1)
+            if eff > 1:
+                label = f"{eff}× " + label
             return label
 
         parts = []
-        # Offer lines (products that belong to an offer)
+        # Offer lines (products that belong to an offer) — repeat per offer copy
         for oo in self.order_offers.all():
             for line in oo.lines.all():
-                parts.append(_line_label(line))
+                parts.append(_line_label(line, oo.quantity or 1))
         # Standalone product lines (not part of any offer)
         for line in self.lines.filter(order_offer__isnull=True):
             parts.append(_line_label(line))
