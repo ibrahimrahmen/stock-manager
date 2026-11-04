@@ -16849,6 +16849,78 @@ def api_order_set_note(request, pk):
 @csrf_exempt
 @require_POST
 @login_required(login_url="/login/")
+def api_order_remove_offer_copy(request, pk):
+    """Remove ONE copy of a bundle (OrderOffer) from an order — or the whole
+    bundle when a single copy is left.
+
+    Why: a customer can add the same set (same colour + size) to the cart
+    twice by accident, which merges into quantity 2. Staff need a one-click way
+    to drop it back to 1 (or remove an unwanted set entirely) and have the
+    order total fix itself — without rebuilding the order.
+
+    Safety:
+    - Allowed ONLY before the order is pushed to Navex (no bordereau yet) and
+      while it is not cancelled. After Navex, use cancellation / exchange.
+    - Runs under select_for_update so a concurrent edit can't double-apply.
+    - Component lines are rescaled proportionally; the total is recomputed from
+      the ledger of offers + lines (never set by hand). Writes an audit entry.
+    """
+    if not _orders_role_check(request):
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import Order, log_action, AuditLog
+    try:
+        data = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"status": "error", "message": "JSON invalide."}, status=400)
+    try:
+        oo_id = int(data.get("offer_id") or 0)
+    except (TypeError, ValueError):
+        oo_id = 0
+
+    with transaction.atomic():
+        order = Order.objects.select_for_update().filter(pk=pk).first()
+        if order is None:
+            return JsonResponse({"status": "error", "message": "Commande introuvable."}, status=404)
+        if order.bordereau_barcode:
+            return JsonResponse({"status": "error",
+                "message": "Commande déjà envoyée à Navex : modifiez-la par annulation / échange."}, status=400)
+        if order.status == "annulee":
+            return JsonResponse({"status": "error", "message": "Commande annulée — non modifiable."}, status=400)
+
+        oo = order.order_offers.filter(pk=oo_id).first()
+        if oo is None:
+            return JsonResponse({"status": "error", "message": "Article introuvable."}, status=404)
+
+        offer_label = oo.offer_name or "Offre"
+        old_q = oo.quantity or 1
+        if old_q <= 1:
+            oo.delete()  # OrderLine.order_offer is CASCADE → its pieces go too
+            desc = "1 ensemble retiré (%s) — ligne supprimée" % offer_label
+        else:
+            new_q = old_q - 1
+            for line in oo.lines.all():
+                per = (line.quantity // old_q) if old_q else line.quantity
+                line.quantity = max(1, per) * new_q
+                line.save(update_fields=["quantity"])
+            oo.quantity = new_q
+            oo.save(update_fields=["quantity"])
+            desc = "1 ensemble retiré (%s) — reste ×%d" % (offer_label, new_q)
+
+        order.recalc_total()
+        total = order.total
+        remaining = (order.order_offers.count()
+                     + order.lines.filter(order_offer__isnull=True).count())
+
+    log_action(request.user, AuditLog.EDIT,
+               description="Commande #%s : %s" % (order.id, desc),
+               request=request, target_model="Order", target_id=order.id)
+    return JsonResponse({"status": "ok", "total": str(total),
+                         "total_display": "%.0f" % total, "remaining": remaining})
+
+
+@csrf_exempt
+@require_POST
+@login_required(login_url="/login/")
 def api_order_change_status(request, pk):
     """Change the status of an order, enforcing valid transitions.
 

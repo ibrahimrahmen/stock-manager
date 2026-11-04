@@ -103,6 +103,7 @@ urlpatterns = [
     path("sales-orders/<int:pk>/", views.order_view, name="order_view"),
     path("api/sales-orders/<int:pk>/status/", views.api_order_change_status, name="api_order_change_status"),
     path("api/sales-orders/<int:pk>/note/", views.api_order_set_note, name="api_order_set_note"),
+    path("api/sales-orders/<int:pk>/remove-offer-copy/", views.api_order_remove_offer_copy, name="api_order_remove_offer_copy"),
     path("api/sales-orders/<int:pk>/push-navex/", views.api_push_order_to_navex, name="api_push_order_to_navex"),
     path("api/sales-orders/sync-navex/", views.api_sync_v2_orders_navex, name="api_sync_v2_orders_navex"),
 

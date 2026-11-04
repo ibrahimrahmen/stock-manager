@@ -218,7 +218,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
       <tbody>
         {% for oo in order.order_offers.all %}
         <tr style="background:rgba(96,165,250,0.08);">
-          <td colspan="4" style="font-weight:700;">📦 {{ oo.offer_name|default:"Offre" }}{% if oo.quantity > 1 %} ×{{ oo.quantity }}{% endif %}</td>
+          <td colspan="4" style="font-weight:700;">📦 {{ oo.offer_name|default:"Offre" }}{% if oo.quantity > 1 %} · <span style="color:#60a5fa;">{{ oo.quantity }} ensembles</span>{% endif %}{% if not order.bordereau_barcode and order.status != 'annulee' %}<button type="button" onclick="removeOfferCopy({{ oo.id }}, this)" title="Retirer un ensemble — le total se recalcule tout seul" style="margin-left:10px;background:rgba(217,79,78,0.12);color:#d94f4e;border:0.5px solid rgba(217,79,78,0.3);border-radius:7px;padding:2px 9px;font-size:12px;font-weight:500;cursor:pointer;vertical-align:middle;">🗑 Retirer un</button>{% endif %}</td>
           <td style="text-align:right;">{{ oo.bundle_price|floatformat:3 }} DT</td>
           <td style="text-align:right;">{{ oo.offer_total|floatformat:3 }} DT</td>
         </tr>
@@ -417,6 +417,22 @@ async function changeStatus(newStatus, btn, extra) {
     }
   } catch (e) { alert('Erreur réseau : ' + e.message); return false; }
   return true;
+}
+
+async function removeOfferCopy(offerId, btn) {
+  if (!confirm("Retirer un ensemble de cette commande ?\n\nLe total sera recalculé automatiquement.")) return;
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const res = await fetch("{% url 'api_order_remove_offer_copy' order.pk %}", {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf()},
+      body: JSON.stringify({offer_id: offerId}),
+    });
+    const data = await res.json();
+    if (data.status === 'ok') { window.location.reload(); }
+    else { alert(data.message || 'Erreur'); btn.disabled = false; btn.textContent = orig; }
+  } catch (e) { alert('Erreur réseau : ' + e.message); btn.disabled = false; btn.textContent = orig; }
 }
 
 async function confirmAndPush(btn) {
