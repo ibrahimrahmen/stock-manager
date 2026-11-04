@@ -16776,12 +16776,19 @@ def order_view(request, pk):
     article_blocks = []
     for oo in order.order_offers.all():
         q = oo.quantity or 1
-        copy_lines = [{
-            "product_name": l.product.name,
-            "color": (l.variant.color_label if l.variant_id else ""),
-            "size": l.size,
-            "qty": (l.quantity // q) if q else l.quantity,
-        } for l in oo.lines.all()]
+        copy_lines = []
+        for l in oo.lines.all():
+            lq = l.quantity or 0
+            # Two storage styles exist: component qty stored PER bundle (not
+            # multiplied by q), or already multiplied by q. Only divide when it
+            # is a clean multiple of q; otherwise it is already per-copy.
+            per = (lq // q) if (q and lq >= q and lq % q == 0) else lq
+            copy_lines.append({
+                "product_name": l.product.name,
+                "color": (l.variant.color_label if l.variant_id else ""),
+                "size": l.size,
+                "qty": per,
+            })
         for _ in range(q):
             article_blocks.append({
                 "offer_id": oo.id,
@@ -16923,9 +16930,13 @@ def api_order_remove_offer_copy(request, pk):
         else:
             new_q = old_q - 1
             for line in oo.lines.all():
-                per = (line.quantity // old_q) if old_q else line.quantity
-                line.quantity = max(1, per) * new_q
-                line.save(update_fields=["quantity"])
+                lq = line.quantity or 0
+                # Only rescale component lines that were stored multiplied by the
+                # copy count (a clean multiple of old_q). Lines stored per-bundle
+                # represent one set's composition and must stay as-is.
+                if old_q and lq >= old_q and lq % old_q == 0:
+                    line.quantity = (lq // old_q) * new_q
+                    line.save(update_fields=["quantity"])
             oo.quantity = new_q
             oo.save(update_fields=["quantity"])
             desc = "1 ensemble retiré (%s) — reste ×%d" % (offer_label, new_q)
