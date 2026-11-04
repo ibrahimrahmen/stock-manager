@@ -10997,6 +10997,40 @@ def shop_admin_stats(request):
     return render(request, "inventory/shop_admin_stats.html", ctx)
 
 
+@login_required(login_url="/login/")
+def api_shop_top_pages(request):
+    """Most-visited storefront pages over a period, from StoreHit pageviews.
+    Resolves /produit/<id>/ paths to their offer name. Read-only; superuser."""
+    import re
+    from datetime import timedelta
+    from django.utils import timezone
+    from django.db.models import Count
+    from .models import StoreHit, Offer
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    now = timezone.now()
+    rng = (request.GET.get("range") or "7").strip()
+    if rng == "today":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        days = {"7": 7, "30": 30, "90": 90, "all": 3650}.get(rng, 7)
+        start = now - timedelta(days=days)
+    rows = list(StoreHit.objects.filter(event="pageview", created_at__gte=start)
+                .values("path")
+                .annotate(views=Count("id"), sessions=Count("session", distinct=True))
+                .order_by("-sessions")[:25])
+    ids = []
+    for r in rows:
+        m = re.match(r"^/produit/(\d+)/?$", r.get("path") or "")
+        r["offer_id"] = int(m.group(1)) if m else None
+        if r["offer_id"]:
+            ids.append(r["offer_id"])
+    names = dict(Offer.objects.filter(id__in=ids).values_list("id", "name"))
+    for r in rows:
+        r["name"] = names.get(r["offer_id"], "")
+    return JsonResponse({"status": "ok", "range": rng, "rows": rows})
+
+
 def shop_collection(request):
     """Product listing ('Tout voir' / category 'Découvrir') — a grid.
     Without ?cat= it shows the whole catalogue; with ?cat=ensemble|veste|pull
