@@ -10599,21 +10599,26 @@ def api_shop_order(request):
         with transaction.atomic():
             order = Order.objects.create(**okw)
             for offer, q, sz, cl in parsed:
-                oo = OrderOffer.objects.create(
-                    order=order, offer=offer, offer_name=offer.name,
-                    bundle_price=offer.price_for_page(page), quantity=q)
-                for op in offer.products.all():
-                    # Resolve the chosen colour to this product's matching
-                    # variant so the order stores the real colour (not just a
-                    # note). Match the chosen label against each variant's code
-                    # or display label, tolerant of case/spacing/punctuation
-                    # and FR<->EN naming ("BLACK" == "Black" == "Noir"). If the
-                    # product has a single colour, use it.
-                    variant = _resolve_variant_colour(op.product, cl)
-                    OrderLine.objects.create(
-                        order=order, order_offer=oo, product_id=op.product_id,
-                        variant=variant, size=_undisp_size(sz),
-                        quantity=max(1, op.quantity) * q, unit_price=0)
+                # Store each ordered copy of a set as its OWN OrderOffer row
+                # (quantity 1), exactly like a Barats.tn / Shopify order. Two of
+                # the same set = two "Ensemble" entries, each independently
+                # editable and removable — never a single "×2" line.
+                for _copy in range(q):
+                    oo = OrderOffer.objects.create(
+                        order=order, offer=offer, offer_name=offer.name,
+                        bundle_price=offer.price_for_page(page), quantity=1)
+                    for op in offer.products.all():
+                        # Resolve the chosen colour to this product's matching
+                        # variant so the order stores the real colour (not just a
+                        # note). Match the chosen label against each variant's code
+                        # or display label, tolerant of case/spacing/punctuation
+                        # and FR<->EN naming ("BLACK" == "Black" == "Noir"). If the
+                        # product has a single colour, use it.
+                        variant = _resolve_variant_colour(op.product, cl)
+                        OrderLine.objects.create(
+                            order=order, order_offer=oo, product_id=op.product_id,
+                            variant=variant, size=_undisp_size(sz),
+                            quantity=max(1, op.quantity), unit_price=0)
             order.recalc_total()
     except Exception as e:
         return JsonResponse({"status": "error", "message": "Erreur: %s" % e}, status=400)
