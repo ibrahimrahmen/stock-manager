@@ -82,6 +82,15 @@ WEBSITE_ACCOUNT_TO_SALESPAGE_NAME = {
     "1865152710850959": "Converty",    # ArrowConverty account
 }
 
+# Within ONE ad account a website ad is attributed by its DESTINATION URL first,
+# so Arrow.tn ads running in the ArrowConverty account are counted as Arrow.tn
+# (not Converty). Matched as a substring of the ad's destination link; only when
+# no domain here matches do we fall back to the account mapping above. Add a row
+# here whenever a new store gets its own ads inside a shared account.
+WEBSITE_DOMAIN_TO_SALESPAGE_NAME = {
+    "arrowsportwear.barats.tn": "Arrow.tn",
+}
+
 
 def _extract_tn_phone(text):
     """Extract a valid Tunisian mobile (8 digits) from free text.
@@ -11847,6 +11856,29 @@ def _sync_ads_from_meta(start_date, end_date):
     return True, f"{n} publicité(s) synchronisée(s) depuis Meta.", n
 
 
+def _creative_dest_url(cre):
+    """Best-effort destination website URL from a Meta ad creative, across the
+    common shapes (direct link ad, video CTA, dynamic/catalog, existing post).
+    Returns '' when no link can be found."""
+    if not isinstance(cre, dict):
+        return ""
+    disp = cre.get("link_destination_display_url")
+    if disp:
+        return disp
+    oss = cre.get("object_story_spec") or {}
+    for key in ("link_data", "video_data", "template_data"):
+        d = oss.get(key) or {}
+        if d.get("link"):
+            return d["link"]
+        cta = (d.get("call_to_action") or {}).get("value") or {}
+        if cta.get("link"):
+            return cta["link"]
+    for lu in ((cre.get("asset_feed_spec") or {}).get("link_urls") or []):
+        if lu.get("website_url"):
+            return lu["website_url"]
+    return ""
+
+
 def _meta_spend_by_page(start_date, end_date):
     """Spend per SALES PAGE for a date range, read straight from Meta at the
     AD level and attributed by the REAL page each ad posts from — no names, no
@@ -11953,7 +11985,8 @@ def _meta_spend_by_page(start_date, end_date):
                 f"https://graph.facebook.com/v18.0/"
                 f"?ids={','.join(chunk)}"
                 f"&fields=adset{{destination_type}},"
-                f"creative{{object_story_id,effective_object_story_id}}"
+                f"creative{{object_story_id,effective_object_story_id,"
+                f"link_destination_display_url,object_story_spec,asset_feed_spec}}"
                 f"&access_token={acc_token}"
             )
             try:
@@ -11974,7 +12007,16 @@ def _meta_spend_by_page(start_date, end_date):
                 if dest.startswith("MESSAG"):
                     name = page_to_name.get(page_id, "")   # DM -> real FB/IG page
                 else:
-                    name = website_name                    # website/pixel -> account
+                    # Website/pixel: attribute by destination URL first (so
+                    # Arrow.tn ads inside a shared account count as Arrow.tn),
+                    # then fall back to the ad account's default page.
+                    name = website_name
+                    dest_url = _creative_dest_url(cre).lower()
+                    if dest_url:
+                        for _dom, _nm in WEBSITE_DOMAIN_TO_SALESPAGE_NAME.items():
+                            if _dom in dest_url:
+                                name = _nm
+                                break
                 spend_by_name[name] += Decimal(str(spend_by_ad[aid] * rate))
                 count_by_name[name] += 1
 
