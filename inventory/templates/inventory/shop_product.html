@@ -10,9 +10,10 @@
   .gal-track img{flex:0 0 100%;width:100%;aspect-ratio:4/5;object-fit:contain;background:var(--surface);scroll-snap-align:center}
   .gal-count{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.55);color:#fff;font-size:12px;
     font-weight:600;padding:3px 9px;border-radius:999px;pointer-events:none}
-  .gal-dots{display:flex;gap:7px;justify-content:center;padding:12px 0 2px;flex-wrap:wrap}
-  .gal-dots button{width:7px;height:7px;border-radius:999px;border:0;background:var(--line);padding:0;cursor:pointer;transition:width .2s,background .2s}
-  .gal-dots button.on{background:var(--fg);width:18px}
+  .gal-thumbs{display:flex;gap:8px;justify-content:center;padding:12px 10px 2px;flex-wrap:wrap}
+  .gal-thumbs button{width:54px;height:68px;border-radius:9px;border:1.5px solid var(--line);background:var(--surface);padding:0;cursor:pointer;overflow:hidden;transition:border-color .2s;line-height:0}
+  .gal-thumbs button.on{border-color:var(--fg)}
+  .gal-thumbs button img{width:100%;height:100%;object-fit:cover;display:block}
   .pdp .info{position:sticky;top:78px;align-self:start;padding:clamp(22px,3.4vw,54px);
     display:flex;flex-direction:column;gap:18px}
   .p-name{font-size:clamp(23px,2.3vw,32px);text-transform:uppercase;letter-spacing:-.01em}
@@ -75,7 +76,7 @@
       {% for g in product.gallery %}<img src="{{ g }}" alt="{{ product.n }}" {% if forloop.first %}loading="eager"{% else %}loading="lazy"{% endif %}>{% endfor %}
     </div>
     <span class="gal-count" id="galCount"></span>
-    <div class="gal-dots" id="galDots"></div>
+    <div class="gal-thumbs" id="galThumbs"></div>
   </div>
   <div class="info">
     <h1 class="p-name">{{ product.n }}</h1>
@@ -129,22 +130,22 @@ let sel={color:0,colorLabel:(PD.color_labels&&PD.color_labels[0])||'Unique',size
 
 // --- gallery carousel: shows only the selected colour's photos, swipeable ---
 const track=document.getElementById('galTrack');
-const dots=document.getElementById('galDots');
+const thumbs=document.getElementById('galThumbs');
 const countEl=document.getElementById('galCount');
 function curImgs(){return (CG[sel.color]&&CG[sel.color].imgs)||PD.gallery||[];}
 function renderGallery(){
   const imgs=curImgs();
   track.innerHTML=imgs.map((u,i)=>'<img src="'+u+'" alt="'+PD.n+'" '+(i?'loading="lazy"':'loading="eager"')+'>').join('');
-  dots.innerHTML=imgs.length>1?imgs.map((_,i)=>'<button data-d="'+i+'" class="'+(i===0?'on':'')+'" aria-label="photo '+(i+1)+'"></button>').join(''):'';
+  thumbs.innerHTML=imgs.length>1?imgs.map((u,i)=>'<button data-d="'+i+'" class="'+(i===0?'on':'')+'" aria-label="photo '+(i+1)+'"><img src="'+u+'" alt="" loading="lazy"></button>').join(''):'';
   countEl.textContent=imgs.length>1?('1/'+imgs.length):'';
   track.scrollLeft=0;
-  dots.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{
+  thumbs.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{
     track.scrollTo({left:(+b.dataset.d)*track.clientWidth,behavior:'smooth'});});
 }
 track.addEventListener('scroll',()=>{
   const n=curImgs().length;if(n<2)return;
   const i=Math.max(0,Math.min(n-1,Math.round(track.scrollLeft/track.clientWidth)));
-  dots.querySelectorAll('[data-d]').forEach((b,j)=>b.classList.toggle('on',j===i));
+  thumbs.querySelectorAll('[data-d]').forEach((b,j)=>b.classList.toggle('on',j===i));
   countEl.textContent=(i+1)+'/'+n;
 },{passive:true});
 
