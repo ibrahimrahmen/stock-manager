@@ -173,6 +173,30 @@ document.getElementById('addBtn').onclick=()=>{
 };
 let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
   clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2800);}
+
+// Pre-select a colour from the link, so an ad for a specific colour lands on it,
+// e.g. /produit/51/?couleur=rouge (also ?color= / ?c=). No param = default (first
+// colour), unchanged. Matches FR/EN names, tolerant of case/spacing/extra words.
+(function(){
+  try{
+    const p=new URLSearchParams(location.search);
+    const want=(p.get('couleur')||p.get('color')||p.get('c')||'').trim().toLowerCase();
+    if(!want) return;
+    const SYN={rouge:'red',red:'rouge',noir:'black',black:'noir',blanc:'white',white:'blanc',
+      bleu:'blue',blue:'bleu',vert:'green',green:'vert',gris:'gray',gray:'gris',grey:'gris',
+      jaune:'yellow',yellow:'jaune',rose:'pink',pink:'rose',marron:'brown',brown:'marron',
+      violet:'purple',purple:'violet',beige:'beige'};
+    const norm=s=>(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+    const keys=new Set([norm(want)]); if(SYN[want])keys.add(norm(SYN[want]));
+    const labels=PD.color_labels||[];
+    let idx=labels.findIndex(l=>keys.has(norm(l)));
+    if(idx<0) idx=labels.findIndex(l=>{const n=norm(l);return [...keys].some(k=>k&&n.includes(k));});
+    if(idx<0) return;
+    const btn=document.querySelector('[data-c="'+idx+'"]');
+    if(btn){btn.click();}
+    else{sel.color=idx;sel.colorLabel=labels[idx];const cn=document.getElementById('colorName');if(cn)cn.textContent=labels[idx];}
+  }catch(e){}
+})();
 renderGallery();
 try{if(window.fbq)fbq('track','ViewContent',{content_ids:[PD.id],content_type:'product',content_name:PD.n,value:PD.p,currency:'TND'});}catch(e){}
 {% endverbatim %}
