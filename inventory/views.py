@@ -70,6 +70,7 @@ MESSENGER_PAGE_TO_SALESPAGE = {
     "17841474217754022": 5,  # @handsome.collection216  → Handsome Collection
     "17841479779102575": 6,  # @primefit_tn (IG)        → PrimeFit
     "17841466972227220": 2,  # @arrowsportswear.tn (IG) → Arrow SportsWear
+    "28972433105771465": 13, # @coucoufemme2026 (IG)    → Coucou femme (new-id page)
 }
 MESSENGER_DEFAULT_SALESPAGE = 3   # Barats (fallback for unmapped pages)
 
