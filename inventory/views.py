@@ -20225,7 +20225,15 @@ def api_messenger_webhook(request):
                     _already_asked_addr = any(
                         (isinstance(m, dict) and m.get("addr_followup"))
                         for m in (conv.messages or []))
-                    if recently_greeted or has_recent_order:
+                    # A prior order / recent auto-reply only means "following up
+                    # on an existing order" when THIS message is a question
+                    # (e.g. "where is my colis?"). A repeat buyer placing a NEW
+                    # order — sending their number / size / address — must still
+                    # get the "وصلنا طلبك" confirmation. Without this, returning
+                    # customers (and anyone testing with their own number) get
+                    # the greeting but never the confirmation.
+                    _following_up = (recently_greeted or has_recent_order) and _looks_like_question(text)
+                    if _following_up:
                         conv.auto_replied = True
                         conv.save(update_fields=["auto_replied", "updated_at"])
                     elif not _already_asked_addr:
