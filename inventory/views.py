@@ -20185,22 +20185,32 @@ def api_messenger_webhook(request):
                     has_recent_order = False
                     try:
                         from .models import Order as _OrderChk
+                        # CRITICAL: the customer's OWN order for THIS conversation
+                        # must NOT count as a "recent order" — otherwise placing a
+                        # complete order (size + address + phone) suppresses its
+                        # own confirmation and the customer gets no reply. Exclude
+                        # it from both checks; only a SEPARATE earlier order counts.
+                        _own_id = getattr(conv, "pending_order_id", None)
                         # 1) By phone found in the current conversation text.
                         _cust_phone = _extract_tn_phone(conv_text_all)
                         if _cust_phone:
-                            has_recent_order = (_OrderChk.objects.filter(
+                            _rq = _OrderChk.objects.filter(
                                 customer__phone=_cust_phone,
-                                created_at__gte=_tz2.now() - _td2(days=7)
-                            ).exists())
+                                created_at__gte=_tz2.now() - _td2(days=7))
+                            if _own_id:
+                                _rq = _rq.exclude(pk=_own_id)
+                            has_recent_order = _rq.exists()
                         # 2) The customer may be following up WITHOUT re-sending
                         # their number (it was given in an earlier conversation).
                         # Link by sender_id: any pending_order from this same
-                        # Instagram/Messenger user in the last 7 days counts.
+                        # Instagram/Messenger user in the last 7 days counts —
+                        # except this conversation's own order.
                         if not has_recent_order:
-                            _pids = list(MessengerConversation.objects.filter(
+                            _pids = [pid for pid in MessengerConversation.objects.filter(
                                 sender_id=sender_id, page_id=page_id,
                                 pending_order__isnull=False)
-                                .values_list("pending_order_id", flat=True))
+                                .values_list("pending_order_id", flat=True)
+                                if pid and pid != _own_id]
                             if _pids:
                                 has_recent_order = (_OrderChk.objects.filter(
                                     id__in=_pids,
