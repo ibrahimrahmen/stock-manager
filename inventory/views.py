@@ -62,6 +62,7 @@ MESSENGER_PAGE_TO_SALESPAGE = {
     "212577788599999": 5,    # Handsome collection → Handsome Collection
     "859568317250953": 6,    # Primefit.tn         → PrimeFit
     "494370360430121": 10,   # Traffic.tn          → Traffic
+    "938553302679435": 13,   # Coucou femme        → Coucou femme
     # Instagram accounts (keyed by IG account id, same as FB pages)
     "17841474699259489": 3,  # @barats216 (IG)          → Barats
     "17841473682487619": 4,  # @next.generation216 (IG) → Next Generation
@@ -12913,6 +12914,7 @@ def api_bot_toggle(request):
 _REPLY_PAGES = {
     2: "Arrow SportsWear", 3: "Barats", 4: "Next Generation",
     5: "Handsome Collection", 6: "PrimeFit", 10: "Traffic",
+    13: "Coucou femme",
 }
 
 
