@@ -398,7 +398,16 @@ def _fetch_ig_story_origin(page_id, sender_id):
 # SAME real account. When the webhook delivers on the old id but only the new
 # id has a live token, we reply with the new id's token. Map: old id -> new id.
 IG_ID_ALIASES = {
+    # Instagram webhooks still arrive under each account's OLD id, but after the
+    # Instagram-Login reconnection the valid token is stored under the NEW id.
+    # Bridge old -> new so _messenger_page_token resolves the fresh token and IG
+    # replies keep sending. Without a bridge, a page's IG send finds no valid
+    # token and the bot goes silent (the cause of "can't reply on Instagram").
     "17841474699259489": "27678288761765194",  # @barats216
+    "17841466972227220": "28361039160154258",  # @arrowsportswear.tn
+    "17841473682487619": "28145561965050959",  # @next.generation216
+    "17841479779102575": "27610187378630687",  # @primefit_tn
+    "17841471034197351": "37020143607601272",  # @traffica.tn
 }
 
 
