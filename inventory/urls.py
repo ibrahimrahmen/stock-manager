@@ -150,6 +150,7 @@ urlpatterns = [
     path("api/debug/navex-etat/", views.api_debug_navex_etat, name="api_debug_navex_etat"),
     # Debug: test each Messenger/Instagram page token against Meta (superuser only)
     path("api/debug/token-health/", views.api_debug_token_health, name="api_debug_token_health"),
+    path("api/debug/resubscribe/", views.api_debug_resubscribe, name="api_debug_resubscribe"),
     # Cron: import env tokens into the DB store + auto-refresh Instagram tokens.
     path("cron/refresh-tokens/", views.cron_refresh_tokens, name="cron_refresh_tokens"),
     # Connect onboarding: one-click OAuth to capture Page/Instagram tokens.

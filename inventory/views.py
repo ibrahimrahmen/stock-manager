@@ -774,6 +774,42 @@ def _subscribe_webhooks(host, account_id, token, fields):
         data={"subscribed_fields": fields, "access_token": token})
 
 
+@csrf_exempt
+@login_required(login_url="/login/")
+def api_debug_resubscribe(request):
+    """Superuser: re-subscribe ONE account's webhooks and RETURN Meta's actual
+    response, so a silently-failed subscription (the cause of a page whose DMs
+    never arrive) becomes visible. The OAuth connect flow subscribes best-effort
+    and swallows the result; this surfaces it.
+
+    ?id=<account_id>&platform=instagram|facebook  (platform defaults to facebook)
+    """
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    acc = (request.GET.get("id") or "").strip()
+    platform = (request.GET.get("platform") or "facebook").strip().lower()
+    if not acc:
+        return JsonResponse({"status": "error", "message": "paramètre id requis"}, status=400)
+    tok = _messenger_page_token(acc)
+    if not tok:
+        return JsonResponse({"status": "error",
+                             "message": "aucun token résolu pour %s" % acc}, status=400)
+    if platform == "instagram":
+        host, fields = "graph.instagram.com", _IG_WEBHOOK_FIELDS
+    else:
+        host, fields = "graph.facebook.com", _FB_PAGE_WEBHOOK_FIELDS
+    resp, err = _http_json(
+        "https://%s/v21.0/%s/subscribed_apps" % (host, acc),
+        data={"subscribed_fields": fields, "access_token": tok})
+    # Also read back what's currently subscribed, to confirm it took.
+    got, got_err = _http_json(
+        "https://%s/v21.0/%s/subscribed_apps?access_token=%s" % (host, acc, tok))
+    return JsonResponse({"status": "ok", "account": acc, "platform": platform,
+                         "host": host, "subscribe_response": resp,
+                         "subscribe_error": err, "current_subscription": got,
+                         "read_error": got_err})
+
+
 @login_required(login_url="/login/")
 def connect_home(request):
     """Onboarding page: shows connected accounts + their health, and the two
