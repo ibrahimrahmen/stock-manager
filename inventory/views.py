@@ -70,7 +70,8 @@ MESSENGER_PAGE_TO_SALESPAGE = {
     "17841474217754022": 5,  # @handsome.collection216  → Handsome Collection
     "17841479779102575": 6,  # @primefit_tn (IG)        → PrimeFit
     "17841466972227220": 2,  # @arrowsportswear.tn (IG) → Arrow SportsWear
-    "28972433105771465": 13, # @coucoufemme2026 (IG)    → Coucou femme (new-id page)
+    "28972433105771465": 13, # @coucoufemme2026 (IG, new Login id)  → Coucou femme
+    "17841480047312085": 13, # @coucoufemme2026 (IG, webhook id)    → Coucou femme
 }
 MESSENGER_DEFAULT_SALESPAGE = 3   # Barats (fallback for unmapped pages)
 
@@ -408,6 +409,7 @@ IG_ID_ALIASES = {
     "17841473682487619": "28145561965050959",  # @next.generation216
     "17841479779102575": "27610187378630687",  # @primefit_tn
     "17841471034197351": "37020143607601272",  # @traffica.tn
+    "17841480047312085": "28972433105771465",  # @coucoufemme2026 (webhook id -> Login id)
 }
 
 
