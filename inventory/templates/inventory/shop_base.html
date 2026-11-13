@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<script>/* play the logo intro once per visit (per browser session), then it stays static */try{if(!sessionStorage.getItem('arrow_logo_intro')){document.documentElement.classList.add('logo-intro');sessionStorage.setItem('arrow_logo_intro','1');}}catch(e){}</script>
+<script>/* play the logo intro on every page load */try{document.documentElement.classList.add('logo-intro');}catch(e){}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{% block title %}Arrow Sportwear — Boutique{% endblock %}</title>
 <meta name="description" content="Arrow Sportwear — streetwear tunisien. Paiement à la livraison, ouvre et vérifie avant de payer.">
