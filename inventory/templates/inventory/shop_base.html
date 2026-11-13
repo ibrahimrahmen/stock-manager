@@ -2,6 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
+<script>/* play the logo intro once per visit (per browser session), then it stays static */try{if(!sessionStorage.getItem('arrow_logo_intro')){document.documentElement.classList.add('logo-intro');sessionStorage.setItem('arrow_logo_intro','1');}}catch(e){}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{% block title %}Arrow Sportwear — Boutique{% endblock %}</title>
 <meta name="description" content="Arrow Sportwear — streetwear tunisien. Paiement à la livraison, ouvre et vérifie avant de payer.">
@@ -41,8 +42,24 @@
   .brand{display:inline-flex;align-items:center;gap:11px;color:var(--fg)}
   .blogo{width:38px;height:38px;flex:none;display:block;color:var(--fg)}
   .btext{display:flex;flex-direction:column;line-height:1;gap:4px}
-  .bl1{font-family:var(--display);font-weight:900;font-size:20px;letter-spacing:.16em}
+  .bl1{font-family:var(--display);font-weight:900;font-size:20px;letter-spacing:.16em;white-space:nowrap}
   .bl2{font-family:var(--display);font-weight:600;font-size:9px;letter-spacing:.38em;color:var(--muted)}
+  /* ---- one-time logo intro: "Draw + Launch" (plays once per visit) ---- */
+  @media (prefers-reduced-motion:no-preference){
+    html.logo-intro .blogo-ring{stroke-dasharray:1;stroke-dashoffset:1;animation:blDraw .6s ease-out forwards}
+    html.logo-intro .blogo-plane{opacity:0;transform:translate(-26px,30px) scale(.35);transform-origin:38px 50px;animation:blLaunch .55s cubic-bezier(.2,.9,.25,1.2) .32s forwards}
+    html.logo-intro .bl1 span{display:inline-block;opacity:0;transform:translateY(9px);animation:blRise .4s ease-out forwards}
+    html.logo-intro .bl1 span:nth-child(1){animation-delay:.50s}
+    html.logo-intro .bl1 span:nth-child(2){animation-delay:.55s}
+    html.logo-intro .bl1 span:nth-child(3){animation-delay:.60s}
+    html.logo-intro .bl1 span:nth-child(4){animation-delay:.65s}
+    html.logo-intro .bl1 span:nth-child(5){animation-delay:.70s}
+    html.logo-intro .bl2{opacity:0;animation:blFade .5s ease-out .72s forwards}
+  }
+  @keyframes blDraw{to{stroke-dashoffset:0}}
+  @keyframes blLaunch{0%{opacity:0;transform:translate(-26px,30px) scale(.35)}60%{opacity:1;transform:translate(3px,-3px) scale(1.08)}100%{opacity:1;transform:translate(0,0) scale(1)}}
+  @keyframes blRise{to{opacity:1;transform:translateY(0)}}
+  @keyframes blFade{to{opacity:1}}
   .icons{display:flex;gap:16px;align-items:center;justify-content:flex-end}
   .iconbtn{background:none;border:0;color:var(--fg);padding:4px;display:grid;place-items:center}
   .cartcount{background:var(--accent);color:var(--accent-fg);font-size:10.5px;font-weight:700;border-radius:999px;
@@ -148,10 +165,10 @@ src="https://www.facebook.com/tr?id={{ pixel_id }}&ev=PageView&noscript=1"/></no
   <nav class="main"><a href="{{ shop_base }}/#new">Nouveautés</a><a href="{{ shop_base }}/produits/?cat=ensemble">Ensembles</a><a href="{{ shop_base }}/produits/?cat=veste">Vestes</a><a href="{{ shop_base }}/produits/">Tout</a></nav>
   <a class="brand" href="{{ shop_base }}/" aria-label="Arrow Sportwear — accueil">
     <svg class="blogo" viewBox="0 0 100 100" fill="none" aria-hidden="true">
-      <path d="M31.4 22.5 A36 36 0 1 1 18.2 39.7" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
-      <path d="M15 16 L87 52 L43 57 L34 86 Z" fill="currentColor"/>
+      <circle class="blogo-ring" cx="50" cy="50" r="36" pathLength="1" stroke="currentColor" stroke-width="7" fill="none"/>
+      <path class="blogo-plane" d="M15 16 L87 52 L43 57 L34 86 Z" fill="currentColor"/>
     </svg>
-    <span class="btext"><span class="bl1">ARROW</span><span class="bl2">SPORTWEAR</span></span>
+    <span class="btext"><span class="bl1"><span>A</span><span>R</span><span>R</span><span>O</span><span>W</span></span><span class="bl2">SPORTWEAR</span></span>
   </a>
   <div class="icons">
     <button class="iconbtn" aria-label="Recherche"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg></button>
