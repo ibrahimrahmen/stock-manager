@@ -5824,8 +5824,14 @@ def product_test_orders(request, pk):
 
 @login_required(login_url="/login/")
 def product_test_edit(request, pk):
-    """Edit a product test: name, Facebook link, page."""
-    from .models import ProductTest, SalesPage
+    """Edit a product test: name, Facebook link, page, and its colours/sizes.
+
+    Colour variants are edited like the Add form: each row carries a hidden
+    ``vid_<i>`` (the existing variant's pk, or empty for a new row) plus
+    ``color_<i>`` / ``sizes_<i>`` / ``image_<i>``. Existing rows removed in the
+    browser simply aren't submitted, and are deleted here. ``variant_count`` is
+    the number of index slots to scan."""
+    from .models import ProductTest, ProductTestVariant, SalesPage
     try:
         pt = ProductTest.objects.get(pk=pk)
     except ProductTest.DoesNotExist:
@@ -5842,6 +5848,42 @@ def product_test_edit(request, pk):
         except (ValueError, TypeError):
             pass
         pt.save()
+
+        # ---- colours / sizes ----
+        existing_ids = set(pt.variants.values_list("pk", flat=True))
+        kept_ids = set()
+        try:
+            n = int(request.POST.get("variant_count") or 0)
+        except ValueError:
+            n = 0
+        for i in range(n):
+            # A row removed in the browser submits none of its fields.
+            if not any(k % i in request.POST for k in
+                       ("vid_%d", "color_%d", "sizes_%d")):
+                continue
+            vid = (request.POST.get("vid_%d" % i) or "").strip()
+            cl = (request.POST.get("color_%d" % i) or "").strip()
+            sz = (request.POST.get("sizes_%d" % i) or "").strip()
+            img = request.FILES.get("image_%d" % i)
+            if vid:
+                # Update an existing colour.
+                v = pt.variants.filter(pk=vid).first()
+                if v:
+                    kept_ids.add(v.pk)
+                    v.color_label = cl or "—"
+                    v.sizes = sz
+                    if img:
+                        v.image = img
+                    v.save()
+            elif cl or sz or img:
+                # A brand-new colour.
+                ProductTestVariant.objects.create(
+                    product_test=pt, color_label=cl or "—", sizes=sz, image=img)
+        # Delete existing colours that were removed in the browser.
+        to_delete = existing_ids - kept_ids
+        if to_delete:
+            pt.variants.filter(pk__in=to_delete).delete()
+
         return redirect("/testing-production/?tab=" + pt.status)
     return render(request, "inventory/testing_production_edit.html",
                   {"pt": pt, "pages": pages})
