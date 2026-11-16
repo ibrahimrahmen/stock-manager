@@ -9715,10 +9715,12 @@ def orders_list(request):
     from django.db.models import Q as _Q
     if source_filter == "barats":
         qs = qs.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "arrow":
+        qs = qs.filter(sales_page__name__iexact="Arrow.tn")
     elif source_filter == "converty":
         qs = qs.filter(sales_page__name__iexact="Converty")
     elif source_filter == "facebook":
-        qs = qs.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+        qs = qs.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty").exclude(sales_page__name__iexact="Arrow.tn")
 
     # "Aujourd'hui" toggle. When ON, it narrows ONLY the early/call-center
     # statuses to today's business day (17h yesterday → 17h today, by création
@@ -9876,10 +9878,12 @@ def orders_list(request):
     counts_qs = Order.objects.filter(sent_to_test__isnull=True)
     if source_filter == "barats":
         counts_qs = counts_qs.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "arrow":
+        counts_qs = counts_qs.filter(sales_page__name__iexact="Arrow.tn")
     elif source_filter == "converty":
         counts_qs = counts_qs.filter(sales_page__name__iexact="Converty")
     elif source_filter == "facebook":
-        counts_qs = counts_qs.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+        counts_qs = counts_qs.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty").exclude(sales_page__name__iexact="Arrow.tn")
     # Chip counts follow the same rules: an explicit date range scopes every
     # status; otherwise 'Aujourd'hui' limits early statuses only.
     if range_active:
@@ -18680,20 +18684,24 @@ def stats_commandes(request):
     source_filter = request.GET.get("source", "all")
     if source_filter == "barats":
         orders = orders.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "arrow":
+        orders = orders.filter(sales_page__name__iexact="Arrow.tn")
     elif source_filter == "converty":
         orders = orders.filter(sales_page__name__iexact="Converty")
     elif source_filter == "facebook":
-        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty").exclude(sales_page__name__iexact="Arrow.tn")
     # Which orders are "Sortie" = have a linked v1 ShippingOrder.
     sortie_q = ShippingOrder.objects.filter(
         order__created_at__gte=win_start, order__created_at__lt=win_end
     )
     if source_filter == "barats":
         sortie_q = sortie_q.filter(order__sales_page__name__iexact="Barats.tn")
+    elif source_filter == "arrow":
+        sortie_q = sortie_q.filter(order__sales_page__name__iexact="Arrow.tn")
     elif source_filter == "converty":
         sortie_q = sortie_q.filter(order__sales_page__name__iexact="Converty")
     elif source_filter == "facebook":
-        sortie_q = sortie_q.exclude(order__sales_page__name__iexact="Barats.tn").exclude(order__sales_page__name__iexact="Converty")
+        sortie_q = sortie_q.exclude(order__sales_page__name__iexact="Barats.tn").exclude(order__sales_page__name__iexact="Converty").exclude(order__sales_page__name__iexact="Arrow.tn")
     sortie_ids = set(sortie_q.values_list("order_id", flat=True))
 
     # status row -> predicate
@@ -18836,10 +18844,12 @@ def stats_modeles(request):
     source_filter = request.GET.get("source", "all")
     if source_filter == "barats":
         orders = orders.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "arrow":
+        orders = orders.filter(sales_page__name__iexact="Arrow.tn")
     elif source_filter == "converty":
         orders = orders.filter(sales_page__name__iexact="Converty")
     elif source_filter == "facebook":
-        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty").exclude(sales_page__name__iexact="Arrow.tn")
     orders = list(orders.values("id", "status", "exchange_of_id", "sales_page__name"))
     order_ids = [o["id"] for o in orders]
 
@@ -18986,10 +18996,12 @@ def stats_offres(request):
     source_filter = request.GET.get("source", "all")
     if source_filter == "barats":
         orders = orders.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "arrow":
+        orders = orders.filter(sales_page__name__iexact="Arrow.tn")
     elif source_filter == "converty":
         orders = orders.filter(sales_page__name__iexact="Converty")
     elif source_filter == "facebook":
-        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty").exclude(sales_page__name__iexact="Arrow.tn")
     orders = list(orders.values("id", "status", "exchange_of_id", "sales_page__name"))
     order_ids = [o["id"] for o in orders]
 
@@ -19113,10 +19125,12 @@ def stats_pages(request):
     source_filter = request.GET.get("source", "all")
     if source_filter == "barats":
         orders = orders.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "arrow":
+        orders = orders.filter(sales_page__name__iexact="Arrow.tn")
     elif source_filter == "converty":
         orders = orders.filter(sales_page__name__iexact="Converty")
     elif source_filter == "facebook":
-        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty").exclude(sales_page__name__iexact="Arrow.tn")
     orders = list(orders.values("id", "status", "exchange_of_id", "sales_page__name"))
     order_ids = [o["id"] for o in orders]
 
@@ -19415,10 +19429,12 @@ def stats_gouvernorats(request):
     source_filter = request.GET.get("source", "all")
     if source_filter == "barats":
         orders = orders.filter(sales_page__name__iexact="Barats.tn")
+    elif source_filter == "arrow":
+        orders = orders.filter(sales_page__name__iexact="Arrow.tn")
     elif source_filter == "converty":
         orders = orders.filter(sales_page__name__iexact="Converty")
     elif source_filter == "facebook":
-        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty")
+        orders = orders.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty").exclude(sales_page__name__iexact="Arrow.tn")
     orders = list(orders.values("id", "status", "exchange_of_id", "region_id", "ville"))
     order_ids = [o["id"] for o in orders]
 

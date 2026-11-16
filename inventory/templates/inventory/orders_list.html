@@ -342,6 +342,7 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
   <div class="source-filter">
     <a href="?status={{ status_filter }}&source=all{% if today_on %}&today=1{% endif %}{% if date_from %}&from={{ date_from }}&to={{ date_to }}{% endif %}" class="src-btn {% if source_filter == 'all' %}active{% endif %}">Toutes les sources</a>
     <a href="?status={{ status_filter }}&source=barats{% if today_on %}&today=1{% endif %}{% if date_from %}&from={{ date_from }}&to={{ date_to }}{% endif %}" class="src-btn {% if source_filter == 'barats' %}active{% endif %}">🌐 Barats.tn</a>
+    <a href="?status={{ status_filter }}&source=arrow{% if today_on %}&today=1{% endif %}{% if date_from %}&from={{ date_from }}&to={{ date_to }}{% endif %}" class="src-btn {% if source_filter == 'arrow' %}active{% endif %}">🏹 Arrow.tn</a>
     <a href="?status={{ status_filter }}&source=converty{% if today_on %}&today=1{% endif %}{% if date_from %}&from={{ date_from }}&to={{ date_to }}{% endif %}" class="src-btn {% if source_filter == 'converty' %}active{% endif %}">🛒 Converty</a>
     <a href="?status={{ status_filter }}&source=facebook{% if today_on %}&today=1{% endif %}{% if date_from %}&from={{ date_from }}&to={{ date_to }}{% endif %}" class="src-btn {% if source_filter == 'facebook' %}active{% endif %}">📘 Facebook</a>
   </div>
