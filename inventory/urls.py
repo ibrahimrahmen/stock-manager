@@ -190,6 +190,7 @@ urlpatterns = [
     path("testing-production/<int:pk>/start-production/", views.product_test_start_production, name="product_test_start_production"),
     path("testing-production/<int:pk>/set-stage/", views.product_test_set_stage, name="product_test_set_stage"),
     path("testing-production/<int:pk>/set-priority/", views.product_test_set_priority, name="product_test_set_priority"),
+    path("testing-production/<int:pk>/set-producer/", views.product_test_set_producer, name="product_test_set_producer"),
     path("testing-production/<int:pk>/back-to-production/", views.product_test_back_to_production, name="product_test_back_to_production"),
     path("testing-production/<int:pk>/to-product/", views.product_test_to_product, name="product_test_to_product"),
     path("testing-production/<int:pk>/add-spending/", views.product_test_add_spending, name="product_test_add_spending"),

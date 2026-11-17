@@ -5613,12 +5613,37 @@ def testing_production_page(request):
     }
     if tab in valid:
         status, label, icon = valid[tab]
-        items = list(ProductTest.objects.filter(status=status)
-                     .annotate(norders=Count("test_orders"))
-                     .prefetch_related("variants"))
-        # In Production, show highest-priority products first.
+        # Production is split by assigned producer. The entry page (no ?producer)
+        # shows a producer picker + the UNASSIGNED products; ?producer=<id> shows
+        # only that producer's assigned products. Testing/History are unchanged.
+        producer_cards = []
+        selected_producer = None
+        unassigned_count = 0
         if tab == "production":
+            from django.contrib.auth import get_user_model
+            _User = get_user_model()
+            prod_qs = ProductTest.objects.filter(status=status)
+            _producers = list(_User.objects.filter(
+                is_active=True, profile__role="producer").order_by("username"))
+            for _u in _producers:
+                producer_cards.append({"id": _u.id, "username": _u.username,
+                                       "count": prod_qs.filter(producer=_u).count()})
+            unassigned_count = prod_qs.filter(producer__isnull=True).count()
+            _sel = (request.GET.get("producer") or "").strip()
+            if _sel.isdigit():
+                selected_producer = next(
+                    (u for u in _producers if u.id == int(_sel)), None)
+            base_qs = (prod_qs.filter(producer=selected_producer)
+                       if selected_producer is not None
+                       else prod_qs.filter(producer__isnull=True))
+            items = list(base_qs.annotate(norders=Count("test_orders"))
+                         .prefetch_related("variants"))
+            # Highest-priority products first.
             items.sort(key=lambda it: ProductTest.PRIORITY_RANK.get(it.priority, 1))
+        else:
+            items = list(ProductTest.objects.filter(status=status)
+                         .annotate(norders=Count("test_orders"))
+                         .prefetch_related("variants"))
         # Per-product colour/size map, for the "finish test" form built in JS.
         items_data = {
             str(it.id): {
@@ -5651,6 +5676,8 @@ def testing_production_page(request):
         return render(request, "inventory/testing_production_list.html", {
             "tab": tab, "label": label, "icon": icon,
             "items": items, "count": len(items), "items_data": items_data,
+            "producer_cards": producer_cards, "selected_producer": selected_producer,
+            "unassigned_count": unassigned_count,
         })
     return render(request, "inventory/testing_production.html", {
         "testing_count": ProductTest.objects.filter(status=ProductTest.TESTING).count(),
@@ -5912,6 +5939,24 @@ def product_test_detail(request, pk):
         cells.append({"size": "unknown",
                       "val": prow.get("unknown", rrow.get("unknown", 0)) if prow else rrow.get("unknown", 0)})
         vdata.append({"label": v.color_label, "image": v.image, "cells": cells})
+
+    # Per-colour / per-size breakdown of how the TEST performed (orders by size).
+    # Shown on the detail page even after the product has moved to Production.
+    def _ti(x):
+        try:
+            return int(x or 0)
+        except (ValueError, TypeError):
+            return 0
+    test_rows = []
+    if isinstance(results, dict) and results:
+        for v in pt.variants.all():
+            prow = results.get(v.color_label) or {}
+            cells = [{"size": ("Inconnu" if s == "unknown" else s), "qty": _ti(q)}
+                     for s, q in prow.items() if _ti(q) > 0]
+            total = sum(_ti(q) for q in prow.values())
+            if total > 0:
+                test_rows.append({"label": v.color_label, "image": v.image,
+                                  "cells": cells, "total": total})
     producers = list(User.objects.filter(is_active=True, profile__role="producer")
                      .order_by("username"))
     # Products in Mes produits, for the "lier le produit" selector (so pieces =
@@ -5924,6 +5969,7 @@ def product_test_detail(request, pk):
     return render(request, "inventory/testing_production_detail.html", {
         "pt": pt, "vdata": vdata, "producers": producers,
         "linked_product": linked_product, "products": products,
+        "test_rows": test_rows,
     })
 
 
@@ -5966,6 +6012,32 @@ def product_test_start_production(request, pk):
         "by": request.user.get_username(),
     }]
     pt.save()
+    return JsonResponse({"status": "ok",
+                         "producer": producer.username if producer else None})
+
+
+@login_required(login_url="/login/")
+@require_POST
+def product_test_set_producer(request, pk):
+    """Reassign a production item to a different producer (or clear it). Lets the
+    owner move an existing product from one producteur's bucket to another."""
+    from .models import ProductTest
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    pt = ProductTest.objects.filter(pk=pk).first()
+    if not pt:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    try:
+        data = json.loads(request.body.decode("utf-8") or "{}")
+        pid = int(data.get("producer_id") or 0)
+    except (ValueError, TypeError, json.JSONDecodeError):
+        pid = 0
+    producer = None
+    if pid:
+        producer = User.objects.filter(pk=pid, is_active=True,
+                                       profile__role="producer").first()
+    pt.producer = producer
+    pt.save(update_fields=["producer"])
     return JsonResponse({"status": "ok",
                          "producer": producer.username if producer else None})
 

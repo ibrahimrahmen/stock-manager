@@ -127,12 +127,28 @@ h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bo
   {% endif %}
 
   <!-- Test results -->
-  {% if pt.finished_at %}
+  {% if pt.finished_at or test_rows %}
   <div class="card">
-    <h2>Résultats du test</h2>
+    <h2>🧪 Résultats du test</h2>
     <div class="rrow"><span>Total commandes</span><b>{{ pt.total_orders }}</b></div>
     <div class="rrow"><span>Montant dépensé</span><b>{{ pt.amount_spent|floatformat:2 }} DT</b></div>
-    <div class="rrow"><span>Terminé le</span><b>{{ pt.finished_at|date:"d/m/Y" }}</b></div>
+    {% if pt.finished_at %}<div class="rrow"><span>Terminé le</span><b>{{ pt.finished_at|date:"d/m/Y" }}</b></div>{% endif %}
+    {% if test_rows %}
+    <div style="margin-top:14px;border-top:0.5px solid var(--border);padding-top:14px;">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:12px;">Détail par couleur / taille</div>
+      {% for r in test_rows %}
+      <div class="v" style="align-items:flex-start;">
+        {% if r.image %}<img src="{{ r.image.url }}" alt="{{ r.label }}">{% else %}<div class="noimg">🎨</div>{% endif %}
+        <div style="flex:1;min-width:0;">
+          <div class="vname">{{ r.label }} · <span style="color:var(--green);">{{ r.total }} commande(s)</span></div>
+          <div style="margin-top:4px;">
+            {% for c in r.cells %}<span class="chip">{% if c.size == 'Inconnu' %}Inconnu{% else %}T.{{ c.size }}{% endif %} : {{ c.qty }}</span>{% endfor %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 
@@ -141,7 +157,14 @@ h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;margin-bo
   <div class="card prod-live">
     <h2>Production</h2>
     <div style="margin-bottom:12px;"><span class="badge-live">🟢 En production</span></div>
-    <div class="rrow"><span>Producteur</span><b>{{ pt.producer.username|default:"—" }}</b></div>
+    <div class="rrow" style="align-items:center;"><span>Producteur</span>
+      {% if producers %}
+      <select onchange="setProducer('{{ pt.id }}', this.value)" style="background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-family:inherit;font-size:14px;font-weight:600;">
+        <option value="">— Non assigné —</option>
+        {% for u in producers %}<option value="{{ u.id }}"{% if pt.producer_id == u.id %} selected{% endif %}>{{ u.username }}</option>{% endfor %}
+      </select>
+      {% else %}<b>{{ pt.producer.username|default:"—" }}</b>{% endif %}
+    </div>
     <div class="rrow"><span>Démarré le</span><b>{{ pt.production_started_at|date:"d/m/Y H:i" }}</b></div>
     {% with tl=pt.stage_timeline %}{% if tl %}
     <div class="timeline">
@@ -296,6 +319,14 @@ function startProd(){
   }).then(r=>r.json()).then(function(j){
     if(j.status==='ok'){ location.href='{% url "testing_production_page" %}?tab=production'; }
     else { alert('Erreur: '+(j.message||'')); }
+  }).catch(function(e){ alert('Erreur: '+e); });
+}
+function setProducer(id, pid){
+  fetch('/testing-production/'+id+'/set-producer/', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':csrf()},
+    body: JSON.stringify({producer_id: pid})
+  }).then(r=>r.json()).then(function(j){
+    if(j.status!=='ok'){ alert('Erreur: '+(j.message||'')); }
   }).catch(function(e){ alert('Erreur: '+e); });
 }
 </script>

@@ -114,6 +114,13 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .totrow{display:flex;justify-content:space-between;align-items:center;margin-top:16px;background:var(--surface2);border:0.5px solid var(--border);border-radius:10px;padding:12px 14px;}
 .totrow .tlabel{color:var(--muted);font-size:13px;}
 .totrow .tval{font-family:'DM Serif Display',serif;font-size:26px;}
+/* Producer picker (Production tab): choose whose products to view. */
+.producer-bar{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 22px;}
+.prod-chip{display:inline-flex;align-items:center;gap:7px;background:var(--surface);border:0.5px solid var(--border);color:var(--text);border-radius:22px;padding:9px 16px;font-size:14px;font-weight:600;text-decoration:none;}
+.prod-chip:hover{border-color:var(--green);}
+.prod-chip.active{background:var(--green);color:#04120b;border-color:var(--green);}
+.prod-chip .pc-count{font-size:12px;font-weight:700;opacity:0.8;background:rgba(0,0,0,0.15);border-radius:12px;padding:1px 7px;}
+.prod-chip.active .pc-count{background:rgba(0,0,0,0.18);}
 </style>
 {% include "inventory/_tp_chrome.html" %}
 </head>
@@ -142,6 +149,15 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
     {% elif tab == 'production' %}Produits validés en production.
     {% else %}Tests terminés / archivés.{% endif %}
   </div>
+
+  {% if tab == 'production' %}
+  <div class="producer-bar">
+    <a href="?tab=production" class="prod-chip{% if not selected_producer %} active{% endif %}">📥 Non assignés <span class="pc-count">{{ unassigned_count }}</span></a>
+    {% for pc in producer_cards %}
+    <a href="?tab=production&amp;producer={{ pc.id }}" class="prod-chip{% if selected_producer and selected_producer.id == pc.id %} active{% endif %}">👤 {{ pc.username }} <span class="pc-count">{{ pc.count }}</span></a>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   {% if items %}
   <div class="pcards">
@@ -245,7 +261,7 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
   {% else %}
   <div class="empty">
     <div class="big">{{ icon }}</div>
-    <div>Aucun produit dans « {{ label }} » pour le moment.</div>
+    <div>{% if tab == 'production' and selected_producer %}Aucun produit assigné à {{ selected_producer.username }}.{% elif tab == 'production' %}Aucun produit non assigné.{% else %}Aucun produit dans « {{ label }} » pour le moment.{% endif %}</div>
     {% if tab == 'testing' %}<div style="margin-top:14px;"><a class="addbtn" href="{% url 'product_test_add' %}">➕ Ajouter un test</a></div>{% endif %}
   </div>
   {% endif %}
