@@ -881,12 +881,6 @@ def connect_settings(request):
     })
 
 
-def _require_superuser_redirect(request):
-    if not request.user.is_authenticated:
-        return False
-    return request.user.is_superuser
-
-
 @login_required(login_url="/login/")
 def oauth_facebook_start(request):
     """Redirect the admin to Facebook's OAuth dialog to connect Pages."""
@@ -5014,6 +5008,7 @@ def api_return_multiple(request):
 
 @csrf_exempt
 @require_POST
+@login_required(login_url="/login/")
 def api_scan_payment(request):
     """
     Scan a payment barcode from the shipping company slip.
@@ -5113,6 +5108,7 @@ def api_scan_payment(request):
 
 @csrf_exempt
 @require_POST
+@login_required(login_url="/login/")
 def api_confirm_payment(request):
     """Confirm payment with optional modifications (refused items, adjusted price)."""
     from .models import log_action, AuditLog
@@ -5231,6 +5227,7 @@ def api_confirm_payment(request):
 
 @csrf_exempt
 @require_POST
+@login_required(login_url="/login/")
 def api_close_order(request):
     """Manually close the currently open order with an expected amount."""
     from .models import log_action, AuditLog
@@ -5423,6 +5420,7 @@ def api_fix_order_units(request, pk):
 
 @csrf_exempt
 @require_POST
+@login_required(login_url="/login/")
 def api_delete_order(request, pk):
     """Delete an order and return all units to in_stock."""
     from .models import log_action, AuditLog
@@ -7295,17 +7293,6 @@ def navex_sync_page(request):
     return render(request, "inventory/navex_sync.html", {})
 
 
-@csrf_exempt
-@require_POST
-def api_navex_sync(request):
-    """Run Navex sync — check all shipped orders."""
-    if not request.user.is_staff:
-        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
-    from .navex_sync import sync_shipped_orders
-    results = sync_shipped_orders()
-    return JsonResponse(results)
-
-
 def admin_panel(request):
     if not request.user.is_staff:
         from django.http import HttpResponseForbidden
@@ -8398,35 +8385,6 @@ def _send_telegram(message, chat_id=None, token=None):
             }).encode()
             req = urllib.request.Request(url, data=data)
             with urllib.request.urlopen(req, timeout=20) as resp:
-                resp.read()
-            sent_any = True
-        except Exception:
-            continue
-    return sent_any
-
-
-def _send_whatsapp(message, phone=None, apikey=None):
-    """Send a WhatsApp message via CallMeBot. Reads phone + apikey from env
-    (CALLMEBOT_PHONE, CALLMEBOT_APIKEY) unless passed explicitly. Best-effort:
-    never raises, returns True/False. Supports multiple recipients by comma in
-    CALLMEBOT_PHONE / CALLMEBOT_APIKEY (matched by position)."""
-    import urllib.parse, urllib.request
-    phones = (phone or os.environ.get("CALLMEBOT_PHONE", "")).split(",")
-    keys = (apikey or os.environ.get("CALLMEBOT_APIKEY", "")).split(",")
-    sent_any = False
-    for i, ph in enumerate(phones):
-        ph = ph.strip()
-        if not ph:
-            continue
-        key = keys[i].strip() if i < len(keys) else (keys[0].strip() if keys else "")
-        if not key:
-            continue
-        try:
-            url = (
-                "https://api.callmebot.com/whatsapp.php?"
-                + urllib.parse.urlencode({"phone": ph, "text": message, "apikey": key})
-            )
-            with urllib.request.urlopen(url, timeout=20) as resp:
                 resp.read()
             sent_any = True
         except Exception:
@@ -12731,55 +12689,6 @@ def api_ad_link_offer(request, pk):
 
 
 @login_required(login_url="/login/")
-def diagnose_offer_web(request):
-    """TEMPORARY admin-only diagnostic. Open /diagnose-offer/?name=Icy%20Maze
-    (or ?offer_id=NN) in a browser. Prints offer -> product -> family ->
-    variants -> unit counts by size as plain text. Remove after debugging."""
-    if not _orders_role_check(request):
-        return HttpResponse("Accès refusé.", status=403, content_type="text/plain; charset=utf-8")
-    from .models import Offer, Product, ProductUnit
-    from django.db.models import Q
-
-    name = (request.GET.get("name") or "").strip()
-    offer_id = (request.GET.get("offer_id") or "").strip()
-    qs = Offer.objects.all()
-    if offer_id.isdigit():
-        qs = qs.filter(id=int(offer_id))
-    elif name:
-        qs = qs.filter(name__icontains=name)
-    else:
-        return HttpResponse("Ajoutez ?name=Icy Maze ou ?offer_id=NN à l'URL.",
-                            content_type="text/plain; charset=utf-8")
-
-    lines = []
-    for offer in qs:
-        lines.append(f"=== OFFER #{offer.id}: {offer.name} (active={offer.is_active}) ===")
-        ops = offer.products.all()
-        if not ops:
-            lines.append("  (offer has NO products linked)")
-        for op in ops:
-            p = op.product
-            root = p.parent_product or p
-            family = Product.objects.filter(Q(id=root.id) | Q(parent_product=root))
-            lines.append(f"  OfferProduct -> product #{p.id} '{p.name}' "
-                         f"(parent={p.parent_product_id}) qty={op.quantity}")
-            lines.append(f"    root=#{root.id} '{root.name}'  family size={family.count()}")
-            for fam_p in family:
-                variants = fam_p.variants.all()
-                lines.append(f"      product #{fam_p.id} '{fam_p.name}' -> {variants.count()} variant(s)")
-                for v in variants:
-                    by_size = {}
-                    for u in v.units.all():
-                        by_size[u.size] = by_size.get(u.size, 0) + 1
-                    lines.append(f"        variant #{v.id} color='{v.color_label or v.color_name}' "
-                                 f"units={v.units.count()} by_size={by_size}")
-        lines.append("")
-    if not lines:
-        lines = [f"No offer matched name='{name}' offer_id='{offer_id}'."]
-    return HttpResponse("\n".join(lines), content_type="text/plain; charset=utf-8")
-
-
-@login_required(login_url="/login/")
 @csrf_exempt
 def api_extract_conversation(request, pk):
     """Superuser tool: force a Messenger/Instagram conversation to be extracted
@@ -13813,24 +13722,6 @@ def _maybe_send_status_sms(order):
                 description=f"SMS statut FAIL order {getattr(order,'id','?')}: {str(_sms_exc)[:200]}")
         except Exception:
             pass
-
-
-def _maybe_send_expedie_sms(order):
-    """Send the 'expédié' SMS once when an order's colis is shipped."""
-    try:
-        from . import sms_service
-    except Exception:
-        return
-    if not order or not order.customer or order.sms_expedie_sent:
-        return
-    try:
-        total = sms_service._fmt_total(order)
-        ok, _ = sms_service.send_sms(order.customer.phone, sms_service.msg_expedie(total))
-        if ok:
-            order.sms_expedie_sent = True
-            order.save(update_fields=["sms_expedie_sent"])
-    except Exception:
-        pass
 
 
 def _create_order_from_shopify_shaped_payload(payload, source="shopify", external_id="", request=None, sales_page_id=None):
