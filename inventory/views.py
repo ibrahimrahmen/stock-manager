@@ -11067,7 +11067,7 @@ def api_shop_track(request):
     from .models import StoreHit
     s = (request.GET.get("s") or "")[:40].strip()
     e = (request.GET.get("e") or "").strip()
-    if s and e in ("pageview", "ping", "add_to_cart", "checkout", "purchase"):
+    if s and e in ("pageview", "ping", "add_to_cart", "checkout", "purchase", "ruler"):
         v = request.GET.get("v")
         try:
             val = Decimal(v) if v else None
@@ -11138,6 +11138,40 @@ def _shop_funnel(start, end=None):
         "carts": _sess("add_to_cart"),
         "checkouts": _sess("checkout"),
         "purchases": _sess("purchase"),
+    }
+
+
+def _shop_ruler_ratio(start, end=None):
+    """Did the size finder ('ruler') help people buy? Over a window, split unique
+    visitor sessions into used-the-guide vs not, and bought vs not, and give the
+    buy-rate for each group plus how many times more often guide-users buy."""
+    from .models import StoreHit
+    hits = StoreHit.objects.filter(created_at__gte=start)
+    if end is not None:
+        hits = hits.filter(created_at__lt=end)
+
+    def _sset(ev):
+        return set(hits.filter(event=ev).values_list("session", flat=True))
+
+    visitors = _sset("pageview")
+    tried = _sset("ruler")
+    bought = _sset("purchase")
+    universe = visitors | tried | bought          # never lose a session
+    tried_bought = len(tried & bought)
+    tried_not = len(tried - bought)
+    nottried_bought = len(bought - tried)
+    nottried_not = len(universe - tried - bought)
+    tried_total = len(tried)
+    nottried_total = len(universe - tried)
+    tried_rate = (100.0 * tried_bought / tried_total) if tried_total else 0.0
+    nottried_rate = (100.0 * nottried_bought / nottried_total) if nottried_total else 0.0
+    lift = (tried_rate / nottried_rate) if nottried_rate else None
+    return {
+        "tried_bought": tried_bought, "tried_not": tried_not,
+        "nottried_bought": nottried_bought, "nottried_not": nottried_not,
+        "tried_total": tried_total, "nottried_total": nottried_total,
+        "tried_rate": round(tried_rate, 1), "nottried_rate": round(nottried_rate, 1),
+        "lift": round(lift, 1) if lift is not None else None,
     }
 
 
@@ -11221,6 +11255,7 @@ def shop_admin_stats(request):
         "period_json": _json.dumps({"sales": total_sales, "orders": orders_count,
                                     "aov": aov, "new": new_c, "ret": ret_c}),
         "funnel_json": _json.dumps(_shop_funnel(start)),
+        "ruler_json": _json.dumps(_shop_ruler_ratio(start)),
         "by_gov_json": _json.dumps(by_gov, ensure_ascii=False),
         "top_json": _json.dumps(top, ensure_ascii=False),
         "recent_json": _json.dumps(recent, ensure_ascii=False),

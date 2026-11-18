@@ -106,6 +106,22 @@ a{color:inherit;text-decoration:none}
     <div class="cr"><b id="cr_val">—</b><span>taux de conversion — visiteurs qui ont commandé (<span id="cr_det">—</span>)</span></div>
   </div>
 
+  <!-- SIZE GUIDE (ruler) IMPACT -->
+  <div class="sec">
+    <h2>📏 Guide des tailles · impact sur les achats · {{ range_label }}</h2>
+    <div class="grid c2">
+      <div class="card kpi"><div class="lab">📏 Ont utilisé le guide</div><div class="val" id="r_tried_rate">—</div><div class="sub"><span id="r_tried_det">—</span> ont acheté</div></div>
+      <div class="card kpi"><div class="lab">Sans le guide</div><div class="val" id="r_not_rate">—</div><div class="sub"><span id="r_not_det">—</span> ont acheté</div></div>
+    </div>
+    <div class="cr"><b id="r_lift">—</b><span id="r_lift_txt">&nbsp;</span></div>
+    <div class="grid c4" style="margin-top:14px">
+      <div class="card kpi"><div class="lab">Guide + achat</div><div class="val" id="r_tb">—</div></div>
+      <div class="card kpi"><div class="lab">Guide · sans achat</div><div class="val" id="r_tn">—</div></div>
+      <div class="card kpi"><div class="lab">Sans guide + achat</div><div class="val" id="r_nb">—</div></div>
+      <div class="card kpi"><div class="lab">Sans guide · sans achat</div><div class="val" id="r_nn">—</div></div>
+    </div>
+  </div>
+
   <!-- PERIOD ANALYTICS -->
   <div class="sec grid c4">
     <div class="card kpi"><div class="lab">Ventes totales</div><div class="val" id="p_sales"></div></div>
@@ -136,6 +152,7 @@ a{color:inherit;text-decoration:none}
 
 <script id="d_period" type="application/json">{{ period_json|safe }}</script>
 <script id="d_funnel" type="application/json">{{ funnel_json|safe }}</script>
+<script id="d_ruler" type="application/json">{{ ruler_json|safe }}</script>
 <script id="d_gov" type="application/json">{{ by_gov_json|safe }}</script>
 <script id="d_top" type="application/json">{{ top_json|safe }}</script>
 <script id="d_recent" type="application/json">{{ recent_json|safe }}</script>
@@ -192,6 +209,28 @@ a{color:inherit;text-decoration:none}
   var cr=F.visits?(100*F.purchases/F.visits):0;
   document.getElementById('cr_val').textContent=(Math.round(cr*10)/10).toLocaleString('fr-FR')+'%';
   document.getElementById('cr_det').textContent=num(F.purchases)+' / '+num(F.visits);
+
+  // SIZE GUIDE (ruler) impact on buying
+  var R=J('d_ruler')||{};
+  function pct(n){return (Number(n)||0).toLocaleString('fr-FR')+'%';}
+  document.getElementById('r_tried_rate').textContent=pct(R.tried_rate);
+  document.getElementById('r_tried_det').textContent=num(R.tried_bought)+' / '+num(R.tried_total);
+  document.getElementById('r_not_rate').textContent=pct(R.nottried_rate);
+  document.getElementById('r_not_det').textContent=num(R.nottried_bought)+' / '+num(R.nottried_total);
+  document.getElementById('r_tb').textContent=num(R.tried_bought);
+  document.getElementById('r_tn').textContent=num(R.tried_not);
+  document.getElementById('r_nb').textContent=num(R.nottried_bought);
+  document.getElementById('r_nn').textContent=num(R.nottried_not);
+  var lift=R.lift;
+  if(lift&&isFinite(lift)&&R.tried_total){
+    document.getElementById('r_lift').textContent='×'+Number(lift).toLocaleString('fr-FR');
+    document.getElementById('r_lift_txt').textContent=(lift>=1
+      ?('les visiteurs qui utilisent le guide achètent '+Number(lift).toLocaleString('fr-FR')+'× plus souvent')
+      :'les visiteurs qui utilisent le guide achètent moins souvent');
+  } else {
+    document.getElementById('r_lift').textContent='—';
+    document.getElementById('r_lift_txt').textContent='pas encore assez de données pour comparer';
+  }
 
   // LIVE tiles (initial + polling) — top row only, funnel stays period-based
   function paintLive(d){

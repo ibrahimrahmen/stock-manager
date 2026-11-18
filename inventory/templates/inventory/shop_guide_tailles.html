@@ -96,7 +96,7 @@
     res.hidden=false;
     highlight(s);
     try{ res.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
-    try{ if(window.ShopTrack) ShopTrack('size_guide', s); }catch(e){}
+    try{ if(window.ShopTrack) ShopTrack('ruler'); }catch(e){}
   }
   btn.addEventListener('click', go);
   [h,w].forEach(function(el){ el.addEventListener('keydown', function(e){ if(e.key==='Enter') go(); }); });
