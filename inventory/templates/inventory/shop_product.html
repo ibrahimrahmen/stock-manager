@@ -66,6 +66,34 @@
   .related-wrap{padding:clamp(44px,6vw,84px) 0}
   .related-wrap h2{font-size:clamp(26px,4vw,40px);margin-bottom:26px}
   @media (max-width:900px){.pdp{grid-template-columns:1fr}.pdp .info{position:static}}
+  /* Size finder (height + weight -> auto-select the size) */
+  .size-help{display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .size-finder-btn{background:none;border:0;color:var(--accent);font-size:12px;font-weight:700;
+    cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:5px;text-decoration:underline}
+  .sf-scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;opacity:0;pointer-events:none;
+    transition:opacity .25s;display:grid;place-items:center;padding:20px}
+  .sf-scrim.open{opacity:1;pointer-events:auto}
+  .sf-modal{background:var(--bg);width:min(420px,100%);max-height:90vh;overflow:auto;padding:24px;
+    transform:translateY(12px);transition:transform .25s}
+  .sf-scrim.open .sf-modal{transform:none}
+  .sf-x{float:right;background:none;border:0;font-size:24px;line-height:1;color:var(--muted);cursor:pointer;margin:-6px -6px 0 0}
+  .sf-modal h3{font-size:22px;margin-bottom:4px}
+  .sf-hint{color:var(--muted);font-size:13.5px;margin-bottom:18px}
+  .sf-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .sf-row label{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:700;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .sf-row input{background:var(--surface);border:1px solid var(--line);color:var(--fg);padding:13px;
+    font-family:var(--display);font-size:19px;font-weight:700;text-align:center;width:100%}
+  .sf-row input:focus{outline:none;border-color:var(--fg)}
+  .sf-err{color:var(--accent);font-size:13px;min-height:1px;margin-top:8px}
+  .sf-res{margin-top:16px;border-top:1px dashed var(--line);padding-top:16px;text-align:center}
+  .sf-res .sf-size{font-family:var(--display);font-weight:900;font-size:52px;line-height:1;color:var(--accent);margin:4px 0}
+  .sf-res .sf-note{font-size:13px;color:var(--muted);margin-top:6px}
+  .sf-actions{display:flex;gap:10px;margin-top:18px}
+  .sf-actions button{flex:1;padding:14px;font-weight:700;font-size:13px;letter-spacing:.08em;
+    text-transform:uppercase;border:1px solid var(--fg);cursor:pointer}
+  .sf-actions .sf-go{background:var(--fg);color:var(--bg)}
+  .sf-actions .sf-cancel{background:var(--bg);color:var(--fg)}
 {% endblock %}
 {% block content %}
 <script id="product-data" type="application/json">{{ product_json|safe }}</script>
@@ -88,7 +116,7 @@
         {% for c in product.colors %}<button class="sw2 {% if forloop.first %}sel{% endif %}" data-c="{{ forloop.counter0 }}" data-label="{{ c.label }}" title="{{ c.label }}"><img src="{{ c.img }}" alt="{{ c.label }}"></button>{% endfor %}
       </div></div>
     {% endif %}
-    <div><div class="lbl" id="sizeLbl">Taille</div>
+    <div><div class="size-help"><div class="lbl" id="sizeLbl">Taille</div><button type="button" class="size-finder-btn" id="sizeFinderBtn">📏 Trouver ma taille</button></div>
       <div class="sizes" id="sizeOpts">{% for s in product.sizes %}<button class="sz" data-s="{{ s }}">{{ s }}</button>{% endfor %}</div></div>
     <div><div class="lbl">Quantité</div>
       <div class="qtyrow"><button data-q="-1" aria-label="moins">−</button><span id="qtyV">1</span><button data-q="1" aria-label="plus">+</button></div></div>
@@ -107,6 +135,27 @@ Tu ouvres et vérifies ton colis avant de payer.
 Lavage à 30°C · ne pas sécher au sèche-linge · repasser à basse température.</div></details>
   </div>
 </section>
+<div class="sf-scrim" id="sfScrim" aria-hidden="true">
+  <div class="sf-modal" role="dialog" aria-label="Trouver ma taille">
+    <button type="button" class="sf-x" id="sfClose" aria-label="Fermer">×</button>
+    <h3>Trouve ta taille</h3>
+    <div class="sf-hint">Entre ta taille et ton poids — on sélectionne la bonne taille pour ce produit.</div>
+    <div class="sf-row">
+      <label>Taille (cm)<input id="sfH" type="number" inputmode="numeric" min="140" max="220" placeholder="ex : 175"></label>
+      <label>Poids (kg)<input id="sfW" type="number" inputmode="numeric" min="35" max="180" placeholder="ex : 74"></label>
+    </div>
+    <div class="sf-err" id="sfErr"></div>
+    <div class="sf-res" id="sfRes" hidden>
+      <div class="lbl" style="color:var(--muted)">Ta taille</div>
+      <div class="sf-size" id="sfSize">—</div>
+      <div class="sf-note" id="sfNote"></div>
+    </div>
+    <div class="sf-actions">
+      <button type="button" class="sf-cancel" id="sfCancel">Annuler</button>
+      <button type="button" class="sf-go" id="sfGo">Trouver ma taille</button>
+    </div>
+  </div>
+</div>
 {% if related %}
 <section class="related-wrap wrap gut">
   <h2>Vous aimerez aussi</h2>
@@ -200,6 +249,60 @@ let tt;function toast(m){const t=document.getElementById('toast');t.textContent=
 })();
 renderGallery();
 try{if(window.fbq)fbq('track','ViewContent',{content_ids:[PD.id],content_type:'product',content_name:PD.n,value:PD.p,currency:'TND'});}catch(e){}
+
+// --- Size finder: height + weight -> auto-select the right size on THIS product ---
+(function(){
+  var scrim=document.getElementById('sfScrim'), openBtn=document.getElementById('sizeFinderBtn');
+  if(!scrim||!openBtn) return;
+  var fH=document.getElementById('sfH'), fW=document.getElementById('sfW'),
+      ferr=document.getElementById('sfErr'), fres=document.getElementById('sfRes'),
+      fsize=document.getElementById('sfSize'), fnote=document.getElementById('sfNote'),
+      fgo=document.getElementById('sfGo');
+  var pending=null;
+  function openM(){scrim.classList.add('open');scrim.setAttribute('aria-hidden','false');setTimeout(function(){try{fH.focus();}catch(e){}},80);}
+  function closeM(){scrim.classList.remove('open');scrim.setAttribute('aria-hidden','true');}
+  function resetRes(){fres.hidden=true;fgo.textContent='Trouver ma taille';pending=null;}
+  function availSizes(){return Array.prototype.map.call(document.querySelectorAll('#sizeOpts [data-s]'),function(b){return b.getAttribute('data-s');});}
+  function nearest(rec,avail){
+    if(avail.indexOf(rec)>=0) return rec;
+    var AS=window.ArrowSize; if(!AS) return null;
+    var rr=AS.rank(rec), best=null, bd=99;
+    avail.forEach(function(s){var r=AS.rank(s);if(r>=0){var d=Math.abs(r-rr);if(d<bd){bd=d;best=s;}}});
+    return best;
+  }
+  function compute(){
+    ferr.textContent='';
+    var h=parseInt(fH.value,10), w=parseInt(fW.value,10);
+    if(!h||h<140||h>220){ferr.textContent='Entre une taille valide (140–220 cm).';fH.focus();return;}
+    if(!w||w<35||w>180){ferr.textContent='Entre un poids valide (35–180 kg).';fW.focus();return;}
+    var AS=window.ArrowSize, rec=AS?AS.reco(h,w):null, avail=availSizes(), pick=nearest(rec,avail);
+    pending=pick;
+    fsize.textContent=pick||rec||'—';
+    if(pick&&pick!==rec) fnote.textContent='La taille '+rec+' n\'est pas dispo ici — on a pris le '+pick+'.';
+    else if(!pick) fnote.textContent='Choisis ta taille manuellement ci-dessous.';
+    else fnote.textContent='';
+    fres.hidden=false;
+    fgo.textContent=pick?('Choisir le '+pick):'Fermer';
+  }
+  openBtn.addEventListener('click',openM);
+  document.getElementById('sfClose').addEventListener('click',closeM);
+  document.getElementById('sfCancel').addEventListener('click',closeM);
+  scrim.addEventListener('click',function(e){if(e.target===scrim)closeM();});
+  fgo.addEventListener('click',function(){
+    if(fres.hidden){compute();return;}
+    if(pending){
+      var btn=Array.prototype.slice.call(document.querySelectorAll('#sizeOpts [data-s]')).filter(function(b){return b.getAttribute('data-s')===pending;})[0];
+      if(btn) btn.click();
+      closeM();
+      try{document.getElementById('sizeOpts').scrollIntoView({behavior:'smooth',block:'center'});}catch(e){}
+      if(typeof toast==='function') toast('Taille '+pending+' sélectionnée');
+    } else { closeM(); }
+  });
+  [fH,fW].forEach(function(el){
+    el.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();fres.hidden?compute():fgo.click();}});
+    el.addEventListener('input',resetRes);
+  });
+})();
 {% endverbatim %}
 </script>
 {% endblock %}

@@ -217,6 +217,22 @@ src="https://www.facebook.com/tr?id={{ pixel_id }}&ev=PageView&noscript=1"/></no
 </aside>
 <script>window.SHOP_BASE="{{ shop_base }}";window.SHOP_PIXEL="{{ pixel_id }}";</script>
 <script>
+// Shared size recommender (height cm + weight kg -> S..XXXL). Used by BOTH the
+// size-guide page and the product-page size finder, so the logic stays identical.
+window.ArrowSize={
+  SIZES:['S','M','L','XL','XXL','XXXL'],
+  reco:function(H,W){
+    var i;
+    if(W<63)i=0;else if(W<73)i=1;else if(W<84)i=2;
+    else if(W<96)i=3;else if(W<110)i=4;else i=5;
+    if(H>=188&&i<5)i+=1;              // tall frame -> size up for length
+    else if(H<=163&&i>0&&W<96)i-=1;   // short + not heavy -> size down
+    return this.SIZES[i];
+  },
+  rank:function(s){return this.SIZES.indexOf(s);}
+};
+</script>
+<script>
 // lightweight storefront analytics beacon (powers the live Arrow.tn dashboard)
 (function(){
   var SID;

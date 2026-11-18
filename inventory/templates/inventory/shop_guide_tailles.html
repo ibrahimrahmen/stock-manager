@@ -77,16 +77,8 @@
       res=document.getElementById('gtResult'), out=document.getElementById('gtSize'),
       sub=document.getElementById('gtSub');
   if(!btn) return;
-  var SIZES=['S','M','L','XL','XXL','XXXL'];
-  function reco(H,W){
-    var i;
-    if(W<63) i=0; else if(W<73) i=1; else if(W<84) i=2;
-    else if(W<96) i=3; else if(W<110) i=4; else i=5;
-    // Tall frames carry a size up for length/fit; very short frames one down.
-    if(H>=188 && i<5) i+=1;
-    else if(H<=163 && i>0 && W<96) i-=1;
-    return SIZES[i];
-  }
+  var SIZES=(window.ArrowSize&&window.ArrowSize.SIZES)||['S','M','L','XL','XXL','XXXL'];
+  function reco(H,W){ return window.ArrowSize?window.ArrowSize.reco(H,W):SIZES[0]; }
   function highlight(size){
     var rows=document.querySelectorAll('.gt-table tr[data-s]');
     rows.forEach(function(r){ r.classList.toggle('hl', r.getAttribute('data-s')===size); });
