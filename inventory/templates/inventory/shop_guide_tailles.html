@@ -1,0 +1,113 @@
+{% extends "inventory/shop_base.html" %}
+{% block title %}Guide des tailles — Arrow Sportwear{% endblock %}
+{% block style %}
+  .gt-wrap{max-width:720px;margin-inline:auto;padding-block:44px 76px}
+  .gt-crumb{font-size:12.5px;color:var(--muted);margin-bottom:20px}
+  .gt-crumb a:hover{color:var(--fg)}
+  .gt-wrap h1{font-size:clamp(34px,7.5vw,58px);margin-bottom:12px}
+  .gt-lead{color:var(--muted);font-size:15px;line-height:1.6;margin-bottom:34px;max-width:52ch}
+  .gt-card{border:1px solid var(--line);background:var(--surface);padding:26px;margin-bottom:22px}
+  .gt-card h2{font-size:22px;margin-bottom:8px}
+  .gt-card .hint{color:var(--muted);font-size:14px;margin-bottom:18px}
+  .gt-form{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+  @media (max-width:460px){.gt-form{grid-template-columns:1fr}}
+  .gt-form label{display:flex;flex-direction:column;gap:7px;font-size:12px;font-weight:700;
+    letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .gt-form input{background:var(--bg);border:1px solid var(--line);color:var(--fg);
+    padding:14px;font-family:var(--display);font-size:20px;font-weight:700;width:100%;text-align:center}
+  .gt-form input:focus{outline:none;border-color:var(--fg)}
+  .gt-err{color:var(--accent);font-size:13.5px;margin-top:4px;min-height:1px}
+  .gt-result{margin-top:20px;border-top:1px dashed var(--line);padding-top:20px;text-align:center}
+  .gt-result .lbl{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .gt-size{font-family:var(--display);font-weight:900;font-size:clamp(56px,16vw,96px);line-height:1;
+    color:var(--accent);margin:6px 0 4px}
+  .gt-sub{font-size:14.5px;color:var(--fg);line-height:1.6}
+  .gt-sub .alt{color:var(--muted)}
+  .gt-table{width:100%;border-collapse:collapse;font-size:14px;margin-top:4px}
+  .gt-table th,.gt-table td{text-align:left;padding:11px 10px;border-bottom:1px solid var(--line)}
+  .gt-table th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .gt-table td:first-child{font-family:var(--display);font-weight:800;font-size:15px}
+  .gt-table tr.hl td{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+  .gt-note{color:var(--muted);font-size:13.5px;line-height:1.6;margin-top:16px}
+{% endblock %}
+{% block content %}
+<div class="wrap gut gt-wrap">
+  <div class="gt-crumb"><a href="{{ shop_base }}/">Accueil</a> / Guide des tailles</div>
+  <h1>Guide des tailles</h1>
+  <p class="gt-lead">Pas sûr de ta taille ? Entre ta taille et ton poids, on te recommande la taille idéale — en une seconde.</p>
+
+  <div class="gt-card">
+    <h2>Trouve ta taille</h2>
+    <div class="hint">Renseigne ta taille (en cm) et ton poids (en kg).</div>
+    <div class="gt-form">
+      <label>Taille (cm)<input id="gtH" type="number" inputmode="numeric" min="140" max="220" placeholder="ex : 175"></label>
+      <label>Poids (kg)<input id="gtW" type="number" inputmode="numeric" min="35" max="180" placeholder="ex : 74"></label>
+    </div>
+    <div class="gt-err" id="gtErr"></div>
+    <button class="btn red block" id="gtBtn" type="button">Trouver ma taille</button>
+    <div class="gt-result" id="gtResult" hidden>
+      <div class="lbl">Ta taille recommandée</div>
+      <div class="gt-size" id="gtSize">—</div>
+      <div class="gt-sub" id="gtSub"></div>
+    </div>
+  </div>
+
+  <div class="gt-card">
+    <h2>Tableau des tailles</h2>
+    <table class="gt-table">
+      <thead><tr><th>Taille</th><th>Poids</th><th>Hauteur</th></tr></thead>
+      <tbody>
+        <tr data-s="S"><td>S</td><td>55 – 63 kg</td><td>160 – 170 cm</td></tr>
+        <tr data-s="M"><td>M</td><td>63 – 73 kg</td><td>167 – 178 cm</td></tr>
+        <tr data-s="L"><td>L</td><td>73 – 84 kg</td><td>174 – 186 cm</td></tr>
+        <tr data-s="XL"><td>XL</td><td>84 – 96 kg</td><td>181 – 192 cm</td></tr>
+        <tr data-s="XXL"><td>XXL</td><td>96 – 110 kg</td><td>186 – 197 cm</td></tr>
+        <tr data-s="XXXL"><td>XXXL</td><td>110 kg +</td><td>194 cm +</td></tr>
+      </tbody>
+    </table>
+    <p class="gt-note">C'est une estimation pour une coupe standard. Pour un style plus ample, prends une taille au-dessus. Paiement à la livraison — tu peux vérifier avant de payer, et l'échange est possible sous 48h.</p>
+  </div>
+</div>
+{% endblock %}
+{% block script %}
+<script>{% verbatim %}
+(function(){
+  var h=document.getElementById('gtH'), w=document.getElementById('gtW'),
+      btn=document.getElementById('gtBtn'), err=document.getElementById('gtErr'),
+      res=document.getElementById('gtResult'), out=document.getElementById('gtSize'),
+      sub=document.getElementById('gtSub');
+  if(!btn) return;
+  var SIZES=['S','M','L','XL','XXL','XXXL'];
+  function reco(H,W){
+    var i;
+    if(W<63) i=0; else if(W<73) i=1; else if(W<84) i=2;
+    else if(W<96) i=3; else if(W<110) i=4; else i=5;
+    // Tall frames carry a size up for length/fit; very short frames one down.
+    if(H>=188 && i<5) i+=1;
+    else if(H<=163 && i>0 && W<96) i-=1;
+    return SIZES[i];
+  }
+  function highlight(size){
+    var rows=document.querySelectorAll('.gt-table tr[data-s]');
+    rows.forEach(function(r){ r.classList.toggle('hl', r.getAttribute('data-s')===size); });
+  }
+  function go(){
+    err.textContent='';
+    var H=parseInt(h.value,10), W=parseInt(w.value,10);
+    if(!H||H<140||H>220){ err.textContent='Entre une taille valide (140–220 cm).'; h.focus(); return; }
+    if(!W||W<35||W>180){ err.textContent='Entre un poids valide (35–180 kg).'; w.focus(); return; }
+    var s=reco(H,W);
+    var i=SIZES.indexOf(s);
+    out.textContent=s;
+    var alt = i<SIZES.length-1 ? (' Pour un style plus ample, prends du <b>'+SIZES[i+1]+'</b>.') : '';
+    sub.innerHTML='D\'après <b>'+H+' cm</b> et <b>'+W+' kg</b>.<span class="alt">'+alt+'</span>';
+    res.hidden=false;
+    highlight(s);
+    try{ res.scrollIntoView({behavior:'smooth',block:'center'}); }catch(e){}
+    try{ if(window.ShopTrack) ShopTrack('size_guide', s); }catch(e){}
+  }
+  btn.addEventListener('click', go);
+  [h,w].forEach(function(el){ el.addEventListener('keydown', function(e){ if(e.key==='Enter') go(); }); });
+})();
+{% endverbatim %}</script>
+{% endblock %}

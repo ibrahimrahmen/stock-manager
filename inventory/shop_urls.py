@@ -13,6 +13,7 @@ urlpatterns = [
     path("produits/", views.shop_collection, name="shop_collection"),
     path("commande/", views.shop_checkout, name="shop_checkout"),
     path("livraison-echange/", views.shop_livraison_echange, name="shop_livraison_echange"),
+    path("guide-tailles/", views.shop_guide_tailles, name="shop_guide_tailles"),
     path("shop/img/", views.shop_img, name="shop_img"),
     path("api/shop/track/", views.api_shop_track, name="api_shop_track"),
     path("api/shop/order/", views.api_shop_order, name="api_shop_order"),

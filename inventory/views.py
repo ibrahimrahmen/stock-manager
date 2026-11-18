@@ -10557,6 +10557,15 @@ def shop_livraison_echange(request):
     })
 
 
+def shop_guide_tailles(request):
+    """Public storefront size guide: the customer types their height + weight and
+    gets a recommended size, plus a reference chart. Logic runs client-side."""
+    return render(request, "inventory/shop_guide_tailles.html", {
+        "shop_base": _shop_base(request),
+        "pixel_id": _cfg("shop_pixel_id", ""),
+    })
+
+
 def _capi_purchase(request, email, phone, value, content_ids, event_id):
     """Send a server-side Purchase to the Meta Conversions API, deduplicated
     with the browser pixel via the shared event_id. Fire-and-forget in a daemon
