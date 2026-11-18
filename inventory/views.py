@@ -10294,6 +10294,32 @@ def _thumb(url, w, frame=False):
     return u + "&frame=45" if frame else u
 
 
+def _offer_thumb(offer, w=120):
+    """Small thumbnail URL for an Offer — its own photo, else a product variant
+    photo — resolved like the storefront grid. '' when nothing is available."""
+    if not offer:
+        return ""
+    url = ""
+    try:
+        for oi in offer.images.all():
+            if oi.image:
+                url = oi.image.url
+                break
+        if not url and getattr(offer, "image", None):
+            url = offer.image.url
+        if not url:
+            for op in offer.products.all():
+                for v in op.product.variants.all():
+                    if v.image:
+                        url = v.image.url
+                        break
+                if url:
+                    break
+    except Exception:
+        url = ""
+    return _thumb(url, w) if url else ""
+
+
 def _fr_description(offer, colors, sizes):
     """A clean French customer description, built from the offer's attributes.
     (The stored description is internal AI text, so we don't show that.)"""
@@ -10781,7 +10807,9 @@ def api_shop_recent_purchases(request):
     try:
         qs = (Order.objects.filter(sales_page=page)
               .select_related("region", "customer")
-              .prefetch_related("order_offers")
+              .prefetch_related(
+                  "order_offers__offer__images",
+                  "order_offers__offer__products__product__variants")
               .order_by("-created_at")[:60])
         now = timezone.now()
         for o in qs:
@@ -10794,6 +10822,9 @@ def api_shop_recent_purchases(request):
             product = ((oo.offer_name if oo else "") or "").strip()
             if not product:
                 continue
+            img = _offer_thumb(oo.offer if oo else None, 120)
+            if not img:
+                continue  # no photo -> skip, the popup is photo-first
             region = (o.region.name if o.region_id else (o.ville or "")).strip()
             mins = int(max(0, (now - o.created_at).total_seconds()) // 60)
             if mins < 1:
@@ -10805,7 +10836,7 @@ def api_shop_recent_purchases(request):
             else:
                 ago = "il y a %d j" % (mins // 1440)
             items.append({"name": first[:20].title(), "region": region[:30],
-                          "product": product[:60], "ago": ago})
+                          "product": product[:60], "ago": ago, "img": img})
             if len(items) >= 12:
                 break
     except Exception:

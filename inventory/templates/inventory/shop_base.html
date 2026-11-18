@@ -152,6 +152,7 @@
   .sproof.show{transform:none;opacity:1;pointer-events:auto}
   .sproof .sp-ic{flex:none;width:38px;height:38px;border-radius:999px;background:color-mix(in srgb,var(--ok) 14%,transparent);
     color:var(--ok);display:grid;place-items:center;margin-top:1px}
+  .sproof .sp-img{flex:none;width:46px;height:56px;object-fit:cover;background:var(--surface);border:1px solid var(--line)}
   .sproof .sp-tx{min-width:0;flex:1;font-size:12.5px;line-height:1.35}
   .sproof .sp-tx b{font-weight:700}
   .sproof .sp-p{color:var(--accent);font-weight:700}
@@ -298,7 +299,9 @@ document.addEventListener('keydown',function(e){
   var data=[], i=0, dismissed=false, timer;
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function render(it){
-    box.innerHTML='<div class="sp-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg></div>'+
+    var ic=it.img?('<img class="sp-img" src="'+esc(it.img)+'" alt="" loading="lazy">')
+      :'<div class="sp-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg></div>';
+    box.innerHTML=ic+
       '<div class="sp-tx"><b>'+esc(it.name)+'</b>'+(it.region?(' de '+esc(it.region)):'')+' a commandé <span class="sp-p">'+esc(it.product)+'</span>'+
       '<span class="sp-ago">'+esc(it.ago)+' · Paiement à la livraison</span></div>'+
       '<button class="sp-x" type="button" aria-label="Fermer">×</button>';
@@ -308,7 +311,8 @@ document.addEventListener('keydown',function(e){
     if(dismissed||!data.length) return;
     render(data[i % data.length]); i++;
     void box.offsetWidth; box.classList.add('show');
-    timer=setTimeout(function(){ box.classList.remove('show'); timer=setTimeout(cycle, 4000); }, 6000);
+    // Stay visible 10s, then a calm 12s gap before the next one (not spammy).
+    timer=setTimeout(function(){ box.classList.remove('show'); timer=setTimeout(cycle, 12000); }, 10000);
   }
   try{
     fetch('/api/shop/recent-purchases/').then(function(r){return r.json();}).then(function(j){
