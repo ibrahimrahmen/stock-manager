@@ -144,6 +144,20 @@
     text-transform:uppercase;padding:11px 8px;border:1px solid var(--fg);background:var(--bg);color:var(--fg);cursor:pointer}
   .addpop .ap-act .prim{background:var(--fg);color:var(--bg)}
   @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  /* Social-proof popup: recent REAL purchases, bottom-left, auto-cycles. */
+  .sproof{position:fixed;left:max(16px,env(safe-area-inset-left,0px));bottom:max(16px,env(safe-area-inset-bottom,16px));z-index:88;
+    width:min(322px,calc(100vw - 32px));background:var(--bg);border:1px solid var(--line);box-shadow:0 18px 50px rgba(0,0,0,.18);
+    display:flex;gap:11px;align-items:flex-start;padding:12px 13px;transform:translateY(16px);opacity:0;pointer-events:none;
+    transition:transform .35s cubic-bezier(.2,.8,.2,1),opacity .3s}
+  .sproof.show{transform:none;opacity:1;pointer-events:auto}
+  .sproof .sp-ic{flex:none;width:38px;height:38px;border-radius:999px;background:color-mix(in srgb,var(--ok) 14%,transparent);
+    color:var(--ok);display:grid;place-items:center;margin-top:1px}
+  .sproof .sp-tx{min-width:0;flex:1;font-size:12.5px;line-height:1.35}
+  .sproof .sp-tx b{font-weight:700}
+  .sproof .sp-p{color:var(--accent);font-weight:700}
+  .sproof .sp-ago{display:block;color:var(--muted);font-size:11px;margin-top:3px;letter-spacing:.02em}
+  .sproof .sp-x{flex:none;background:none;border:0;color:var(--muted);font-size:18px;line-height:1;padding:0 2px;margin:-2px -2px 0 0}
+  @media (max-width:520px){.sproof{width:calc(100vw - 24px);left:12px;bottom:12px}}
   {% block style %}{% endblock %}
 </style>
 {% if pixel_id %}
@@ -188,6 +202,7 @@ src="https://www.facebook.com/tr?id={{ pixel_id }}&ev=PageView&noscript=1"/></no
 </div></footer>
 <div class="toast" id="toast"></div>
 <div class="addpop" id="addPop" aria-live="polite"></div>
+<div class="sproof" id="sproof" aria-live="polite"></div>
 <div class="cart-scrim" id="cartScrim"></div>
 <aside class="cart" id="cartDrawer" aria-hidden="true">
   <div class="cart-top"><b>Panier</b><button class="x" id="cartClose" aria-label="Fermer">×</button></div>
@@ -273,6 +288,34 @@ document.addEventListener('keydown',function(e){
   document.querySelectorAll('[data-cart-open]').forEach(b=>b.addEventListener('click',e=>{e.preventDefault();open();}));
   document.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
   render();
+})();
+{% endverbatim %}</script>
+<script>{% verbatim %}
+// Social-proof popup: cycles REAL recent purchases (first name + region +
+// product + time-ago) from /api/shop/recent-purchases/. Appears ~every 10s.
+(function(){
+  var box=document.getElementById('sproof'); if(!box) return;
+  var data=[], i=0, dismissed=false, timer;
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function render(it){
+    box.innerHTML='<div class="sp-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg></div>'+
+      '<div class="sp-tx"><b>'+esc(it.name)+'</b>'+(it.region?(' de '+esc(it.region)):'')+' a commandé <span class="sp-p">'+esc(it.product)+'</span>'+
+      '<span class="sp-ago">'+esc(it.ago)+' · Paiement à la livraison</span></div>'+
+      '<button class="sp-x" type="button" aria-label="Fermer">×</button>';
+    var x=box.querySelector('.sp-x'); if(x) x.onclick=function(){dismissed=true;box.classList.remove('show');clearTimeout(timer);};
+  }
+  function cycle(){
+    if(dismissed||!data.length) return;
+    render(data[i % data.length]); i++;
+    void box.offsetWidth; box.classList.add('show');
+    timer=setTimeout(function(){ box.classList.remove('show'); timer=setTimeout(cycle, 4000); }, 6000);
+  }
+  try{
+    fetch('/api/shop/recent-purchases/').then(function(r){return r.json();}).then(function(j){
+      data=(j&&j.items)||[];
+      if(data.length){ timer=setTimeout(cycle, 4000); }
+    }).catch(function(){});
+  }catch(e){}
 })();
 {% endverbatim %}</script>
 {% block script %}{% endblock %}

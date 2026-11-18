@@ -10759,6 +10759,64 @@ def api_shop_order(request):
                          "total": str(order.total), "event_id": event_id})
 
 
+def api_shop_recent_purchases(request):
+    """PUBLIC: recent REAL purchases for the storefront social-proof popup.
+
+    Returns, for the latest orders on THIS shop's sales page: the customer's
+    FIRST NAME only, their governorate (region), the product (offer) name, and a
+    'time ago' label. No phone, no full name, no address — just enough for honest
+    social proof. Cached 60s so it never hammers the DB."""
+    from .models import Order
+    from django.core.cache import cache as _cache
+    page = _shop_sales_page()
+    ck = "shop_recent_purchases:%s" % (page.id if page else "0")
+    try:
+        cached = _cache.get(ck)
+    except Exception:
+        cached = None
+    if cached is not None:
+        return JsonResponse({"items": cached})
+
+    items = []
+    try:
+        qs = (Order.objects.filter(sales_page=page)
+              .select_related("region", "customer")
+              .prefetch_related("order_offers")
+              .order_by("-created_at")[:60])
+        now = timezone.now()
+        for o in qs:
+            raw = (o.customer_name or (o.customer.name if o.customer_id else "") or "").strip()
+            parts = raw.split()
+            first = parts[0] if parts else ""
+            if len(first) < 2:
+                continue
+            oo = next(iter(o.order_offers.all()), None)
+            product = ((oo.offer_name if oo else "") or "").strip()
+            if not product:
+                continue
+            region = (o.region.name if o.region_id else (o.ville or "")).strip()
+            mins = int(max(0, (now - o.created_at).total_seconds()) // 60)
+            if mins < 1:
+                ago = "à l'instant"
+            elif mins < 60:
+                ago = "il y a %d min" % mins
+            elif mins < 1440:
+                ago = "il y a %d h" % (mins // 60)
+            else:
+                ago = "il y a %d j" % (mins // 1440)
+            items.append({"name": first[:20].title(), "region": region[:30],
+                          "product": product[:60], "ago": ago})
+            if len(items) >= 12:
+                break
+    except Exception:
+        items = []
+    try:
+        _cache.set(ck, items, 60)
+    except Exception:
+        pass
+    return JsonResponse({"items": items})
+
+
 def shop_img(request):
     """Serve a resized (and optionally 4:5-framed) offer image, cached on disk.
     Lets the storefront load small uniform thumbnails instead of full media."""
@@ -21126,7 +21184,12 @@ def _build_shopify_shape_from_extraction(data, conv):
         _capture_on = (_cfg("capture_ai:%s" % _sp, "") == "on")
     except Exception:
         _capture_on = False
-    if not _capture_on:
+    # FB / Instagram DM orders fill CUSTOMER + PHONE + ADDRESS only — never the
+    # product. Seeding loose TEXT items here filled the wrong offer on page/DM
+    # orders (e.g. order #32442), so it is OFF by default; set DM_AUTOFILL_OFFERS=1
+    # to re-enable. This matches _match_offers_from_text / _add_extracted_items_to_order.
+    # (capture_ai pages are already excluded above — the photo cascade fills those.)
+    if (not _capture_on) and os.environ.get("DM_AUTOFILL_OFFERS", "0") == "1":
         for it in items:
             prod = (it.get("product") or "").strip()
             if not prod:

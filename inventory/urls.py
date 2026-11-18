@@ -176,6 +176,7 @@ urlpatterns = [
     path("shop/admin/top-pages/", views.api_shop_top_pages, name="api_shop_top_pages"),
     path("api/shop/track/", views.api_shop_track, name="api_shop_track"),
     path("api/shop/order/", views.api_shop_order, name="api_shop_order"),
+    path("api/shop/recent-purchases/", views.api_shop_recent_purchases, name="api_shop_recent_purchases"),
     # Push the catalogue to Google Drive (button + cron).
     path("api/drive-sync/", views.api_drive_sync, name="api_drive_sync"),
     path("cron/drive-sync/", views.cron_drive_sync, name="cron_drive_sync"),
