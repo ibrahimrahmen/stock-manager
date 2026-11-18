@@ -153,6 +153,8 @@
   .sproof .sp-ic{flex:none;width:38px;height:38px;border-radius:999px;background:color-mix(in srgb,var(--ok) 14%,transparent);
     color:var(--ok);display:grid;place-items:center;margin-top:1px}
   .sproof .sp-img{flex:none;width:46px;height:56px;object-fit:cover;background:var(--surface);border:1px solid var(--line)}
+  .sproof .sp-link{display:flex;gap:11px;align-items:flex-start;flex:1;min-width:0;color:inherit}
+  .sproof .sp-link:hover .sp-p{text-decoration:underline}
   .sproof .sp-tx{min-width:0;flex:1;font-size:12.5px;line-height:1.35}
   .sproof .sp-tx b{font-weight:700}
   .sproof .sp-p{color:var(--accent);font-weight:700}
@@ -301,11 +303,12 @@ document.addEventListener('keydown',function(e){
   function render(it){
     var ic=it.img?('<img class="sp-img" src="'+esc(it.img)+'" alt="" loading="lazy">')
       :'<div class="sp-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6L9 17l-5-5"/></svg></div>';
-    box.innerHTML=ic+
-      '<div class="sp-tx"><b>'+esc(it.name)+'</b>'+(it.region?(' de '+esc(it.region)):'')+' a commandé <span class="sp-p">'+esc(it.product)+'</span>'+
-      '<span class="sp-ago">'+esc(it.ago)+' · Paiement à la livraison</span></div>'+
+    var inner=ic+'<div class="sp-tx"><b>'+esc(it.name)+'</b>'+(it.region?(' de '+esc(it.region)):'')+' a commandé <span class="sp-p">'+esc(it.product)+'</span>'+
+      '<span class="sp-ago">'+esc(it.ago)+' · Paiement à la livraison</span></div>';
+    var href=it.id?(window.SHOP_BASE+'/produit/'+it.id+'/'):'';
+    box.innerHTML=(href?('<a class="sp-link" href="'+esc(href)+'">'+inner+'</a>'):('<div class="sp-link">'+inner+'</div>'))+
       '<button class="sp-x" type="button" aria-label="Fermer">×</button>';
-    var x=box.querySelector('.sp-x'); if(x) x.onclick=function(){dismissed=true;box.classList.remove('show');clearTimeout(timer);};
+    var x=box.querySelector('.sp-x'); if(x) x.onclick=function(e){e.preventDefault();e.stopPropagation();dismissed=true;box.classList.remove('show');clearTimeout(timer);};
   }
   function cycle(){
     if(dismissed||!data.length) return;

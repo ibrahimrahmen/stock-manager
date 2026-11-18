@@ -10836,7 +10836,8 @@ def api_shop_recent_purchases(request):
             else:
                 ago = "il y a %d j" % (mins // 1440)
             items.append({"name": first[:20].title(), "region": region[:30],
-                          "product": product[:60], "ago": ago, "img": img})
+                          "product": product[:60], "ago": ago, "img": img,
+                          "id": oo.offer_id})
             if len(items) >= 12:
                 break
     except Exception:
