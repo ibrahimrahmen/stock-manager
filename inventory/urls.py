@@ -169,6 +169,7 @@ urlpatterns = [
     path("shop/produit/<int:offer_id>/", views.shop_product, name="shop_product"),
     path("shop/produits/", views.shop_collection, name="shop_collection"),
     path("shop/commande/", views.shop_checkout, name="shop_checkout"),
+    path("shop/livraison-echange/", views.shop_livraison_echange, name="shop_livraison_echange"),
     path("shop/img/", views.shop_img, name="shop_img"),
     path("shop/admin/vitrine/", views.shop_admin_vitrine, name="shop_admin_vitrine"),
     path("shop/admin/stats/", views.shop_admin_stats, name="shop_admin_stats"),

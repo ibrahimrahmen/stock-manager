@@ -1,0 +1,58 @@
+{% extends "inventory/shop_base.html" %}
+{% block title %}Livraison & Échange — Arrow Sportwear{% endblock %}
+{% block style %}
+  .le-wrap{max-width:760px;margin-inline:auto;padding-block:44px 76px}
+  .le-crumb{font-size:12.5px;color:var(--muted);margin-bottom:20px;letter-spacing:.02em}
+  .le-crumb a:hover{color:var(--fg)}
+  .le-wrap h1{font-size:clamp(34px,7.5vw,58px);margin-bottom:12px}
+  .le-lead{color:var(--muted);font-size:15px;line-height:1.6;margin-bottom:38px;max-width:52ch}
+  .le-card{border:1px solid var(--line);background:var(--surface);padding:26px;margin-bottom:20px}
+  .le-badge{display:inline-block;background:var(--fg);color:var(--bg);font-size:11px;font-weight:700;
+    letter-spacing:.14em;text-transform:uppercase;padding:5px 12px;margin-bottom:14px}
+  .le-card h2{font-size:23px;margin-bottom:14px;display:flex;align-items:center;gap:10px}
+  .le-card p{font-size:15px;line-height:1.7;margin:0 0 11px}
+  .le-card p:last-child{margin-bottom:0}
+  .le-card b{font-weight:700}
+  .le-note{color:var(--muted);font-size:13.5px}
+  .le-phone{display:inline-flex;align-items:center;gap:10px;background:var(--accent);color:#fff;
+    font-family:var(--display);font-weight:800;font-size:21px;letter-spacing:.06em;padding:13px 24px;margin:4px 0 12px}
+  .le-phone:hover{opacity:.92}
+  .le-steps{list-style:none;padding:0;margin:4px 0 0;display:flex;flex-direction:column;gap:9px}
+  .le-steps li{display:flex;gap:11px;font-size:14.5px;line-height:1.5;align-items:flex-start}
+  .le-steps .n{flex:none;width:23px;height:23px;border-radius:999px;background:var(--fg);color:var(--bg);
+    font-size:12px;font-weight:700;display:grid;place-items:center;margin-top:1px}
+{% endblock %}
+{% block content %}
+<div class="wrap gut le-wrap">
+  <div class="le-crumb"><a href="{{ shop_base }}/">Accueil</a> / Livraison &amp; Échange</div>
+  <h1>Livraison &amp; Échange</h1>
+  <p class="le-lead">Tout ce qu'il faut savoir avant et après ta commande — simple, clair, et toujours payé à la livraison.</p>
+
+  <div class="le-card">
+    <div class="le-badge">Livraison</div>
+    <h2>🚚 Livraison en 24–48h</h2>
+    <p>Ta commande est livrée partout en Tunisie <b>entre 24h et 48h</b> après confirmation.</p>
+    <p><b>Paiement à la livraison :</b> tu <b>ouvres et vérifies ta commande avant de payer</b>. Si quelque chose ne te convient pas, tu ne paies pas.</p>
+    <p class="le-note">Frais de livraison : 7 DT partout en Tunisie.</p>
+  </div>
+
+  <div class="le-card">
+    <div class="le-badge">Échange</div>
+    <h2>🔁 Échange sous 48h</h2>
+    <p>Un souci de taille ou de couleur ? L'échange est possible <b>uniquement dans les 48h qui suivent la réception</b> de ta commande.</p>
+    <p>Pour lancer un échange, appelle-nous :</p>
+    <a class="le-phone" href="tel:+21626200219" aria-label="Appeler le 26 200 219">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.1-8.7A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>
+      26 200 219
+    </a>
+    <ul class="le-steps">
+      <li><span class="n">1</span><span>Appelle le <b>26 200 219</b> dans les 48h après avoir reçu ta commande.</span></li>
+      <li><span class="n">2</span><span>Dis-nous l'article reçu et la taille / couleur que tu veux à la place.</span></li>
+      <li><span class="n">3</span><span>On organise l'échange avec le livreur — tu gardes ta pièce jusqu'à l'échange.</span></li>
+    </ul>
+    <p class="le-note" style="margin-top:12px;">Passé 48h après la réception, l'échange n'est plus garanti.</p>
+  </div>
+
+  <a class="btn red" href="{{ shop_base }}/produits/">Continuer mes achats</a>
+</div>
+{% endblock %}

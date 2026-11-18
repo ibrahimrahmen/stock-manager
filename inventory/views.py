@@ -10548,6 +10548,15 @@ def shop_home(request):
     })
 
 
+def shop_livraison_echange(request):
+    """Public storefront page explaining delivery (24–48h, pay on delivery) and
+    the exchange policy (within 48h of arrival, by phone)."""
+    return render(request, "inventory/shop_livraison_echange.html", {
+        "shop_base": _shop_base(request),
+        "pixel_id": _cfg("shop_pixel_id", ""),
+    })
+
+
 def _capi_purchase(request, email, phone, value, content_ids, event_id):
     """Send a server-side Purchase to the Meta Conversions API, deduplicated
     with the browser pixel via the shared event_id. Fire-and-forget in a daemon
