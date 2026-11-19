@@ -45,11 +45,9 @@
   .sizes{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .sz{min-width:56px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:12px 14px;font-weight:600;font-size:14px}
   .sz.sel{border-color:var(--fg);background:var(--fg);color:var(--bg)}
-  .sz-help{min-width:0;border:1px dashed var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent);
-    color:var(--accent);padding:12px 14px;font-weight:700;font-size:14px;display:inline-flex;align-items:center;
-    gap:6px;cursor:pointer;line-height:1;white-space:nowrap}
-  .sz-help:hover{background:var(--accent);color:#fff;border-style:solid}
-  .sz-help .rl{font-size:16px}
+  .sz-help{min-width:56px;border:1px solid var(--accent);background:var(--bg);
+    color:var(--accent);padding:12px 14px;font-weight:700;font-size:16px;cursor:pointer;line-height:1}
+  .sz-help:hover{background:var(--accent);color:#fff}
   #sizeOpts.err .sz{border-color:var(--accent);color:var(--accent)}
   #sizeOpts.err{animation:shk .36s}
   .lbl.err{color:var(--accent)}
@@ -141,7 +139,7 @@
       </div></div>
     {% endif %}
     <div><div class="size-help"><div class="lbl" id="sizeLbl">Taille</div><button type="button" class="size-finder-btn" id="sizeFinderBtn"><span class="rl">📏</span> Trouver ma taille</button></div>
-      <div class="sizes" id="sizeOpts">{% for s in product.sizes %}<button class="sz" data-s="{{ s }}">{{ s }}</button>{% endfor %}<button type="button" class="sz-help" id="sizeHelpBtn" aria-label="Je ne connais pas ma taille, aide-moi"><span class="rl">📏</span> Ma taille ?</button></div></div>
+      <div class="sizes" id="sizeOpts">{% for s in product.sizes %}<button class="sz" data-s="{{ s }}">{{ s }}</button>{% endfor %}<button type="button" class="sz-help" id="sizeHelpBtn" aria-label="Je ne connais pas ma taille, aide-moi">?</button></div></div>
     <div><div class="lbl">Quantité</div>
       <div class="qtyrow"><button data-q="-1" aria-label="moins">−</button><span id="qtyV">1</span><button data-q="1" aria-label="plus">+</button></div></div>
     <button class="cta-big" id="addBtn" style="margin-top:6px">Ajouter au panier</button>
