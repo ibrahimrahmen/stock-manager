@@ -1,5 +1,13 @@
 {% extends "inventory/shop_base.html" %}
 {% block title %}{{ product.n }} — Arrow Sportwear{% endblock %}
+{% block head %}
+<meta property="og:type" content="product">
+<meta property="og:title" content="{{ product.n }} — Arrow Sportwear">
+<meta property="og:description" content="{{ product.p_str }} DT · Paiement à la livraison · Livraison 24–48h">
+{% if og_image %}<meta property="og:image" content="{{ og_image }}">{% endif %}
+<meta property="og:url" content="{{ canonical }}">
+<meta name="twitter:card" content="summary_large_image">
+{% endblock %}
 {% block style %}
   .crumb{font-size:12px;color:var(--muted);letter-spacing:.04em;padding:16px 0}
   .crumb a:hover{color:var(--fg)}
@@ -315,6 +323,19 @@ try{if(window.fbq)fbq('track','ViewContent',{content_ids:[PD.id],content_type:'p
     el.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();fres.hidden?compute():fgo.click();}});
     el.addEventListener('input',resetRes);
   });
+})();
+
+// Product-aware contact: from a product page, WhatsApp/Messenger carry THIS
+// product. WhatsApp pre-fills a message; its link preview shows the photo.
+(function(){
+  try{
+    var url=location.href.split('#')[0];
+    var msg='Bonjour 👋\nJe veux commander : '+PD.n+' ('+PD.p_str+' DT)\n'+url;
+    var wa=document.querySelector('.sicon.wa');
+    if(wa) wa.href='https://wa.me/21626200219?text='+encodeURIComponent(msg);
+    var ms=document.querySelector('.sicon.ms');
+    if(ms) ms.href='https://m.me/61553527294504?ref=product_'+PD.id;
+  }catch(e){}
 })();
 {% endverbatim %}
 </script>

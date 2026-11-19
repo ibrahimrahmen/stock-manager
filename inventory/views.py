@@ -11119,6 +11119,11 @@ def shop_product(request, offer_id):
              "hoodie": "Hoodies", "pantalon": "Pantalons", "sport": "Sport",
              "espadrille": "Chaussures", "claquette": "Chaussures"}.get(
                  (offer.category or "").lower(), "Boutique")
+    # Absolute image + URL so a shared WhatsApp link unfurls with the product
+    # photo (Open Graph), and so the pre-filled message carries a real link.
+    _og_rel = gallery[0] if gallery else (product.get("cart_img") or "")
+    og_image = request.build_absolute_uri(_og_rel) if _og_rel else ""
+    canonical = request.build_absolute_uri()
     return render(request, "inventory/shop_product.html", {
         "product": product,
         "product_json": _json.dumps(product, ensure_ascii=False),
@@ -11126,6 +11131,8 @@ def shop_product(request, offer_id):
         "breadcrumb_cat": crumb,
         "shop_base": base,
         "pixel_id": _cfg("shop_pixel_id", ""),
+        "og_image": og_image,
+        "canonical": canonical,
     })
 
 
