@@ -10633,6 +10633,15 @@ def shop_guide_tailles(request):
     })
 
 
+def shop_contact(request):
+    """Public storefront contact page: WhatsApp (10h–17h) and Messenger (10h–23h)
+    channels with a live open/closed badge, plus Instagram."""
+    return render(request, "inventory/shop_contact.html", {
+        "shop_base": _shop_base(request),
+        "pixel_id": _cfg("shop_pixel_id", ""),
+    })
+
+
 def _capi_purchase(request, email, phone, value, content_ids, event_id):
     """Send a server-side Purchase to the Meta Conversions API, deduplicated
     with the browser pixel via the shared event_id. Fire-and-forget in a daemon
