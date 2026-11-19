@@ -215,6 +215,8 @@ urlpatterns = [
     path("api/shopify/webhook/orders/create/", views.api_shopify_webhook_order_created, name="api_shopify_webhook_order_created"),
     # Messenger DM webhook: receives messages + ad referral, stores conversation.
     path("webhooks/messenger/", views.api_messenger_webhook, name="api_messenger_webhook"),
+    # WhatsApp Cloud API webhook: receives inbound messages into the same inbox.
+    path("webhooks/whatsapp/", views.api_whatsapp_webhook, name="api_whatsapp_webhook"),
     path("api/messenger/poll/", views.api_messenger_poll, name="api_messenger_poll"),
     path("api/messenger/poll-cron/", views.api_messenger_poll_cron, name="api_messenger_poll_cron"),
     # Regions / delegations (cascaded dropdown)

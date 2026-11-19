@@ -642,6 +642,15 @@ _CONFIG_SECTIONS = [
         ("IG_APP_ID", "ID de l'app Instagram", False),
         ("IG_APP_SECRET", "Secret de l'app Instagram", True),
     ]),
+    ("WhatsApp", "🟢", [
+        ("WHATSAPP_PHONE_NUMBER_ID", "ID du numéro (Phone number ID — Meta → WhatsApp → API Setup)", False),
+        ("WHATSAPP_TOKEN", "Token d'accès permanent WhatsApp", True),
+        ("WHATSAPP_VERIFY_TOKEN", "Token de vérification du webhook (inventez-en un, puis collez le même dans Meta)", True),
+        ("WHATSAPP_WABA_ID", "ID du compte WhatsApp Business (WABA — optionnel)", False),
+        ("WHATSAPP_TEMPLATE_NAME", "Nom du modèle 'commande en route' approuvé par Meta (ex: commande_en_route)", False),
+        ("WHATSAPP_TEMPLATE_LANG", "Langue du modèle (déf. fr)", False),
+        ("WHATSAPP_NOTIFY_ENABLED", "Envoyer la notif WhatsApp 'commande en route' (1 = oui / 0 = non). Laissez 0 tant que le modèle n'est pas approuvé.", False),
+    ]),
     ("Meta Ads", "📣", [
         ("META_AD_ACCOUNT_ID", "ID du compte publicitaire", False),
         ("META_AD_ACCOUNT_TOKENS", "Tokens des comptes pub", True),
@@ -3648,6 +3657,99 @@ def _conversation_deep_link(page_id, psid, platform="messenger"):
     return f"https://business.facebook.com/latest/inbox/all/?asset_id={page_id}"
 
 
+def _wa_to(phone):
+    """Normalize a Tunisian phone to WhatsApp international form: 216 + 8 digits,
+    no '+'. Accepts stored 8-digit numbers or already-prefixed ones."""
+    digits = "".join(c for c in str(phone or "") if c.isdigit())
+    if not digits:
+        return ""
+    if digits.startswith("216") and len(digits) == 11:
+        return digits
+    return "216" + digits[-8:]
+
+
+def _whatsapp_send_text(to, text):
+    """Free-form WhatsApp reply via the Cloud API. VALID ONLY inside the 24h
+    customer-service window (after the customer messaged us); outside it Meta
+    rejects free text and a template is required. Best-effort, never raises."""
+    import urllib.request as _ureq
+    import json as _json
+    token = _cfg("WHATSAPP_TOKEN", "")
+    pnid = _cfg("WHATSAPP_PHONE_NUMBER_ID", "")
+    to = _wa_to(to)
+    if not token or not pnid or not to or not text:
+        if not token or not pnid:
+            _log_send_failure(pnid or "whatsapp", "whatsapp",
+                              "WHATSAPP_TOKEN / PHONE_NUMBER_ID non configuré")
+        return False
+    url = f"https://graph.facebook.com/v21.0/{pnid}/messages"
+    body = _json.dumps({
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "text",
+        "text": {"body": text},
+    }).encode("utf-8")
+    try:
+        req = _ureq.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Authorization", "Bearer " + token)
+        with _ureq.urlopen(req, timeout=10) as resp:
+            return resp.status == 200
+    except Exception as e:
+        _reason = ""
+        try:
+            if hasattr(e, "read"):
+                _reason = e.read().decode("utf-8", "replace")[:200]
+        except Exception:
+            pass
+        _log_send_failure(pnid or "whatsapp", "whatsapp", _reason or str(e)[:120])
+        return False
+
+
+def _whatsapp_send_template(to, template_name, lang="fr", body_params=None):
+    """Send a pre-approved WhatsApp template (the only way to message a customer
+    OUTSIDE the 24h window, e.g. 'commande en route'). `body_params` fills the
+    template's {{1}}, {{2}}… body variables in order. Best-effort, never raises.
+    Returns True on a 200 from Meta."""
+    import urllib.request as _ureq
+    import json as _json
+    token = _cfg("WHATSAPP_TOKEN", "")
+    pnid = _cfg("WHATSAPP_PHONE_NUMBER_ID", "")
+    to = _wa_to(to)
+    if not token or not pnid or not to or not template_name:
+        return False
+    tmpl = {"name": template_name, "language": {"code": lang or "fr"}}
+    if body_params:
+        tmpl["components"] = [{
+            "type": "body",
+            "parameters": [{"type": "text", "text": str(p)} for p in body_params],
+        }]
+    body = _json.dumps({
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "template",
+        "template": tmpl,
+    }).encode("utf-8")
+    try:
+        req = _ureq.Request(url=f"https://graph.facebook.com/v21.0/{pnid}/messages",
+                            data=body, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Authorization", "Bearer " + token)
+        with _ureq.urlopen(req, timeout=10) as resp:
+            return resp.status == 200
+    except Exception as e:
+        _reason = ""
+        try:
+            if hasattr(e, "read"):
+                _reason = e.read().decode("utf-8", "replace")[:200]
+        except Exception:
+            pass
+        _log_send_failure(pnid or "whatsapp", "whatsapp", _reason or str(e)[:120])
+        return False
+
+
 def _messenger_send_text(page_id, recipient_id, text, platform="messenger"):
     """Send a text message back to a user via the Meta Send API. Best-effort:
     returns True on success, False otherwise (never raises).
@@ -3656,7 +3758,10 @@ def _messenger_send_text(page_id, recipient_id, text, platform="messenger"):
     For Instagram (Instagram Login), the identifier is the IG account id and
     the send endpoint lives on graph.instagram.com; the token for that IG id is
     stored in MESSENGER_PAGE_TOKENS keyed by the IG account id (same as pages).
+    For WhatsApp, delegate to the Cloud API sender (24h-window free text).
     """
+    if platform == "whatsapp":
+        return _whatsapp_send_text(recipient_id, text)
     import urllib.request as _ureq
     import json as _json
     token = _messenger_page_token(page_id)
@@ -14014,6 +14119,20 @@ def _maybe_send_status_sms(order):
                     order.save(update_fields=[
                         "sms_en_cours_sent", "sms_en_cours_last_tel",
                         "sms_en_cours_last_date"])
+                # WhatsApp 'commande en route' notification — fires at the same
+                # moment as the SMS, but only when explicitly enabled AND a Meta-
+                # approved template name is configured. Dormant by default so it
+                # can never fire before the number + template are live. The
+                # template's {{1}} body variable receives the customer's name.
+                if _cfg("WHATSAPP_NOTIFY_ENABLED", "0") == "1":
+                    _tmpl = _cfg("WHATSAPP_TEMPLATE_NAME", "")
+                    if _tmpl and phone:
+                        _nm = ((getattr(order.customer, "name", "") or "").strip()
+                               or "cher client").split(" ")[0]
+                        _whatsapp_send_template(
+                            phone, _tmpl,
+                            _cfg("WHATSAPP_TEMPLATE_LANG", "fr") or "fr",
+                            [_nm])
     except Exception as _sms_exc:
         try:
             from .models import log_action as _la, AuditLog as _AL
@@ -19726,6 +19845,116 @@ def stats_gouvernorats(request):
 # and (when complete) extracts an order via Gemini into a pending non_confirmee
 # Order for human confirmation.
 # ---------------------------------------------------------------------------
+@csrf_exempt
+def api_whatsapp_webhook(request):
+    """Meta WhatsApp Cloud API webhook.
+      GET  → verification: echo hub.challenge if hub.verify_token matches
+             WHATSAPP_VERIFY_TOKEN.
+      POST → inbound messages: capture each into a MessengerConversation
+             (platform='whatsapp') so WhatsApp chats land in the SAME inbox as
+             Messenger/Instagram and can be replied to from the same box.
+
+    Status callbacks (sent/delivered/read) and non-text message types are
+    acknowledged but, for text, the body is stored. Always returns 200 quickly
+    so Meta does not retry.
+    """
+    # --- GET: verification handshake ---
+    if request.method == "GET":
+        verify_token = _cfg("WHATSAPP_VERIFY_TOKEN", "")
+        mode = request.GET.get("hub.mode")
+        token = request.GET.get("hub.verify_token")
+        challenge = request.GET.get("hub.challenge", "")
+        if mode == "subscribe" and token and verify_token and token == verify_token:
+            return HttpResponse(challenge, content_type="text/plain")
+        return HttpResponse("Verification failed", status=403)
+
+    if request.method != "POST":
+        return HttpResponse(status=405)
+
+    from .models import MessengerConversation
+    from django.core.cache import cache as _wac
+    from django.utils import timezone as _tzc
+    from datetime import timedelta as _tdc
+    import json as _json
+    try:
+        payload = _json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return JsonResponse({"status": "ok"})
+
+    try:
+        for entry in payload.get("entry", []):
+            for change in entry.get("changes", []):
+                value = change.get("value") or {}
+                if (value.get("messaging_product") or "") != "whatsapp":
+                    continue
+                meta = value.get("metadata") or {}
+                phone_number_id = str(meta.get("phone_number_id") or "")
+                # Map wa_id → profile name from the contacts block.
+                names = {}
+                for c in value.get("contacts", []) or []:
+                    wid = str(c.get("wa_id") or "")
+                    nm = ((c.get("profile") or {}).get("name") or "").strip()
+                    if wid and nm:
+                        names[wid] = nm
+                for msg in value.get("messages", []) or []:
+                    wamid = str(msg.get("id") or "")
+                    # Dedup: Meta re-delivers on any non-200; skip seen ids.
+                    if wamid:
+                        ck = "wa_seen:" + wamid
+                        if _wac.get(ck):
+                            continue
+                        _wac.set(ck, 1, 86400)
+                    sender_id = str(msg.get("from") or "")
+                    if not sender_id:
+                        continue
+                    mtype = msg.get("type") or "text"
+                    if mtype == "text":
+                        text = ((msg.get("text") or {}).get("body") or "").strip()
+                    elif mtype in ("image", "video", "document", "audio", "sticker"):
+                        text = f"[{mtype}]"
+                    elif mtype == "button":
+                        text = ((msg.get("button") or {}).get("text") or "").strip()
+                    elif mtype == "interactive":
+                        _inter = msg.get("interactive") or {}
+                        text = (((_inter.get("button_reply") or {}).get("title"))
+                                or ((_inter.get("list_reply") or {}).get("title"))
+                                or "").strip()
+                    else:
+                        text = f"[{mtype}]"
+                    if not text:
+                        text = f"[{mtype}]"
+
+                    # Reuse the most recent whatsapp conversation from this sender
+                    # within 48h — same rule as Messenger — else open a new one.
+                    cutoff = _tzc.now() - _tdc(hours=48)
+                    conv = (MessengerConversation.objects
+                            .filter(sender_id=sender_id, platform="whatsapp",
+                                    updated_at__gte=cutoff)
+                            .order_by("-id").first())
+                    if conv is None:
+                        conv = MessengerConversation.objects.create(
+                            sender_id=sender_id, page_id=phone_number_id,
+                            platform="whatsapp",
+                        )
+                    if not conv.sender_name and names.get(sender_id):
+                        conv.sender_name = names[sender_id][:200]
+                    msgs = conv.messages or []
+                    msgs.append({
+                        "from": "user", "text": text,
+                        "ts": _tzc.now().isoformat(),
+                    })
+                    conv.messages = msgs
+                    conv.save()
+    except Exception as _wa_exc:
+        try:
+            from .models import log_action as _la, AuditLog as _AL
+            _la(None, _AL.OTHER,
+                description="WhatsApp webhook FAIL: " + str(_wa_exc)[:200])
+        except Exception:
+            pass
+    return JsonResponse({"status": "ok"})
+
+
 @csrf_exempt
 def api_messenger_webhook(request):
     """Meta Messenger webhook.
