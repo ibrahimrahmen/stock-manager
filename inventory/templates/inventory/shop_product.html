@@ -140,7 +140,7 @@
         {% for c in product.colors %}<button class="sw2 dot {% if not c.col %}photo {% endif %}{% if forloop.first %}sel{% endif %}" data-c="{{ forloop.counter0 }}" data-label="{{ c.label }}" title="{{ c.label }}"{% if c.col %} style="background:{{ c.col }}"{% endif %}>{% if not c.col %}<img src="{{ c.img }}" alt="{{ c.label }}">{% endif %}</button>{% endfor %}
       </div></div>
     {% endif %}
-    <div><div class="size-help"><div class="lbl" id="sizeLbl">Taille</div><button type="button" class="size-finder-btn" id="sizeFinderBtn"><span class="rl">📏</span> Trouver ma taille</button></div>
+    <div><div class="lbl" id="sizeLbl">Taille</div>
       <div class="sizes" id="sizeOpts">{% for s in product.sizes %}<button class="sz" data-s="{{ s }}">{{ s }}</button>{% endfor %}<button type="button" class="sz-help" id="sizeHelpBtn" aria-label="Je ne connais pas ma taille, aide-moi"><svg viewBox="0 0 48 30" aria-hidden="true" focusable="false"><text x="7" y="26" font-size="13" font-weight="800" transform="rotate(-24 7 26)">?</text><text x="22" y="23" font-size="21" font-weight="800">?</text><text x="37" y="15" font-size="15" font-weight="800" transform="rotate(24 37 15)">?</text></svg></button></div></div>
     <div><div class="lbl">Quantité</div>
       <div class="qtyrow"><button data-q="-1" aria-label="moins">−</button><span id="qtyV">1</span><button data-q="1" aria-label="plus">+</button></div></div>
@@ -277,7 +277,7 @@ try{if(window.fbq)fbq('track','ViewContent',{content_ids:[PD.id],content_type:'p
 // --- Size finder: height + weight -> auto-select the right size on THIS product ---
 (function(){
   var scrim=document.getElementById('sfScrim'), openBtn=document.getElementById('sizeFinderBtn');
-  if(!scrim||!openBtn) return;
+  if(!scrim) return;
   var fH=document.getElementById('sfH'), fW=document.getElementById('sfW'),
       ferr=document.getElementById('sfErr'), fres=document.getElementById('sfRes'),
       fsize=document.getElementById('sfSize'), fnote=document.getElementById('sfNote'),
@@ -310,7 +310,7 @@ try{if(window.fbq)fbq('track','ViewContent',{content_ids:[PD.id],content_type:'p
     fres.hidden=false;
     fgo.textContent=pick?('Choisir le '+pick):'Fermer';
   }
-  openBtn.addEventListener('click',openM);
+  if(openBtn) openBtn.addEventListener('click',openM);
   var helpBtn=document.getElementById('sizeHelpBtn');
   if(helpBtn) helpBtn.addEventListener('click',openM);
   document.getElementById('sfClose').addEventListener('click',closeM);
