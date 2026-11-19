@@ -50,6 +50,9 @@
     align-items:center;justify-content:center}
   .sz-help:hover{background:var(--accent);color:#fff}
   .sz-help svg{height:22px;width:auto;display:block;fill:currentColor;overflow:visible}
+  .size-hint{display:flex;align-items:center;justify-content:flex-end;gap:4px;margin-top:7px;color:var(--accent)}
+  .size-hint .sh-txt{font-size:13px;font-weight:700;transform:rotate(-2deg)}
+  .size-hint .sh-arrow{width:34px;height:26px;flex:none}
   #sizeOpts.err .sz{border-color:var(--accent);color:var(--accent)}
   #sizeOpts.err{animation:shk .36s}
   .lbl.err{color:var(--accent)}
@@ -141,7 +144,8 @@
       </div></div>
     {% endif %}
     <div><div class="lbl" id="sizeLbl">Taille</div>
-      <div class="sizes" id="sizeOpts">{% for s in product.sizes %}<button class="sz" data-s="{{ s }}">{{ s }}</button>{% endfor %}<button type="button" class="sz-help" id="sizeHelpBtn" aria-label="Je ne connais pas ma taille, aide-moi"><svg viewBox="0 0 48 30" aria-hidden="true" focusable="false"><text x="7" y="26" font-size="13" font-weight="800" transform="rotate(-24 7 26)">?</text><text x="22" y="23" font-size="21" font-weight="800">?</text><text x="37" y="15" font-size="15" font-weight="800" transform="rotate(24 37 15)">?</text></svg></button></div></div>
+      <div class="sizes" id="sizeOpts">{% for s in product.sizes %}<button class="sz" data-s="{{ s }}">{{ s }}</button>{% endfor %}<button type="button" class="sz-help" id="sizeHelpBtn" aria-label="Je ne connais pas ma taille, aide-moi"><svg viewBox="0 0 48 30" aria-hidden="true" focusable="false"><text x="7" y="26" font-size="13" font-weight="800" transform="rotate(-24 7 26)">?</text><text x="22" y="23" font-size="21" font-weight="800">?</text><text x="37" y="15" font-size="15" font-weight="800" transform="rotate(24 37 15)">?</text></svg></button></div>
+      <div class="size-hint"><span class="sh-txt">Teste le guide de taille</span><svg class="sh-arrow" viewBox="0 0 40 30" aria-hidden="true"><path d="M4 27 C 6 12, 18 6, 31 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M31 6 l-8 0" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M31 6 l-1 8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></div></div>
     <div><div class="lbl">Quantité</div>
       <div class="qtyrow"><button data-q="-1" aria-label="moins">−</button><span id="qtyV">1</span><button data-q="1" aria-label="plus">+</button></div></div>
     <button class="cta-big" id="addBtn" style="margin-top:6px">Ajouter au panier</button>
