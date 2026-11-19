@@ -46,8 +46,10 @@
   .sz{min-width:56px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:12px 14px;font-weight:600;font-size:14px}
   .sz.sel{border-color:var(--fg);background:var(--fg);color:var(--bg)}
   .sz-help{min-width:56px;border:1px solid var(--accent);background:var(--bg);
-    color:var(--accent);padding:12px 14px;font-weight:700;font-size:16px;cursor:pointer;line-height:1}
+    color:var(--accent);padding:10px 14px;cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center}
   .sz-help:hover{background:var(--accent);color:#fff}
+  .sz-help svg{height:22px;width:auto;display:block;fill:currentColor;overflow:visible}
   #sizeOpts.err .sz{border-color:var(--accent);color:var(--accent)}
   #sizeOpts.err{animation:shk .36s}
   .lbl.err{color:var(--accent)}
@@ -139,7 +141,7 @@
       </div></div>
     {% endif %}
     <div><div class="size-help"><div class="lbl" id="sizeLbl">Taille</div><button type="button" class="size-finder-btn" id="sizeFinderBtn"><span class="rl">📏</span> Trouver ma taille</button></div>
-      <div class="sizes" id="sizeOpts">{% for s in product.sizes %}<button class="sz" data-s="{{ s }}">{{ s }}</button>{% endfor %}<button type="button" class="sz-help" id="sizeHelpBtn" aria-label="Je ne connais pas ma taille, aide-moi">?</button></div></div>
+      <div class="sizes" id="sizeOpts">{% for s in product.sizes %}<button class="sz" data-s="{{ s }}">{{ s }}</button>{% endfor %}<button type="button" class="sz-help" id="sizeHelpBtn" aria-label="Je ne connais pas ma taille, aide-moi"><svg viewBox="0 0 48 30" aria-hidden="true" focusable="false"><text x="7" y="26" font-size="13" font-weight="800" transform="rotate(-24 7 26)">?</text><text x="22" y="23" font-size="21" font-weight="800">?</text><text x="37" y="15" font-size="15" font-weight="800" transform="rotate(24 37 15)">?</text></svg></button></div></div>
     <div><div class="lbl">Quantité</div>
       <div class="qtyrow"><button data-q="-1" aria-label="moins">−</button><span id="qtyV">1</span><button data-q="1" aria-label="plus">+</button></div></div>
     <button class="cta-big" id="addBtn" style="margin-top:6px">Ajouter au panier</button>
