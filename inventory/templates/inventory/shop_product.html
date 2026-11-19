@@ -23,9 +23,17 @@
   .pulse{width:8px;height:8px;border-radius:999px;background:var(--accent);animation:pl 1.8s infinite}
   @keyframes pl{0%{box-shadow:0 0 0 0 rgba(209,20,39,.5)}70%{box-shadow:0 0 0 9px transparent}100%{box-shadow:0 0 0 0 transparent}}
   .swatches2{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-  .sw2{width:50px;height:62px;border:1px solid var(--line);overflow:hidden;background:var(--surface);padding:0}
+  .sw2{width:50px;height:62px;border:1px solid var(--line);overflow:hidden;background:var(--surface);padding:0;transition:transform .12s}
   .sw2.sel{outline:2px solid var(--fg);outline-offset:1px}
-  .sw2 img{width:100%;height:100%;object-fit:cover}
+  .sw2 img{width:100%;height:100%;object-fit:cover;display:block}
+  /* Round colour swatches: a solid (or half/half) colour dot per colour. */
+  .sw2.dot{width:42px;height:42px;border-radius:50%;border:1px solid rgba(0,0,0,.18);cursor:pointer;
+    box-shadow:inset 0 2px 5px rgba(255,255,255,.45),inset 0 -3px 6px rgba(0,0,0,.14)}
+  .sw2.dot:hover{transform:scale(1.07)}
+  .sw2.dot.sel{outline:none;box-shadow:inset 0 2px 5px rgba(255,255,255,.45),inset 0 -3px 6px rgba(0,0,0,.14),0 0 0 2px var(--bg),0 0 0 4px var(--fg)}
+  .sw2.dot.photo{box-shadow:none;border:1px solid var(--line)}
+  .sw2.dot.photo.sel{outline:none;box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--fg)}
+  .sw2.dot img{border-radius:50%}
   .sizes{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .sz{min-width:56px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:12px 14px;font-weight:600;font-size:14px}
   .sz.sel{border-color:var(--fg);background:var(--fg);color:var(--bg)}
@@ -116,7 +124,7 @@
     {% if product.colors %}
     <div><div class="lbl">Couleur — <span id="colorName">{{ product.colors.0.label }}</span></div>
       <div class="swatches2" id="colorOpts">
-        {% for c in product.colors %}<button class="sw2 {% if forloop.first %}sel{% endif %}" data-c="{{ forloop.counter0 }}" data-label="{{ c.label }}" title="{{ c.label }}"><img src="{{ c.img }}" alt="{{ c.label }}"></button>{% endfor %}
+        {% for c in product.colors %}<button class="sw2 dot {% if not c.col %}photo {% endif %}{% if forloop.first %}sel{% endif %}" data-c="{{ forloop.counter0 }}" data-label="{{ c.label }}" title="{{ c.label }}"{% if c.col %} style="background:{{ c.col }}"{% endif %}>{% if not c.col %}<img src="{{ c.img }}" alt="{{ c.label }}">{% endif %}</button>{% endfor %}
       </div></div>
     {% endif %}
     <div><div class="size-help"><div class="lbl" id="sizeLbl">Taille</div><button type="button" class="size-finder-btn" id="sizeFinderBtn"><span class="rl">📏</span> Trouver ma taille</button></div>

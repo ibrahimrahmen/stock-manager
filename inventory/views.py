@@ -10294,6 +10294,73 @@ def _thumb(url, w, frame=False):
     return u + "&frame=45" if frame else u
 
 
+_BASE_COLORS = {
+    "noir": "#141414", "black": "#141414",
+    "blanc": "#f4f2ed", "white": "#f4f2ed", "ecru": "#efe7d6", "écru": "#efe7d6",
+    "gris": "#9a9a9a", "gray": "#9a9a9a", "grey": "#9a9a9a",
+    "rouge": "#d11427", "red": "#d11427",
+    "bordeaux": "#6e1420", "bordo": "#6e1420",
+    "rose": "#e98aa8", "pink": "#e98aa8",
+    "bleu": "#2d6cdf", "blue": "#2d6cdf",
+    "marine": "#1f2a44", "navy": "#1f2a44",
+    "ciel": "#7fb6e6", "sky": "#7fb6e6",
+    "vert": "#2e8b57", "green": "#2e8b57",
+    "kaki": "#5a5f38", "khaki": "#5a5f38", "olive": "#5a5f38", "militaire": "#5a5f38",
+    "jaune": "#f2c200", "yellow": "#f2c200",
+    "orange": "#e8731e",
+    "violet": "#8a5cc0", "purple": "#8a5cc0", "mauve": "#b19cd9",
+    "marron": "#6b4423", "brown": "#6b4423", "chocolat": "#5a3418", "cafe": "#6b4423", "café": "#6b4423",
+    "beige": "#d9c7a7", "sable": "#d9c7a7", "creme": "#efe7d2", "crème": "#efe7d2", "cream": "#efe7d2",
+    "turquoise": "#1fb6b6", "cyan": "#1fb6b6",
+    "dore": "#c9a227", "doré": "#c9a227", "gold": "#c9a227",
+    "argent": "#c0c0c0", "silver": "#c0c0c0",
+}
+# Multi-word colours that must stay ONE colour (not split into their parts).
+_TWO_WORD_COLORS = {
+    "bleu marine": "#1f2a44", "bleu nuit": "#13203f", "bleu ciel": "#7fb6e6",
+    "gris fonce": "#5a5a5a", "gris foncé": "#5a5a5a",
+    "gris clair": "#c7c7c7", "gris claire": "#c7c7c7",
+    "vert militaire": "#5a5f38", "vert olive": "#5a5f38",
+    "vert clair": "#7bc47f", "vert claire": "#7bc47f", "vert fonce": "#1f5c3a", "vert foncé": "#1f5c3a",
+}
+
+
+def _color_swatch(label):
+    """Turn a colour NAME into a CSS background for a round swatch. One colour ->
+    solid hex; a two-tone name like 'Noir/Blanc' or 'noir blanc' -> half/half
+    split. Returns '' when no colour word is recognised (caller falls back to the
+    product photo)."""
+    import re as _re
+    s = (label or "").strip().lower()
+    if not s:
+        return ""
+    # Protect known two-word colours by replacing them with placeholder tokens.
+    placeholders = {}
+    t = s
+    n = 0
+    for phrase, hx in _TWO_WORD_COLORS.items():
+        if phrase in t:
+            key = "\x00%d\x00" % n
+            n += 1
+            t = t.replace(phrase, " %s " % key)
+            placeholders[key] = hx
+    hexes = []
+    for tok in _re.split(r"[\/\-&+,\s]+", t):
+        tok = tok.strip()
+        if not tok:
+            continue
+        hx = placeholders.get(tok) or _BASE_COLORS.get(tok, "")
+        if hx and hx not in hexes:
+            hexes.append(hx)
+        if len(hexes) >= 2:
+            break
+    if not hexes:
+        return ""
+    if len(hexes) == 1:
+        return hexes[0]
+    return "linear-gradient(135deg, %s 0 50%%, %s 50%% 100%%)" % (hexes[0], hexes[1])
+
+
 def _offer_thumb(offer, w=120):
     """Small thumbnail URL for an Offer — its own photo, else a product variant
     photo — resolved like the storefront grid. '' when nothing is available."""
@@ -10988,7 +11055,8 @@ def shop_product(request, offer_id):
         "swatch": _thumb(_dedup(g["imgs"])[0], 150, frame=True),
         "imgs": [_thumb(u, 1000) for u in _dedup(g["imgs"])],
     } for g in groups if g["imgs"]]
-    colors = [{"label": g["label"], "img": g["swatch"]} for g in color_groups]
+    colors = [{"label": g["label"], "img": g["swatch"],
+               "col": _color_swatch(g["label"])} for g in color_groups]
     color_labels = [g["label"] for g in color_groups] or ["Unique"]
     # first colour's photos; fallback to every photo when nothing is tagged
     gallery = color_groups[0]["imgs"] if color_groups else [
