@@ -67,7 +67,8 @@ MESSENGER_PAGE_TO_SALESPAGE = {
     "17841474699259489": 3,  # @barats216 (IG)          → Barats
     "17841473682487619": 4,  # @next.generation216 (IG) → Next Generation
     "17841471034197351": 10, # @traffica.tn (IG)        → Traffic
-    "17841474217754022": 5,  # @handsome.collection216  → Handsome Collection
+    "17841474217754022": 5,  # @handsome.collection216 (IG webhook id)  → Handsome Collection
+    "38154735550791877": 5,  # @handsome.collection216 (IG Login id)    → Handsome Collection
     "17841479779102575": 6,  # @primefit_tn (IG)        → PrimeFit
     "17841466972227220": 2,  # @arrowsportswear.tn (IG) → Arrow SportsWear
     "28972433105771465": 13, # @coucoufemme2026 (IG, new Login id)  → Coucou femme
@@ -405,6 +406,7 @@ IG_ID_ALIASES = {
     # replies keep sending. Without a bridge, a page's IG send finds no valid
     # token and the bot goes silent (the cause of "can't reply on Instagram").
     "17841474699259489": "27678288761765194",  # @barats216
+    "17841474217754022": "38154735550791877",  # @handsome.collection216
     "17841466972227220": "28361039160154258",  # @arrowsportswear.tn
     "17841473682487619": "28145561965050959",  # @next.generation216
     "17841479779102575": "27610187378630687",  # @primefit_tn
