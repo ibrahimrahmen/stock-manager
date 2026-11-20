@@ -9825,6 +9825,29 @@ def _orders_role_check(request):
         return True  # legacy users default to allowed
 
 
+def _apply_order_source_filter(qs, source_filter):
+    """Narrow an Order queryset by the orders-list source filter.
+
+    'barats' / 'arrow' / 'converty' = that website; 'facebook' = every other
+    page (all Facebook pages, plus orders with no page); 'page_<id>' = one
+    specific sales page. Anything else (e.g. 'all') leaves qs untouched.
+    """
+    if source_filter == "barats":
+        return qs.filter(sales_page__name__iexact="Barats.tn")
+    if source_filter == "arrow":
+        return qs.filter(sales_page__name__iexact="Arrow.tn")
+    if source_filter == "converty":
+        return qs.filter(sales_page__name__iexact="Converty")
+    if source_filter == "facebook":
+        return (qs.exclude(sales_page__name__iexact="Barats.tn")
+                  .exclude(sales_page__name__iexact="Converty")
+                  .exclude(sales_page__name__iexact="Arrow.tn"))
+    if source_filter.startswith("page_"):
+        pk = source_filter[5:]
+        return qs.filter(sales_page_id=int(pk)) if pk.isdigit() else qs.none()
+    return qs
+
+
 @login_required(login_url="/login/")
 def orders_list(request):
     if not _orders_role_check(request):
@@ -9844,18 +9867,19 @@ def orders_list(request):
     # Orders sent to a product test leave the list until they're sent back.
     qs = qs.filter(sent_to_test__isnull=True)
 
-    # Source filter: barats.tn (website), converty, or facebook (every other
-    # page). Default = all sources.
+    # Source filter: barats.tn / arrow.tn / converty, facebook (every other
+    # page), or one specific page (page_<id>). Default = all sources.
     source_filter = request.GET.get("source", "all")
     from django.db.models import Q as _Q
-    if source_filter == "barats":
-        qs = qs.filter(sales_page__name__iexact="Barats.tn")
-    elif source_filter == "arrow":
-        qs = qs.filter(sales_page__name__iexact="Arrow.tn")
-    elif source_filter == "converty":
-        qs = qs.filter(sales_page__name__iexact="Converty")
-    elif source_filter == "facebook":
-        qs = qs.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty").exclude(sales_page__name__iexact="Arrow.tn")
+    qs = _apply_order_source_filter(qs, source_filter)
+    # Facebook pages for the dropdown, and the one picked (source=page_<id>).
+    fb_pages = list(
+        SalesPage.objects.exclude(name__iregex=r"^(barats\.tn|arrow\.tn|converty)$")
+        .filter(is_active=True).order_by("name")
+    )
+    fb_page_selected = None
+    if source_filter.startswith("page_") and source_filter[5:].isdigit():
+        fb_page_selected = SalesPage.objects.filter(pk=int(source_filter[5:])).first()
 
     # "Aujourd'hui" toggle. When ON, it narrows ONLY the early/call-center
     # statuses to today's business day (17h yesterday → 17h today, by création
@@ -10010,15 +10034,9 @@ def orders_list(request):
     # chip shows its own total within the chosen source). Exclude orders sent to
     # a product test — they're hidden from the list, so the counts must match
     # (otherwise the "non confirmé" count stays high after sending to test).
-    counts_qs = Order.objects.filter(sent_to_test__isnull=True)
-    if source_filter == "barats":
-        counts_qs = counts_qs.filter(sales_page__name__iexact="Barats.tn")
-    elif source_filter == "arrow":
-        counts_qs = counts_qs.filter(sales_page__name__iexact="Arrow.tn")
-    elif source_filter == "converty":
-        counts_qs = counts_qs.filter(sales_page__name__iexact="Converty")
-    elif source_filter == "facebook":
-        counts_qs = counts_qs.exclude(sales_page__name__iexact="Barats.tn").exclude(sales_page__name__iexact="Converty").exclude(sales_page__name__iexact="Arrow.tn")
+    counts_qs = _apply_order_source_filter(
+        Order.objects.filter(sent_to_test__isnull=True), source_filter
+    )
     # Chip counts follow the same rules: an explicit date range scopes every
     # status; otherwise 'Aujourd'hui' limits early statuses only.
     if range_active:
@@ -10064,6 +10082,8 @@ def orders_list(request):
         "orders": orders,
         "status_filter": status_filter,
         "source_filter": source_filter,
+        "fb_pages": fb_pages,
+        "fb_page_selected": fb_page_selected,
         "today_on": today_on,
         "date_from": date_from,
         "date_to": date_to,

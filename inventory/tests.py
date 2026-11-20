@@ -893,3 +893,46 @@ class DriveSyncTest(TestCase):
         User.objects.create_user("ds_plain", "d@d.com", "pw")
         c = Client(); c.force_login(User.objects.get(username="ds_plain"))
         self.assertEqual(c.get("/api/drive-sync/").status_code, 403)
+
+
+class OrdersListFacebookPageFilterTest(TestCase):
+    """Orders list: 'Facebook' = all FB pages; 'page_<id>' = one page only."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from inventory.models import SalesPage
+        self.admin = User.objects.create_superuser("admin", "a@a.com", "pw")
+        self.client.force_login(self.admin)
+        c = Customer.objects.create(phone="20555666")
+        self.site = SalesPage.objects.create(name="Barats.tn")
+        self.page_a = SalesPage.objects.create(name="Page A")
+        self.page_b = SalesPage.objects.create(name="Page B")
+        self.o_site = Order.objects.create(customer=c, sales_page=self.site)
+        self.o_a = Order.objects.create(customer=c, sales_page=self.page_a)
+        self.o_b = Order.objects.create(customer=c, sales_page=self.page_b)
+
+    def _ids(self, source):
+        from django.urls import reverse
+        r = self.client.get(reverse("orders_list"), {"status": "all", "source": source})
+        self.assertEqual(r.status_code, 200)
+        return {o.pk for o in r.context["orders"]}, r
+
+    def test_facebook_shows_every_page_but_not_websites(self):
+        ids, r = self._ids("facebook")
+        self.assertEqual(ids, {self.o_a.pk, self.o_b.pk})
+        self.assertContains(r, "Toutes les pages Facebook")
+        self.assertContains(r, "Page A")
+
+    def test_single_page(self):
+        ids, r = self._ids(f"page_{self.page_a.pk}")
+        self.assertEqual(ids, {self.o_a.pk})
+        self.assertEqual(r.context["fb_page_selected"], self.page_a)
+        self.assertEqual(r.context["total"], 1)
+
+    def test_websites_not_listed_in_dropdown(self):
+        _, r = self._ids("all")
+        self.assertNotIn(self.site, r.context["fb_pages"])
+
+    def test_bad_page_value_shows_nothing(self):
+        ids, _ = self._ids("page_abc")
+        self.assertEqual(ids, set())

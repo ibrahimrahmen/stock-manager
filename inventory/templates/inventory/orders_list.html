@@ -55,6 +55,13 @@ body{background:var(--bg);font-family:'DM Sans',sans-serif;color:var(--text);min
 .src-btn:hover{background:var(--surface2);color:var(--text);}
 .src-date{background:var(--input-bg,rgba(255,255,255,0.05));border:0.5px solid var(--border);color:var(--text);border-radius:7px;padding:6px 8px;font-family:inherit;font-size:12px;}
 .src-btn.active{background:var(--text);color:var(--bg);border-color:var(--text);}
+.fb-drop{position:relative;}
+.fb-drop>summary{list-style:none;display:inline-block;}
+.fb-drop>summary::-webkit-details-marker{display:none;}
+.fb-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:50;min-width:200px;max-height:320px;overflow-y:auto;background:var(--surface);border:0.5px solid var(--border);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.15);padding:4px;display:flex;flex-direction:column;}
+.fb-menu a{padding:8px 10px;border-radius:6px;color:var(--text);text-decoration:none;font-size:13px;white-space:nowrap;}
+.fb-menu a:hover{background:var(--surface2);}
+.fb-menu a.active{background:var(--text);color:var(--bg);}
 .chip-group{display:flex;gap:8px;flex-wrap:wrap;min-width:0;}
 .chip-group-right{margin-left:auto;justify-content:flex-end;flex-shrink:0;}
 /* Search bar */
@@ -344,7 +351,16 @@ tr.create-row input:focus,tr.create-row select:focus{outline:none;border-color:v
     <a href="?status={{ status_filter }}&source=barats{% if today_on %}&today=1{% endif %}{% if date_from %}&from={{ date_from }}&to={{ date_to }}{% endif %}" class="src-btn {% if source_filter == 'barats' %}active{% endif %}">🌐 Barats.tn</a>
     <a href="?status={{ status_filter }}&source=arrow{% if today_on %}&today=1{% endif %}{% if date_from %}&from={{ date_from }}&to={{ date_to }}{% endif %}" class="src-btn {% if source_filter == 'arrow' %}active{% endif %}">🏹 Arrow.tn</a>
     <a href="?status={{ status_filter }}&source=converty{% if today_on %}&today=1{% endif %}{% if date_from %}&from={{ date_from }}&to={{ date_to }}{% endif %}" class="src-btn {% if source_filter == 'converty' %}active{% endif %}">🛒 Converty</a>
-    <a href="?status={{ status_filter }}&source=facebook{% if today_on %}&today=1{% endif %}{% if date_from %}&from={{ date_from }}&to={{ date_to }}{% endif %}" class="src-btn {% if source_filter == 'facebook' %}active{% endif %}">📘 Facebook</a>
+    {# Facebook: all pages at once, or pick one page (source=page_<id>). #}
+    <details class="fb-drop">
+      <summary class="src-btn {% if source_filter == 'facebook' or fb_page_selected %}active{% endif %}">📘 {% if fb_page_selected %}{{ fb_page_selected.name }}{% else %}Facebook{% endif %} ▾</summary>
+      <div class="fb-menu">
+        <a href="?status={{ status_filter }}&source=facebook{% if today_on %}&today=1{% endif %}{% if date_from %}&from={{ date_from }}&to={{ date_to }}{% endif %}" class="{% if source_filter == 'facebook' %}active{% endif %}">Toutes les pages Facebook</a>
+        {% for p in fb_pages %}
+        <a href="?status={{ status_filter }}&source=page_{{ p.pk }}{% if today_on %}&today=1{% endif %}{% if date_from %}&from={{ date_from }}&to={{ date_to }}{% endif %}" class="{% if fb_page_selected.pk == p.pk %}active{% endif %}">{{ p.name }}</a>
+        {% endfor %}
+      </div>
+    </details>
   </div>
 
   <div class="chips">
@@ -2820,6 +2836,12 @@ function doSendTest(testId){
     } else { alert('Erreur: '+(j.message||'')); }
   }).catch(function(e){ alert('Erreur: '+e); });
 }
+// Close the Facebook page dropdown when clicking outside it.
+document.addEventListener('click', function (e) {
+  document.querySelectorAll('details.fb-drop[open]').forEach(function (d) {
+    if (!d.contains(e.target)) d.removeAttribute('open');
+  });
+});
 </script>
 
 <div class="stmodal-bg" id="st-modal">
