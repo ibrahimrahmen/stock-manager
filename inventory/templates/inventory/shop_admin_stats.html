@@ -106,9 +106,10 @@ a{color:inherit;text-decoration:none}
   <!-- SIZE GUIDE (ruler) IMPACT -->
   <div class="sec">
     <h2>📏 Guide des tailles · impact sur les achats · {{ range_label }}</h2>
+    <p style="font-size:12px;color:var(--muted);margin:-8px 0 14px">Seulement les visiteurs qui ont choisi une taille — via le guide ou en cliquant directement. Ceux qui n'ont rien choisi ne comptent pas.</p>
     <div class="grid c2">
-      <div class="card kpi"><div class="lab">📏 Ont utilisé le guide</div><div class="val" id="r_tried_rate">—</div><div class="sub"><span id="r_tried_det">—</span> ont acheté</div></div>
-      <div class="card kpi"><div class="lab">Sans le guide</div><div class="val" id="r_not_rate">—</div><div class="sub"><span id="r_not_det">—</span> ont acheté</div></div>
+      <div class="card kpi"><div class="lab">📏 Ont utilisé le guide</div><div class="val" id="r_tried_rate">—</div><div class="sub" id="r_tried_det">—</div></div>
+      <div class="card kpi"><div class="lab">Ont choisi sans le guide</div><div class="val" id="r_not_rate">—</div><div class="sub" id="r_not_det">—</div></div>
     </div>
     <div class="cr"><b id="r_lift">—</b><span id="r_lift_txt">&nbsp;</span></div>
     <div class="grid c4" style="margin-top:14px">
@@ -210,10 +211,10 @@ a{color:inherit;text-decoration:none}
   // SIZE GUIDE (ruler) impact on buying
   var R=J('d_ruler')||{};
   function pct(n){return (Number(n)||0).toLocaleString('fr-FR')+'%';}
-  document.getElementById('r_tried_rate').textContent=pct(R.tried_rate);
-  document.getElementById('r_tried_det').textContent=num(R.tried_bought)+' / '+num(R.tried_total);
-  document.getElementById('r_not_rate').textContent=pct(R.nottried_rate);
-  document.getElementById('r_not_det').textContent=num(R.nottried_bought)+' / '+num(R.nottried_total);
+  document.getElementById('r_tried_rate').textContent=R.tried_total?pct(R.tried_rate):'—';
+  document.getElementById('r_tried_det').textContent=R.tried_total?(num(R.tried_bought)+' / '+num(R.tried_total)+' ont acheté'):'aucun usage du guide';
+  document.getElementById('r_not_rate').textContent=R.nottried_total?pct(R.nottried_rate):'—';
+  document.getElementById('r_not_det').textContent=R.nottried_total?(num(R.nottried_bought)+' / '+num(R.nottried_total)+' ont acheté'):'données à venir';
   document.getElementById('r_tb').textContent=num(R.tried_bought);
   document.getElementById('r_tn').textContent=num(R.tried_not);
   document.getElementById('r_nb').textContent=num(R.nottried_bought);
@@ -222,8 +223,8 @@ a{color:inherit;text-decoration:none}
   if(lift&&isFinite(lift)&&R.tried_total){
     document.getElementById('r_lift').textContent='×'+Number(lift).toLocaleString('fr-FR');
     document.getElementById('r_lift_txt').textContent=(lift>=1
-      ?('les visiteurs qui utilisent le guide achètent '+Number(lift).toLocaleString('fr-FR')+'× plus souvent')
-      :'les visiteurs qui utilisent le guide achètent moins souvent');
+      ?('ceux qui utilisent le guide achètent '+Number(lift).toLocaleString('fr-FR')+'× plus souvent que ceux qui choisissent leur taille sans le guide')
+      :'ceux qui utilisent le guide achètent moins souvent que ceux qui choisissent sans le guide');
   } else {
     document.getElementById('r_lift').textContent='—';
     document.getElementById('r_lift_txt').textContent='pas encore assez de données pour comparer';

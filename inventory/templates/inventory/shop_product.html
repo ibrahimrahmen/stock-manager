@@ -239,10 +239,15 @@ document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{sel.color=+b.dat
   document.querySelectorAll('[data-c]').forEach(e=>e.classList.remove('sel'));b.classList.add('sel');
   const cn=document.getElementById('colorName');if(cn)cn.textContent=b.dataset.label;
   renderGallery();});
+var _sizePickSent=false;
 document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{sel.size=b.dataset.s;
   document.querySelectorAll('[data-s]').forEach(e=>e.classList.remove('sel'));b.classList.add('sel');
   document.getElementById('sizeOpts').classList.remove('err');
-  document.getElementById('sizeLbl').classList.remove('err');});
+  document.getElementById('sizeLbl').classList.remove('err');
+  // Analytics: a real size choice. Fire once per page, and NOT when the size
+  // finder auto-applies (that's a guide use, already tracked as 'ruler').
+  if(!_sizePickSent && !window._guideApplying){_sizePickSent=true;
+    try{if(window.ShopTrack)ShopTrack('size_pick');}catch(e){}}});
 document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{sel.qty=Math.max(1,sel.qty+ +b.dataset.q);
   document.getElementById('qtyV').textContent=sel.qty;});
 document.getElementById('addBtn').onclick=()=>{
@@ -333,7 +338,7 @@ try{if(window.fbq)fbq('track','ViewContent',{content_ids:[PD.id],content_type:'p
     if(fres.hidden){compute();return;}
     if(pending){
       var btn=Array.prototype.slice.call(document.querySelectorAll('#sizeOpts [data-s]')).filter(function(b){return b.getAttribute('data-s')===pending;})[0];
-      if(btn) btn.click();
+      if(btn){window._guideApplying=true;btn.click();window._guideApplying=false;}
       closeM();
       try{document.getElementById('sizeOpts').scrollIntoView({behavior:'smooth',block:'center'});}catch(e){}
       if(typeof toast==='function') toast('Taille '+pending+' sélectionnée');

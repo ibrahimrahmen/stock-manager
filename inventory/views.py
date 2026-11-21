@@ -11278,7 +11278,8 @@ def api_shop_track(request):
     from .models import StoreHit
     s = (request.GET.get("s") or "")[:40].strip()
     e = (request.GET.get("e") or "").strip()
-    if s and e in ("pageview", "ping", "add_to_cart", "checkout", "purchase", "ruler"):
+    if s and e in ("pageview", "ping", "add_to_cart", "checkout", "purchase",
+                   "ruler", "size_pick"):
         v = request.GET.get("v")
         try:
             val = Decimal(v) if v else None
@@ -11353,9 +11354,17 @@ def _shop_funnel(start, end=None):
 
 
 def _shop_ruler_ratio(start, end=None):
-    """Did the size finder ('ruler') help people buy? Over a window, split unique
-    visitor sessions into used-the-guide vs not, and bought vs not, and give the
-    buy-rate for each group plus how many times more often guide-users buy."""
+    """Did the size finder ('ruler') help people buy? We compare ONLY visitors
+    who engaged with sizing at all — guide users vs people who picked a size
+    directly — so passive bouncers (who never chose a size) don't dilute the
+    'no guide' group and make the guide look artificially good.
+
+      used the guide  = fired a 'ruler' event
+      no guide        = fired 'size_pick' (clicked S/M/L/…) WITHOUT the guide
+      never chose a size (neither event) = excluded from both.
+
+    Note: size_pick is only recorded from the day this shipped, so for windows
+    before then the 'no guide' group is empty until fresh traffic accumulates."""
     from .models import StoreHit
     hits = StoreHit.objects.filter(created_at__gte=start)
     if end is not None:
@@ -11364,16 +11373,16 @@ def _shop_ruler_ratio(start, end=None):
     def _sset(ev):
         return set(hits.filter(event=ev).values_list("session", flat=True))
 
-    visitors = _sset("pageview")
-    tried = _sset("ruler")
+    tried = _sset("ruler")           # used the size guide
+    sized = _sset("size_pick")       # picked a size (guide auto-apply is suppressed)
     bought = _sset("purchase")
-    universe = visitors | tried | bought          # never lose a session
+    noguide = sized - tried          # picked a size WITHOUT opening the guide
     tried_bought = len(tried & bought)
     tried_not = len(tried - bought)
-    nottried_bought = len(bought - tried)
-    nottried_not = len(universe - tried - bought)
+    nottried_bought = len(noguide & bought)
+    nottried_not = len(noguide - bought)
     tried_total = len(tried)
-    nottried_total = len(universe - tried)
+    nottried_total = len(noguide)
     tried_rate = (100.0 * tried_bought / tried_total) if tried_total else 0.0
     nottried_rate = (100.0 * nottried_bought / nottried_total) if nottried_total else 0.0
     lift = (tried_rate / nottried_rate) if nottried_rate else None
