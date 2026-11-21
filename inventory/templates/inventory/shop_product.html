@@ -82,6 +82,18 @@
   .cta-big{width:100%;background:var(--fg);color:var(--bg);border:0;font-weight:700;font-size:14px;letter-spacing:.1em;
     text-transform:uppercase;padding:18px}
   .cta-big:disabled{opacity:.6}
+  /* buy row: quantity stepper + add-to-cart side by side, buy-now full width below */
+  .buyrow{display:flex;gap:10px;margin-top:14px}
+  .buyrow .qtyrow{margin-top:0}
+  .buyrow .qtyrow button{height:54px}
+  .buyrow .qtyrow span{height:54px}
+  .buyrow .cta-big{flex:1;padding:0 12px;height:54px}
+  .buy-now{margin-top:10px}
+  @media(max-width:460px){
+    .buyrow .cta-big{font-size:12.5px;letter-spacing:.04em;padding:0 6px}
+    .buyrow .qtyrow button{width:38px}
+    .buyrow .qtyrow span{min-width:36px}
+  }
   .micro{display:flex;flex-direction:column;gap:9px;font-size:13px;color:var(--muted);margin-top:4px}
   .micro div{display:flex;gap:9px;align-items:flex-start}
   .micro svg{color:var(--ok);flex:none;margin-top:1px}
@@ -155,9 +167,12 @@
     {% endif %}
     <div><div class="lbl" id="sizeLbl">Taille</div>
       <div class="sizes" id="sizeOpts">{% for s in product.sizes %}<button class="sz" data-s="{{ s }}">{{ s }}</button>{% endfor %}<span class="sz-help-wrap"><button type="button" class="sz-help" id="sizeHelpBtn" aria-label="Je ne connais pas ma taille, aide-moi"><svg viewBox="0 0 48 30" aria-hidden="true" focusable="false"><text x="7" y="26" font-size="13" font-weight="800" transform="rotate(-24 7 26)">?</text><text x="22" y="23" font-size="21" font-weight="800">?</text><text x="37" y="15" font-size="15" font-weight="800" transform="rotate(24 37 15)">?</text></svg></button><span class="size-hint"><span class="sh-txt">Teste le guide de taille</span><svg class="sh-arrow" viewBox="0 0 28 32" aria-hidden="true"><path d="M21 30 C 19 20, 13 17, 13 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M13 6 l-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M13 6 l6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span></span></div>
-    <div><div class="lbl">Quantité</div>
-      <div class="qtyrow"><button data-q="-1" aria-label="moins">−</button><span id="qtyV">1</span><button data-q="1" aria-label="plus">+</button></div></div>
-    <button class="cta-big" id="addBtn" style="margin-top:6px">Ajouter au panier</button>
+    <div class="lbl">Quantité</div>
+    <div class="buyrow">
+      <div class="qtyrow"><button data-q="-1" aria-label="moins">−</button><span id="qtyV">1</span><button data-q="1" aria-label="plus">+</button></div>
+      <button class="cta-big" id="addBtn">Ajouter au panier</button>
+    </div>
+    <button class="cta-big buy-now" id="buyBtn">Acheter maintenant</button>
     <div class="micro">
       <div><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Paiement à la livraison — ouvre & vérifie avant de payer.</div>
       <div><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>Échange possible si la taille ne va pas.</div>
@@ -250,18 +265,28 @@ document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{sel.size=b.datas
     try{if(window.ShopTrack)ShopTrack('size_pick');}catch(e){}}});
 document.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>{sel.qty=Math.max(1,sel.qty+ +b.dataset.q);
   document.getElementById('qtyV').textContent=sel.qty;});
+// A size must be picked before add / buy. Shakes the size row and returns false if not.
+function requireSize(){
+  if(sel.size)return true;
+  const so=document.getElementById('sizeOpts');
+  so.classList.remove('err');void so.offsetWidth;  // restart the shake each time
+  so.classList.add('err');document.getElementById('sizeLbl').classList.add('err');
+  so.scrollIntoView({behavior:'smooth',block:'center'});
+  toast('Choisis ta taille');return false;
+}
+function cartItem(){return {id:PD.id,n:PD.n,color:sel.colorLabel,size:sel.size,qty:sel.qty,p:PD.p,
+  img:PD.cart_img||(PD.gallery&&PD.gallery[0])||''};}
 document.getElementById('addBtn').onclick=()=>{
-  if(!sel.size){
-    const so=document.getElementById('sizeOpts');
-    so.classList.remove('err');void so.offsetWidth;  // restart the shake each time
-    so.classList.add('err');document.getElementById('sizeLbl').classList.add('err');
-    so.scrollIntoView({behavior:'smooth',block:'center'});
-    toast('Choisis ta taille');return;
-  }
-  BaratsCart.add({id:PD.id,n:PD.n,color:sel.colorLabel,size:sel.size,qty:sel.qty,p:PD.p,
-    img:PD.cart_img||(PD.gallery&&PD.gallery[0])||''});
+  if(!requireSize())return;
+  BaratsCart.add(cartItem());
   const b=document.getElementById('addBtn');b.classList.add('added');b.textContent='✓ Ajouté au panier';
   clearTimeout(b._t);b._t=setTimeout(()=>{b.classList.remove('added');b.textContent='Ajouter au panier';},1500);
+};
+// Buy now: add this item, then go straight to the order page.
+document.getElementById('buyBtn').onclick=()=>{
+  if(!requireSize())return;
+  BaratsCart.add(cartItem());
+  location.href=(window.SHOP_BASE||'')+'/commande/';
 };
 let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
   clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2800);}
