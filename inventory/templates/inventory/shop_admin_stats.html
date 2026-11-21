@@ -75,13 +75,9 @@ a{color:inherit;text-decoration:none}
   <div class="top">
     <h1><span class="live-dot"></span>Dashboard · {{ page_name }}</h1>
     <div class="links">
-      <div class="seg">
-        <a href="?range=today" class="{% if rng == 'today' %}on{% endif %}">Aujourd'hui</a>
-        <a href="?range=hier" class="{% if rng == 'hier' %}on{% endif %}">Hier</a>
-        <a href="?range=7" class="{% if rng == '7' %}on{% endif %}">7 j</a>
-        <a href="?range=30" class="{% if rng == '30' %}on{% endif %}">30 j</a>
-        <a href="?range=all" class="{% if rng == 'all' %}on{% endif %}">Tout</a>
-      </div>
+      <form method="get" style="margin:0">
+        {% include "inventory/_date_filter.html" with start_name="from" end_name="to" cur_start=from_date cur_end=to_date %}
+      </form>
       <a class="pill" href="/shop/" target="_blank">Voir la boutique ↗</a>
       <a class="pill" href="/shop/admin/vitrine/">Éditeur</a>
     </div>

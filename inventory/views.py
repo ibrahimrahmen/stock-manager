@@ -11417,25 +11417,54 @@ def shop_admin_stats(request):
         return HttpResponseForbidden("Accès refusé.")
     page = _shop_sales_page()
     now = timezone.now()
-    rng = (request.GET.get("range") or "7").strip()
-    end = None  # upper bound; only "hier" needs one (yesterday 00:00 → today 00:00)
-    if rng == "today":
-        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    elif rng == "hier":
-        today0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        start = today0 - timedelta(days=1)
-        end = today0
-    else:
-        days = {"7": 7, "30": 30, "90": 90, "all": 3650}.get(rng, 7)
-        start = now - timedelta(days=days)
-    range_label = {"today": "aujourd'hui", "hier": "hier", "7": "7 derniers jours",
-                   "30": "30 derniers jours", "90": "90 derniers jours",
-                   "all": "depuis le début"}.get(rng, "7 derniers jours")
+    import datetime as _dt
+    today = timezone.localdate()
+    # Date range from the shared Meta-style filter (?from=YYYY-MM-DD&to=YYYY-MM-DD)
+    # — the same component every other stats page uses. The old quick links
+    # (?range=today|hier|7|30|all) still resolve, for any saved bookmarks.
+    try:
+        start_date = _dt.date.fromisoformat((request.GET.get("from") or "").strip())
+    except ValueError:
+        start_date = None
+    try:
+        end_date = _dt.date.fromisoformat((request.GET.get("to") or "").strip())
+    except ValueError:
+        end_date = None
+    if start_date is None or end_date is None:
+        rng = (request.GET.get("range") or "7").strip()
+        if rng == "today":
+            start_date = end_date = today
+        elif rng == "hier":
+            start_date = end_date = today - _dt.timedelta(days=1)
+        elif rng == "30":
+            start_date, end_date = today - _dt.timedelta(days=29), today
+        elif rng == "all":
+            start_date, end_date = _dt.date(2020, 1, 1), today
+        else:  # "7" (default)
+            start_date, end_date = today - _dt.timedelta(days=6), today
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
 
-    valid = (Order.objects.filter(sales_page=page, created_at__gte=start)
+    # Calendar-day bounds (midnight → next-midnight so the end day is included).
+    tz = timezone.get_current_timezone()
+    start = timezone.make_aware(_dt.datetime.combine(start_date, _dt.time.min), tz)
+    end = timezone.make_aware(
+        _dt.datetime.combine(end_date + _dt.timedelta(days=1), _dt.time.min), tz)
+
+    if start_date == end_date:
+        if start_date == today:
+            range_label = "aujourd'hui"
+        elif start_date == today - _dt.timedelta(days=1):
+            range_label = "hier"
+        else:
+            range_label = start_date.strftime("%d/%m/%Y")
+    else:
+        range_label = "du %s au %s" % (start_date.strftime("%d/%m"),
+                                       end_date.strftime("%d/%m/%Y"))
+
+    valid = (Order.objects.filter(sales_page=page,
+                                  created_at__gte=start, created_at__lt=end)
              .exclude(status=Order.ANNULEE))
-    if end is not None:
-        valid = valid.filter(created_at__lt=end)
     orders_count = valid.count()
     total_sales = float(sum((o.total or 0) for o in valid))
     aov = (total_sales / orders_count) if orders_count else 0.0
@@ -11471,7 +11500,8 @@ def shop_admin_stats(request):
     } for o in valid.order_by("-created_at")[:12]]
 
     ctx = {
-        "rng": rng,
+        "from_date": start_date.isoformat(),
+        "to_date": end_date.isoformat(),
         "range_label": range_label,
         "period_json": _json.dumps({"sales": total_sales, "orders": orders_count,
                                     "aov": aov, "new": new_c, "ret": ret_c}),
