@@ -11438,12 +11438,22 @@ def _shop_dropoff(start, end=None, product_id=None):
     cart = _sset("add_to_cart")
 
     if per_product:
-        # product-page funnel: ends at 'added this product to cart' (the win)
+        # Checkout & purchase fire at the CART (path /commande/), not on a product
+        # page, so we attribute them to this product through the SAME visitor:
+        # of the sessions that added THIS product to their cart, how many then
+        # reached payment / bought. (Their cart could also hold other items, so
+        # this follows the visitor, not strictly the single line item.)
+        co = set(hits.filter(event="checkout")
+                 .values_list("session", flat=True)) & cart
+        bo = set(hits.filter(event="purchase")
+                 .values_list("session", flat=True)) & cart
         universe = viewed | color | size | cart
-        b_cart = cart
-        b_size = size - cart
-        b_color = color - size - cart
-        b_view = universe - color - size - cart
+        b_purchase = bo
+        b_checkout = co - bo
+        b_cart = cart - co - bo
+        b_size = size - cart - co - bo
+        b_color = color - size - cart - co - bo
+        b_view = universe - color - size - cart - co - bo
         total = len(universe)
 
         def _pct(n):
@@ -11453,9 +11463,11 @@ def _shop_dropoff(start, end=None, product_id=None):
             ("view", "Vu le produit, repartis", len(b_view)),
             ("color", "Repartis après la couleur", len(b_color)),
             ("size", "Repartis après la taille", len(b_size)),
-            ("cart", "Ajouté au panier", len(b_cart)),
+            ("cart", "Repartis après l'ajout au panier", len(b_cart)),
+            ("checkout", "Repartis au paiement", len(b_checkout)),
+            ("purchase", "Ont acheté", len(b_purchase)),
         ]
-        win_key = "cart"
+        win_key = "purchase"
     else:
         checkout = _sset("checkout")
         bought = _sset("purchase")

@@ -259,7 +259,7 @@ a{color:inherit;text-decoration:none}
     D=D||{total:0,steps:[]};
     if(cartnote){
       cartnote.style.display=D.per_product?'block':'none';
-      if(D.per_product) cartnote.innerHTML='Le paiement et l\'achat se font au panier (plusieurs produits à la fois), donc ils ne sont pas rattachés à un seul produit. Pour les ventes réelles de ce produit, vois « Ventes par produit » plus bas.';
+      if(D.per_product) cartnote.innerHTML='« Au paiement » et « Ont acheté » comptent les visiteurs qui ont ajouté <b>ce produit</b> au panier puis sont allés payer / ont acheté. Comme le paiement se fait au panier, leur commande pouvait aussi contenir d\'autres articles.';
     }
     if(!D.total){
       box.innerHTML='<div class="empty">Pas encore de données pour cette sélection. Les étapes couleur / taille se remplissent avec le trafic à partir d\'aujourd\'hui.</div>';
