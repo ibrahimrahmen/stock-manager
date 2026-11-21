@@ -250,10 +250,16 @@ track.addEventListener('scroll',()=>{
   countEl.textContent=(i+1)+'/'+n;
 },{passive:true});
 
+var _colorPickSent=false;
 document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>{sel.color=+b.dataset.c;sel.colorLabel=b.dataset.label;
   document.querySelectorAll('[data-c]').forEach(e=>e.classList.remove('sel'));b.classList.add('sel');
   const cn=document.getElementById('colorName');if(cn)cn.textContent=b.dataset.label;
-  renderGallery();});
+  renderGallery();
+  // Analytics: a real colour choice. Fire once per page, and NOT when a colour
+  // is auto-selected from the ?couleur= URL param (that's an ad landing, not a
+  // choice) — same idea as the size finder's _guideApplying guard.
+  if(!_colorPickSent && !window._colorAutoApplying){_colorPickSent=true;
+    try{if(window.ShopTrack)ShopTrack('color_pick');}catch(e){}}});
 var _sizePickSent=false;
 document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{sel.size=b.dataset.s;
   document.querySelectorAll('[data-s]').forEach(e=>e.classList.remove('sel'));b.classList.add('sel');
@@ -310,7 +316,7 @@ let tt;function toast(m){const t=document.getElementById('toast');t.textContent=
     if(idx<0) idx=labels.findIndex(l=>{const n=norm(l);return [...keys].some(k=>k&&n.includes(k));});
     if(idx<0) return;
     const btn=document.querySelector('[data-c="'+idx+'"]');
-    if(btn){btn.click();}
+    if(btn){window._colorAutoApplying=true;btn.click();window._colorAutoApplying=false;}
     else{sel.color=idx;sel.colorLabel=labels[idx];const cn=document.getElementById('colorName');if(cn)cn.textContent=labels[idx];}
   }catch(e){}
 })();

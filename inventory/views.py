@@ -11279,7 +11279,7 @@ def api_shop_track(request):
     s = (request.GET.get("s") or "")[:40].strip()
     e = (request.GET.get("e") or "").strip()
     if s and e in ("pageview", "ping", "add_to_cart", "checkout", "purchase",
-                   "ruler", "size_pick"):
+                   "ruler", "size_pick", "color_pick"):
         v = request.GET.get("v")
         try:
             val = Decimal(v) if v else None
@@ -11392,6 +11392,78 @@ def _shop_ruler_ratio(start, end=None):
         "tried_total": tried_total, "nottried_total": nottried_total,
         "tried_rate": round(tried_rate, 1), "nottried_rate": round(nottried_rate, 1),
         "lift": round(lift, 1) if lift is not None else None,
+    }
+
+
+def _shop_dropoff(start, end=None):
+    """WHERE do product visitors leave? Every session that viewed a product page
+    is placed in exactly ONE bucket — the DEEPEST step it reached — so the counts
+    always add up to the total and there are never negative 'drops'. This is the
+    'why does the client come and leave without buying' breakdown.
+
+      Vu le produit ............ landed on /produit/… but did nothing else
+      Couleur choisie .......... clicked a colour, then stopped
+      Taille choisie ........... picked a size, then stopped
+      Ajout au panier .......... added to cart (incl. 'Acheter maintenant'), stopped
+      Au paiement .............. reached the order page, didn't finish
+      Acheté ................... completed the order
+
+    color_pick / size_pick are recorded only from the day they shipped, so for a
+    window before then the early buckets fill in as fresh traffic arrives."""
+    from .models import StoreHit
+    hits = StoreHit.objects.filter(created_at__gte=start)
+    if end is not None:
+        hits = hits.filter(created_at__lt=end)
+
+    def _sset(ev):
+        return set(hits.filter(event=ev).values_list("session", flat=True))
+
+    viewed = set(hits.filter(event="pageview", path__startswith="/produit/")
+                 .values_list("session", flat=True))
+    color = _sset("color_pick")
+    size = _sset("size_pick")
+    cart = _sset("add_to_cart")
+    checkout = _sset("checkout")
+    bought = _sset("purchase")
+    # engaged sessions belong in the universe even if the product pageview row
+    # wasn't captured (deduped / older session id)
+    universe = viewed | color | size | cart | checkout | bought
+
+    # deepest step reached (priority: purchase > checkout > cart > size > color > view)
+    b_purchase = bought
+    b_checkout = checkout - bought
+    b_cart = cart - checkout - bought
+    b_size = size - cart - checkout - bought
+    b_color = color - size - cart - checkout - bought
+    b_view = universe - color - size - cart - checkout - bought
+    total = len(universe)
+
+    def _pct(n):
+        return round(100.0 * n / total, 1) if total else 0.0
+
+    steps = [
+        ("view", "Vu le produit, repartis", len(b_view)),
+        ("color", "Repartis après la couleur", len(b_color)),
+        ("size", "Repartis après la taille", len(b_size)),
+        ("cart", "Repartis après l'ajout au panier", len(b_cart)),
+        ("checkout", "Repartis au paiement", len(b_checkout)),
+        ("purchase", "Ont acheté", len(b_purchase)),
+    ]
+    out = [{"key": k, "label": lbl, "n": n, "pct": _pct(n)} for (k, lbl, n) in steps]
+    # biggest leak = the non-purchase bucket losing the most visitors
+    leak = None
+    if total:
+        leak = max((s for s in out if s["key"] != "purchase"),
+                   key=lambda s: s["n"])
+        if leak["n"] == 0:
+            leak = None
+    return {
+        "total": total,
+        "steps": out,
+        "leak_key": leak["key"] if leak else None,
+        "leak_label": leak["label"] if leak else None,
+        "leak_n": leak["n"] if leak else 0,
+        "leak_pct": leak["pct"] if leak else 0,
     }
 
 
@@ -11515,6 +11587,7 @@ def shop_admin_stats(request):
         "period_json": _json.dumps({"sales": total_sales, "orders": orders_count,
                                     "aov": aov, "new": new_c, "ret": ret_c}),
         "funnel_json": _json.dumps(_shop_funnel(start, end)),
+        "dropoff_json": _json.dumps(_shop_dropoff(start, end)),
         "ruler_json": _json.dumps(_shop_ruler_ratio(start, end)),
         "by_gov_json": _json.dumps(by_gov, ensure_ascii=False),
         "top_json": _json.dumps(top, ensure_ascii=False),
