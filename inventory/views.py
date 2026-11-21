@@ -13556,6 +13556,111 @@ def api_conversation_send_message(request, pk):
         return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
 
 
+def _parse_msg_ts(ts):
+    """Best-effort epoch (float seconds) from a stored message 'ts'.
+
+    Messages carry timestamps in three shapes depending on where they were
+    saved: epoch-millis strings (Messenger webhook), ISO-8601 'created_time'
+    (Graph history fetch / WhatsApp), or '' (FAQ / manual / local page copies).
+    Returns None when nothing parseable is present."""
+    if ts is None:
+        return None
+    s = str(ts).strip()
+    if not s:
+        return None
+    if s.isdigit():
+        v = float(s)
+        return v / 1000.0 if v > 1e11 else v  # millis vs seconds
+    from datetime import datetime as _dt
+    for _fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S.%f%z",
+                 "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f",
+                 "%Y-%m-%d %H:%M:%S%z", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return _dt.strptime(s, _fmt).timestamp()
+        except Exception:
+            continue
+    try:
+        from django.utils.dateparse import parse_datetime as _pdt
+        d = _pdt(s)
+        if d:
+            return d.timestamp()
+    except Exception:
+        pass
+    return None
+
+
+def _clean_conversation_messages(messages):
+    """Return a de-duplicated, chronologically-ordered COPY of a conversation's
+    messages for human display and the stored conversation_text.
+
+    Why this exists: each message can be written twice — once in real time by
+    the webhook and once by the Graph history poll — and the two sources use
+    different timestamp formats and append in a different order, so the raw list
+    ends up jumbled (an old inquiry wedged into the middle of a new order) and
+    doubled. This does NOT mutate the input; the raw conv.messages the bot and
+    the capture logic read is left exactly as-is.
+
+      - User messages are de-duped by message id only (never by text), so a
+        customer legitimately repeating 'Prix ?' is preserved.
+      - Page replies are collapsed by identical text (the webhook copy with an
+        empty mid + Meta's echo with a real mid are the same send); the kept
+        copy inherits whichever timestamp/mid is available so it still sorts.
+      - Then sorted by timestamp. A message with no parseable timestamp keeps
+        its original relative position (anchored just after the previous timed
+        message)."""
+    kept = []
+    seen_mids = {}    # mid -> index in kept
+    page_text = {}    # normalized text -> index in kept (page messages only)
+    for m in (messages or []):
+        frm = m.get("from") or "user"
+        mid = (m.get("mid") or "").strip()
+        norm = " ".join((m.get("text") or "").split())
+        ts = m.get("ts") or ""
+        j = None
+        if mid and mid in seen_mids:
+            j = seen_mids[mid]
+        elif frm == "page" and norm and norm in page_text:
+            j = page_text[norm]
+        if j is not None:
+            # Duplicate of something already kept: enrich it, drop this copy.
+            if ts and not (kept[j].get("ts") or ""):
+                kept[j]["ts"] = ts
+            if mid and not (kept[j].get("mid") or ""):
+                kept[j]["mid"] = mid
+            for im in (m.get("images") or []):
+                kept[j].setdefault("images", [])
+                if im not in kept[j]["images"]:
+                    kept[j]["images"].append(im)
+            continue
+        entry = dict(m)
+        kept.append(entry)
+        k = len(kept) - 1
+        if mid:
+            seen_mids[mid] = k
+        if frm == "page" and norm:
+            page_text[norm] = k
+    # Stable chronological sort: carry the last known timestamp forward so an
+    # untimed line stays next to the timed line it followed.
+    indexed = []
+    last = None
+    for i, m in enumerate(kept):
+        p = _parse_msg_ts(m.get("ts"))
+        if p is not None:
+            last = p
+        key = (p if p is not None else (last if last is not None else float("-inf")), i)
+        indexed.append((key, m))
+    indexed.sort(key=lambda t: t[0])
+    return [m for _k, m in indexed]
+
+
+def _conversation_text_from_messages(messages):
+    """Staff-facing transcript text, cleaned (sorted + de-duplicated)."""
+    return "\n".join(
+        f"{'Client' if m.get('from') == 'user' else 'Page'}: {m.get('text','')}"
+        for m in _clean_conversation_messages(messages) if m.get("text")
+    )
+
+
 def api_order_refresh_conversation(request, pk):
     """Return the latest stored Messenger conversation for this order.
 
@@ -13584,6 +13689,7 @@ def api_order_refresh_conversation(request, pk):
     platform = ""
     ad_source = {}
     conversation_link = ""
+    conversation_text_clean = ""
     try:
         from .models import MessengerConversation
         conv = MessengerConversation.objects.filter(pending_order_id=order.id).order_by("-id").first()
@@ -13602,19 +13708,12 @@ def api_order_refresh_conversation(request, pk):
                     "ref": conv.source_ad_ref or "",
                 }
             if conv.messages:
-                # De-dupe outgoing (page) messages that appear twice: our own
-                # local copy AND Meta's message_echoes copy of the same text.
-                # Meta echoes arrive so fast they can be stored before OR after
-                # our local copy, so we can't rely on write-time order — collapse
-                # identical page texts here, keeping the first occurrence.
-                _seen_page = set()
-                for m in conv.messages:
-                    _is_page = m.get("from") == "page"
-                    _tn = " ".join((m.get("text") or "").split())
-                    if _is_page and _tn:
-                        if _tn in _seen_page:
-                            continue  # duplicate echo/local copy — skip
-                        _seen_page.add(_tn)
+                # Collapse the webhook/echo/history duplicates AND put the whole
+                # thread back in chronological order (see _clean_conversation_
+                # messages). Rebuilding here also repairs orders captured before
+                # this fix: one click on ↻ Rafraîchir cleans them up.
+                _clean = _clean_conversation_messages(conv.messages)
+                for m in _clean:
                     structured.append({
                         "from": m.get("from", "user"),
                         "text": m.get("text", ""),
@@ -13622,13 +13721,18 @@ def api_order_refresh_conversation(request, pk):
                         "kind": m.get("kind", ""),
                         "ts": m.get("ts", ""),
                     })
+                conversation_text_clean = "\n".join(
+                    f"{'Client' if m.get('from') == 'user' else 'Page'}: {m.get('text','')}"
+                    for m in _clean if m.get("text"))
     except Exception:
         structured = []
+        conversation_text_clean = ""
 
-    if order.conversation_text:
+    _out_text = conversation_text_clean or order.conversation_text
+    if _out_text:
         return JsonResponse({
             "status": "ok",
-            "conversation_text": order.conversation_text,
+            "conversation_text": _out_text,
             "messages": structured,
             "platform": platform,
             "ad_source": ad_source,
@@ -22170,10 +22274,7 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
         from django.utils import timezone as _tz
         order = conv.pending_order
         if order and order.status == Order.NON_CONFIRMEE:
-            convo_text = "\n".join(
-                f"{'Client' if m.get('from') == 'user' else 'Page'}: {m.get('text','')}"
-                for m in (conv.messages or []) if m.get("text")
-            )
+            convo_text = _conversation_text_from_messages(conv.messages or [])
             order.conversation_text = convo_text
             order.conversation_updated_at = _tz.now()
             # Fill address/name if newly available and still empty on the order.
@@ -22246,9 +22347,7 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
                     conv.pending_order = _active
                     if _active.status == Order.NON_CONFIRMEE:
                         from django.utils import timezone as _tz
-                        convo_text = "\n".join(
-                            f"{'Client' if m.get('from') == 'user' else 'Page'}: {m.get('text','')}"
-                            for m in (conv.messages or []) if m.get("text"))
+                        convo_text = _conversation_text_from_messages(conv.messages or [])
                         _active.conversation_text = convo_text
                         _active.conversation_updated_at = _tz.now()
                         _active.save(update_fields=["conversation_text",
@@ -22273,10 +22372,7 @@ def _try_extract_and_create_pending(conv, skip_gemini=False, pre_data=None):
             # the order (so the 💬 modal shows it), link the PSID on the customer,
             # and record the ad source in the notes.
             from django.utils import timezone as _tz
-            convo_text = "\n".join(
-                f"{'Client' if m.get('from') == 'user' else 'Page'}: {m.get('text','')}"
-                for m in (conv.messages or []) if m.get("text")
-            )
+            convo_text = _conversation_text_from_messages(conv.messages or [])
             order.conversation_text = convo_text
             order.conversation_updated_at = _tz.now()
             extra_notes = ["[Commande créée depuis Messenger]"]
