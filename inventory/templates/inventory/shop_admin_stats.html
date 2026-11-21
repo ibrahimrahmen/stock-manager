@@ -60,6 +60,9 @@ a{color:inherit;text-decoration:none}
 .drop .row.leak .lab::after{content:"← plus grosse fuite";color:var(--red);font-size:11px;font-weight:700;margin-left:8px}
 .leaknote{margin-top:12px;padding:13px 16px;background:var(--surface);border-left:3px solid var(--red);border-radius:10px;font-size:13.5px;line-height:1.6}
 .leaknote b{color:var(--red)}
+.dropsel-row{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.dropsel{background:var(--surface);color:var(--text);border:.5px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px;font-family:inherit;max-width:100%;min-width:230px}
+.dropsel:focus{outline:none;border-color:var(--blue)}
 .cr{display:flex;align-items:baseline;gap:10px;margin-top:12px;padding:12px 16px;background:var(--surface);border:.5px solid var(--line);border-radius:12px}
 .cr b{font-family:var(--display);font-size:22px;font-weight:800;color:var(--green)}
 .cr span{font-size:12.5px;color:var(--muted)}
@@ -123,8 +126,12 @@ a{color:inherit;text-decoration:none}
   <div class="sec">
     <h2>Où partent les visiteurs ? · {{ range_label }}</h2>
     <p style="font-size:12px;color:var(--muted);margin:-8px 0 14px">Chaque visiteur qui a ouvert une fiche produit est compté une seule fois, à l'étape la plus loin qu'il a atteinte. Ça montre exactement où le client s'arrête et repart.</p>
+    <div class="dropsel-row">
+      <select id="dropsel" class="dropsel"><option value="all">Tous les produits</option></select>
+    </div>
     <div class="drop" id="dropbox"><div class="empty">Chargement…</div></div>
     <div class="leaknote" id="dropnote" style="display:none"></div>
+    <div class="leaknote" id="dropcartnote" style="display:none;border-left-color:var(--muted);color:var(--muted)"></div>
   </div>
 
   <!-- SIZE GUIDE (ruler) IMPACT -->
@@ -175,6 +182,8 @@ a{color:inherit;text-decoration:none}
 <script id="d_period" type="application/json">{{ period_json|safe }}</script>
 <script id="d_funnel" type="application/json">{{ funnel_json|safe }}</script>
 <script id="d_dropoff" type="application/json">{{ dropoff_json|safe }}</script>
+<script id="d_products" type="application/json">{{ products_json|safe }}</script>
+<script>window.STATS_FROM="{{ from_date }}";window.STATS_TO="{{ to_date }}";</script>
 <script id="d_ruler" type="application/json">{{ ruler_json|safe }}</script>
 <script id="d_gov" type="application/json">{{ by_gov_json|safe }}</script>
 <script id="d_top" type="application/json">{{ top_json|safe }}</script>
@@ -234,26 +243,32 @@ a{color:inherit;text-decoration:none}
   document.getElementById('cr_det').textContent=num(F.purchases)+' / '+num(F.visits);
 
   // DROP-OFF : where product visitors leave (deepest step reached, one bucket each)
-  var D=J('d_dropoff')||{total:0,steps:[]};
-  (function(){
-    var box=document.getElementById('dropbox'), note=document.getElementById('dropnote');
+  function leakPhrase(k){
+    return ({
+      view:'ont ouvert le produit mais sont repartis sans rien choisir — le prix, les photos ou la lenteur de chargement les arrêtent.',
+      color:'ont choisi une couleur puis sont repartis — la taille ou la décision les bloque.',
+      size:'ont choisi leur taille puis sont repartis sans ajouter au panier — hésitation sur le prix ou la confiance.',
+      cart:'ont ajouté au panier mais ne sont pas allés jusqu\'au paiement.',
+      checkout:'ont ouvert la page commande sans la terminer — formulaire trop long ou doute au dernier moment.'
+    })[k]||'sont repartis à cette étape.';
+  }
+  function renderDrop(D){
+    var box=document.getElementById('dropbox'), note=document.getElementById('dropnote'),
+        cartnote=document.getElementById('dropcartnote');
     if(!box) return;
+    D=D||{total:0,steps:[]};
+    if(cartnote){
+      cartnote.style.display=D.per_product?'block':'none';
+      if(D.per_product) cartnote.innerHTML='Le paiement et l\'achat se font au panier (plusieurs produits à la fois), donc ils ne sont pas rattachés à un seul produit. Pour les ventes réelles de ce produit, vois « Ventes par produit » plus bas.';
+    }
     if(!D.total){
-      box.innerHTML='<div class="empty">Pas encore de données. Les étapes couleur / taille se remplissent avec le trafic à partir d\'aujourd\'hui.</div>';
+      box.innerHTML='<div class="empty">Pas encore de données pour cette sélection. Les étapes couleur / taille se remplissent avec le trafic à partir d\'aujourd\'hui.</div>';
       note.style.display='none'; return;
     }
-    function leakPhrase(k){
-      return ({
-        view:'ont ouvert le produit mais sont repartis sans rien choisir — le prix, les photos ou la lenteur de chargement les arrêtent.',
-        color:'ont choisi une couleur puis sont repartis — la taille ou la décision les bloque.',
-        size:'ont choisi leur taille puis sont repartis sans ajouter au panier — hésitation sur le prix ou la confiance.',
-        cart:'ont ajouté au panier mais ne sont pas allés jusqu\'au paiement.',
-        checkout:'ont ouvert la page commande sans la terminer — formulaire trop long ou doute au dernier moment.'
-      })[k]||'sont repartis à cette étape.';
-    }
+    var win=D.win_key||'purchase';
     var vmax=Math.max.apply(null,D.steps.map(function(s){return s.n;}).concat([1]));
     box.innerHTML=D.steps.map(function(s){
-      var cls=s.key==='purchase'?'win':(s.key===D.leak_key?'leak':'');
+      var cls=s.key===win?'win':(s.key===D.leak_key?'leak':'');
       return '<div class="row '+cls+'"><div class="top">'+
         '<span class="lab">'+s.label+'</span>'+
         '<span class="num">'+num(s.n)+'<span class="pct">'+(s.pct||0).toLocaleString('fr-FR')+'%</span></span>'+
@@ -264,6 +279,22 @@ a{color:inherit;text-decoration:none}
       note.innerHTML='La plus grosse fuite : <b>'+num(D.leak_n)+' visiteur'+(D.leak_n>1?'s':'')+
         '</b> ('+(D.leak_pct||0).toLocaleString('fr-FR')+'%) '+leakPhrase(D.leak_key)+' C\'est là qu\'il faut agir en priorité.';
     } else { note.style.display='none'; }
+  }
+  renderDrop(J('d_dropoff'));
+  // product selector -> fetch per-product drop-off without reloading the page
+  (function(){
+    var sel=document.getElementById('dropsel'); if(!sel) return;
+    (J('d_products')||[]).forEach(function(p){
+      var o=document.createElement('option'); o.value=p.id; o.textContent=p.name; sel.appendChild(o);
+    });
+    sel.onchange=function(){
+      document.getElementById('dropbox').innerHTML='<div class="empty">Chargement…</div>';
+      var u='/shop/admin/stats/dropoff/?product='+encodeURIComponent(sel.value)+
+            '&from='+encodeURIComponent(window.STATS_FROM||'')+'&to='+encodeURIComponent(window.STATS_TO||'');
+      fetch(u,{headers:{'X-Requested-With':'fetch'},credentials:'same-origin'})
+        .then(function(r){return r.json();}).then(renderDrop)
+        .catch(function(){document.getElementById('dropbox').innerHTML='<div class="empty">Erreur de chargement.</div>';});
+    };
   })();
 
   // SIZE GUIDE (ruler) impact on buying

@@ -176,6 +176,7 @@ urlpatterns = [
     path("shop/admin/vitrine/", views.shop_admin_vitrine, name="shop_admin_vitrine"),
     path("shop/admin/stats/", views.shop_admin_stats, name="shop_admin_stats"),
     path("shop/admin/stats/live/", views.shop_admin_stats_live, name="shop_admin_stats_live"),
+    path("shop/admin/stats/dropoff/", views.api_shop_dropoff, name="api_shop_dropoff"),
     path("shop/admin/top-pages/", views.api_shop_top_pages, name="api_shop_top_pages"),
     path("api/shop/track/", views.api_shop_track, name="api_shop_track"),
     path("api/shop/order/", views.api_shop_order, name="api_shop_order"),

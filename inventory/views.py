@@ -11395,18 +11395,19 @@ def _shop_ruler_ratio(start, end=None):
     }
 
 
-def _shop_dropoff(start, end=None):
+def _shop_dropoff(start, end=None, product_id=None):
     """WHERE do product visitors leave? Every session that viewed a product page
     is placed in exactly ONE bucket — the DEEPEST step it reached — so the counts
     always add up to the total and there are never negative 'drops'. This is the
     'why does the client come and leave without buying' breakdown.
 
-      Vu le produit ............ landed on /produit/… but did nothing else
-      Couleur choisie .......... clicked a colour, then stopped
-      Taille choisie ........... picked a size, then stopped
-      Ajout au panier .......... added to cart (incl. 'Acheter maintenant'), stopped
-      Au paiement .............. reached the order page, didn't finish
-      Acheté ................... completed the order
+    product_id=None  -> ALL products, full funnel:
+      Vu le produit -> Couleur -> Taille -> Ajout panier -> Paiement -> Acheté
+    product_id=<n>   -> ONE product, product-PAGE funnel only:
+      Vu le produit -> Couleur -> Taille -> Ajouté au panier
+      (checkout/purchase happen at the cart, which can hold several products, so
+      they can't be attributed to a single product — 'Ventes par produit' holds
+      that product's real sales instead.)
 
     color_pick / size_pick are recorded only from the day they shipped, so for a
     window before then the early buckets fill in as fresh traffic arrives."""
@@ -11415,51 +11416,85 @@ def _shop_dropoff(start, end=None):
     if end is not None:
         hits = hits.filter(created_at__lt=end)
 
-    def _sset(ev):
-        return set(hits.filter(event=ev).values_list("session", flat=True))
+    per_product = product_id is not None
+    ppath = ("/produit/%s/" % product_id) if per_product else None
 
-    viewed = set(hits.filter(event="pageview", path__startswith="/produit/")
-                 .values_list("session", flat=True))
+    def _sset(ev):
+        """Sessions that fired event `ev`. When a single product is selected we
+        keep only hits whose path is that product's page, so colour / size / cart
+        all belong to the same product."""
+        qs = hits.filter(event=ev)
+        if per_product:
+            qs = qs.filter(path=ppath)
+        return set(qs.values_list("session", flat=True))
+
+    if per_product:
+        viewed = _sset("pageview")
+    else:
+        viewed = set(hits.filter(event="pageview", path__startswith="/produit/")
+                     .values_list("session", flat=True))
     color = _sset("color_pick")
     size = _sset("size_pick")
     cart = _sset("add_to_cart")
-    checkout = _sset("checkout")
-    bought = _sset("purchase")
-    # engaged sessions belong in the universe even if the product pageview row
-    # wasn't captured (deduped / older session id)
-    universe = viewed | color | size | cart | checkout | bought
 
-    # deepest step reached (priority: purchase > checkout > cart > size > color > view)
-    b_purchase = bought
-    b_checkout = checkout - bought
-    b_cart = cart - checkout - bought
-    b_size = size - cart - checkout - bought
-    b_color = color - size - cart - checkout - bought
-    b_view = universe - color - size - cart - checkout - bought
-    total = len(universe)
+    if per_product:
+        # product-page funnel: ends at 'added this product to cart' (the win)
+        universe = viewed | color | size | cart
+        b_cart = cart
+        b_size = size - cart
+        b_color = color - size - cart
+        b_view = universe - color - size - cart
+        total = len(universe)
 
-    def _pct(n):
-        return round(100.0 * n / total, 1) if total else 0.0
+        def _pct(n):
+            return round(100.0 * n / total, 1) if total else 0.0
 
-    steps = [
-        ("view", "Vu le produit, repartis", len(b_view)),
-        ("color", "Repartis après la couleur", len(b_color)),
-        ("size", "Repartis après la taille", len(b_size)),
-        ("cart", "Repartis après l'ajout au panier", len(b_cart)),
-        ("checkout", "Repartis au paiement", len(b_checkout)),
-        ("purchase", "Ont acheté", len(b_purchase)),
-    ]
+        steps = [
+            ("view", "Vu le produit, repartis", len(b_view)),
+            ("color", "Repartis après la couleur", len(b_color)),
+            ("size", "Repartis après la taille", len(b_size)),
+            ("cart", "Ajouté au panier", len(b_cart)),
+        ]
+        win_key = "cart"
+    else:
+        checkout = _sset("checkout")
+        bought = _sset("purchase")
+        # engaged sessions belong in the universe even if the product pageview
+        # row wasn't captured (deduped / older session id)
+        universe = viewed | color | size | cart | checkout | bought
+        b_purchase = bought
+        b_checkout = checkout - bought
+        b_cart = cart - checkout - bought
+        b_size = size - cart - checkout - bought
+        b_color = color - size - cart - checkout - bought
+        b_view = universe - color - size - cart - checkout - bought
+        total = len(universe)
+
+        def _pct(n):
+            return round(100.0 * n / total, 1) if total else 0.0
+
+        steps = [
+            ("view", "Vu le produit, repartis", len(b_view)),
+            ("color", "Repartis après la couleur", len(b_color)),
+            ("size", "Repartis après la taille", len(b_size)),
+            ("cart", "Repartis après l'ajout au panier", len(b_cart)),
+            ("checkout", "Repartis au paiement", len(b_checkout)),
+            ("purchase", "Ont acheté", len(b_purchase)),
+        ]
+        win_key = "purchase"
+
     out = [{"key": k, "label": lbl, "n": n, "pct": _pct(n)} for (k, lbl, n) in steps]
-    # biggest leak = the non-purchase bucket losing the most visitors
+    # biggest leak = the step (other than the 'win' step) losing the most visitors
     leak = None
     if total:
-        leak = max((s for s in out if s["key"] != "purchase"),
-                   key=lambda s: s["n"])
+        leak = max((s for s in out if s["key"] != win_key), key=lambda s: s["n"])
         if leak["n"] == 0:
             leak = None
     return {
         "total": total,
         "steps": out,
+        "per_product": per_product,
+        "win_key": win_key,
         "leak_key": leak["key"] if leak else None,
         "leak_label": leak["label"] if leak else None,
         "leak_n": leak["n"] if leak else 0,
@@ -11580,6 +11615,24 @@ def shop_admin_stats(request):
         "when": o.created_at.strftime("%d/%m %H:%M"),
     } for o in valid.order_by("-created_at")[:12]]
 
+    # products that got traffic in this window — fills the per-product drop-off
+    # selector, most-visited first.
+    import re as _re
+    from .models import StoreHit as _SH, Offer as _Offer
+    _pv = (_SH.objects.filter(event="pageview", path__startswith="/produit/",
+                              created_at__gte=start, created_at__lt=end)
+           .values("path").annotate(s=Count("session", distinct=True)).order_by("-s"))
+    _pid_order = []
+    for _row in _pv:
+        _m = _re.match(r"^/produit/(\d+)/?$", _row["path"] or "")
+        if _m:
+            _pid = int(_m.group(1))
+            if _pid not in _pid_order:
+                _pid_order.append(_pid)
+    _names = dict(_Offer.objects.filter(id__in=_pid_order).values_list("id", "name"))
+    products = [{"id": pid, "name": _names.get(pid) or ("Produit %d" % pid)}
+                for pid in _pid_order if pid in _names]
+
     ctx = {
         "from_date": start_date.isoformat(),
         "to_date": end_date.isoformat(),
@@ -11588,6 +11641,7 @@ def shop_admin_stats(request):
                                     "aov": aov, "new": new_c, "ret": ret_c}),
         "funnel_json": _json.dumps(_shop_funnel(start, end)),
         "dropoff_json": _json.dumps(_shop_dropoff(start, end)),
+        "products_json": _json.dumps(products, ensure_ascii=False),
         "ruler_json": _json.dumps(_shop_ruler_ratio(start, end)),
         "by_gov_json": _json.dumps(by_gov, ensure_ascii=False),
         "top_json": _json.dumps(top, ensure_ascii=False),
@@ -11596,6 +11650,53 @@ def shop_admin_stats(request):
         "page_name": page.name if page else "Arrow.tn",
     }
     return render(request, "inventory/shop_admin_stats.html", ctx)
+
+
+@login_required(login_url="/login/")
+def api_shop_dropoff(request):
+    """Drop-off breakdown for the whole shop (?product=all) or one product
+    (?product=<offer id>), over the dashboard's date window (?from/&to, with the
+    old ?range= still honoured). Powers the per-product selector without a full
+    page reload."""
+    if not request.user.is_superuser:
+        return HttpResponseForbidden("Accès refusé.")
+    import json as _json
+    import datetime as _dt
+    from django.utils import timezone
+    today = timezone.localdate()
+    try:
+        start_date = _dt.date.fromisoformat((request.GET.get("from") or "").strip())
+    except ValueError:
+        start_date = None
+    try:
+        end_date = _dt.date.fromisoformat((request.GET.get("to") or "").strip())
+    except ValueError:
+        end_date = None
+    if start_date is None or end_date is None:
+        rng = (request.GET.get("range") or "7").strip()
+        if rng == "today":
+            start_date = end_date = today
+        elif rng == "hier":
+            start_date = end_date = today - _dt.timedelta(days=1)
+        elif rng == "30":
+            start_date, end_date = today - _dt.timedelta(days=29), today
+        elif rng == "all":
+            start_date, end_date = _dt.date(2020, 1, 1), today
+        else:
+            start_date, end_date = today - _dt.timedelta(days=6), today
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+    tz = timezone.get_current_timezone()
+    start = timezone.make_aware(_dt.datetime.combine(start_date, _dt.time.min), tz)
+    end = timezone.make_aware(
+        _dt.datetime.combine(end_date + _dt.timedelta(days=1), _dt.time.min), tz)
+    pid = (request.GET.get("product") or "").strip()
+    try:
+        product_id = int(pid) if pid and pid != "all" else None
+    except ValueError:
+        product_id = None
+    return HttpResponse(_json.dumps(_shop_dropoff(start, end, product_id)),
+                        content_type="application/json")
 
 
 @login_required(login_url="/login/")
