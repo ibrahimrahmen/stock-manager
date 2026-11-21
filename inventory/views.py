@@ -11418,17 +11418,24 @@ def shop_admin_stats(request):
     page = _shop_sales_page()
     now = timezone.now()
     rng = (request.GET.get("range") or "7").strip()
+    end = None  # upper bound; only "hier" needs one (yesterday 00:00 → today 00:00)
     if rng == "today":
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif rng == "hier":
+        today0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start = today0 - timedelta(days=1)
+        end = today0
     else:
         days = {"7": 7, "30": 30, "90": 90, "all": 3650}.get(rng, 7)
         start = now - timedelta(days=days)
-    range_label = {"today": "aujourd'hui", "7": "7 derniers jours",
+    range_label = {"today": "aujourd'hui", "hier": "hier", "7": "7 derniers jours",
                    "30": "30 derniers jours", "90": "90 derniers jours",
                    "all": "depuis le début"}.get(rng, "7 derniers jours")
 
     valid = (Order.objects.filter(sales_page=page, created_at__gte=start)
              .exclude(status=Order.ANNULEE))
+    if end is not None:
+        valid = valid.filter(created_at__lt=end)
     orders_count = valid.count()
     total_sales = float(sum((o.total or 0) for o in valid))
     aov = (total_sales / orders_count) if orders_count else 0.0
@@ -11446,8 +11453,11 @@ def shop_admin_stats(request):
 
     by_gov = list(valid.exclude(ville="").values("ville")
                   .annotate(n=Count("id")).order_by("-n")[:8])
-    top = list(OrderOffer.objects.filter(
+    top_qs = OrderOffer.objects.filter(
         order__sales_page=page, order__created_at__gte=start)
+    if end is not None:
+        top_qs = top_qs.filter(order__created_at__lt=end)
+    top = list(top_qs
         .exclude(order__status=Order.ANNULEE).values("offer_name")
         .annotate(sales=Sum(F("bundle_price") * F("quantity")),
                   qty=Sum("quantity")).order_by("-sales")[:6])
@@ -11465,8 +11475,8 @@ def shop_admin_stats(request):
         "range_label": range_label,
         "period_json": _json.dumps({"sales": total_sales, "orders": orders_count,
                                     "aov": aov, "new": new_c, "ret": ret_c}),
-        "funnel_json": _json.dumps(_shop_funnel(start)),
-        "ruler_json": _json.dumps(_shop_ruler_ratio(start)),
+        "funnel_json": _json.dumps(_shop_funnel(start, end)),
+        "ruler_json": _json.dumps(_shop_ruler_ratio(start, end)),
         "by_gov_json": _json.dumps(by_gov, ensure_ascii=False),
         "top_json": _json.dumps(top, ensure_ascii=False),
         "recent_json": _json.dumps(recent, ensure_ascii=False),
