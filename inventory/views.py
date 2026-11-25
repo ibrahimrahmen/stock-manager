@@ -4748,6 +4748,29 @@ def logout_view(request):
 
 
 
+def _shipped_today_orderitem(unit):
+    """Return the OrderItem if this unit was scanned into a shipping order
+    (EXPÉDITION) earlier TODAY, else None.
+
+    Server time only — the client clock is never trusted (uses timezone.now()
+    and the Africa/Tunis local day boundary). This backs the same-day rule:
+    workers were abusing the RETOUR scan to "re-scan" a unit they had already
+    shipped, which silently flipped the order — and its linked v2 Order — to
+    'Retourné'. A unit shipped today may not be returned today.
+    """
+    from datetime import datetime, time as _time
+    start_local = timezone.make_aware(
+        datetime.combine(timezone.localdate(), _time.min)
+    )
+    return (OrderItem.objects
+            .select_related("order")
+            .filter(unit=unit,
+                    status_at_scan=ProductUnit.SHIPPED,
+                    scanned_at__gte=start_local)
+            .order_by("-scanned_at")
+            .first())
+
+
 def _do_return_unit(unit, user=None):
     variant = unit.variant
     reconciliation = None
@@ -4983,6 +5006,21 @@ def api_scan_return(request):
             request=request, target_unit_barcode=barcode,
         )
         return JsonResponse({"status": "error", "message": f"Unite introuvable : {barcode}"})
+    # Same-day rule: a unit scanned in EXPÉDITION today cannot be returned today.
+    shipped_oi = _shipped_today_orderitem(unit)
+    if shipped_oi is not None:
+        log_action(
+            request.user, AuditLog.SCAN_RETURN,
+            description=f"Retour BLOQUÉ pour {barcode} : expédié aujourd'hui "
+                        f"(ordre {shipped_oi.order.bordereau_barcode})",
+            request=request, target_unit_barcode=barcode,
+            target_order_barcode=shipped_oi.order.bordereau_barcode,
+        )
+        return JsonResponse({
+            "status": "error", "code": "SHIPPED_TODAY",
+            "message": f"Tu peux pas — {barcode} a été scanné en EXPÉDITION aujourd'hui. "
+                       f"Impossible de le retourner le même jour.",
+        })
     if unit.status not in (ProductUnit.SHIPPED, ProductUnit.PAID,
                            ProductUnit.EARLY_RETURN, ProductUnit.AT_DEPOT):
         msgs = {
@@ -5090,9 +5128,14 @@ def api_return_multiple(request):
         return JsonResponse({"status": "error", "message": "Aucune unité sélectionnée."})
     returned_units = []
     reconciliations = []
+    blocked_today = []  # units scanned in EXPÉDITION today — cannot be returned today
     for barcode in barcodes:
         try:
             unit = ProductUnit.objects.select_related("variant__product").get(barcode=barcode)
+            # Same-day rule: skip (and report) units expédiés aujourd'hui.
+            if _shipped_today_orderitem(unit) is not None:
+                blocked_today.append(barcode)
+                continue
             if unit.status in (ProductUnit.SHIPPED, ProductUnit.PAID,
                                ProductUnit.EARLY_RETURN, ProductUnit.AT_DEPOT):
                 unit_data, reconciliation = _do_return_unit(unit, user=_user_for_request(request))
@@ -5101,7 +5144,21 @@ def api_return_multiple(request):
                     reconciliations.append(reconciliation)
         except ProductUnit.DoesNotExist:
             pass
+    if blocked_today:
+        log_action(
+            request.user, AuditLog.SCAN_RETURN,
+            description=f"Retour multi BLOQUÉ (expédié aujourd'hui) : {', '.join(blocked_today[:10])}",
+            request=request,
+        )
     if not returned_units:
+        if blocked_today:
+            return JsonResponse({
+                "status": "error", "code": "SHIPPED_TODAY",
+                "message": "Tu peux pas — "
+                           + ", ".join(blocked_today)
+                           + " : scanné(s) en EXPÉDITION aujourd'hui. "
+                             "Impossible de retourner le même jour.",
+            })
         return JsonResponse({"status": "error", "message": "Aucune unité retournée."})
     log_action(
         request.user, AuditLog.SCAN_RETURN,
@@ -5109,8 +5166,14 @@ def api_return_multiple(request):
         request=request,
     )
     combined = {"message": " | ".join(r["message"] for r in reconciliations)} if reconciliations else None
-    return JsonResponse({"status": "ok", "message": f"{len(returned_units)} unité(s) retournée(s).",
-                         "returned_units": returned_units, "reconciliation": combined})
+    msg = f"{len(returned_units)} unité(s) retournée(s)."
+    if blocked_today:
+        msg += (" ⛔ " + ", ".join(blocked_today)
+                + " non retourné(s) : expédié(s) aujourd'hui.")
+    return JsonResponse({"status": "ok", "message": msg,
+                         "returned_units": returned_units,
+                         "blocked_today": blocked_today,
+                         "reconciliation": combined})
 
 
 @csrf_exempt
@@ -7996,7 +8059,23 @@ def api_return_unit_to_order(request, pk):
         unit = ProductUnit.objects.select_related("variant__product").get(barcode=barcode)
     except ProductUnit.DoesNotExist:
         return JsonResponse({"status": "error", "message": f"Unité {barcode} introuvable."})
-    
+
+    # Same-day rule: a unit scanned in EXPÉDITION today cannot be returned today.
+    shipped_oi = _shipped_today_orderitem(unit)
+    if shipped_oi is not None:
+        log_action(
+            request.user, AuditLog.SCAN_RETURN,
+            description=f"Retour BLOQUÉ pour {barcode} : expédié aujourd'hui "
+                        f"(ordre {shipped_oi.order.bordereau_barcode})",
+            request=request, target_unit_barcode=barcode,
+            target_order_barcode=shipped_oi.order.bordereau_barcode,
+        )
+        return JsonResponse({
+            "status": "error", "code": "SHIPPED_TODAY",
+            "message": f"Tu peux pas — {barcode} a été scanné en EXPÉDITION aujourd'hui. "
+                       f"Impossible de le retourner le même jour.",
+        })
+
     if unit.status not in (ProductUnit.SHIPPED, ProductUnit.PAID,
                            ProductUnit.EARLY_RETURN, ProductUnit.AT_DEPOT):
         return JsonResponse({"status": "error", "message": f"Cette unité ne peut pas être retournée (statut: {unit.status})."})
