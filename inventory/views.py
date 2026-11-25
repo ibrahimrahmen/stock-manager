@@ -20935,13 +20935,29 @@ def api_messenger_webhook(request):
                 _price_q = (_price_only_on and bool((text or "").strip())
                             and any(k in (text or "").lower()
                                     for k in _PRICE_QUESTION_KWS))
+                # Cross-worker idempotency (especially Instagram): Meta often
+                # delivers the SAME incoming message to several gunicorn workers
+                # at once, and each one sent its own FAQ/price/welcome reply — so
+                # the customer received the same message 2–4 times. Claim this
+                # (conversation, message-id) ONCE in the shared DB cache; any
+                # duplicate delivery then skips ALL auto-replies below. The bot
+                # path keeps its own claim too (belt and braces).
+                _reply_dup = False
+                if mid and not is_echo:
+                    try:
+                        from django.core.cache import cache as _rc
+                        if not _rc.add("reply_mid:%s:%s" % (conv.id, mid), 1, 900):
+                            _reply_dup = True
+                    except Exception:
+                        _reply_dup = False
                 # FAQ first: fixed, reliable answers (open parcel, delivery
                 # timing, price-from-ad). If one fires, the bot must NOT also
                 # reply, or the customer gets two messages. This runs whether or
                 # not the bot is on.
                 _faq_fired = False
                 try:
-                    if not _external_agent and not is_echo and (text or "").strip():
+                    if (not _external_agent and not is_echo and not _reply_dup
+                            and (text or "").strip()):
                         _ans = _faq_answer(text, conv)
                         if _ans:
                             _already = any(m.get("faq") == _ans
@@ -20962,7 +20978,7 @@ def api_messenger_webhook(request):
                 # 7 digits). Ask them to resend it complete, so the bot doesn't
                 # stay silent on a half-typed number. Only when the bot is on and
                 # nothing else already answered.
-                if (_bot_on and not _faq_fired and not is_echo
+                if (_bot_on and not _faq_fired and not is_echo and not _reply_dup
                         and (text or "").strip()):
                     try:
                         if _looks_like_incomplete_phone(text):
@@ -20987,7 +21003,7 @@ def api_messenger_webhook(request):
                 # text reply. Only for real questions, not order data.
                 _carousel_sent = False
                 if (_bot_on and _gates_ok and not _faq_fired and not _price_q
-                        and (text or "").strip()):
+                        and not _reply_dup and (text or "").strip()):
                     try:
                         _cards = _build_category_carousel(text, _sp_here)
                         if _cards:
@@ -21006,7 +21022,7 @@ def api_messenger_webhook(request):
                         _carousel_sent = False
 
                 if (_bot_on and _gates_ok and not _faq_fired and not _carousel_sent
-                        and not _price_q
+                        and not _price_q and not _reply_dup
                         and ((text or "").strip() or images)):
                     # Dedup: Meta sometimes delivers the same webhook event more
                     # than once (retries / duplicate deliveries). Without a guard
@@ -21196,6 +21212,7 @@ def api_messenger_webhook(request):
                         and not is_echo
                         and not (_price_only_on and _faq_fired)  # Barats: no welcome after a price/FAQ answer
                         and not _price_q    # Barats price question -> price or silence, never welcome
+                        and not _reply_dup  # duplicate webhook delivery -> don't re-greet
                         and (text or "").strip()
                         and not has_phone_now
                         and not conv.auto_replied
