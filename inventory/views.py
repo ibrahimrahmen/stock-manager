@@ -76,6 +76,20 @@ MESSENGER_PAGE_TO_SALESPAGE = {
 }
 MESSENGER_DEFAULT_SALESPAGE = 3   # Barats (fallback for unmapped pages)
 
+# Rollout gate for the "price-only / silence" auto-reply behavior (quote the
+# price from the ad on a price question; otherwise stay silent — no AI guess, no
+# welcome). Rolled out to Barats (SalesPage 3) FIRST. To enable on ALL pages,
+# set PRICE_ONLY_SALESPAGES = None (or add the other SalesPage ids).
+PRICE_ONLY_SALESPAGES = {3}   # {3} = Barats only; None = all pages
+
+
+def _price_only_enabled(sp_id):
+    """True when the price-only/silence behavior is active for this sales page."""
+    try:
+        return PRICE_ONLY_SALESPAGES is None or int(sp_id) in PRICE_ONLY_SALESPAGES
+    except Exception:
+        return False
+
 # Ad account → sales page NAME for WEBSITE / pixel ads (destination is a site,
 # not a DM). A DM ad is instead mapped by the FB/IG page it runs under, via
 # MESSENGER_PAGE_TO_SALESPAGE. The owner confirmed: ads in the Ibrahim account
@@ -250,6 +264,61 @@ def _ad_info_for_conv(conv):
         if not ad_id:
             return ""
         return _clean_ad_text(_fetch_ad_text(ad_id))
+    except Exception:
+        return ""
+
+
+# Standard delivery fee quoted in auto-replies (DT). Mirrors Order.delivery_fee.
+_LIVRAISON_FEE_DT = 7
+
+
+def _fmt_price_dt(val):
+    """115.000 -> '115', 99.500 -> '99.5'. Clean price for the quote line."""
+    try:
+        from decimal import Decimal as _D
+        d = _D(str(val or 0)).normalize()
+        s = format(d, "f")
+        if "." in s:
+            s = s.rstrip("0").rstrip(".")
+        return s or "0"
+    except Exception:
+        return str(val or 0)
+
+
+def _price_line_for_conv(conv):
+    """Concise price reply for a customer who came from an ad, e.g.
+    'Bomber Ferrari 115 Dt + 7 dt livraison'.
+
+    Resolves the OFFER the ad sells from this conversation's ad / campaign
+    attribution (same resolver the capture cascade uses — no images, so it is a
+    cheap DB lookup with no Vision call), then quotes that product's real
+    catalogue price plus the standard delivery fee. Returns '' when the product
+    can't be resolved, so the caller falls back to the raw ad copy.
+    """
+    try:
+        if conv is None:
+            return ""
+        from .models import SalesPage
+        sp_id = MESSENGER_PAGE_TO_SALESPAGE.get(
+            str(getattr(conv, "page_id", "") or ""), MESSENGER_DEFAULT_SALESPAGE)
+        if not _price_only_enabled(sp_id):
+            return ""   # feature not rolled out to this page yet
+        page = SalesPage.objects.filter(pk=sp_id).first()
+        offer, _confident, _note = _resolve_ad_line_offer(conv, page, [], [])
+        if not offer or not _confident:
+            # Not sure which product the ad sells -> never guess a price.
+            return ""
+        price = None
+        try:
+            price = offer.price_for_page(page) if page else None
+        except Exception:
+            price = None
+        if not price or price <= 0:
+            price = offer.bundle_price
+        if not price or price <= 0:
+            return ""
+        return "%s %s Dt + %s dt livraison" % (
+            offer.name, _fmt_price_dt(price), _LIVRAISON_FEE_DT)
     except Exception:
         return ""
 
@@ -1152,6 +1221,12 @@ def _faq_answer(text, conv=None):
     if not low:
         return ""
     if conv is not None and any(k in low for k in _PRICE_QUESTION_KWS):
+        # Preferred: one clean line from the catalogue — "<Produit> <prix> Dt +
+        # 7 dt livraison". Falls back to the raw ad copy if the product that the
+        # ad sells can't be resolved.
+        line = _price_line_for_conv(conv)
+        if line:
+            return line
         info = _ad_info_for_conv(conv)
         if info:
             return info
@@ -20852,6 +20927,14 @@ def api_messenger_webhook(request):
                     and _looks_like_question(text))
 
                 _gates_ok = (_is_test) or _pre_order or _post_order_q
+                # Price question? Then the ONLY allowed reply is the price quoted
+                # from the ad (via _faq_answer below). If we can't quote a price,
+                # the bot stays SILENT — no AI guess, no welcome. (Owner rule.)
+                # Gated per page: Barats first (PRICE_ONLY_SALESPAGES), all later.
+                _price_only_on = _price_only_enabled(_sp_here)
+                _price_q = (_price_only_on and bool((text or "").strip())
+                            and any(k in (text or "").lower()
+                                    for k in _PRICE_QUESTION_KWS))
                 # FAQ first: fixed, reliable answers (open parcel, delivery
                 # timing, price-from-ad). If one fires, the bot must NOT also
                 # reply, or the customer gets two messages. This runs whether or
@@ -20903,7 +20986,7 @@ def api_messenger_webhook(request):
                 # send a horizontal carousel of matching products instead of a
                 # text reply. Only for real questions, not order data.
                 _carousel_sent = False
-                if (_bot_on and _gates_ok and not _faq_fired
+                if (_bot_on and _gates_ok and not _faq_fired and not _price_q
                         and (text or "").strip()):
                     try:
                         _cards = _build_category_carousel(text, _sp_here)
@@ -20923,6 +21006,7 @@ def api_messenger_webhook(request):
                         _carousel_sent = False
 
                 if (_bot_on and _gates_ok and not _faq_fired and not _carousel_sent
+                        and not _price_q
                         and ((text or "").strip() or images)):
                     # Dedup: Meta sometimes delivers the same webhook event more
                     # than once (retries / duplicate deliveries). Without a guard
@@ -21110,6 +21194,8 @@ def api_messenger_webhook(request):
                         and not _bot_on
                         and not _external_agent
                         and not is_echo
+                        and not (_price_only_on and _faq_fired)  # Barats: no welcome after a price/FAQ answer
+                        and not _price_q    # Barats price question -> price or silence, never welcome
                         and (text or "").strip()
                         and not has_phone_now
                         and not conv.auto_replied
