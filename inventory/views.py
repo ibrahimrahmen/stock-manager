@@ -12786,6 +12786,20 @@ def _creative_dest_url(cre):
     return ""
 
 
+import re as _test_ad_re_mod
+# A campaign / ad whose name contains the word "test" (e.g.
+# "Next Generation | test doudoune") is an EXPERIMENT. Its spend is kept OUT of
+# every page's real spend and pooled into a separate "test budget" total.
+_TEST_AD_RE = _test_ad_re_mod.compile(r"(?i)\btests?\b")
+TEST_SPEND_KEY = "__TEST__"
+
+
+def _is_test_ad_name(*names):
+    """True if any of the given ad/campaign names marks a test campaign."""
+    joined = " ".join(n or "" for n in names)
+    return bool(_TEST_AD_RE.search(joined))
+
+
 def _meta_spend_by_page(start_date, end_date):
     """Spend per SALES PAGE for a date range, read straight from Meta at the
     AD level and attributed by the REAL page each ad posts from — no names, no
@@ -12891,7 +12905,7 @@ def _meta_spend_by_page(start_date, end_date):
             url = (
                 f"https://graph.facebook.com/v18.0/"
                 f"?ids={','.join(chunk)}"
-                f"&fields=adset{{destination_type}},"
+                f"&fields=name,campaign{{name}},adset{{destination_type}},"
                 f"creative{{object_story_id,effective_object_story_id,"
                 f"link_destination_display_url,object_story_spec,asset_feed_spec}}"
                 f"&access_token={acc_token}"
@@ -12907,6 +12921,13 @@ def _meta_spend_by_page(start_date, end_date):
                 continue
             for aid in chunk:
                 ad = obj.get(aid) or {}
+                # Test campaign? Keep its spend OUT of every page, pool it under
+                # the test bucket. Name OR campaign name contains the word "test".
+                if _is_test_ad_name(ad.get("name"),
+                                    (ad.get("campaign") or {}).get("name")):
+                    spend_by_name[TEST_SPEND_KEY] += Decimal(str(spend_by_ad[aid] * rate))
+                    count_by_name[TEST_SPEND_KEY] += 1
+                    continue
                 dest = ((ad.get("adset") or {}).get("destination_type") or "").upper()
                 cre = ad.get("creative") or {}
                 story = cre.get("object_story_id") or cre.get("effective_object_story_id") or ""
@@ -20071,13 +20092,19 @@ def stats_pages(request):
     spend_by_page = {}
     unassigned_spend = _D("0")
     unassigned_count = 0
+    test_spend = _D("0")      # pooled spend of "test" campaigns (NOT on any page)
+    test_count = 0
     try:
         if _cfg("META_ACCESS_TOKEN", "").strip():
             _sp_map, _ct_map = _meta_spend_by_page(spend_start.isoformat(),
                                                     spend_end.isoformat())
-            spend_by_page = {k: v for k, v in _sp_map.items() if k}
+            # Exclude the unassigned ("") AND the test bucket from page spend.
+            spend_by_page = {k: v for k, v in _sp_map.items()
+                             if k and k != TEST_SPEND_KEY}
             unassigned_spend = _sp_map.get("", _D("0"))
             unassigned_count = _ct_map.get("", 0)
+            test_spend = _sp_map.get(TEST_SPEND_KEY, _D("0"))
+            test_count = _ct_map.get(TEST_SPEND_KEY, 0)
     except Exception:
         pass
 
@@ -20212,6 +20239,8 @@ def stats_pages(request):
         "spend_to": spend_end.isoformat(),
         "unassigned_spend": unassigned_spend,
         "unassigned_count": unassigned_count,
+        "test_spend": test_spend,
+        "test_count": test_count,
         "source_filter": source_filter,
     })
 

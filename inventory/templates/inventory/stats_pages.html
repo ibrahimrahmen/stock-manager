@@ -103,6 +103,9 @@ tr.totaux td{color:var(--text);}
   {% if unassigned_spend %}
   <div class="n-info" style="color:var(--red);">⚠️ <b>Non assigné : {{ unassigned_spend|floatformat:2 }} DT</b> ({{ unassigned_count }} pub(s) dont la page n'a pas pu être identifiée depuis Meta) — cette dépense n'est comptée sous aucune page ci-dessous (jamais devinée).</div>
   {% endif %}
+  {% if test_spend %}
+  <div class="n-info" style="color:var(--blue);">🧪 <b>Budget test : {{ test_spend|floatformat:2 }} DT</b> ({{ test_count }} pub(s) « test ») — dépense des campagnes dont le nom contient « test » (ex. « Next Generation | test doudoune »). Elle n'est comptée sous AUCUNE page ci-dessous.</div>
+  {% endif %}
 
   <div class="card">
     <table id="modtable">
