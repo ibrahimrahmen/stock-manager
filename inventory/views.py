@@ -11680,8 +11680,9 @@ def shop_admin_stats_live(request):
     page = _shop_sales_page()
     day0 = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
     live = _shop_live_stats()
-    todays = Order.objects.filter(sales_page=page, created_at__gte=day0).exclude(
-        status=Order.ANNULEE)
+    todays = Order.objects.filter(sales_page=page, created_at__gte=day0,
+                                  sent_to_test__isnull=True).exclude(
+        status=Order.ANNULEE)   # test/production orders don't count
     live["orders_today"] = todays.count()
     live["sales_today"] = float(sum((o.total or 0) for o in todays))
     return HttpResponse(_json.dumps(live), content_type="application/json")
@@ -19522,7 +19523,8 @@ def stats_commandes(request):
     win_start, _ = _business_day_bounds(start_date, tz)
     _, win_end = _business_day_bounds(end_date, tz)
 
-    orders = (Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end)
+    orders = (Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end,
+                                   sent_to_test__isnull=True)  # exclude orders sent to a test/production
               .values("id", "status", "created_at", "exchange_of_id"))
 
     # Source filter (same grouping as the orders list).
@@ -19685,7 +19687,8 @@ def stats_modeles(request):
     win_start, _ = _business_day_bounds(start_date, tz)
     _, win_end = _business_day_bounds(end_date, tz)
 
-    orders = Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end)
+    orders = Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end,
+                                  sent_to_test__isnull=True)  # exclude orders sent to a test/production
     source_filter = request.GET.get("source", "all")
     if source_filter == "barats":
         orders = orders.filter(sales_page__name__iexact="Barats.tn")
@@ -19837,7 +19840,8 @@ def stats_offres(request):
     win_start, _ = _business_day_bounds(start_date, tz)
     _, win_end = _business_day_bounds(end_date, tz)
 
-    orders = Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end)
+    orders = Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end,
+                                  sent_to_test__isnull=True)  # exclude orders sent to a test/production
     source_filter = request.GET.get("source", "all")
     if source_filter == "barats":
         orders = orders.filter(sales_page__name__iexact="Barats.tn")
@@ -19966,7 +19970,8 @@ def stats_pages(request):
     win_start, _ = _business_day_bounds(start_date, tz)
     _, win_end = _business_day_bounds(end_date, tz)
 
-    orders = Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end)
+    orders = Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end,
+                                  sent_to_test__isnull=True)  # exclude orders sent to a test/production
     source_filter = request.GET.get("source", "all")
     if source_filter == "barats":
         orders = orders.filter(sales_page__name__iexact="Barats.tn")
@@ -20278,7 +20283,8 @@ def stats_gouvernorats(request):
     win_start, _ = _business_day_bounds(start_date, tz)
     _, win_end = _business_day_bounds(end_date, tz)
 
-    orders = Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end)
+    orders = Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end,
+                                  sent_to_test__isnull=True)  # exclude orders sent to a test/production
     source_filter = request.GET.get("source", "all")
     if source_filter == "barats":
         orders = orders.filter(sales_page__name__iexact="Barats.tn")
