@@ -2149,3 +2149,75 @@ class ProductTestVariant(models.Model):
     @property
     def size_list(self):
         return [s.strip() for s in (self.sizes or "").split(",") if s.strip()]
+
+
+# ---------------------------------------------------------------------------
+# AI office — virtual "employees" (Claude agents) shown in a 3D office.
+# Each employee has a role and an editable job description (sent to Claude as
+# its instructions). Every piece of work is an AITask row, so the office can
+# show who is working on what and keep the history of finished reports.
+# ---------------------------------------------------------------------------
+class AIEmployee(models.Model):
+    ROLE_FINANCE = "finance"
+    ROLE_CHOICES = [
+        (ROLE_FINANCE, "Directeur financier"),
+    ]
+
+    slug            = models.SlugField(max_length=40, unique=True)
+    name            = models.CharField(max_length=60)
+    role            = models.CharField(max_length=30, choices=ROLE_CHOICES)
+    title           = models.CharField(max_length=80, blank=True, default="",
+                                       help_text="Job title shown on the name tag.")
+    job_description = models.TextField(blank=True, default="",
+                                       help_text="Instructions the AI follows (editable by the owner).")
+    color           = models.CharField(max_length=9, default="#3dba8a",
+                                       help_text="Shirt colour of the 3D character.")
+    desk_index      = models.PositiveSmallIntegerField(default=0,
+                                                       help_text="Which desk of the office this employee sits at.")
+    is_active       = models.BooleanField(default=True)
+    created_at      = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["desk_index", "id"]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_role_display()})"
+
+
+class AITask(models.Model):
+    QUEUED  = "queued"
+    WORKING = "working"
+    DONE    = "done"
+    FAILED  = "failed"
+    STATUS_CHOICES = [
+        (QUEUED,  "En attente"),
+        (WORKING, "En cours"),
+        (DONE,    "Terminé"),
+        (FAILED,  "Échec"),
+    ]
+
+    employee     = models.ForeignKey(AIEmployee, on_delete=models.CASCADE, related_name="tasks")
+    title        = models.CharField(max_length=200)
+    instruction  = models.TextField(blank=True, default="",
+                                    help_text="Extra question/instruction from the owner, if any.")
+    period_from  = models.DateField(null=True, blank=True)
+    period_to    = models.DateField(null=True, blank=True)
+    status       = models.CharField(max_length=10, choices=STATUS_CHOICES, default=QUEUED, db_index=True)
+    # Figures computed by CODE (trustworthy). The AI never produces numbers.
+    result_data  = models.JSONField(default=dict, blank=True)
+    # The AI's explanation of those figures, for the owner.
+    result_text  = models.TextField(blank=True, default="")
+    error        = models.TextField(blank=True, default="")
+    triggered_by = models.CharField(max_length=20, default="owner",
+                                    help_text="owner | cron")
+    requested_by = models.ForeignKey("auth.User", on_delete=models.SET_NULL,
+                                     null=True, blank=True, related_name="ai_tasks")
+    created_at   = models.DateTimeField(auto_now_add=True)
+    started_at   = models.DateTimeField(null=True, blank=True)
+    finished_at  = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.employee.name}: {self.title} [{self.status}]"

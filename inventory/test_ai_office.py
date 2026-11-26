@@ -1,0 +1,209 @@
+"""Tests for the AI office: finance figures, task running, API and daily cron."""
+import json
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from unittest.mock import patch
+
+from django.contrib.auth.models import User
+from django.test import TestCase
+from django.utils import timezone
+
+from . import ai_office
+from .models import (
+    AIEmployee, AITask, Expense, OrderItem, Product, ProductUnit,
+    ProductVariant, ShippingOrder, StockMovement,
+)
+
+DAY = date(2026, 11, 20)
+NO_ADS = (Decimal("0"), False, [])
+ADS_50 = (Decimal("50"), True, [{"name": "Camp A", "spend": 50.0}])
+
+
+def _at(d, hour=12):
+    return timezone.make_aware(datetime(d.year, d.month, d.day, hour))
+
+
+class FinanceFiguresTests(TestCase):
+    def setUp(self):
+        self.p = Product.objects.create(name="Pull", code="PUL", buy_price=Decimal("20"),
+                                        sell_price=Decimal("60"))
+        self.v = ProductVariant.objects.create(product=self.p, color_name="BLK", color_label="Noir")
+        self.n = 0
+
+    def unit(self, status=ProductUnit.PAID):
+        self.n += 1
+        return ProductUnit.objects.create(variant=self.v, barcode=f"PUL-{self.n}", size="M", status=status)
+
+    def paid_shipment(self, d, n_paid, n_returned=0, status=ShippingOrder.PAID, collected="127"):
+        so = ShippingOrder.objects.create(bordereau_barcode=f"B{self.n}-{d}-{status}", status=status,
+                                          paid_at=_at(d), amount_collected=Decimal(collected))
+        for _ in range(n_paid):
+            OrderItem.objects.create(order=so, unit=self.unit(), status_at_payment=ProductUnit.PAID)
+        for _ in range(n_returned):
+            OrderItem.objects.create(order=so, unit=self.unit(ProductUnit.RETURNED),
+                                     status_at_payment=ProductUnit.RETURNED)
+        return so
+
+    def test_profit_formula(self):
+        self.paid_shipment(DAY, 2, n_returned=1)                       # 2 sold
+        self.paid_shipment(DAY, 1, status=ShippingOrder.PARTIAL_PAID, collected="67")  # partial counts
+        self.paid_shipment(DAY - timedelta(days=3), 5)                 # outside period
+        mv = StockMovement.objects.create(unit=self.unit(ProductUnit.RETURNED),
+                                          movement_type=StockMovement.RETURNED)
+        StockMovement.objects.filter(pk=mv.pk).update(moved_at=_at(DAY))
+        Expense.objects.create(amount=Decimal("10"), category="loyer_pro", date=DAY)
+        Expense.objects.create(amount=Decimal("99"), category="loyer_pro", date=DAY + timedelta(days=1))
+
+        with patch.object(ai_office, "_ad_spend", return_value=ADS_50):
+            d = ai_office.compute_finance(DAY, DAY)
+
+        s = d["sales"]
+        self.assertEqual(s["units_sold"], 3)
+        self.assertEqual(s["paid_shipments"], 2)
+        self.assertEqual(s["partially_paid_shipments"], 1)
+        self.assertEqual(s["sales_catalog_price"], 180.0)
+        self.assertEqual(s["purchase_cost"], 60.0)
+        self.assertEqual(s["gross_margin"], 120.0)
+        self.assertEqual(s["cash_collected_by_navex"], 194.0)
+        self.assertEqual(d["returns"]["count"], 1)
+        self.assertEqual(d["expenses"]["total"], 10.0)
+        self.assertEqual(d["ads"]["spend_per_unit_sold"], round(50 / 3, 3))
+        # 120 margin - 1 return fee - 50 ads - 10 expenses
+        self.assertEqual(d["net_profit"], 59.0)
+        self.assertEqual(d["products_most_returned"][0]["code"], "PUL")
+        # previous period = the day before: nothing happened
+        self.assertEqual(d["previous_period"]["net_profit"], -50.0)  # only the (mocked) ad spend
+        json.dumps(d)  # must be JSON-safe for the JSONField
+
+    def test_ads_unavailable_is_reported_not_guessed(self):
+        self.paid_shipment(DAY, 1)
+        with patch.object(ai_office, "_ad_spend", return_value=NO_ADS):
+            d = ai_office.compute_finance(DAY, DAY, with_previous=False)
+        self.assertFalse(d["ads"]["available"])
+        self.assertIsNone(d["ads"]["spend_per_unit_sold"])
+        self.assertEqual(d["net_profit"], 40.0)
+
+
+class RunTaskTests(TestCase):
+    def setUp(self):
+        self.emp = AIEmployee.objects.get(slug="finance")   # hired by the migration
+
+    def test_seeded_employee(self):
+        self.assertEqual(self.emp.role, AIEmployee.ROLE_FINANCE)
+        self.assertIn("JAMAIS", self.emp.job_description)
+
+    @patch.object(ai_office, "_ad_spend", return_value=NO_ADS)
+    def test_success(self, _ads):
+        t = ai_office.create_finance_task(self.emp, DAY, DAY, "Hier", instruction="pourquoi ?")
+        with patch("inventory.views._claude_generate", return_value="  الربح مليح  ") as gen:
+            ai_office.run_task(t)
+        t.refresh_from_db()
+        self.assertEqual(t.status, AITask.DONE)
+        self.assertEqual(t.result_text, "الربح مليح")
+        self.assertIn("net_profit", t.result_data)
+        kwargs = gen.call_args.kwargs
+        self.assertEqual(kwargs["system"], self.emp.job_description)
+        self.assertIn("pourquoi ?", gen.call_args.args[0])
+
+    @patch.object(ai_office, "_ad_spend", return_value=NO_ADS)
+    def test_ai_failure_keeps_numbers(self, _ads):
+        t = ai_office.create_finance_task(self.emp, DAY, DAY, "Hier")
+        with patch("inventory.views._claude_generate", return_value=None):
+            ai_office.run_task(t)
+        t.refresh_from_db()
+        self.assertEqual(t.status, AITask.DONE)
+        self.assertIn("net_profit", t.result_data)
+        self.assertIn("échoué", t.error)
+
+    def test_crash_marks_failed(self):
+        t = ai_office.create_finance_task(self.emp, DAY, DAY, "Hier")
+        with patch.object(ai_office, "compute_finance", side_effect=RuntimeError("boom")):
+            ai_office.run_task(t)
+        t.refresh_from_db()
+        self.assertEqual(t.status, AITask.FAILED)
+        self.assertIn("boom", t.error)
+
+    def test_periods(self):
+        today = date(2026, 11, 27)
+        self.assertEqual(ai_office.period_for("yesterday", today)[:2], (date(2026, 11, 26),) * 2)
+        self.assertEqual(ai_office.period_for("month", today)[:2], (date(2026, 11, 1), today))
+        self.assertEqual(ai_office.period_for("last_month", today)[:2], (date(2026, 10, 1), date(2026, 10, 31)))
+
+
+@patch.object(ai_office, "_ad_spend", return_value=NO_ADS)
+@patch("inventory.views._claude_generate", return_value="rapport")
+class OfficeApiTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_superuser("owner", "o@example.com", "pw")
+        self.staff = User.objects.create_user("staff", "s@example.com", "pw", is_staff=True)
+        for u in (self.owner, self.staff):   # skip the forced first-login password change
+            prof = getattr(u, "profile", None)
+            if prof is not None and prof.must_change_password:
+                prof.must_change_password = False
+                prof.save()
+
+    def test_owner_only(self, *_):
+        self.client.force_login(self.staff)
+        self.assertEqual(self.client.get("/ai-office/").status_code, 403)
+        self.assertEqual(self.client.post("/ai-office/api/employees/finance/task/",
+                                          "{}", content_type="application/json").status_code, 403)
+        self.client.logout()
+        self.assertEqual(self.client.get("/ai-office/api/state/").status_code, 302)
+
+    def test_page_and_state(self, *_):
+        self.client.force_login(self.owner)
+        r = self.client.get("/ai-office/")
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "three.module.js")
+        st = self.client.get("/ai-office/api/state/").json()
+        self.assertEqual(st["employees"][0]["slug"], "finance")
+        self.assertEqual(st["employees"][0]["state"], "idle")
+
+    def test_give_task(self, *_):
+        self.client.force_login(self.owner)
+        r = self.client.post("/ai-office/api/employees/finance/task/",
+                             json.dumps({"period": "last7", "instruction": "q"}),
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["status"], "done")
+        self.assertEqual(r.json()["result_text"], "rapport")
+        bad = self.client.post("/ai-office/api/employees/finance/task/",
+                               json.dumps({"period": "forever"}), content_type="application/json")
+        self.assertEqual(bad.status_code, 400)
+
+    def test_busy_employee_refuses_second_task(self, *_):
+        emp = AIEmployee.objects.get(slug="finance")
+        AITask.objects.create(employee=emp, title="x", status=AITask.WORKING)
+        self.client.force_login(self.owner)
+        r = self.client.post("/ai-office/api/employees/finance/task/", "{}",
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 409)
+
+    def test_stale_working_task_expires(self, *_):
+        emp = AIEmployee.objects.get(slug="finance")
+        t = AITask.objects.create(employee=emp, title="x", status=AITask.WORKING)
+        AITask.objects.filter(pk=t.pk).update(created_at=timezone.now() - timedelta(minutes=10))
+        self.client.force_login(self.owner)
+        self.client.get("/ai-office/api/state/")
+        t.refresh_from_db()
+        self.assertEqual(t.status, AITask.FAILED)
+
+    def test_update_employee(self, *_):
+        self.client.force_login(self.owner)
+        r = self.client.post("/ai-office/api/employees/finance/update/",
+                             json.dumps({"name": "Amine", "color": "#ff0000", "job_description": "jd"}),
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 200)
+        e = AIEmployee.objects.get(slug="finance")
+        self.assertEqual((e.name, e.color, e.job_description), ("Amine", "#ff0000", "jd"))
+        r = self.client.post("/ai-office/api/employees/finance/update/", json.dumps({"name": " "}),
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_cron_runs_once_per_day(self, gen, _ads):
+        r1 = self.client.get("/cron/ai-office-daily/").json()
+        r2 = self.client.get("/cron/ai-office-daily/").json()
+        self.assertEqual(r1["status"], "done")
+        self.assertEqual(r2["status"], "skipped")
+        self.assertEqual(gen.call_count, 1)
+        self.assertEqual(AITask.objects.filter(triggered_by="cron").count(), 1)

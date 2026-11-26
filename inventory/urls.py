@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 from . import converty
 from . import unifunl_commerce
+from . import ai_office_views
 
 urlpatterns = [
     # --- Unifunl Commerce API (Unifunl "Connect your own store" backend) ---
@@ -82,6 +83,13 @@ urlpatterns = [
     path("products/", views.products_list, name="products_list"),
     path("admin-panel/", views.admin_panel, name="admin_panel"),
     path("revenue/", views.revenue, name="revenue"),
+    # AI office: 3D office of AI employees (finance first)
+    path("ai-office/", ai_office_views.office, name="ai_office"),
+    path("ai-office/api/state/", ai_office_views.api_state, name="ai_office_state"),
+    path("ai-office/api/tasks/<int:pk>/", ai_office_views.api_task_detail, name="ai_office_task"),
+    path("ai-office/api/employees/<slug:slug>/task/", ai_office_views.api_give_task, name="ai_office_give_task"),
+    path("ai-office/api/employees/<slug:slug>/update/", ai_office_views.api_update_employee, name="ai_office_update_employee"),
+    path("cron/ai-office-daily/", ai_office_views.cron_ai_office_daily, name="cron_ai_office_daily"),
     path("api/expense/add/", views.api_expense_add, name="api_expense_add"),
     path("api/expense/bulk-import/", views.api_expense_bulk_import, name="api_expense_bulk_import"),
     path("api/expense/<int:pk>/delete/", views.api_expense_delete, name="api_expense_delete"),
