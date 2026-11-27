@@ -100,7 +100,7 @@
     .chat-tools label{display:flex;gap:6px;align-items:center;cursor:pointer}
     .linkbtn{background:none;border:0;color:var(--blue);font:500 13px 'DM Sans';cursor:pointer}
     .chat-log{display:flex;flex-direction:column;gap:8px;margin:12px 0;min-height:120px}
-    .msg{max-width:88%;padding:10px 12px;border-radius:14px;font:14px/1.8 'Noto Kufi Arabic','DM Sans',sans-serif;white-space:pre-wrap;direction:rtl;text-align:right}
+    .msg{max-width:88%;padding:10px 12px;border-radius:14px;font:14px/1.7 'DM Sans','Noto Kufi Arabic',sans-serif;white-space:pre-wrap;text-align:start}
     .msg.user{align-self:flex-start;background:var(--green-dim);border:1px solid rgba(61,186,138,.25)}
     .msg.assistant{align-self:flex-end;background:var(--surface2);border:1px solid var(--border)}
     .msg .say{display:block;margin-top:4px;background:none;border:0;color:var(--muted);cursor:pointer;font-size:13px;direction:ltr;text-align:left}
@@ -138,7 +138,7 @@
 </header>
 
 <div id="voiceCap"></div>
-<div class="hint" id="hint">Cliquez sur un employé pour lui donner une tâche. Glissez pour tourner, molette pour zoomer. <span style="opacity:.5">· v7</span></div>
+<div class="hint" id="hint">Cliquez sur un employé pour lui donner une tâche. Glissez pour tourner, molette pour zoomer. <span style="opacity:.5">· v8</span></div>
 
 <aside id="panel" aria-hidden="true">
   <div class="p-head">
@@ -723,9 +723,9 @@ function renderChat(messages, thinkingName) {
       Il connaît son dernier rapport et se souvient de la discussion.<br>Astuce : dictez avec Wispr Flow.</div>`;
     return;
   }
-  log.innerHTML = messages.map((m, i) => `<div class="msg ${m.role}">${esc(m.text)}${m.role === 'assistant'
+  log.innerHTML = messages.map((m, i) => `<div class="msg ${m.role}" dir="auto">${esc(m.text)}${m.role === 'assistant'
       ? `<button class="say" data-i="${i}" title="Écouter">🔊 écouter</button>` : ''}</div>`).join('')
-    + (thinkingName ? `<div class="msg assistant thinking">${esc(thinkingName)} يكتب…</div>` : '');
+    + (thinkingName ? `<div class="msg assistant thinking">${esc(thinkingName)} is thinking…</div>` : '');
   log.querySelectorAll('.say').forEach(btn => btn.onclick = () => speak(messages[+btn.dataset.i].text, selected));
   log.lastElementChild?.scrollIntoView({ block: 'end' });
 }
@@ -781,39 +781,37 @@ $('newChat').onclick = async () => {
   if (r.ok) { chatMessages = []; renderChat([]); }
 };
 
-/* voice: the device's own text-to-speech (free). Never read Arabic with a
-   non-Arabic voice (it would skip the words and only say the numbers).
-   Microsoft Edge offers free natural Tunisian voices (ar-TN: Hedi, Reem). */
+/* voice: the device's own text-to-speech (free). The employees answer in
+   ENGLISH in the Discussion, because every phone and PC ships English voices
+   (Arabic voices are often missing). */
 const synth = window.speechSynthesis;
-let arVoices = [];
-const FEMALE_VOICE = /reem|hoda|salma|zariyah|amina|fatima|laila|layla|mouna|sana|iman|rana|noura|amal|mariam|hala|sarah|female|femme/i;
-const MALE_VOICE = /hedi|naayf|hamed|shakir|bassel|omar|taim|rami|moaz|jamal|ali\b|maged|majed|tarik|hamdan|fahed|saleh|mounir|male|homme/i;
+let enVoices = [];
+const FEMALE_VOICE = /female|zira|aria|jenny|samantha|karen|moira|tessa|susan|hazel|libby|sonia|michelle|ava|allison|serena|victoria|fiona|kate|emma|catherine|natasha/i;
+const MALE_VOICE = /\bmale|david|mark|guy|daniel|alex|fred|george|ryan|christopher|eric|james|thomas|oliver|arthur|aaron|tom\b/i;
 const FEMALE_NAMES = ['nour', 'amira', 'yasmine', 'sarra', 'mariem', 'ines', 'rania', 'layla', 'salma', 'nada', 'emna', 'asma'];
-const NO_VOICE_MSG = "Pas de voix arabe sur cet appareil, donc pas de lecture. Sur PC : ouvrez le Bureau IA dans Microsoft Edge (voix tunisiennes gratuites), ou ajoutez une voix arabe dans Windows (Paramètres › Heure et langue › Voix). Sur téléphone : ajoutez l'arabe dans la synthèse vocale.";
+const NO_VOICE_MSG = "Aucune voix anglaise sur cet appareil, donc pas de lecture.";
 function pickVoice() {
   if (!synth) return;
   const all = synth.getVoices();
-  const pref = ['ar-tn', 'ar-ma', 'ar-dz', 'ar-ly', 'ar-sa', 'ar-ae', 'ar-eg'];
   const rank = v => {
-    const l = v.lang.replace('_', '-').toLowerCase(), i = pref.indexOf(l);
-    return (i < 0 ? 50 : i * 2) - (/natural|online|neural/i.test(v.name) ? 1 : 0);
+    const l = v.lang.replace('_', '-').toLowerCase();
+    return (l === 'en-us' ? 0 : l === 'en-gb' ? 1 : 3)
+      - (/natural|online|neural|google/i.test(v.name) ? 2 : 0);
   };
-  arVoices = all.filter(v => /^ar/i.test(v.lang)).sort((a, b) => rank(a) - rank(b));
+  enVoices = all.filter(v => /^en/i.test(v.lang)).sort((a, b) => rank(a) - rank(b));
   $('voiceNote').textContent = !synth ? 'Cet appareil ne sait pas lire à voix haute.'
-    : (all.length && !arVoices.length ? NO_VOICE_MSG : '');
+    : (all.length && !enVoices.length ? NO_VOICE_MSG : '');
 }
 function voiceFor(slug) {
-  if (!arVoices.length) pickVoice();
-  if (!arVoices.length) return null;
+  if (!enVoices.length) pickVoice();
+  if (!enVoices.length) return null;
   const p = people.get(slug), name = (p ? p.data.name : '').toLowerCase();
   const wantFemale = FEMALE_NAMES.includes(name);
-  const best = arVoices[0];
-  const bestLang = best.lang.toLowerCase();
-  // same accent as the best voice, matching the employee's gender if possible
-  const sameLang = arVoices.filter(v => v.lang.toLowerCase() === bestLang);
-  return sameLang.find(v => (wantFemale ? FEMALE_VOICE : MALE_VOICE).test(v.name))
-    || arVoices.find(v => (wantFemale ? FEMALE_VOICE : MALE_VOICE).test(v.name) && v.lang.toLowerCase().startsWith('ar-tn'))
-    || best;
+  const mine = wantFemale ? FEMALE_VOICE : MALE_VOICE, other = wantFemale ? MALE_VOICE : FEMALE_VOICE;
+  // a voice that matches the employee, else one that at least isn't the other gender
+  return enVoices.find(v => mine.test(v.name))
+    || enVoices.find(v => !other.test(v.name))
+    || enVoices[0];
 }
 if (synth) { pickVoice(); synth.onvoiceschanged = pickVoice; }
 let voiceUnlocked = false;
