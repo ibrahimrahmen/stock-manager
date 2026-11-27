@@ -195,6 +195,9 @@ urlpatterns = [
     path("cron/drive-sync/", views.cron_drive_sync, name="cron_drive_sync"),
     # Bot test harness (superuser): run the real bot reply logic, no Meta.
     path("bot-test/", views.bot_test_page, name="bot_test_page"),
+    # Price agent test console (superuser): watch the 3-tier price cascade.
+    path("price-agent-test/", views.price_agent_test_page, name="price_agent_test_page"),
+    path("api/price-agent-test/", views.api_price_agent_test, name="api_price_agent_test"),
     path("testing-production/", views.testing_production_page, name="testing_production_page"),
     path("testing-production/add/", views.product_test_add, name="product_test_add"),
     path("testing-production/<int:pk>/finish/", views.product_test_finish, name="product_test_finish"),

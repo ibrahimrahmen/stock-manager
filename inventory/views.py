@@ -323,6 +323,151 @@ def _price_line_for_conv(conv):
         return ""
 
 
+def _price_agent_trace(conv, page):
+    """PRICE AGENT (private test). Runs the 3-tier price cascade and returns a
+    step-by-step trace. Sends NOTHING. Tier 1 = ad link (free), Tier 2 = photo
+    fingerprint (free, local dHash), Tier 3 = photo AI analysis (Vision, paid);
+    if none resolve a price, the fallback asks for a photo (never guesses)."""
+    from .models import Offer
+    trace = {"steps": [], "reply": "", "resolved_by": None,
+             "cost_est": "0 DT (gratuit)", "is_price_question": False,
+             "router_note": "", "has_photo": False}
+    # The customer's latest text.
+    text = ""
+    for m in reversed(conv.messages or []):
+        if m.get("from") == "user" and (m.get("text") or "").strip():
+            text = m["text"]
+            break
+    low = (text or "").lower()
+    price_kw = next((k for k in _PRICE_QUESTION_KWS if k in low), None)
+    avail_kw = next((k for k in _AVAIL_QUESTION_KWS if k in low), None)
+    is_price = bool(price_kw or avail_kw)
+    trace["is_price_question"] = is_price
+
+    # ROUTER
+    if not is_price:
+        trace["router_note"] = ("Pas une question de prix/dispo — l'agent prix "
+                                "ne répond pas (un autre agent s'en occupe).")
+        trace["steps"].append({"tier": 0, "name": "Routeur", "tried": True,
+                               "found": False,
+                               "why": "aucun mot de prix ou de disponibilité",
+                               "cost": "0"})
+        trace["reply"] = ("(l'agent prix reste silencieux — ce n'est pas une "
+                          "question de prix)")
+        trace["resolved_by"] = "not_price"
+        return trace
+    _kind = "disponibilité" if (avail_kw and not price_kw) else "prix"
+    trace["router_note"] = ("Question de %s détectée (mot: « %s »)"
+                            % (_kind, avail_kw or price_kw))
+    trace["steps"].append({"tier": 0, "name": "Routeur", "tried": True,
+                           "found": True,
+                           "why": "mot détecté: « %s »" % (price_kw or avail_kw),
+                           "cost": "0"})
+
+    # Customer photo(s)?
+    try:
+        local_imgs, img_urls = _capture_images_for_conv(conv)
+    except Exception:
+        local_imgs, img_urls = [], []
+    has_photo = bool(local_imgs or img_urls)
+    trace["has_photo"] = has_photo
+
+    offer = None
+    by = None
+
+    # TIER 1 — AD LINK (free, DB only)
+    s1 = {"tier": 1, "name": "Lien de la pub", "tried": True, "cost": "0"}
+    try:
+        _o, _conf, _note = _resolve_ad_line_offer(conv, page, local_imgs, img_urls)
+    except Exception:
+        _o, _conf, _note = None, False, ""
+    if _o and _conf:
+        offer, by = _o, "ad"
+        s1["found"] = True
+        s1["offer"] = _o.name
+    else:
+        s1["found"] = False
+        s1["why"] = (_note or "pas de nom de pub / pub non liée à un produit")
+    trace["steps"].append(s1)
+
+    # TIER 2 — PHOTO FINGERPRINT (free, local dHash)
+    if not offer:
+        s2 = {"tier": 2, "name": "Empreinte photo", "cost": "0"}
+        if has_photo:
+            s2["tried"] = True
+            try:
+                _fp = _fingerprint_match(local_imgs, img_urls)
+            except Exception:
+                _fp = {}
+            if _fp and _fp.get("confident") and _fp.get("name"):
+                _fo = (Offer.objects.filter(name__iexact=_fp["name"],
+                                            is_active=True).first()
+                       or Offer.objects.filter(name__iexact=_fp["name"]).first())
+                if _fo:
+                    offer, by = _fo, "fingerprint"
+                    s2["found"] = True
+                    s2["offer"] = _fo.name
+            if not offer:
+                s2["found"] = False
+                s2["why"] = "aucune photo catalogue identique"
+        else:
+            s2["tried"] = False
+            s2["found"] = False
+            s2["why"] = "pas de photo du client"
+        trace["steps"].append(s2)
+
+    # TIER 3 — PHOTO AI ANALYSIS (Vision, paid)
+    if not offer:
+        s3 = {"tier": 3, "name": "Analyse IA de la photo",
+              "cost": "~0,01–0,03 DT (Vision)"}
+        if has_photo and _bot_vision_enabled():
+            s3["tried"] = True
+            try:
+                _res = _identify_offer_for_conv(conv, page)
+            except Exception:
+                _res = None
+            if _res and _res.get("confident") and _res.get("offer"):
+                offer, by = _res["offer"], "vision"
+                s3["found"] = True
+                s3["offer"] = _res["offer"].name
+            else:
+                s3["found"] = False
+                s3["why"] = ((_res or {}).get("note")
+                             or "pas sûr du produit sur la photo")
+        else:
+            s3["tried"] = False
+            s3["found"] = False
+            s3["why"] = ("photos désactivées (bot_use_vision=0)"
+                         if has_photo else "pas de photo du client")
+            s3["cost"] = "0"
+        trace["steps"].append(s3)
+
+    # RESOLVE
+    if offer:
+        _price = None
+        try:
+            _price = offer.price_for_page(page) if page else None
+        except Exception:
+            _price = None
+        if not _price or _price <= 0:
+            _price = offer.bundle_price
+        if _price and _price > 0:
+            trace["reply"] = "%s %s Dt + %s dt livraison" % (
+                offer.name, _fmt_price_dt(_price), _LIVRAISON_FEE_DT)
+            trace["resolved_by"] = by
+            trace["cost_est"] = ("~0,01–0,03 DT" if by == "vision"
+                                 else "0 DT (gratuit)")
+        else:
+            offer = None  # product found but no price -> ask for photo
+
+    if trace["resolved_by"] is None:
+        trace["reply"] = ("Aslema khouya 🤍 ab3athelna taswira mte3 el article "
+                          "eli 7abbito bech na3tiwek el prix bel dhabt.")
+        trace["resolved_by"] = "ask_photo"
+        trace["cost_est"] = ("~0,01–0,03 DT" if has_photo else "0 DT (gratuit)")
+    return trace
+
+
 def _fetch_ig_post_media(page_id, media_id):
     """A customer can SHARE one of our Instagram posts in a DM (attachment
     type == 'ig_post'). The webhook only gives us the post's media_id, so we
@@ -1207,6 +1352,15 @@ _PRICE_QUESTION_KWS = (
     "9added", "9added", "bech9adeh", "ch9adeh", "ch9adech",
     "prix", "price", "thaman", "combien", "chhal", "ch7al", "che7al",
     "بقداش", "قداش", "بقداه", "قداه", "سعر", "الثمن", "بكم", "كم",
+)
+
+# Availability phrasing — "is it in stock / available?". Kept SEPARATE from the
+# price keywords so the router can tell a pure availability question from a
+# price one, but both are handled by the same price agent.
+_AVAIL_QUESTION_KWS = (
+    "mawjoud", "majoud", "maujoud", "mawjouda", "mawjod", "mawjoude",
+    "disponible", "dispo", "dispon", "famma", "fama", "famma", "stock",
+    "available", "3andkom", "3andek", "andkom", "موجود", "متوفر",
 )
 
 
@@ -5852,6 +6006,29 @@ def bot_test_page(request):
 
 
 @login_required(login_url="/login/")
+def price_agent_test_page(request):
+    """PRIVATE test console for the Barats price agent. Type a customer message
+    (optionally an ad/product name + a photo URL) and watch the 3-tier cascade
+    step by step. Superuser only; nothing is ever sent to a customer."""
+    if not request.user.is_superuser:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Accès refusé.")
+    from .models import SalesPage, Offer
+    sp = SalesPage.objects.filter(pk=3).first()
+    offer_names = []
+    try:
+        if sp:
+            offer_names = sorted({o.name for o in
+                                  Offer.objects.filter(is_active=True,
+                                                       sales_pages=sp)
+                                  if o.name})
+    except Exception:
+        offer_names = []
+    return render(request, "inventory/price_agent_test.html",
+                  {"offer_names": offer_names})
+
+
+@login_required(login_url="/login/")
 def testing_production_page(request):
     """'Testing & Production' space — visible to ALL logged-in members.
     No ?tab -> entry screen with 3 count cards.
@@ -6759,6 +6936,47 @@ def api_bot_test_reply(request):
                     pass
 
         return JsonResponse({"status": "ok", "reply": reply or ""})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
+
+
+@login_required(login_url="/login/")
+@require_POST
+def api_price_agent_test(request):
+    """Run the price agent on a simulated message and return the full trace.
+    No DB writes, nothing sent. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    try:
+        import json as _json
+        data = _json.loads(request.body.decode("utf-8"))
+        message = (data.get("message") or "").strip()
+        ad_name = (data.get("ad_name") or "").strip()
+        photo_url = (data.get("photo_url") or "").strip()
+        if not message:
+            return JsonResponse({"status": "error", "message": "Message vide."}, status=400)
+        from .models import SalesPage
+        page = SalesPage.objects.filter(pk=3).first()
+
+        class _FakeConv:
+            pass
+        conv = _FakeConv()
+        conv.id = 0
+        conv.pk = 0
+        conv.platform = "messenger"
+        _um = {"from": "user", "text": message, "ts": "", "mid": ""}
+        if photo_url:
+            _um["images"] = [photo_url]
+        conv.messages = [_um]
+        conv.page_id = "580021675198711"
+        conv.sender_name = ""
+        conv.source_ad_id = ""
+        conv.source_campaign_name = ad_name
+        conv.source_campaign = ad_name
+        conv.identified_offer = ""
+        conv.identified_sig = ""
+        trace = _price_agent_trace(conv, page)
+        return JsonResponse({"status": "ok", "trace": trace})
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
 

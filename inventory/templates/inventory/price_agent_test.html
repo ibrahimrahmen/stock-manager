@@ -1,0 +1,149 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Prix — Console de test</title>
+<style>
+  :root{
+    --bg:#f5f4f0; --card:#ffffff; --ink:#1c1c1a; --muted:#6b6a64;
+    --border:#e4e2db; --green:#1d9e75; --greenbg:#e1f5ee;
+    --amber:#ba7517; --amberbg:#faeeda; --gray:#888780; --graybg:#f1efe8;
+    --red:#c0392b; --redbg:#fbecea; --blue:#185fa5; --bluebg:#e6f1fb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.5;padding:16px;}
+  .wrap{max-width:720px;margin:0 auto;}
+  h1{font-size:20px;margin:0 0 2px;font-weight:600;}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 4px;}
+  .warn{background:var(--amberbg);color:var(--amber);border-radius:10px;
+    padding:8px 12px;font-size:13px;margin:12px 0 18px;}
+  .card{background:var(--card);border:0.5px solid var(--border);
+    border-radius:14px;padding:16px;margin-bottom:16px;}
+  label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px;}
+  input[type=text],textarea{width:100%;padding:10px 12px;border:0.5px solid var(--border);
+    border-radius:10px;font-size:15px;font-family:inherit;background:#fff;color:var(--ink);}
+  textarea{min-height:52px;resize:vertical;}
+  .hint{font-size:12px;color:var(--muted);margin:3px 0 0;}
+  button{margin-top:14px;width:100%;padding:12px;border:0;border-radius:10px;
+    background:var(--ink);color:#fff;font-size:15px;font-weight:600;cursor:pointer;}
+  button:active{transform:scale(.99);}
+  .examples{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+  .chip{font-size:12px;background:var(--graybg);border:0.5px solid var(--border);
+    border-radius:999px;padding:5px 10px;cursor:pointer;color:var(--ink);}
+  .router{font-size:14px;padding:10px 12px;border-radius:10px;margin-bottom:12px;
+    background:var(--bluebg);color:var(--blue);}
+  .step{display:flex;gap:12px;align-items:flex-start;padding:12px;
+    border-radius:12px;margin-bottom:10px;border-left:4px solid var(--gray);
+    background:var(--graybg);}
+  .step.ok{border-left-color:var(--green);background:var(--greenbg);}
+  .step.paid{border-left-color:var(--amber);background:var(--amberbg);}
+  .step.miss{border-left-color:var(--gray);background:var(--graybg);}
+  .step.skip{opacity:.6;}
+  .step .num{flex:0 0 26px;height:26px;border-radius:50%;background:#fff;
+    border:0.5px solid var(--border);display:flex;align-items:center;
+    justify-content:center;font-weight:700;font-size:13px;}
+  .step .body{flex:1;min-width:0;}
+  .step .ttl{font-weight:600;font-size:14px;}
+  .step .why{font-size:13px;color:var(--muted);margin-top:2px;}
+  .step .cost{font-size:12px;font-weight:600;margin-top:4px;}
+  .reply{background:#0f6e56;color:#fff;border-radius:14px 14px 14px 4px;
+    padding:12px 14px;font-size:15px;margin-top:6px;white-space:pre-wrap;}
+  .reply.ask{background:#6b6a64;}
+  .total{display:flex;justify-content:space-between;font-size:14px;
+    margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);}
+  .total b{font-weight:700;}
+  .spin{color:var(--muted);font-size:14px;padding:10px 0;}
+  .err{background:var(--redbg);color:var(--red);padding:10px 12px;border-radius:10px;font-size:14px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🏷️ Agent Prix — console de test</h1>
+  <p class="sub">Page Barats · simulation privée.</p>
+  <div class="warn">⚠️ Test à blanc : <b>rien n'est envoyé au client</b>. Tu vois seulement ce que l'agent déciderait.</div>
+
+  <div class="card">
+    {% csrf_token %}
+    <label for="msg">Message du client</label>
+    <textarea id="msg" placeholder="ex : b9adeh ? / 2XL mawjoud ? / prix svp"></textarea>
+    <div class="examples">
+      <span class="chip" data-m="b9adeh ?">b9adeh ?</span>
+      <span class="chip" data-m="2XL mawjoud ?">2XL mawjoud ?</span>
+      <span class="chip" data-m="prix svp">prix svp</span>
+      <span class="chip" data-m="akal vest nike">akal vest nike</span>
+      <span class="chip" data-m="cc">cc (pas prix)</span>
+    </div>
+
+    <label for="ad">Venu d'une pub (nom du produit / campagne) — optionnel</label>
+    <input type="text" id="ad" list="offers" placeholder="ex : Nk Doudoune">
+    <datalist id="offers">
+      {% for n in offer_names %}<option value="{{ n }}">{% endfor %}
+    </datalist>
+    <p class="hint">Déclenche l'étape 1 (le prix depuis la pub).</p>
+
+    <label for="photo">Photo du client (URL) — optionnel</label>
+    <input type="text" id="photo" placeholder="https://…">
+    <p class="hint">Déclenche les étapes 2 (empreinte) et 3 (analyse IA).</p>
+
+    <button id="run">Lancer l'agent ▶</button>
+  </div>
+
+  <div id="out"></div>
+</div>
+
+<script>
+const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+const out = document.getElementById('out');
+document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{document.getElementById('msg').value=c.dataset.m;});
+
+function esc(s){return (s||'').replace(/[&<>]/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[x]));}
+
+function render(tr){
+  let h = '';
+  if(tr.router_note){ h += '<div class="router">🧭 '+esc(tr.router_note)+'</div>'; }
+  (tr.steps||[]).forEach(s=>{
+    let cls='miss', icon='✗';
+    if(s.found){ cls = (s.cost && s.cost.indexOf('Vision')>-1) ? 'paid':'ok'; icon='✓'; }
+    else if(s.tried===false){ cls='skip'; icon='–'; }
+    const num = (s.tier===0)?'🧭':s.tier;
+    let line = s.found ? ('<b>Trouvé :</b> '+esc(s.offer||'')) : esc(s.why||'');
+    h += '<div class="step '+cls+'">'
+       + '<div class="num">'+num+'</div>'
+       + '<div class="body"><div class="ttl">'+icon+' '+esc(s.name)+'</div>'
+       + '<div class="why">'+line+'</div>'
+       + (s.cost?('<div class="cost">💰 '+esc(s.cost)+'</div>'):'')
+       + '</div></div>';
+  });
+  const askCls = (tr.resolved_by==='ask_photo'||tr.resolved_by==='not_price')?' ask':'';
+  h += '<div class="card"><div class="ttl" style="font-weight:600;margin-bottom:6px;">💬 Réponse envoyée au client</div>'
+     + '<div class="reply'+askCls+'">'+esc(tr.reply)+'</div>'
+     + '<div class="total"><span>Résolu par : <b>'+esc(tr.resolved_by||'—')+'</b></span>'
+     + '<span>Coût : <b>'+esc(tr.cost_est||'0')+'</b></span></div></div>';
+  out.innerHTML = h;
+}
+
+document.getElementById('run').onclick = async ()=>{
+  const message = document.getElementById('msg').value.trim();
+  if(!message){ out.innerHTML='<div class="err">Écris un message d\'abord.</div>'; return; }
+  out.innerHTML = '<div class="spin">⏳ L\'agent réfléchit…</div>';
+  try{
+    const r = await fetch('/api/price-agent-test/', {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':csrf},
+      body: JSON.stringify({
+        message,
+        ad_name: document.getElementById('ad').value.trim(),
+        photo_url: document.getElementById('photo').value.trim(),
+      })
+    });
+    const j = await r.json();
+    if(j.status==='ok'){ render(j.trace); }
+    else { out.innerHTML = '<div class="err">'+esc(j.message||'Erreur')+'</div>'; }
+  }catch(e){ out.innerHTML = '<div class="err">'+esc(String(e))+'</div>'; }
+};
+</script>
+</body>
+</html>
