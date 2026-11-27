@@ -19946,13 +19946,12 @@ def stats_offres(request):
     })
 
 
-def stats_pages(request):
-    """Statistics — Pages tab. Per-sales-page breakdown counted in ORDERS
-    (one order = 1), across the same order-status rows as the other tabs, over a
-    date range. Shows, per page: total / Sortie / Livrée / Retour / En cours /
-    Payée / Annulée / Échange orders, plus a return rate (Retour % vs Sortie)."""
-    if not request.user.is_superuser:
-        return redirect("home")
+def _stats_pages_data(start_date, end_date, source_filter="all", spend=None):
+    """Computation behind Statistiques > Pages (per sales page: orders by status,
+    J-1 ad spend, cost per order, bénéfice). Shared by the stats page and the AI
+    office finance employee so both always show the SAME numbers.
+    spend: optional pre-fetched (spend_by_name, count_by_name) for the J-1 day(s),
+    as returned by _meta_spend_by_page; None = fetch from Meta."""
     from .models import Order, ShippingOrder, OrderOffer, Offer
     from collections import defaultdict
     import datetime as _dt
@@ -19961,25 +19960,12 @@ def stats_pages(request):
         tz = zoneinfo.ZoneInfo("Africa/Tunis")
     except Exception:
         tz = timezone.get_current_timezone()
-
     today = timezone.localdate()
-    try:
-        start_date = _dt.date.fromisoformat(request.GET.get("from", ""))
-    except ValueError:
-        start_date = today - _dt.timedelta(days=13)
-    try:
-        end_date = _dt.date.fromisoformat(request.GET.get("to", ""))
-    except ValueError:
-        end_date = today
-    if start_date > end_date:
-        start_date, end_date = end_date, start_date
-
     win_start, _ = _business_day_bounds(start_date, tz)
     _, win_end = _business_day_bounds(end_date, tz)
 
     orders = Order.objects.filter(created_at__gte=win_start, created_at__lt=win_end,
                                   sent_to_test__isnull=True)  # exclude orders sent to a test/production
-    source_filter = request.GET.get("source", "all")
     if source_filter == "barats":
         orders = orders.filter(sales_page__name__iexact="Barats.tn")
     elif source_filter == "arrow":
@@ -20107,9 +20093,10 @@ def stats_pages(request):
     test_spend = _D("0")      # pooled spend of "test" campaigns (NOT on any page)
     test_count = 0
     try:
-        if _cfg("META_ACCESS_TOKEN", "").strip():
-            _sp_map, _ct_map = _meta_spend_by_page(spend_start.isoformat(),
-                                                    spend_end.isoformat())
+        if spend is not None or _cfg("META_ACCESS_TOKEN", "").strip():
+            _sp_map, _ct_map = (spend if spend is not None else
+                                _meta_spend_by_page(spend_start.isoformat(),
+                                                    spend_end.isoformat()))
             # Exclude the unassigned ("") AND the test bucket from page spend.
             spend_by_page = {k: v for k, v in _sp_map.items()
                              if k and k != TEST_SPEND_KEY}
@@ -20242,7 +20229,7 @@ def stats_pages(request):
     totals["cpo_basis"] = _tb
     totals["cpo"] = (totals["ad_spend"] / _tot_denom) if _tot_denom else None
 
-    return render(request, "inventory/stats_pages.html", {
+    return {
         "per_page": per_page,
         "totals": dict(totals),
         "from_date": start_date.isoformat(),
@@ -20254,7 +20241,40 @@ def stats_pages(request):
         "test_spend": test_spend,
         "test_count": test_count,
         "source_filter": source_filter,
-    })
+    }
+
+
+def stats_pages(request):
+    """Statistics — Pages tab. Per-sales-page breakdown counted in ORDERS
+    (one order = 1), across the same order-status rows as the other tabs, over a
+    date range. Shows, per page: total / Sortie / Livrée / Retour / En cours /
+    Payée / Annulée / Échange orders, plus a return rate (Retour % vs Sortie)."""
+    if not request.user.is_superuser:
+        return redirect("home")
+    from .models import Order, ShippingOrder, OrderOffer, Offer
+    from collections import defaultdict
+    import datetime as _dt
+    try:
+        import zoneinfo
+        tz = zoneinfo.ZoneInfo("Africa/Tunis")
+    except Exception:
+        tz = timezone.get_current_timezone()
+
+    today = timezone.localdate()
+    try:
+        start_date = _dt.date.fromisoformat(request.GET.get("from", ""))
+    except ValueError:
+        start_date = today - _dt.timedelta(days=13)
+    try:
+        end_date = _dt.date.fromisoformat(request.GET.get("to", ""))
+    except ValueError:
+        end_date = today
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+
+    return render(request, "inventory/stats_pages.html",
+                  _stats_pages_data(start_date, end_date,
+                                    request.GET.get("source", "all")))
 
 
 @login_required(login_url="/login/")

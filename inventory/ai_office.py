@@ -165,7 +165,11 @@ def compute_finance(date_from, date_to, with_ads=True, with_previous=True):
         "products_most_returned": most_returned,
     }
 
-    if with_previous:
+    if with_previous:            # main period only: the owner's per-page, per-day view
+        try:
+            data["pages_by_day"] = compute_pages_daily(date_from, date_to)
+        except Exception as exc:  # never lose the rest of the report
+            data["pages_by_day"] = {"error": f"{type(exc).__name__}: {exc}"[:300]}
         length = date_to - date_from
         prev_to = date_from - timedelta(days=1)
         prev_from = prev_to - length
@@ -181,6 +185,92 @@ def compute_finance(date_from, date_to, with_ads=True, with_previous=True):
             "expenses": prev["expenses"]["total"],
         }
     return data
+
+
+# ---------------------------------------------------------------------------
+# Finance per page, per day — the owner's own method (Statistiques > Pages)
+# ---------------------------------------------------------------------------
+MAX_PAGE_DAYS = 31
+
+
+def _prefetch_page_spend(days):
+    """J-1 Meta spend per page for each day, fetched in parallel (one Meta
+    call per day). Returns {day: (spend_by_name, count_by_name) | None}."""
+    from concurrent.futures import ThreadPoolExecutor
+    from django.db import connection
+    from .views import _cfg, _meta_spend_by_page
+    if not (_cfg("META_ACCESS_TOKEN", "").strip() or _cfg("META_AD_ACCOUNT_TOKENS", "").strip()):
+        return {d: None for d in days}
+
+    def fetch(d):
+        prev = (d - timedelta(days=1)).isoformat()
+        try:
+            return d, _meta_spend_by_page(prev, prev)
+        except Exception:
+            return d, ({}, {})
+        finally:
+            connection.close()          # threads open their own DB connection
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        return dict(ex.map(fetch, days))
+
+
+def compute_pages_daily(date_from, date_to):
+    """For each business day: the Statistiques > Pages table (same code as the
+    page), and whether the day is CLOSED (no order en cours / livrée-not-paid:
+    everything paid or returned -> the profit is exact) or still OPEN."""
+    from .views import _stats_pages_data
+    days = []
+    d = date_to
+    while d >= date_from and len(days) < MAX_PAGE_DAYS:
+        days.append(d)
+        d -= timedelta(days=1)
+    spends = _prefetch_page_spend(days)
+    out, closed_profit, open_profit = [], Decimal("0"), Decimal("0")
+    closed_n = open_n = 0
+    for day in days:
+        sp = spends.get(day)
+        data = _stats_pages_data(day, day, "all", spend=sp if sp is not None else None)
+        t = data["totals"]
+        if not t.get("total"):
+            continue
+        closed = t.get("encours", 0) == 0 and t.get("livree", 0) == 0
+        extra = (data.get("test_spend") or Decimal("0")) + (data.get("unassigned_spend") or Decimal("0"))
+        day_profit = (t.get("benefit") or Decimal("0")) - extra
+        if closed:
+            closed_n += 1; closed_profit += day_profit
+        else:
+            open_n += 1; open_profit += day_profit
+        out.append({
+            "day": day.isoformat(),
+            "status": "closed_exact" if closed else "open_provisional",
+            "orders": t.get("total", 0), "sortie": t.get("sortie", 0),
+            "payee": t.get("payee", 0), "livree": t.get("livree", 0),
+            "retour": t.get("retour", 0), "encours": t.get("encours", 0),
+            "ad_spend_pages": _f(t.get("ad_spend")),
+            "ad_spend_test": _f(data.get("test_spend")),
+            "ad_spend_unassigned": _f(data.get("unassigned_spend")),
+            "cost_per_order": _f(t["cpo"]) if t.get("cpo") is not None else None,
+            "cost_per_order_basis": t.get("cpo_basis"),
+            "benefit_pages": _f(t.get("benefit")),
+            "profit_day": _f(day_profit),
+            "pages": [{
+                "page": r["page"], "orders": r["total"], "sortie": r["sortie"],
+                "payee": r["payee"], "livree": r["livree"], "retour": r["retour"],
+                "encours": r["encours"], "retour_pct": r["retour_pct"],
+                "ad_spend": _f(r.get("ad_spend")),
+                "cost_per_order": _f(r["cpo"]) if r.get("cpo") is not None else None,
+                "cost_per_order_basis": r.get("cpo_basis"),
+                "benefit": _f(r.get("benefit")),
+            } for r in data["per_page"] if r["total"] or r.get("ad_spend")],
+        })
+    return {
+        "method": "Statistiques > Pages, jour par jour (journée 17h->17h, pub de la veille J-1)",
+        "closed_days": closed_n, "open_days": open_n,
+        "profit_closed_days_exact": _f(closed_profit),
+        "profit_open_days_provisional": _f(open_profit),
+        "days": out,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -436,6 +526,8 @@ def period_for(key, today=None):
         return d, d, "Hier"
     if key == "last7":
         return today - timedelta(days=7), today - timedelta(days=1), "7 derniers jours"
+    if key == "last14":
+        return today - timedelta(days=14), today - timedelta(days=1), "14 derniers jours"
     if key == "month":
         return today.replace(day=1), today, "Ce mois-ci"
     if key == "last_month":
@@ -450,7 +542,9 @@ ROLE_TASK_TITLES = {
 }
 # The period each employee reports on in the automatic morning run.
 ROLE_DAILY_PERIOD = {
-    AIEmployee.ROLE_FINANCE: "yesterday",
+    # 14 days: recent days are still open (orders en cours), older ones are
+    # closed, so the report shows both the exact and the provisional profit.
+    AIEmployee.ROLE_FINANCE: "last14",
     AIEmployee.ROLE_MARKETING: "last7",   # one day is too little to judge an ad
 }
 
@@ -495,6 +589,17 @@ def _finance_prompt(task, data):
         "cash_collected_by_navex = argent réellement encaissé par Navex (inclut "
         "les frais de livraison payés par le client et les réductions) ; "
         "net_profit = marge brute − frais de retour − publicité − dépenses.",
+        "pages_by_day = LA MÉTHODE DU PATRON (sa page Statistiques > Pages), jour par "
+        "jour : pour chaque page de vente, commandes (sortie, payée, livrée, retour, "
+        "en cours), pub de la veille (J-1), coût par commande (sur la base indiquée : "
+        "'sortie' tant qu'il reste des commandes en cours, 'payée+livrée' quand tout "
+        "est réglé) et bénéfice (commandes payées − livraison − prix d'achat − pub). "
+        "status 'closed_exact' = plus aucune commande en cours ni livrée non payée : "
+        "le bénéfice de ce jour est EXACT. 'open_provisional' = encore des commandes en "
+        "route : bénéfice provisoire (il montera quand elles seront payées). "
+        "profit_day = bénéfice des pages − pub test − pub non assignée. Donne d'abord "
+        "le bénéfice EXACT des jours fermés, puis les jours encore ouverts, puis quelle "
+        "page gagne et laquelle perd, et le coût par commande de chaque page.",
         "CHIFFRES (JSON):",
         json.dumps(data, ensure_ascii=False, indent=1),
     ]

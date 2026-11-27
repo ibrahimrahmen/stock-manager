@@ -379,3 +379,63 @@ class ChatTests(TestCase):
         self.assertEqual(self.post({"message": "  "}).status_code, 400)
         self.client.logout()
         self.assertEqual(self.post({"message": "x"}).status_code, 302)
+
+
+class PagesDailyTests(TestCase):
+    """Sami's per-page, per-day view = the Statistiques > Pages numbers."""
+
+    def setUp(self):
+        self.p = Product.objects.create(name="Pull", code="PLL", buy_price=Decimal("40"),
+                                        sell_price=Decimal("100"))
+        self.v = ProductVariant.objects.create(product=self.p, color_name="RED", color_label="Rouge")
+        self.cust = Customer.objects.create(phone="21000000", name="T")
+        self.page, _ = SalesPage.objects.get_or_create(name="Arrow.tn")
+        self.n = 0
+
+    def order(self, day, status):
+        self.n += 1
+        o = Order.objects.create(customer=self.cust, sales_page=self.page, status=status,
+                                 total=Decimal("107"), delivery_fee=Decimal("7"))
+        Order.objects.filter(pk=o.pk).update(created_at=_at(day, 10))   # 10h = that business day
+        OrderLine.objects.create(order=o, product=self.p, variant=self.v, size="M",
+                                 quantity=1, unit_price=Decimal("100"))
+        ShippingOrder.objects.create(bordereau_barcode=f"BX{self.n}", order=o,
+                                     status=ShippingOrder.CLOSED)   # it went out (sortie)
+        return o
+
+    def test_closed_and_open_days(self):
+        closed_day, open_day = DAY - timedelta(days=5), DAY
+        self.order(closed_day, "payee"); self.order(closed_day, "payee")
+        self.order(closed_day, "returned")
+        self.order(open_day, "payee"); self.order(open_day, "en_cours")
+        spend = {closed_day: ({"Arrow.tn": Decimal("30")}, {"Arrow.tn": 1}),
+                 open_day: ({"Arrow.tn": Decimal("20")}, {"Arrow.tn": 1})}
+        with patch.object(ai_office, "_prefetch_page_spend",
+                          side_effect=lambda days: {d: spend.get(d, ({}, {})) for d in days}):
+            d = ai_office.compute_pages_daily(closed_day, open_day)
+        days = {x["day"]: x for x in d["days"]}
+        c, o = days[closed_day.isoformat()], days[open_day.isoformat()]
+        self.assertEqual(c["status"], "closed_exact")
+        self.assertEqual(o["status"], "open_provisional")
+        # closed: 2 paid x (100 - 40) - 30 pub = 90 ; cost/order on paid orders
+        self.assertEqual(c["profit_day"], 90.0)
+        self.assertEqual(c["cost_per_order_basis"], "payée+livrée")
+        self.assertEqual(c["cost_per_order"], 15.0)
+        self.assertEqual(c["pages"][0]["page"], "Arrow.tn")
+        # open: 1 paid x 60 - 20 = 40, cost/order still on sortie (2 out)
+        self.assertEqual(o["profit_day"], 40.0)
+        self.assertEqual(o["cost_per_order_basis"], "sortie")
+        self.assertEqual(o["cost_per_order"], 10.0)
+        self.assertEqual((d["closed_days"], d["open_days"]), (1, 1))
+        self.assertEqual(d["profit_closed_days_exact"], 90.0)
+        json.dumps(d)
+
+    def test_same_numbers_as_stats_page(self):
+        self.order(DAY, "payee"); self.order(DAY, "returned")
+        from . import views
+        with patch.object(views, "_meta_spend_by_page", return_value=({"Arrow.tn": Decimal("25")}, {"Arrow.tn": 1})), \
+                patch.object(views, "_cfg", side_effect=lambda k, d="": "tok" if k == "META_ACCESS_TOKEN" else d):
+            page_ctx = views._stats_pages_data(DAY, DAY)
+            d = ai_office.compute_pages_daily(DAY, DAY)
+        self.assertEqual(d["days"][0]["benefit_pages"], float(page_ctx["totals"]["benefit"]))
+        self.assertEqual(d["days"][0]["benefit_pages"], 35.0)   # 60 - 25

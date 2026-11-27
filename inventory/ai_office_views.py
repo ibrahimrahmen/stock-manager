@@ -19,7 +19,7 @@ from .models import AIConversation, AIEmployee, AITask
 
 # A task still "working" after this long was killed (worker restart): show it as failed.
 STALE_AFTER = timedelta(minutes=5)
-PERIOD_KEYS = ("yesterday", "last7", "month", "last_month")
+PERIOD_KEYS = ("yesterday", "last7", "last14", "month", "last_month")
 
 
 def _owner_only(view):

@@ -112,6 +112,15 @@
     .chat-input{display:flex;gap:8px;align-items:flex-end}
     .chat-input textarea{flex:1}
     .chat-input .btn{width:auto;margin:0;padding:12px 16px}
+    .day{background:var(--surface2);border:1px solid var(--border);border-radius:12px;margin-top:8px;overflow:hidden}
+    .day summary{list-style:none;cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:13px}
+    .day summary::-webkit-details-marker{display:none}
+    .day .st{font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+    .day .st.closed{background:rgba(61,186,138,.15);color:var(--green)}
+    .day .st.open{background:rgba(232,160,32,.15);color:var(--amber)}
+    .pg{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:8px 12px;border-top:1px solid var(--border);font-size:12px}
+    .pg .nm{font-weight:700}
+    .pg .mt{grid-column:1 / -1;color:var(--muted)}
     .hist{list-style:none}
     .hist li{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer}
     .hist li:hover{color:var(--green)}
@@ -142,7 +151,7 @@
 
 <div id="voiceCap"></div>
 <button id="stopTalk">⏹ Stop</button>
-<div class="hint" id="hint">Cliquez sur un employé pour lui donner une tâche. Glissez pour tourner, molette pour zoomer. <span style="opacity:.5">· v10</span></div>
+<div class="hint" id="hint">Cliquez sur un employé pour lui donner une tâche. Glissez pour tourner, molette pour zoomer. <span style="opacity:.5">· v11</span></div>
 
 <aside id="panel" aria-hidden="true">
   <div class="p-head">
@@ -179,6 +188,7 @@
       <div class="periods" id="periods">
         <button data-p="yesterday" class="on">Hier</button>
         <button data-p="last7">7 derniers jours</button>
+        <button data-p="last14">14 derniers jours</button>
         <button data-p="month">Ce mois-ci</button>
         <button data-p="last_month">Le mois dernier</button>
       </div>
@@ -656,9 +666,33 @@ function renderResult(t, quiet) {
     </div>
     ${t.result_text ? `<div class="report">${esc(t.result_text)}</div>` : ''}
     ${t.error ? `<div class="note" style="color:var(--amber)">${esc(t.error)}</div>` : ''}
+    ${renderPagesByDay(d.pages_by_day)}
     <div class="note">Les chiffres sont calculés par le logiciel. L'IA les explique seulement, elle ne les invente pas.</div>`;
 }
 
+
+
+/* Sami: the Statistiques > Pages table, day by day. Closed day = nothing en
+   cours / livrée waiting for payment -> exact profit. */
+function renderPagesByDay(pb) {
+  if (!pb || !pb.days) return pb && pb.error ? `<div class="note" style="color:var(--amber)">Pages : ${esc(pb.error)}</div>` : '';
+  if (!pb.days.length) return '';
+  const cpo = (v, b) => v == null ? '—' : `${money(v)} <span style="opacity:.7">(${esc(b === 'payée+livrée' ? 'payées' : b)})</span>`;
+  const days = pb.days.map(d => `
+    <details class="day">
+      <summary><span><b>${esc(d.day)}</b> · ${d.orders} cmd · ${d.sortie} sorties · ${d.payee} payées · ${d.retour} retours${d.encours ? ' · ' + d.encours + ' en cours' : ''}</span>
+        <span><span class="st ${d.status === 'closed_exact' ? 'closed' : 'open'}">${d.status === 'closed_exact' ? '✅ exact' : '⏳ provisoire'}</span>
+        <b class="${d.profit_day < 0 ? 'neg' : 'pos'}">${money(d.profit_day)}</b></span></summary>
+      ${d.pages.map(p => `<div class="pg"><span class="nm">${esc(p.page)}</span><b class="${p.benefit < 0 ? 'neg' : 'pos'}">${money(p.benefit)}</b>
+        <span class="mt">Pub ${money(p.ad_spend)} · coût/cmd ${cpo(p.cost_per_order, p.cost_per_order_basis)} · ${p.sortie} sorties, ${p.payee} payées, ${p.retour} retours${p.encours ? ', ' + p.encours + ' en cours' : ''}</span></div>`).join('')}
+      ${d.ad_spend_test || d.ad_spend_unassigned ? `<div class="pg"><span class="mt">Pub test ${money(d.ad_spend_test)} · pub non assignée ${money(d.ad_spend_unassigned)} (déduites du jour)</span></div>` : ''}
+    </details>`).join('');
+  return `<div class="section-title">Par page, jour par jour (méthode Statistiques › Pages)</div>
+    <div class="grid">
+      <div class="cell"><div class="lbl">Jours fermés ✅ (exact)</div><div class="val ${pb.profit_closed_days_exact < 0 ? 'neg' : 'pos'}">${money(pb.profit_closed_days_exact)}</div><div class="lbl">${pb.closed_days} jour(s)</div></div>
+      <div class="cell"><div class="lbl">Jours ouverts ⏳ (provisoire)</div><div class="val">${money(pb.profit_open_days_provisional)}</div><div class="lbl">${pb.open_days} jour(s), commandes encore en route</div></div>
+    </div>${days}`;
+}
 
 const VERDICT = { scale: 'Augmenter', watch: 'Surveiller', stop: 'Arrêter', untracked: 'Lien manquant' };
 function renderMarketing(t, d, quiet) {
