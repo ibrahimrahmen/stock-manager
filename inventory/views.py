@@ -323,6 +323,32 @@ def _price_line_for_conv(conv):
         return ""
 
 
+def _ad_price_line(conv):
+    """Price read straight from the AD COPY, even when the ad isn't linked to an
+    offer. Returns 'NNN Dt + 7 dt livraison' or ''. This is how a human answers
+    'prix' for an ad we haven't linked yet — the number is in the ad text."""
+    import re as _re
+    try:
+        txt = _ad_info_for_conv(conv) or ""
+    except Exception:
+        txt = ""
+    if not txt:
+        return ""
+    low = txt.lower()
+    m = _re.search(r"(\d{2,4})\s*(?:dt|dinar|dinars|tnd|د\.?ت|دينار)", low)
+    if not m:
+        m = _re.search(r"prix[^\d]{0,14}(\d{2,4})", low)
+    if not m:
+        return ""
+    try:
+        val = int(m.group(1))
+    except Exception:
+        return ""
+    if val < 10 or val > 2000:  # sanity: a plausible clothing price in DT
+        return ""
+    return "%s Dt + %s dt livraison" % (val, _LIVRAISON_FEE_DT)
+
+
 def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
     """PRICE AGENT (private test). Runs the 3-tier price cascade and returns a
     step-by-step trace. Sends NOTHING. Tier 1 = ad link (free), Tier 2 = photo
@@ -389,6 +415,24 @@ def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
         s1["found"] = False
         s1["why"] = (_note or "pas de nom de pub / pub non liée à un produit")
     trace["steps"].append(s1)
+
+    # TIER 1b — PRICE FROM THE AD COPY (free; even if the ad isn't linked to an
+    # offer, the price is usually written in the ad text the customer clicked).
+    if not offer:
+        s1b = {"tier": "1b", "name": "Prix dans la pub (texte)",
+               "tried": True, "cost": "0"}
+        _adline = _ad_price_line(conv)
+        if _adline:
+            trace["reply"] = _adline
+            trace["resolved_by"] = "ad_text"
+            trace["cost_est"] = "0 DT (gratuit)"
+            s1b["found"] = True
+            s1b["offer"] = _adline
+            trace["steps"].append(s1b)
+            return trace
+        s1b["found"] = False
+        s1b["why"] = "pas de prix lisible dans la pub"
+        trace["steps"].append(s1b)
 
     # Dashboard live view: skip the photo tiers (slow / possibly paid) and
     # surface an on-click "Analyser" instead of auto-spending on Vision.
@@ -470,8 +514,7 @@ def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
             offer = None  # product found but no price -> ask for photo
 
     if trace["resolved_by"] is None and (not allow_photo_tiers) and has_photo:
-        trace["reply"] = ("(photo présente — clique « Analyser » pour que "
-                          "l'agent lise la photo et donne le prix)")
+        trace["reply"] = "📷 photo présente — analyse de la photo requise pour le prix"
         trace["resolved_by"] = "need_analysis"
         trace["cost_est"] = "0 DT (gratuit)"
     if trace["resolved_by"] is None:
