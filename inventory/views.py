@@ -349,6 +349,20 @@ def _ad_price_line(conv):
     return "%s Dt + %s dt livraison" % (val, _LIVRAISON_FEE_DT)
 
 
+def _order_agent_line(conv):
+    """Reply when the customer signals they want to order. If they already sent
+    a phone number, confirm receipt; otherwise ask for the order details."""
+    import re as _re
+    text = ""
+    for m in reversed(conv.messages or []):
+        if m.get("from") == "user" and (m.get("text") or "").strip():
+            text = m["text"]
+            break
+    if _re.search(r"\d{8}", (text or "")):
+        return "Wselna tolbek khouya 🤍 el equipe bech tkalmek 3al confirmation."
+    return "Bech t3adi commande ab3athelna taille, adresse w noumrouk 🤍"
+
+
 def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
     """PRICE AGENT (private test). Runs the 3-tier price cascade and returns a
     step-by-step trace. Sends NOTHING. Tier 1 = ad link (free), Tier 2 = photo
@@ -7241,6 +7255,12 @@ def api_conversations_live(request):
                 faq_reply = _faq_answer(_ct, None) or ""
             except Exception:
                 faq_reply = ""
+        order_reply = ""
+        if intk == "order":
+            try:
+                order_reply = _order_agent_line(c)
+            except Exception:
+                order_reply = ""
         try:
             tr = _price_agent_trace(c, page, allow_vision=False,
                                     allow_photo_tiers=False)
@@ -7264,6 +7284,7 @@ def api_conversations_live(request):
             "intent": intk,
             "intent_label": intlbl,
             "faq_reply": faq_reply,
+            "order_reply": order_reply,
         })
     return JsonResponse({"status": "ok", "count": len(rows), "rows": rows,
                          "hours": hours})

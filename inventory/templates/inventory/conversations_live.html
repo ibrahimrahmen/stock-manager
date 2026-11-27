@@ -96,6 +96,7 @@ function footer(r){
   if(!r.waiting) return '<div class="sg s-done">✅ répondu — en attente du client</div>';
   if(r.is_price_q) return '<div class="sg '+suggClass(r.suggest_by)+'">🤖 '+esc(r.suggest)+'</div>';
   if(r.intent==='faq' && r.faq_reply) return '<div class="sg s-ok">🤖 '+esc(r.faq_reply)+'</div>';
+  if(r.intent==='order' && r.order_reply) return '<div class="sg s-ok">🤖 '+esc(r.order_reply)+'</div>';
   return '<div class="sg s-rt">🧭 décide → '+esc(ACTION[r.intent]||ACTION.other)+'</div>';
 }
 function card(r){
