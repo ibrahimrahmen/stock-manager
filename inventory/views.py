@@ -7055,6 +7055,32 @@ def api_conversations_live(request):
         last_from = (last or {}).get("from", "")
         # "Waiting" = the customer spoke last and nobody (human or bot) answered.
         waiting = (last_from == "user")
+        # Last few messages so each tile can show a live mini-thread.
+        recent = []
+        for _m in msgs[-8:]:
+            if _m.get("greeting"):
+                _fl = "auto"
+            elif _m.get("faq"):
+                _fl = "faq"
+            elif _m.get("bot"):
+                _fl = "bot"
+            elif _m.get("carousel"):
+                _fl = "carousel"
+            elif _m.get("phonefix"):
+                _fl = "bot"
+            elif _m.get("from") == "page":
+                _fl = "human"
+            elif _m.get("from") == "system":
+                _fl = "system"
+            else:
+                _fl = ""
+            recent.append({
+                "from": _m.get("from", ""),
+                "text": (_m.get("text") or "")[:240],
+                "images": [u for u in (_m.get("images") or [])
+                           if u and u != "local"][:2],
+                "flag": _fl,
+            })
         try:
             tr = _price_agent_trace(c, page, allow_vision=False,
                                     allow_photo_tiers=False)
@@ -7070,6 +7096,7 @@ def api_conversations_live(request):
             "last_from": last_from,
             "waiting": waiting,
             "mins_ago": mins,
+            "msgs": recent,
             "has_photo": bool(tr.get("has_photo")),
             "suggest": tr.get("reply", ""),
             "suggest_by": tr.get("resolved_by", ""),

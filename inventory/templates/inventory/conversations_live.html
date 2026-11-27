@@ -13,56 +13,40 @@
     --blue:#185fa5; --bluebg:#e6f1fb; --purple:#534ab7; --purplebg:#eeedfe;
   }
   *{box-sizing:border-box}
-  html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--ink);
-    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.45;}
-  .wrap{max-width:1000px;margin:0 auto;padding:12px 14px;height:100%;display:flex;flex-direction:column;}
-  .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
-  h1{font-size:18px;margin:0;font-weight:600;}
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.4;padding:14px;}
+  .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;max-width:1300px;margin-left:auto;margin-right:auto;}
+  h1{font-size:19px;margin:0;font-weight:600;}
   .count{background:var(--graybg);border-radius:999px;padding:3px 11px;font-weight:600;font-size:13px;}
   .bar{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:12px;color:var(--muted);}
   .toggle{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;}
-  .app{flex:1;display:flex;gap:12px;min-height:0;}
-  .list{width:280px;flex:0 0 280px;overflow:auto;display:flex;flex-direction:column;gap:6px;}
-  .litem{background:var(--card);border:0.5px solid var(--border);border-radius:12px;padding:10px 12px;cursor:pointer;}
-  .litem.active{border-color:var(--green);background:var(--greenbg);}
-  .litem .ln{font-weight:600;font-size:14px;display:flex;align-items:center;gap:6px;}
-  .litem .ls{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
+  #wall{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;
+    max-width:1300px;margin:0 auto;}
+  .cv{background:var(--card);border:0.5px solid var(--border);border-radius:14px;
+    display:flex;flex-direction:column;height:380px;overflow:hidden;}
+  .cv.wait{border-color:var(--red);box-shadow:0 0 0 1px var(--red) inset;}
+  .cvh{padding:9px 12px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .cvh .nm{font-weight:600;font-size:14px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--red);flex:0 0 8px;}
-  .mins{margin-left:auto;font-size:11px;color:var(--muted);font-weight:400;}
-  .thread{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--card);
-    border:0.5px solid var(--border);border-radius:14px;overflow:hidden;}
-  .thead{padding:12px 14px;border-bottom:0.5px solid var(--border);font-weight:600;font-size:15px;
-    display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-  .thead .ad{font-size:12px;color:var(--muted);font-weight:400;}
-  .badge{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;}
+  .badge{font-size:10px;padding:1px 7px;border-radius:999px;font-weight:600;}
   .b-ms{background:var(--bluebg);color:var(--blue);} .b-ig{background:var(--purplebg);color:var(--purple);}
-  .agentbar{padding:10px 14px;border-bottom:0.5px solid var(--border);background:#fafaf8;font-size:13px;}
-  .agentbar .rt{color:var(--muted);margin-bottom:5px;}
-  .sugg{border-radius:9px;padding:8px 11px;white-space:pre-wrap;}
+  .mins{margin-left:auto;font-size:11px;color:var(--muted);}
+  .ad{font-size:11px;color:var(--muted);padding:0 12px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .cvm{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:5px;background:var(--bg);}
+  .b{max-width:82%;padding:6px 9px;border-radius:12px;font-size:12.5px;white-space:pre-wrap;word-break:break-word;}
+  .b .lbl{font-size:9px;opacity:.7;display:block;font-weight:600;}
+  .b.u{align-self:flex-start;background:#fff;border:0.5px solid var(--border);border-bottom-left-radius:3px;}
+  .b.p{align-self:flex-end;background:#0f6e56;color:#fff;border-bottom-right-radius:3px;}
+  .b.s{align-self:center;background:transparent;color:var(--muted);font-size:11px;text-align:center;}
+  .b img{display:block;max-width:120px;border-radius:8px;margin-top:4px;}
+  .cvf{padding:7px 10px;border-top:0.5px solid var(--border);font-size:11.5px;}
+  .cvf .sg{border-radius:8px;padding:5px 8px;white-space:pre-wrap;}
   .s-ok{background:var(--greenbg);color:var(--green);} .s-ask{background:var(--graybg);color:var(--ink);}
-  .s-need{background:var(--amberbg);color:var(--amber);} .s-no{background:var(--graybg);color:var(--muted);font-style:italic;}
-  .btn{margin-top:7px;padding:7px 13px;border:0.5px solid var(--amber);background:var(--amberbg);
-    color:var(--amber);border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;}
-  .msgs{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:8px;background:var(--bg);}
-  .b{max-width:74%;padding:8px 11px;border-radius:14px;font-size:14px;white-space:pre-wrap;word-break:break-word;}
-  .b .lbl{font-size:10px;opacity:.75;display:block;margin-bottom:2px;font-weight:600;}
-  .b.u{align-self:flex-start;background:#fff;border:0.5px solid var(--border);border-bottom-left-radius:4px;}
-  .b.p{align-self:flex-end;background:#0f6e56;color:#fff;border-bottom-right-radius:4px;}
-  .b.s{align-self:center;background:transparent;color:var(--muted);font-size:12px;max-width:90%;text-align:center;}
-  .b img{display:block;max-width:180px;border-radius:10px;margin-top:5px;}
-  .ph{color:var(--muted);text-align:center;margin:auto;font-size:14px;}
-  .err{background:var(--redbg);color:var(--red);padding:10px 12px;border-radius:10px;font-size:14px;}
-  @media (max-width:760px){
-    .app{flex-direction:column;}
-    .list{width:auto;flex:0 0 auto;max-height:150px;flex-direction:row;overflow-x:auto;}
-    .litem{min-width:180px;}
-  }
+  .s-need{background:var(--amberbg);color:var(--amber);} .s-no{background:transparent;color:var(--muted);font-style:italic;}
+  .empty{grid-column:1/-1;text-align:center;color:var(--muted);padding:50px 0;}
 </style>
 </head>
 <body>
-<div class="wrap">
-  {% csrf_token %}
   <div class="top">
     <h1>💬 Conversations</h1>
     <span class="count" id="count">…</span>
@@ -71,99 +55,63 @@
       <span id="updated"></span>
     </div>
   </div>
-  <div class="app">
-    <div class="list" id="list"></div>
-    <div class="thread">
-      <div class="thead" id="thead">Choisis une conversation →</div>
-      <div class="agentbar" id="agentbar" style="display:none;"></div>
-      <div class="msgs" id="msgs"><div class="ph">Clique une conversation à gauche pour voir le fil complet.</div></div>
-    </div>
-  </div>
-</div>
+  <div id="wall"><div class="empty">Chargement…</div></div>
 
 <script>
-const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
-const listEl=document.getElementById('list'), msgsEl=document.getElementById('msgs'),
-      theadEl=document.getElementById('thead'), agentEl=document.getElementById('agentbar');
-let currentId=null;
+const wall=document.getElementById('wall');
 function esc(s){return (s||'').replace(/[&<>]/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[x]));}
 function ago(m){ if(m<1)return "à l'instant"; if(m<60)return "il y a "+m+" min"; return "il y a "+Math.floor(m/60)+" h"; }
 function suggClass(by){ if(['ad','fingerprint','vision'].includes(by))return 's-ok';
   if(by==='need_analysis')return 's-need'; if(by==='not_price')return 's-no'; return 's-ask'; }
-function byLabel(by){ return ({ad:'prix depuis la pub (gratuit)',fingerprint:'empreinte photo (gratuit)',
-  vision:'analyse IA (payant)',ask_photo:'demande une photo',need_analysis:'photo à analyser',
-  not_price:'pas une question de prix'}[by])||by||''; }
 function flagLabel(f){ return ({auto:'auto 🤖',faq:'FAQ 🤖',bot:'bot 🤖',carousel:'carrousel 🤖',human:'équipe 🧑'}[f])||''; }
 
-async function loadList(){
+function bubbles(msgs){
+  return (msgs||[]).map(m=>{
+    if(m.from==='system') return '<div class="b s">'+esc(m.text)+'</div>';
+    const cls=m.from==='user'?'u':'p';
+    const lbl=(m.from!=='user'&&flagLabel(m.flag))?('<span class="lbl">'+flagLabel(m.flag)+'</span>'):'';
+    const imgs=(m.images||[]).map(u=>'<img src="'+esc(u)+'" onerror="this.style.display=\'none\'">').join('');
+    return '<div class="b '+cls+'">'+lbl+esc(m.text)+imgs+'</div>';
+  }).join('');
+}
+function footer(r){
+  if(!r.is_price_q) return '<div class="sg s-no">🤖 pas une question de prix</div>';
+  return '<div class="sg '+suggClass(r.suggest_by)+'">🤖 '+esc(r.suggest)+'</div>';
+}
+function card(r){
+  const pb=r.platform==='instagram'?'<span class="badge b-ig">IG</span>':'<span class="badge b-ms">Msg</span>';
+  const d=r.waiting?'<span class="dot"></span>':'';
+  return '<div class="cv'+(r.waiting?' wait':'')+'" data-id="'+r.id+'">'
+    +'<div class="cvh">'+d+'<span class="nm">'+esc(r.name)+'</span>'+pb+'<span class="mins">'+ago(r.mins_ago)+'</span></div>'
+    +(r.ad?('<div class="ad">📣 '+esc(r.ad)+'</div>'):'')
+    +'<div class="cvm" data-id="'+r.id+'">'+bubbles(r.msgs)+'</div>'
+    +'<div class="cvf">'+footer(r)+'</div></div>';
+}
+
+async function load(){
   try{
     const r=await fetch('/api/conversations-live/',{credentials:'include'});
-    const j=await r.json(); if(j.status!=='ok'){ return; }
+    const j=await r.json(); if(j.status!=='ok') return;
     document.getElementById('count').textContent=j.count+' en cours';
     document.getElementById('updated').textContent='maj '+new Date().toLocaleTimeString('fr-FR');
-    listEl.innerHTML=j.rows.map(r=>{
-      const d=r.waiting?'<span class="dot"></span>':'';
-      return '<div class="litem'+(r.id===currentId?' active':'')+'" onclick="openConv('+r.id+')">'
-        +'<div class="ln">'+d+esc(r.name)+'<span class="mins">'+ago(r.mins_ago)+'</span></div>'
-        +'<div class="ls">'+(r.last_from==='user'?'':'↩ ')+esc(r.last_text||'')+'</div></div>';
-    }).join('') || '<div class="ph">Aucune conversation en cours 👋</div>';
+    // remember scroll positions of open threads
+    const pos={};
+    document.querySelectorAll('.cvm').forEach(el=>{
+      pos[el.dataset.id]={top:el.scrollTop, bottom:(el.scrollHeight-el.scrollTop-el.clientHeight<40)};
+    });
+    wall.innerHTML = j.rows.length ? j.rows.map(card).join('') : '<div class="empty">Aucune conversation en cours 👋</div>';
+    // restore / stick to bottom so new messages appear in place
+    document.querySelectorAll('.cvm').forEach(el=>{
+      const p=pos[el.dataset.id];
+      if(!p || p.bottom){ el.scrollTop=el.scrollHeight; } else { el.scrollTop=p.top; }
+    });
   }catch(e){}
 }
 
-function nearBottom(){ return msgsEl.scrollHeight-msgsEl.scrollTop-msgsEl.clientHeight < 80; }
-
-async function loadThread(force){
-  if(!currentId) return;
-  const stick = force || nearBottom();
-  try{
-    const r=await fetch('/api/conversation-thread/'+currentId+'/',{credentials:'include'});
-    const j=await r.json();
-    if(j.status!=='ok'){ msgsEl.innerHTML='<div class="err">'+esc(j.message||'Erreur')+'</div>'; return; }
-    const pb=j.platform==='instagram'?'<span class="badge b-ig">Instagram</span>':'<span class="badge b-ms">Messenger</span>';
-    theadEl.innerHTML=esc(j.name)+pb+(j.ad?('<span class="ad">📣 '+esc(j.ad)+'</span>'):'');
-    // agent bar
-    const a=j.agent||{};
-    if(a.is_price_q){
-      let h='<div class="rt">🧭 '+esc(a.router)+'</div><div class="sugg '+suggClass(a.by)+'">'+esc(a.suggest)+'</div>'
-        +'<div class="rt" style="margin-top:5px;">→ '+esc(byLabel(a.by))+'</div>';
-      if(a.by==='need_analysis'){ h+='<button class="btn" onclick="analyze('+currentId+',this)">🔍 Analyser la photo</button>'; }
-      h+='<div id="tr-'+currentId+'"></div>';
-      agentEl.innerHTML=h; agentEl.style.display='block';
-    } else { agentEl.innerHTML='<div class="sugg s-no">Agent prix : rien à faire ici (pas une question de prix)</div>'; agentEl.style.display='block'; }
-    // messages
-    msgsEl.innerHTML=j.messages.map(m=>{
-      if(m.from==='system') return '<div class="b s">'+esc(m.text)+'</div>';
-      const cls=m.from==='user'?'u':'p';
-      const lbl=(m.from!=='user'&&flagLabel(m.flag))?('<span class="lbl">'+flagLabel(m.flag)+'</span>'):'';
-      const imgs=(m.images||[]).map(u=>'<img src="'+esc(u)+'" onerror="this.style.display=\'none\'">').join('');
-      return '<div class="b '+cls+'">'+lbl+esc(m.text)+imgs+'</div>';
-    }).join('');
-    if(stick) msgsEl.scrollTop=msgsEl.scrollHeight;
-  }catch(e){ }
-}
-
-function openConv(id){ currentId=id; document.querySelectorAll('.litem').forEach(e=>e.classList.remove('active'));
-  loadList(); loadThread(true); }
-
-async function analyze(id,btn){
-  btn.textContent='⏳ analyse…'; btn.disabled=true;
-  try{
-    const r=await fetch('/api/price-agent-on-conv/'+id+'/',{method:'POST',credentials:'include',
-      headers:{'Content-Type':'application/json','X-CSRFToken':csrf},body:'{}'});
-    const j=await r.json(); const box=document.getElementById('tr-'+id);
-    if(j.status==='ok'){ const t=j.trace;
-      box.innerHTML='<div class="sugg '+suggClass(t.resolved_by)+'" style="margin-top:7px;">'+esc(t.reply)
-        +'</div><div class="rt" style="margin-top:4px;">Résolu par '+esc(byLabel(t.resolved_by))+' · coût '+esc(t.cost_est)+'</div>';
-      btn.style.display='none';
-    } else { box.innerHTML='<div class="err">'+esc(j.message||'Erreur')+'</div>'; btn.disabled=false; btn.textContent='🔍 Réessayer'; }
-  }catch(e){ btn.disabled=false; btn.textContent='🔍 Réessayer'; }
-}
-
-let t1=null,t2=null;
-function schedule(){ if(t1)clearInterval(t1); if(t2)clearInterval(t2);
-  if(document.getElementById('auto').checked){ t1=setInterval(loadList,15000); t2=setInterval(()=>loadThread(false),8000); } }
+let timer=null;
+function schedule(){ if(timer)clearInterval(timer); if(document.getElementById('auto').checked){ timer=setInterval(load,10000);} }
 document.getElementById('auto').onchange=schedule;
-loadList(); schedule();
+load(); schedule();
 </script>
 </body>
 </html>
