@@ -2223,3 +2223,19 @@ class AITask(models.Model):
 
     def __str__(self):
         return f"{self.employee.name}: {self.title} [{self.status}]"
+
+
+class AIConversation(models.Model):
+    """A chat between the owner and one AI employee. The latest one per
+    employee is the "current" conversation; "Nouvelle discussion" starts a new
+    row. messages = [{"role": "user"|"assistant", "text": str, "at": iso}]."""
+    employee   = models.ForeignKey(AIEmployee, on_delete=models.CASCADE, related_name="conversations")
+    messages   = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return f"{self.employee.name} — {len(self.messages)} messages"

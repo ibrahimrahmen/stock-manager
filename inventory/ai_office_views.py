@@ -15,7 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from . import ai_office
-from .models import AIEmployee, AITask
+from .models import AIConversation, AIEmployee, AITask
 
 # A task still "working" after this long was killed (worker restart): show it as failed.
 STALE_AFTER = timedelta(minutes=5)
@@ -162,3 +162,38 @@ def cron_ai_office_daily(request):
         ai_office.run_task(task)
         return JsonResponse({"status": task.status, "employee": emp.slug, "task": task.id})
     return JsonResponse({"status": "skipped", "reason": "all employees already done today"})
+
+
+def _conversation_json(conv):
+    return {"id": conv.id if conv else None,
+            "messages": (conv.messages if conv else [])}
+
+
+@_owner_only
+def api_chat(request, slug):
+    """GET: the current conversation. POST {"message": str} -> reply;
+    POST {"new": true} -> start a fresh conversation."""
+    emp = get_object_or_404(AIEmployee, slug=slug, is_active=True)
+    conv = emp.conversations.first()
+    if request.method == "GET":
+        return JsonResponse(_conversation_json(conv))
+    if request.method != "POST":
+        return JsonResponse({"error": "méthode non autorisée"}, status=405)
+    try:
+        body = json.loads(request.body or b"{}")
+    except ValueError:
+        return JsonResponse({"error": "JSON invalide"}, status=400)
+    if body.get("new"):
+        conv = AIConversation.objects.create(employee=emp)
+        return JsonResponse(_conversation_json(conv))
+    text = str(body.get("message", "")).strip()
+    if not text:
+        return JsonResponse({"error": "Message vide."}, status=400)
+    if conv is None:
+        conv = AIConversation.objects.create(employee=emp)
+    reply, err = ai_office.chat(emp, conv, text)
+    data = _conversation_json(conv)
+    data["reply"] = reply
+    if err:
+        data["error"] = "L'IA n'a pas pu répondre : " + err[:300]
+    return JsonResponse(data, status=200 if reply else 502)

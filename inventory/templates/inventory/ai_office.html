@@ -90,6 +90,19 @@
     .vd.stop{background:rgba(224,80,80,.15);color:var(--red)}
     .vd.none{background:var(--surface);color:var(--muted)}
     .vd.untracked{background:rgba(80,144,224,.15);color:var(--blue)}
+    .chat-tools{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+    .chat-tools label{display:flex;gap:6px;align-items:center;cursor:pointer}
+    .linkbtn{background:none;border:0;color:var(--blue);font:500 13px 'DM Sans';cursor:pointer}
+    .chat-log{display:flex;flex-direction:column;gap:8px;margin:12px 0;min-height:120px}
+    .msg{max-width:88%;padding:10px 12px;border-radius:14px;font:14px/1.8 'Noto Kufi Arabic','DM Sans',sans-serif;white-space:pre-wrap;direction:rtl;text-align:right}
+    .msg.user{align-self:flex-start;background:var(--green-dim);border:1px solid rgba(61,186,138,.25)}
+    .msg.assistant{align-self:flex-end;background:var(--surface2);border:1px solid var(--border)}
+    .msg .say{display:block;margin-top:4px;background:none;border:0;color:var(--muted);cursor:pointer;font-size:13px;direction:ltr;text-align:left}
+    .msg.thinking{color:var(--muted)}
+    .chat-empty{color:var(--muted);font-size:13px;text-align:center;padding:24px 8px;line-height:1.6}
+    .chat-input{display:flex;gap:8px;align-items:flex-end}
+    .chat-input textarea{flex:1}
+    .chat-input .btn{width:auto;margin:0;padding:12px 16px}
     .hist{list-style:none}
     .hist li{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer}
     .hist li:hover{color:var(--green)}
@@ -129,12 +142,27 @@
     <button class="close" id="pClose" aria-label="Fermer">✕</button>
   </div>
   <div class="tabs">
-    <button data-tab="task" class="on">Tâche</button>
+    <button data-tab="chat" class="on">Discussion</button>
+    <button data-tab="task">Rapport</button>
     <button data-tab="history">Historique</button>
     <button data-tab="job">Fiche de poste</button>
   </div>
   <div class="p-body">
-    <section data-pane="task">
+    <section data-pane="chat">
+      <div class="chat-tools">
+        <label><input type="checkbox" id="speakOn" checked> 🔊 Réponses à voix haute</label>
+        <button class="linkbtn" id="newChat">Nouvelle discussion</button>
+      </div>
+      <div class="chat-log" id="chatLog"></div>
+      <div class="chat-input">
+        <textarea id="chatMsg" class="ar" rows="2" placeholder="اكتب ولا احكي (Wispr Flow)…"></textarea>
+        <button class="btn" id="chatSend">Envoyer</button>
+      </div>
+      <div class="status-line" id="chatStatus"></div>
+      <div class="note" id="voiceNote"></div>
+    </section>
+
+    <section data-pane="task" hidden>
       <div class="section-title">Période à analyser</div>
       <div class="periods" id="periods">
         <button data-p="yesterday" class="on">Hier</button>
@@ -407,7 +435,7 @@ function animate() {
   ball.position.y = 1.0 + Math.abs(Math.cos(now / 350)) * .35;
   for (const p of people.values()) {
     p.t += dt;
-    const b = p.body, working = p.data.state === 'working';
+    const b = p.body, working = p.data.state === 'working' || p.chatBusy;
     if (p.mode === 'walk') {
       const target = p.path[0], pos = b.group.position;
       const dir = target.clone().sub(pos); dir.y = 0;
@@ -426,7 +454,13 @@ function animate() {
         b.arms[0].rotation.x = -s * .7; b.arms[1].rotation.x = s * .7;
       }
     } else if (p.mode === 'desk') {
-      if (working) {   // typing fast + glowing screen
+      if (p.talking && !working) {   // speaking to the owner: nods + hand gestures
+        b.head.rotation.x = Math.sin(p.t * 7) * .12;
+        b.head.rotation.y = Math.sin(p.t * 1.5) * .2;
+        b.arms[0].rotation.x = -1.0 + Math.sin(p.t * 4) * .35;
+        b.arms[1].rotation.x = -1.1 + Math.cos(p.t * 3) * .25;
+        if (p.bubble.textContent !== '💬' || p.bubble.classList.contains('off')) { p.bubble.textContent = '💬'; p.bubble.classList.remove('off'); }
+      } else if (working) {   // typing fast + glowing screen
         b.arms[0].rotation.x = -1.2 + Math.sin(p.t * 22) * .12;
         b.arms[1].rotation.x = -1.2 + Math.cos(p.t * 25) * .12;
         b.head.rotation.x = .15 + Math.sin(p.t * 2) * .04;
@@ -437,7 +471,7 @@ function animate() {
         b.arms[1].rotation.x = -1.0 + Math.cos(p.t * 1.1) * .05;
         b.head.rotation.y = Math.sin(p.t * .5) * .35;
         p.desk.disp.material.color.set('#24323c');
-        if (p.bubble.textContent === '…') { p.bubble.textContent = ''; p.bubble.classList.add('off'); }
+        if (p.bubble.textContent === '…' || p.bubble.textContent === '💬') { p.bubble.textContent = ''; p.bubble.classList.add('off'); }
         if (now - p.idleSince > 25000 && Math.random() < .002) goToLounge(p);
       }
     } else if (p.mode === 'lounge') {
@@ -501,7 +535,7 @@ function showTab(t) {
   document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x.dataset.tab === t));
   document.querySelectorAll('[data-pane]').forEach(x => x.hidden = x.dataset.pane !== t);
 }
-$('pClose').onclick = () => { $('panel').classList.remove('open'); selected = null; };
+$('pClose').onclick = () => { $('panel').classList.remove('open'); selected = null; stopVoice(); };
 
 function openPanel(slug) {
   const p = people.get(slug); if (!p) return;
@@ -515,7 +549,8 @@ function fillPanel(e, first) {
   $('pAvatar').style.background = e.color;
   if (first) {
     $('eName').value = e.name; $('eTitle').value = e.title; $('eColor').value = e.color; $('eJob').value = e.job_description;
-    $('result').innerHTML = ''; $('taskStatus').textContent = ''; showTab('task');
+    $('result').innerHTML = ''; $('taskStatus').textContent = ''; showTab('chat');
+    $('chatStatus').textContent = ''; loadChat(e.slug);
     period = e.default_period || 'yesterday';
     document.querySelectorAll('#periods button').forEach(x => x.classList.toggle('on', x.dataset.p === period));
     $('question').placeholder = e.role === 'marketing'
@@ -622,6 +657,108 @@ $('giveTask').onclick = async () => {
     busy = false; await refresh();
   }
 };
+
+
+/* ------------------------------------------------------------ discussion */
+let chatBusy = false;
+function renderChat(messages, thinkingName) {
+  const log = $('chatLog');
+  if (!messages.length && !thinkingName) {
+    const who = people.get(selected)?.data;
+    log.innerHTML = `<div class="chat-empty">Parlez à ${esc(who ? who.name : '')} comme à un collègue.<br>
+      Il connaît son dernier rapport et se souvient de la discussion.<br>Astuce : dictez avec Wispr Flow.</div>`;
+    return;
+  }
+  log.innerHTML = messages.map((m, i) => `<div class="msg ${m.role}">${esc(m.text)}${m.role === 'assistant'
+      ? `<button class="say" data-i="${i}" title="Écouter">🔊 écouter</button>` : ''}</div>`).join('')
+    + (thinkingName ? `<div class="msg assistant thinking">${esc(thinkingName)} يكتب…</div>` : '');
+  log.querySelectorAll('.say').forEach(btn => btn.onclick = () => speak(messages[+btn.dataset.i].text, selected));
+  log.lastElementChild?.scrollIntoView({ block: 'end' });
+}
+let chatMessages = [];
+async function loadChat(slug) {
+  chatMessages = [];
+  renderChat([]);
+  try {
+    const r = await fetch(API + 'employees/' + slug + '/chat/');
+    if (r.ok && selected === slug) { chatMessages = (await r.json()).messages || []; renderChat(chatMessages); }
+  } catch (_) {}
+}
+async function sendChat() {
+  const text = $('chatMsg').value.trim();
+  if (!text || !selected || chatBusy) return;
+  unlockVoice();
+  const slug = selected, p = people.get(slug);
+  chatBusy = true; $('chatSend').disabled = true; $('chatStatus').className = 'status-line'; $('chatStatus').textContent = '';
+  chatMessages = [...chatMessages, { role: 'user', text }];
+  $('chatMsg').value = '';
+  renderChat(chatMessages, p.data.name);
+  p.chatBusy = true; goToDesk(p);
+  try {
+    const r = await fetch(API + 'employees/' + slug + '/chat/', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+      body: JSON.stringify({ message: text }) });
+    const d = await r.json();
+    if (d.messages) chatMessages = d.messages;
+    if (selected === slug) renderChat(chatMessages);
+    if (!r.ok) throw new Error(d.error || ('Erreur ' + r.status));
+    if (d.reply && $('speakOn').checked) speak(d.reply, slug);
+  } catch (err) {
+    $('chatStatus').className = 'status-line err'; $('chatStatus').textContent = err.message;
+  } finally {
+    p.chatBusy = false; chatBusy = false; $('chatSend').disabled = false;
+  }
+}
+$('chatSend').onclick = sendChat;
+$('chatMsg').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+$('newChat').onclick = async () => {
+  if (!selected || chatBusy) return;
+  stopVoice();
+  const r = await fetch(API + 'employees/' + selected + '/chat/', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf }, body: '{"new":true}' });
+  if (r.ok) { chatMessages = []; renderChat([]); }
+};
+
+/* voice: the device's own text-to-speech (free). Darija is read with a
+   standard Arabic voice, so it can sound a little formal. */
+const synth = window.speechSynthesis;
+let arVoice = null;
+function pickVoice() {
+  if (!synth) return;
+  const vs = synth.getVoices().filter(v => /^ar/i.test(v.lang));
+  const pref = ['ar-TN', 'ar-MA', 'ar-DZ', 'ar-SA', 'ar-AE', 'ar-EG'];
+  arVoice = pref.map(l => vs.find(v => v.lang.replace('_', '-').toLowerCase() === l.toLowerCase())).find(Boolean) || vs[0] || null;
+  $('voiceNote').textContent = !synth ? 'Cet appareil ne sait pas lire à voix haute.'
+    : (synth.getVoices().length && !arVoice ? "Aucune voix arabe sur cet appareil : installez une voix arabe dans les réglages (synthèse vocale) pour entendre les réponses." : '');
+}
+if (synth) { pickVoice(); synth.onvoiceschanged = pickVoice; }
+let voiceUnlocked = false;
+function unlockVoice() {   // iPhone only allows speech that starts from a tap
+  if (!synth || voiceUnlocked) return;
+  try { synth.speak(new SpeechSynthesisUtterance(' ')); voiceUnlocked = true; } catch (_) {}
+}
+function stopVoice() {
+  if (synth) synth.cancel();
+  for (const p of people.values()) p.talking = false;
+}
+function speak(text, slug) {
+  if (!synth) return;
+  stopVoice();
+  const clean = String(text).replace(/[*_#>`•\-]+/g, ' ');
+  // Long answers are split into sentences: some browsers stop after ~15 s.
+  const parts = clean.match(/[^.!?؟\n]+[.!?؟]?/g) || [clean];
+  const p = people.get(slug);
+  parts.forEach((part, i) => {
+    if (!part.trim()) return;
+    const u = new SpeechSynthesisUtterance(part.trim());
+    if (arVoice) u.voice = arVoice;
+    u.lang = arVoice ? arVoice.lang : 'ar-SA';
+    u.rate = 1.0;
+    if (i === 0) u.onstart = () => { if (p) p.talking = true; };
+    if (i === parts.length - 1) { u.onend = u.onerror = () => { if (p) p.talking = false; }; }
+    synth.speak(u);
+  });
+}
 
 $('saveJob').onclick = async () => {
   if (!selected) return;

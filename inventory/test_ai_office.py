@@ -325,3 +325,57 @@ class UntrackedCampaignTests(MarketingFiguresTests):
         d = self.compute({"C1": 400})           # Good camp is linked to an offer
         g = {r["name"]: r for r in d["campaigns"]}["Good camp"]
         self.assertEqual(g["verdict"], "stop")
+
+
+class ChatTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_superuser("owner2", "o2@example.com", "pw")
+        prof = getattr(self.owner, "profile", None)
+        if prof is not None and prof.must_change_password:
+            prof.must_change_password = False
+            prof.save()
+        self.emp = AIEmployee.objects.get(slug="finance")
+        AITask.objects.create(employee=self.emp, title="Bénéfice / pertes — Hier",
+                              status=AITask.DONE, period_from=DAY, period_to=DAY,
+                              result_data={"net_profit": 691.1}, result_text="ربحت 691")
+        self.client.force_login(self.owner)
+
+    def post(self, body):
+        return self.client.post("/ai-office/api/employees/finance/chat/", json.dumps(body),
+                                content_type="application/json")
+
+    def test_conversation_remembers_and_uses_last_report(self):
+        calls = []
+
+        def fake(system, messages, model, **kw):
+            calls.append((system, [dict(m) for m in messages]))
+            return f"جواب {len(messages)}"
+
+        with patch.object(ai_office, "_claude_chat", side_effect=fake):
+            r1 = self.post({"message": "علاش؟"}).json()
+            r2 = self.post({"message": "وشنوة نعمل؟"}).json()
+        self.assertEqual(r1["reply"], "جواب 1")
+        self.assertEqual(r2["reply"], "جواب 3")          # saw user, assistant, user
+        self.assertEqual([m["role"] for m in r2["messages"]],
+                         ["user", "assistant", "user", "assistant"])
+        system = calls[0][0]
+        self.assertIn("691.1", system)                    # last report figures
+        self.assertIn("VOIX HAUTE", system)
+        self.assertEqual(self.client.get("/ai-office/api/employees/finance/chat/").json()["messages"][-1]["text"], "جواب 3")
+
+    def test_new_conversation_starts_empty(self):
+        with patch.object(ai_office, "_claude_chat", return_value="ok"):
+            self.post({"message": "salam"})
+        self.assertEqual(self.post({"new": True}).json()["messages"], [])
+        self.assertEqual(self.client.get("/ai-office/api/employees/finance/chat/").json()["messages"], [])
+
+    def test_ai_failure_keeps_owner_message(self):
+        with patch.object(ai_office, "_claude_chat", return_value=None):
+            r = self.post({"message": "salam"})
+        self.assertEqual(r.status_code, 502)
+        self.assertEqual(r.json()["messages"][-1]["text"], "salam")
+
+    def test_empty_message_and_owner_only(self):
+        self.assertEqual(self.post({"message": "  "}).status_code, 400)
+        self.client.logout()
+        self.assertEqual(self.post({"message": "x"}).status_code, 302)

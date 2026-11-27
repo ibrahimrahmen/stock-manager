@@ -17,7 +17,7 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from .models import (
-    Ad, AIEmployee, AITask, Expense, Order, OrderItem, ProductUnit,
+    Ad, AIConversation, AIEmployee, AITask, Expense, Order, OrderItem, ProductUnit,
     ShippingOrder, StockMovement,
 )
 
@@ -571,3 +571,94 @@ def run_task(task):
     task.finished_at = timezone.now()
     task.save()
     return task
+
+
+# ---------------------------------------------------------------------------
+# Conversation (chat) with an employee
+# ---------------------------------------------------------------------------
+CHAT_MAX_TURNS = 20          # messages of history sent to Claude
+CHAT_MAX_CHARS = 2000        # per owner message
+
+
+def _claude_chat(system, messages, model, max_tokens=800, timeout=60, errbox=None):
+    """Multi-turn Claude call (the shared helper only sends one user turn).
+    messages = [{"role": "user"|"assistant", "content": str}]. Returns text or None."""
+    import urllib.request
+    from .views import _cfg
+    api_key = _cfg("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        if errbox is not None:
+            errbox.append("ANTHROPIC_API_KEY manquant")
+        return None
+    body = {"model": model, "max_tokens": max_tokens, "messages": messages,
+            "system": [{"type": "text", "text": system,
+                        "cache_control": {"type": "ephemeral"}}]}
+    req = urllib.request.Request("https://api.anthropic.com/v1/messages",
+                                 data=json.dumps(body).encode("utf-8"), method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("x-api-key", api_key)
+    req.add_header("anthropic-version", "2023-06-01")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            rd = json.loads(resp.read().decode("utf-8"))
+        return "".join(b.get("text", "") for b in rd.get("content") or []
+                       if b.get("type") == "text").strip() or None
+    except Exception as e:
+        msg = str(e)
+        try:
+            if hasattr(e, "read"):
+                msg += " | " + e.read().decode("utf-8", "replace")[:300]
+        except Exception:
+            pass
+        if errbox is not None:
+            errbox.append(msg[:400])
+        return None
+
+
+def _chat_system(employee):
+    last = employee.tasks.filter(status=AITask.DONE).exclude(result_data={}).first()
+    parts = [employee.job_description or "",
+             "\n--- MODE DISCUSSION ---",
+             "Le patron te parle directement, comme à un collègue. Tes réponses "
+             "seront LUES À VOIX HAUTE : réponds court (2 à 5 phrases), en darija "
+             "tunisienne parlée, sans listes, sans symboles, sans markdown. Dis les "
+             "montants en dinars arrondis (ex. 691 دينار).",
+             f"Nous sommes le {timezone.localdate()}."]
+    if last:
+        parts += [
+            f"Ton dernier rapport : « {last.title} » (du {last.period_from} au "
+            f"{last.period_to}). Chiffres calculés par le logiciel (les seuls que "
+            "tu peux citer) :",
+            json.dumps(last.result_data, ensure_ascii=False),
+            "Ce que tu as écrit au patron :", last.result_text or "(pas de texte)",
+            "Si le patron demande une autre période, dis-lui de te donner la tâche "
+            "dans l'onglet « Tâche » : tu n'as pas ces chiffres-là.",
+        ]
+    else:
+        parts.append("Tu n'as encore fait aucun rapport : propose au patron de te "
+                     "donner une tâche dans l'onglet « Tâche » pour avoir des chiffres.")
+    parts.append("Langue : darija TUNISIENNE uniquement (برشة، شنوة، علاش، البارح، "
+                 "اليوم، توة). Jamais de mots égyptiens (النهارده، إمبارح، دلوقتي، كده).")
+    return "\n".join(parts)
+
+
+def chat(employee, conversation, text):
+    """Add the owner's message, get the employee's reply, save both.
+    Returns (reply_text or None, error)."""
+    from .views import _cfg
+    text = (text or "").strip()[:CHAT_MAX_CHARS]
+    now = timezone.now().isoformat()
+    msgs = list(conversation.messages or [])
+    msgs.append({"role": "user", "text": text, "at": now})
+    history = [{"role": m["role"], "content": m["text"]}
+               for m in msgs[-CHAT_MAX_TURNS:]]
+    if history[0]["role"] != "user":       # the API needs to start with a user turn
+        history = history[1:]
+    errbox = []
+    model = (_cfg("AI_OFFICE_MODEL", "") or DEFAULT_MODEL).strip()
+    reply = _claude_chat(_chat_system(employee), history, model, errbox=errbox)
+    if reply:
+        msgs.append({"role": "assistant", "text": reply, "at": timezone.now().isoformat()})
+    conversation.messages = msgs
+    conversation.save()
+    return reply, ("; ".join(errbox) if not reply else "")
