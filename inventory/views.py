@@ -7100,6 +7100,65 @@ def api_price_agent_on_conv(request, pk):
 
 
 @login_required(login_url="/login/")
+def api_conversation_thread(request, pk):
+    """Full message thread of one conversation (Messenger-style inbox view) +
+    a FREE agent suggestion. Superuser only."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import MessengerConversation, SalesPage
+    c = MessengerConversation.objects.filter(pk=pk).first()
+    if not c:
+        return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
+    page = SalesPage.objects.filter(pk=3).first()
+    msgs = (c.messages or [])[-80:]
+    out = []
+    for m in msgs:
+        frm = m.get("from", "")
+        if m.get("greeting"):
+            flag = "auto"
+        elif m.get("faq"):
+            flag = "faq"
+        elif m.get("bot"):
+            flag = "bot"
+        elif m.get("carousel"):
+            flag = "carousel"
+        elif m.get("phonefix"):
+            flag = "bot"
+        elif frm == "page":
+            flag = "human"
+        elif frm == "system":
+            flag = "system"
+        else:
+            flag = ""
+        out.append({
+            "from": frm,
+            "text": m.get("text", "") or "",
+            "images": [u for u in (m.get("images") or []) if u and u != "local"][:4],
+            "flag": flag,
+            "ts": m.get("ts", "") or "",
+        })
+    try:
+        tr = _price_agent_trace(c, page, allow_vision=False, allow_photo_tiers=False)
+    except Exception:
+        tr = {}
+    return JsonResponse({
+        "status": "ok",
+        "id": c.id,
+        "name": (c.sender_name or c.sender_id or "?"),
+        "platform": c.platform or "messenger",
+        "ad": c.source_campaign_name or "",
+        "messages": out,
+        "agent": {
+            "router": tr.get("router_note", ""),
+            "suggest": tr.get("reply", ""),
+            "by": tr.get("resolved_by", ""),
+            "is_price_q": bool(tr.get("is_price_question")),
+            "has_photo": bool(tr.get("has_photo")),
+        },
+    })
+
+
+@login_required(login_url="/login/")
 def api_debug_ai_health(request):
     """Tiny, isolated Claude health check — one trivial generation, NO catalog
     context, NO images — so it tells you cleanly whether your Anthropic key +
