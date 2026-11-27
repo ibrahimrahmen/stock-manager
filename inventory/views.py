@@ -1428,6 +1428,8 @@ _PRICE_QUESTION_KWS = (
     "bgadeh", "bgadech", "bgadach", "bgdh", "bgdach", "bgidach", "bgidech",
     "9added", "9added", "bech9adeh", "ch9adeh", "ch9adech",
     "prix", "price", "thaman", "combien", "chhal", "ch7al", "che7al",
+    "9addeh", "9addech", "som ", "somme", "s3er", "se3er", "s3ar", "sawm",
+    "thamen", "تمن", "سوم",
     "بقداش", "قداش", "بقداه", "قداه", "سعر", "الثمن", "بكم", "كم",
 )
 
@@ -7137,18 +7139,27 @@ def _classify_intent(conv):
     intent. Returns (key, label). Only 'price' acts today; the rest are shown on
     the wall and routed as their agents get built."""
     import re as _re
-    text = ""
+    # Gather the customer's most recent BURST (contiguous run of their messages),
+    # skipping any trailing replies of ours — customers split one question across
+    # several bubbles ("9addeh som" then "Xl"), so classify them together.
+    parts = []
     last_photo = False
+    seen_user = False
     for m in reversed(conv.messages or []):
-        if m.get("from") == "user":
+        frm = m.get("from", "")
+        if frm == "user":
+            seen_user = True
             _imgs = [u for u in (m.get("images") or []) if u and u != "local"]
-            if (m.get("text") or "").strip():
-                text = m["text"]
-                last_photo = bool(_imgs)
-                break
             if _imgs:
                 last_photo = True
-                break
+            if (m.get("text") or "").strip():
+                parts.append(m["text"])
+        elif frm == "page":
+            if seen_user:
+                break          # stop at the reply before the customer's burst
+            continue           # skip our trailing reply, keep looking back
+        # system notes: skip
+    text = " ".join(reversed(parts))
     low = (text or "").lower()
 
     def _has(kws):
