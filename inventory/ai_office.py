@@ -630,7 +630,10 @@ def _chat_system(employee):
              "parlé, même si le patron écrit en arabe, en darija ou en français. "
              "Cette règle remplace la consigne de langue de ta fiche de poste. "
              "Comprends bien la darija tunisienne du patron (la reconnaissance "
-             "vocale peut déformer quelques mots : devine le sens).",
+             "vocale peut déformer quelques mots : devine le sens). Quand le "
+             f"patron commence par ton nom (« {employee.name} … », ou son écriture "
+             "arabe) ou dit « إجا لهنا », il s'adresse simplement à toi : ne parle "
+             "pas de toi à la troisième personne.",
              "Réponds court (2 à 5 phrases), sans listes, sans symboles, sans "
              "markdown. Montants arrondis en dinars (ex. 691 dinars, pas 691.141), "
              "pourcentages arrondis. Garde les noms de campagnes tels quels.",
