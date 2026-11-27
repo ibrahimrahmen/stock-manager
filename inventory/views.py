@@ -1348,7 +1348,13 @@ MESSENGER_FAQ_REPLIES = [
       "tab3athli photo", "ab3athli photo", "sourti", "swira real",
       "nchouf el produit", "nchouf el mntej", "nchuf quality",
       "nchouf quality", "vd réel", "video réelle", "video reelle",
-      "réel", "reel produit", "reel lel produit"),
+      "réel", "reel produit", "reel lel produit",
+      # "Can I see / inspect the item before I buy / take / pay?"
+      "nchouf lhweyj", "nchouf el 7wayej", "nchouf el 7weyj", "nchouf lebsa",
+      "9bal ma nchri", "9bal ma nechri", "9bal ma nekhou", "9bal ma nekhoud",
+      "9bal ma n5alles", "9bal ma nkhalles", "9bal manekhou", "9bal ma ne5ou",
+      "nchoufou 9bal", "nchoufhom 9bal", "nchouf 9bal ma", "voir avant",
+      "avant d'acheter", "avant de payer", "nekhdhem jaw", "nchouf jaw"),
      "El quality mte3na top khouya 🤍 w 3andek el 7a9 tetfa9ed el colis "
      "9bal ma tkhalles, ken ma3jbekch ma tekhdhouch."),
 ]
@@ -7103,6 +7109,13 @@ def _classify_intent(conv):
         return ("availability", "📦 dispo")
     if _has(_INTENT_DELIVERY):
         return ("delivery", "🚚 livraison")
+    # Known FAQ (inspect before paying, where are you, quality, thanks...) —
+    # conv=None so the price branch is skipped (cheap, keyword-only).
+    try:
+        if _faq_answer(low, None):
+            return ("faq", "🤖 FAQ")
+    except Exception:
+        pass
     if has_phone or _has(_INTENT_ORDER):
         return ("order", "📝 commande")
     if _has(_INTENT_PRODUCT):
@@ -7169,6 +7182,17 @@ def api_conversations_live(request):
                 "flag": _fl,
             })
         intk, intlbl = _classify_intent(c)
+        faq_reply = ""
+        if intk == "faq":
+            _ct = ""
+            for _mm in reversed(c.messages or []):
+                if _mm.get("from") == "user" and (_mm.get("text") or "").strip():
+                    _ct = _mm["text"]
+                    break
+            try:
+                faq_reply = _faq_answer(_ct, None) or ""
+            except Exception:
+                faq_reply = ""
         try:
             tr = _price_agent_trace(c, page, allow_vision=False,
                                     allow_photo_tiers=False)
@@ -7192,6 +7216,7 @@ def api_conversations_live(request):
             "is_price_q": bool(tr.get("is_price_question")),
             "intent": intk,
             "intent_label": intlbl,
+            "faq_reply": faq_reply,
         })
     return JsonResponse({"status": "ok", "count": len(rows), "rows": rows,
                          "hours": hours})

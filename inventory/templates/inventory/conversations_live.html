@@ -37,6 +37,7 @@
   .i-exchange{background:var(--amberbg);color:var(--amber);}
   .i-delivery{background:#e6eff5;color:#2b6a86;}
   .i-order{background:var(--graybg);color:var(--ink);}
+  .i-faq{background:#eaf3de;color:#3b6d11;}
   .i-greeting,.i-other{background:var(--graybg);color:var(--muted);}
   .mins{margin-left:auto;font-size:11px;color:var(--muted);}
   .ad{font-size:11px;color:var(--muted);padding:0 12px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -86,9 +87,10 @@ function bubbles(msgs){
 const ACTION={price:'🏷️ agent prix',availability:'📦 agent dispo',
   exchange:'🔁 agent échange (bientôt)',delivery:'🚚 réponse délai (bientôt)',
   order:'📝 capture commande',product:'🖼️ carrousel produits (bientôt)',
-  greeting:'👋 accueil',other:'💬 un humain'};
+  faq:'🤖 agent FAQ',greeting:'👋 accueil',other:'💬 un humain'};
 function footer(r){
   if(r.is_price_q) return '<div class="sg '+suggClass(r.suggest_by)+'">🤖 '+esc(r.suggest)+'</div>';
+  if(r.intent==='faq' && r.faq_reply) return '<div class="sg s-ok">🤖 '+esc(r.faq_reply)+'</div>';
   return '<div class="sg s-rt">🧭 décide → '+esc(ACTION[r.intent]||ACTION.other)+'</div>';
 }
 function card(r){
