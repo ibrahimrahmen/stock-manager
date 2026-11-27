@@ -227,7 +227,16 @@ def _finance_prompt(task, data):
     ]
     if task.instruction:
         parts.append("QUESTION DU PATRON : " + task.instruction)
-    parts.append("Écris ton rapport maintenant (max ~200 mots).")
+    parts.append(
+        f"La période analysée s'appelle « {task.title} » "
+        f"(du {task.period_from} au {task.period_to}) ; nous sommes le "
+        f"{timezone.localdate()}. Nomme-la correctement (ex. البارح pour hier, "
+        "ce n'est pas اليوم).")
+    parts.append(
+        "Langue : darija TUNISIENNE uniquement (برشة، شنوة، علاش، البارح، اليوم، "
+        "توة). Jamais de mots égyptiens (النهارده، إمبارح، دلوقتي، كده).")
+    parts.append("Écris ton rapport maintenant (max ~200 mots) et termine-le "
+                 "complètement, avec les actions de la semaine.")
     return "\n\n".join(parts)
 
 
@@ -249,7 +258,7 @@ def run_task(task):
         errbox = []
         model = (_cfg("AI_OFFICE_MODEL", "") or DEFAULT_MODEL).strip()
         text = _claude_generate(
-            _finance_prompt(task, data), max_tokens=1200, temperature=None,
+            _finance_prompt(task, data), max_tokens=3000, temperature=None,
             system=task.employee.job_description or None, model=model,
             errbox=errbox, timeout=60,
         )
