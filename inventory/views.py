@@ -4124,7 +4124,7 @@ def _vision_model():
             or os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")).strip()
 
 
-def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None, image_urls=None, local_images=None, max_images=3, errbox=None, system=None, model=None):
+def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=None, image_urls=None, local_images=None, max_images=3, errbox=None, system=None, model=None, timeout=15):
     """Call the Anthropic Claude API. Returns response text or None on failure.
     Replaces Gemini for DM order extraction and transliteration. Uses
     ANTHROPIC_API_KEY. On rate limit (429) it bails out immediately so a worker
@@ -4235,9 +4235,13 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
     body = {
         "model": model,
         "max_tokens": max_tokens,
-        "temperature": temperature,
         "messages": [{"role": "user", "content": msg_content}],
     }
+    # temperature=None omits the parameter: the newest Claude models reject it
+    # ("temperature is deprecated for this model"). Existing callers pass a
+    # number and keep sending it unchanged.
+    if temperature is not None:
+        body["temperature"] = temperature
     # A proper SYSTEM role makes the model treat the persona as WHO IT IS, not as
     # a user request it can evaluate and refuse. Sending the "act as a Tunisian
     # boutique" instructions inside the user turn is what let the model break
@@ -4262,7 +4266,7 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
             # Enable prompt caching + the 1-hour extended cache TTL.
             req.add_header("anthropic-beta",
                            "prompt-caching-2024-07-31,extended-cache-ttl-2025-04-11")
-            with _ureq.urlopen(req, timeout=15) as resp:
+            with _ureq.urlopen(req, timeout=timeout) as resp:
                 rd = _json.loads(resp.read().decode("utf-8"))
             blocks = rd.get("content") or []
             txt = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
@@ -4285,8 +4289,11 @@ def _claude_generate(prompt, max_tokens=1024, temperature=0.0, cached_prefix=Non
             if "429" in es:
                 break
             # Retry only transient server errors, briefly.
-            if ("529" in es or "503" in es or "500" in es
-                    or "timed out" in es.lower() or "502" in es) and retry < 2:
+            # (A timeout is not retried for long calls: 3 x a long timeout
+            # would outlive the gunicorn worker timeout.)
+            _timed_out = "timed out" in es.lower()
+            if ("529" in es or "503" in es or "500" in es or "502" in es
+                    or (_timed_out and timeout <= 15)) and retry < 2:
                 import time as _t; _t.sleep(1 + retry)
                 continue
             break  # Any other Claude error (e.g. credits) → fall back.
@@ -4321,7 +4328,7 @@ def _gemini_generate_legacy(prompt, max_tokens=1024, temperature=0.0, model="gem
         return None
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
+        "generationConfig": {"temperature": 0.0 if temperature is None else temperature, "maxOutputTokens": max_tokens},
     }
     base_url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"

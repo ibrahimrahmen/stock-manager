@@ -249,9 +249,9 @@ def run_task(task):
         errbox = []
         model = (_cfg("AI_OFFICE_MODEL", "") or DEFAULT_MODEL).strip()
         text = _claude_generate(
-            _finance_prompt(task, data), max_tokens=1200, temperature=0.2,
+            _finance_prompt(task, data), max_tokens=1200, temperature=None,
             system=task.employee.job_description or None, model=model,
-            errbox=errbox,
+            errbox=errbox, timeout=60,
         )
         if text:
             task.result_text = text.strip()

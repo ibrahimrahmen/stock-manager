@@ -207,3 +207,36 @@ class OfficeApiTests(TestCase):
         self.assertEqual(r2["status"], "skipped")
         self.assertEqual(gen.call_count, 1)
         self.assertEqual(AITask.objects.filter(triggered_by="cron").count(), 1)
+
+
+class ClaudeTemperatureTests(TestCase):
+    """The newest Claude models reject `temperature`; None must omit it."""
+
+    def _sent_body(self, **kw):
+        sent = {}
+
+        class _Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b'{"content":[{"type":"text","text":"ok"}]}'
+
+        def fake_urlopen(req, timeout=None):
+            sent["body"] = json.loads(req.data.decode("utf-8"))
+            sent["timeout"] = timeout
+            return _Resp()
+
+        from . import views
+        with patch.object(views, "_cfg", side_effect=lambda k, d="": "test-key" if k == "ANTHROPIC_API_KEY" else d), \
+                patch("urllib.request.urlopen", fake_urlopen):
+            self.assertEqual(views._claude_generate("hi", **kw), "ok")
+        return sent
+
+    def test_none_omits_temperature(self):
+        sent = self._sent_body(temperature=None, timeout=60)
+        self.assertNotIn("temperature", sent["body"])
+        self.assertEqual(sent["timeout"], 60)
+
+    def test_existing_callers_unchanged(self):
+        sent = self._sent_body()
+        self.assertEqual(sent["body"]["temperature"], 0.0)
+        self.assertEqual(sent["timeout"], 15)
