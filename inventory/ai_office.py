@@ -580,7 +580,7 @@ CHAT_MAX_TURNS = 20          # messages of history sent to Claude
 CHAT_MAX_CHARS = 2000        # per owner message
 
 
-def _claude_chat(system, messages, model, max_tokens=800, timeout=60, errbox=None):
+def _claude_chat(system, messages, model, max_tokens=4000, timeout=60, errbox=None):
     """Multi-turn Claude call (the shared helper only sends one user turn).
     messages = [{"role": "user"|"assistant", "content": str}]. Returns text or None."""
     import urllib.request
@@ -601,8 +601,13 @@ def _claude_chat(system, messages, model, max_tokens=800, timeout=60, errbox=Non
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             rd = json.loads(resp.read().decode("utf-8"))
-        return "".join(b.get("text", "") for b in rd.get("content") or []
-                       if b.get("type") == "text").strip() or None
+        text = "".join(b.get("text", "") for b in rd.get("content") or []
+                       if b.get("type") == "text").strip()
+        # max_tokens also covers the model's own reasoning on newer models, so
+        # an answer can be cut: say so instead of ending mid-word silently.
+        if text and rd.get("stop_reason") == "max_tokens":
+            text += " …"
+        return text or None
     except Exception as e:
         msg = str(e)
         try:
