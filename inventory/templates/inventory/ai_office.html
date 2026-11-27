@@ -138,7 +138,7 @@
 </header>
 
 <div id="voiceCap"></div>
-<div class="hint" id="hint">Cliquez sur un employé pour lui donner une tâche. Glissez pour tourner, molette pour zoomer.</div>
+<div class="hint" id="hint">Cliquez sur un employé pour lui donner une tâche. Glissez pour tourner, molette pour zoomer. <span style="opacity:.5">· v7</span></div>
 
 <aside id="panel" aria-hidden="true">
   <div class="p-head">
@@ -829,7 +829,9 @@ function stopVoice() {
    (or immediately when nothing will be spoken). */
 let speak = function (text, slug) {
   if (!synth) return Promise.resolve();
-  stopVoice();
+  const hadSpeech = synth.speaking || synth.pending;
+  if (hadSpeech) synth.cancel();
+  for (const o of people.values()) o.talking = false;
   const clean = String(text).replace(/[*_#>`•\-]+/g, ' ');
   // Long answers are split into sentences: some browsers stop after ~15 s.
   const parts = clean.match(/[^.!?؟\n]+[.!?؟]?/g) || [clean];
@@ -842,21 +844,33 @@ let speak = function (text, slug) {
   const chunks = parts.map(x => x.trim()).filter(Boolean);
   if (!chunks.length) return Promise.resolve();
   return new Promise(resolve => {
-    let left = chunks.length, done = false;
+    let left = chunks.length, done = false, started = false;
     const finish = () => { if (!done) { done = true; if (p) p.talking = false; resolve(); } };
     // safety net: some phones never fire "end" (e.g. speech cancelled by the OS)
-    const guard = setTimeout(finish, 15000 + chunks.join(' ').length * 120);
-    chunks.forEach((part, i) => {
-      const u = new SpeechSynthesisUtterance(part);
-      u.voice = voice;
-      u.lang = voice.lang;
-      u.rate = 1.0;
-      u.onstart = () => { if (p) p.talking = true; };
-      u.onend = u.onerror = () => { if (--left <= 0) { clearTimeout(guard); finish(); } };
-      synth.speak(u);
-    });
-    // Chrome on Android sometimes stays paused after a cancel(): nudge it.
-    if (synth.paused) synth.resume();
+    const guard = setTimeout(finish, 20000 + chunks.join(' ').length * 120);
+    const go = () => {
+      chunks.forEach(part => {
+        const u = new SpeechSynthesisUtterance(part);
+        u.voice = voice;
+        u.lang = voice.lang;
+        u.rate = 1.0;
+        u.onstart = () => { started = true; if (p) p.talking = true; };
+        u.onend = () => { if (--left <= 0) { clearTimeout(guard); finish(); } };
+        u.onerror = ev => {
+          // Show WHY the voice failed (not-allowed, interrupted, synthesis-failed…)
+          if (ev.error && ev.error !== 'interrupted' && ev.error !== 'canceled') {
+            $('chatStatus').className = 'status-line err';
+            $('chatStatus').textContent = 'Voix : erreur « ' + ev.error + ' » (' + voice.name + ')';
+          }
+          if (--left <= 0) { clearTimeout(guard); finish(); }
+        };
+        synth.speak(u);
+      });
+      if (synth.paused) synth.resume();   // Chrome Android can stay paused after a cancel
+    };
+    // Android: speaking right after cancel() / stopping the mic cancels the new
+    // speech too. Give the phone a moment to release the audio first.
+    setTimeout(go, 600);
   });
 };
 
