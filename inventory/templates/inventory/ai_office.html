@@ -89,6 +89,7 @@
     .vd.watch{background:rgba(232,160,32,.15);color:var(--amber)}
     .vd.stop{background:rgba(224,80,80,.15);color:var(--red)}
     .vd.none{background:var(--surface);color:var(--muted)}
+    .vd.untracked{background:rgba(80,144,224,.15);color:var(--blue)}
     .hist{list-style:none}
     .hist li{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer}
     .hist li:hover{color:var(--green)}
@@ -565,7 +566,7 @@ function renderResult(t, quiet) {
 }
 
 
-const VERDICT = { scale: 'Augmenter', watch: 'Surveiller', stop: 'Arrêter' };
+const VERDICT = { scale: 'Augmenter', watch: 'Surveiller', stop: 'Arrêter', untracked: 'Lien manquant' };
 function renderMarketing(t, d, quiet) {
   const T = d.totals, prev = d.previous_period;
   const camps = d.campaigns.map(c => `
@@ -591,6 +592,7 @@ function renderMarketing(t, d, quiet) {
       <div class="cell"><div class="lbl">À augmenter / surveiller</div><div class="val"><span class="pos">${T.scale}</span> / <span style="color:var(--amber)">${T.watch}</span></div></div>
       <div class="cell"><div class="lbl">À arrêter</div><div class="val neg">${T.stop}</div></div>
     </div>
+    ${T.untracked ? `<div class="note" style="color:var(--blue)">${T.untracked} campagne(s) sans lien (${money(T.untracked_spend)} de pub) : leurs commandes ne sont pas visibles. Liez-les à leur offre dans « Ads & offres » pour que Nour puisse les juger.</div>` : ''}
     ${t.result_text ? `<div class="report">${esc(t.result_text)}</div>` : ''}
     ${t.error ? `<div class="note" style="color:var(--amber)">${esc(t.error)}</div>` : ''}
     <div class="section-title">Campagnes</div>${camps}

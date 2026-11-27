@@ -312,3 +312,16 @@ class MarketingFiguresTests(TestCase):
         d = self.compute({"C2": 10})
         b = {r["name"]: r for r in d["campaigns"]}["Bad camp"]
         self.assertEqual(b["verdict"], "watch")
+
+
+class UntrackedCampaignTests(MarketingFiguresTests):
+    def test_unlinked_campaign_with_no_orders_is_never_stop(self):
+        d = self.compute({"C2": 400})           # Bad camp: no link, no order
+        b = {r["name"]: r for r in d["campaigns"]}["Bad camp"]
+        self.assertEqual(b["verdict"], "untracked")
+        self.assertEqual(d["totals"]["untracked_spend"], 400.0)
+
+    def test_linked_campaign_with_no_orders_can_be_stop(self):
+        d = self.compute({"C1": 400})           # Good camp is linked to an offer
+        g = {r["name"]: r for r in d["campaigns"]}["Good camp"]
+        self.assertEqual(g["verdict"], "stop")

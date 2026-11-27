@@ -202,8 +202,13 @@ MIN_FINISHED_FOR_RATE = 4             # finished orders needed to trust a return
 
 
 def _verdict(c):
-    """scale / watch / stop + the reason, from the campaign figures."""
+    """scale / watch / stop / untracked + the reason, from the campaign figures."""
     spend = Decimal(str(c["spend"]))
+    if c["leads"] == 0 and not c["tracked"]:
+        # We simply cannot see this campaign's orders (e.g. Converty orders carry
+        # no campaign name and the ad has no offer link). Never call it a loser.
+        return "untracked", ("aucune commande rattachée : liez cette pub à son "
+                             "offre dans « Ads & offres » pour la juger")
     rr = c["return_rate_pct"]
     rr_known = c["finished"] >= MIN_FINISHED_FOR_RATE
     if spend < MIN_SPEND_TO_JUDGE and c["confirmed"] < 3:
@@ -362,6 +367,10 @@ def compute_marketing(date_from, date_to, with_previous=True):
                 low_stock.append({"product": p.name, "in_stock": n})
         row = {
             "name": c["name"], "meta_status": c["status"] or "",
+            # Can we see this campaign's orders at all? Yes if it is the Barats
+            # carousel pool, or the ad is linked to an offer, or it already got
+            # at least one order through the captured conversation campaign.
+            "tracked": key == barats_key or bool(key_products.get(key)) or c["leads"] > 0,
             "spend": _f(c["spend"]), "leads": c["leads"],
             "not_shipped": c["not_shipped"], "confirmed": confirmed,
             "pending": c["pending"], "delivered": c["delivered"],
@@ -396,6 +405,9 @@ def compute_marketing(date_from, date_to, with_previous=True):
             "scale": sum(1 for r in paid if r["verdict"] == "scale"),
             "watch": sum(1 for r in paid if r["verdict"] == "watch"),
             "stop": sum(1 for r in paid if r["verdict"] == "stop"),
+            "untracked": sum(1 for r in paid if r["verdict"] == "untracked"),
+            "untracked_spend": round(sum(r["spend"] for r in paid
+                                         if r["verdict"] == "untracked"), 3),
         },
         "rules": {
             "min_spend_to_judge": _f(MIN_SPEND_TO_JUDGE),
@@ -502,8 +514,11 @@ def _marketing_prompt(task, data):
         "retournées) ; est_profit = (ventes nettes − prix d'achat) des commandes "
         "non retournées − pub − 1 DT par retour. Les commandes 'pending' peuvent "
         "encore revenir en retour. verdict = décision calculée par des règles fixes "
-        "(scale = augmenter, watch = surveiller, stop = arrêter) avec sa raison : "
-        "explique-la, ne la change pas.",
+        "(scale = augmenter, watch = surveiller, stop = arrêter, untracked = on ne "
+        "voit pas ses commandes) avec sa raison : explique-la, ne la change pas. "
+        "Une campagne 'untracked' n'est PAS une mauvaise pub : dis au patron de la "
+        "lier à son offre dans la page « Ads & offres », ne recommande jamais de "
+        "l'arrêter.",
         "CHIFFRES (JSON):",
         json.dumps(data, ensure_ascii=False, indent=1),
     ]
