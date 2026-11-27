@@ -47,6 +47,9 @@
       background:rgba(14,14,12,.9);border:1px solid var(--border);border-radius:14px;padding:10px 16px;font:15px/1.6 'Noto Kufi Arabic','DM Sans',sans-serif;
       text-align:center;display:none}
     #voiceCap small{display:block;color:var(--muted);font:12px 'DM Sans'}
+    #stopTalk{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:12;display:none;
+      background:var(--red);color:#fff;border:0;border-radius:999px;padding:12px 22px;font:700 15px 'DM Sans';
+      box-shadow:0 4px 16px rgba(0,0,0,.35);cursor:pointer}
 
     /* side panel */
     #panel{position:fixed;top:0;right:0;bottom:0;width:440px;max-width:100%;z-index:10;background:var(--surface);
@@ -138,7 +141,8 @@
 </header>
 
 <div id="voiceCap"></div>
-<div class="hint" id="hint">Cliquez sur un employé pour lui donner une tâche. Glissez pour tourner, molette pour zoomer. <span style="opacity:.5">· v9</span></div>
+<button id="stopTalk">⏹ Stop</button>
+<div class="hint" id="hint">Cliquez sur un employé pour lui donner une tâche. Glissez pour tourner, molette pour zoomer. <span style="opacity:.5">· v10</span></div>
 
 <aside id="panel" aria-hidden="true">
   <div class="p-head">
@@ -568,6 +572,7 @@ let downAt = null;
 renderer.domElement.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; });
 renderer.domElement.addEventListener('pointerup', e => {
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6) return;
+  if (activeFinish) { stopVoice(); return; }   // a tap while someone talks = "stop talking"
   const r = renderer.domElement.getBoundingClientRect();
   mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(mouse, camera);
@@ -773,6 +778,10 @@ async function sendChat() {
 }
 $('chatSend').onclick = sendChat;
 $('chatMsg').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+// Interrupt: typing (or Wispr Flow dictating), the ⏹ button, Esc, tapping the office.
+$('chatMsg').addEventListener('input', () => { if (activeFinish) stopVoice(); });
+$('stopTalk').onclick = () => stopVoice();
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && activeFinish) stopVoice(); });
 $('newChat').onclick = async () => {
   if (!selected || chatBusy) return;
   stopVoice();
@@ -823,9 +832,11 @@ function unlockVoice() {   // iPhone only allows speech that starts from a tap
   if (!synth || voiceUnlocked) return;
   try { synth.speak(new SpeechSynthesisUtterance(' ')); voiceUnlocked = true; } catch (_) {}
 }
+let activeFinish = null;                 // ends the answer being spoken right now
 function stopVoice() {
   if (synth) synth.cancel();
   for (const p of people.values()) p.talking = false;
+  if (activeFinish) { const f = activeFinish; activeFinish = null; f(); }
 }
 /* Returns a Promise that resolves when the whole answer has been spoken
    (or immediately when nothing will be spoken). */
@@ -847,7 +858,15 @@ let speak = function (text, slug) {
   if (!chunks.length) return Promise.resolve();
   return new Promise(resolve => {
     let left = chunks.length, done = false, started = false;
-    const finish = () => { if (!done) { done = true; if (p) p.talking = false; resolve(); } };
+    const finish = () => {
+      if (done) return;
+      done = true; if (p) p.talking = false;
+      if (activeFinish === finish) activeFinish = null;
+      $('stopTalk').style.display = 'none';
+      resolve();
+    };
+    activeFinish = finish;
+    $('stopTalk').style.display = 'block';
     // safety net: some phones never fire "end" (e.g. speech cancelled by the OS)
     const guard = setTimeout(finish, 20000 + chunks.join(' ').length * 120);
     let current = voice, retried = false, batch = 0;
@@ -985,11 +1004,64 @@ speak = function (text, slug) {
   // beep) takes the audio over and cuts the voice before it even starts.
   micMuted = true;
   if (voiceOn && rec) { try { rec.abort(); } catch (_) {} }
+  let barged = false;
+  if (voiceOn) startBargeIn(() => { barged = true; stopVoice(); });
   return _speak(text, slug).then(() => {
+    stopBargeIn();
     micMuted = false;
-    if (voiceOn) setTimeout(startRec, 400);
+    if (voiceOn) {
+      if (barged) caption('…', 'Je vous écoute');
+      setTimeout(startRec, barged ? 120 : 400);   // after an interruption, listen at once
+    }
   });
 };
+
+/* Barge-in: while an employee speaks, watch the mic level. Their own voice
+   coming back through the speaker is measured during the first 0.7 s and used
+   as the baseline; the owner talking clearly over it interrupts them.
+   (Works best with earphones. Recognition itself is paused meanwhile.) */
+let vad = null;
+async function startBargeIn(onBarge) {
+  stopBargeIn();
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  const state = { stopped: false };
+  vad = state;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(
+      { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } });
+    if (state.stopped) { stream.getTracks().forEach(t => t.stop()); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    const an = ctx.createAnalyser(); an.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(an);
+    const buf = new Float32Array(an.fftSize);
+    state.close = () => { stream.getTracks().forEach(t => t.stop()); ctx.close().catch(() => {}); };
+    const t0 = performance.now();
+    let base = 0, loudSince = 0;
+    const tick = () => {
+      if (state.stopped) return;
+      an.getFloatTimeDomainData(buf);
+      let sum = 0; for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      const rms = Math.sqrt(sum / buf.length), now = performance.now();
+      if (now - t0 < 700) base = Math.max(base, rms);      // echo of their own voice
+      else {
+        const thr = Math.max(0.035, base * 2.2);
+        if (rms > thr) {
+          if (!loudSince) loudSince = now;
+          if (now - loudSince > 220) { stopBargeIn(); onBarge(); return; }
+        } else loudSince = 0;
+      }
+      setTimeout(tick, 40);
+    };
+    tick();
+  } catch (_) { /* no mic access: tap / type / ⏹ still interrupt */ }
+}
+function stopBargeIn() {
+  if (!vad) return;
+  vad.stopped = true;
+  if (vad.close) vad.close();
+  vad = null;
+}
 
 $('saveJob').onclick = async () => {
   if (!selected) return;
