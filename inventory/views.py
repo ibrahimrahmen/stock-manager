@@ -7158,14 +7158,28 @@ _INTENT_GREET = ("slm", "salam", "aslema", "asslema", "3aslema", "3asslema",
                  "slem", "selem", "sbhkom")
 
 
-def _classify_intent(conv):
-    """FREE keyword router: classify the latest customer message into an action
-    intent. Returns (key, label). Only 'price' acts today; the rest are shown on
-    the wall and routed as their agents get built."""
+def _recent_customer_text(conv, limit=6):
+    """The last `limit` customer messages (text) joined, newest-last. Used to
+    build CONTEXT when the latest burst alone isn't understood."""
+    parts = []
+    photo = False
+    n = 0
+    for m in reversed(conv.messages or []):
+        if m.get("from") == "user":
+            if [u for u in (m.get("images") or []) if u and u != "local"]:
+                photo = True
+            t = (m.get("text") or "").strip()
+            if t:
+                parts.append(t)
+                n += 1
+            if n >= limit:
+                break
+    return (" ".join(reversed(parts)), photo)
+
+
+def _intent_from_text(low, has_photo, conv, allow_greeting=True):
+    """Keyword classification of one text blob. Returns (key, label)."""
     import re as _re
-    # Classify the customer's most recent burst (split across bubbles).
-    text, last_photo = _customer_burst_text(conv)
-    low = (text or "").lower()
 
     def _has(kws):
         return any(k in low for k in kws)
@@ -7174,7 +7188,7 @@ def _classify_intent(conv):
 
     if _has(_INTENT_EXCHANGE):
         return ("exchange", "🔁 échange")
-    if last_photo:
+    if has_photo:
         return ("price", "🏷️ prix")
     if any(k in low for k in _PRICE_QUESTION_KWS):
         return ("price", "🏷️ prix")
@@ -7193,8 +7207,28 @@ def _classify_intent(conv):
         return ("order", "📝 commande")
     if _has(_INTENT_PRODUCT):
         return ("product", "🖼️ produit")
-    if _has(_INTENT_GREET) and len(low) <= 16:
+    if allow_greeting and _has(_INTENT_GREET) and len(low) <= 16:
         return ("greeting", "👋 bonjour")
+    return ("other", "💬 autre")
+
+
+def _classify_intent(conv):
+    """FREE keyword router. Returns (key, label). Pass 1 reads the customer's
+    latest burst. If that isn't understood ('other'), it WIDENS the window —
+    reading the messages before it for context — before giving up to a human."""
+    text, last_photo = _customer_burst_text(conv)
+    key, label = _intent_from_text((text or "").lower(), last_photo, conv)
+    if key != "other":
+        return (key, label)
+    # Not understood yet → read earlier messages (the one before, then the one
+    # before that...) to build context before handing off to a human.
+    wtext, wphoto = _recent_customer_text(conv, 6)
+    wlow = (wtext or "").lower()
+    if wlow and wlow != (text or "").lower():
+        key2, label2 = _intent_from_text(wlow, (wphoto or last_photo), conv,
+                                         allow_greeting=False)
+        if key2 != "other":
+            return (key2, label2)
     return ("other", "💬 autre")
 
 
