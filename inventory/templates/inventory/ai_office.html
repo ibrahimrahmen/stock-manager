@@ -138,7 +138,7 @@
 </header>
 
 <div id="voiceCap"></div>
-<div class="hint" id="hint">Cliquez sur un employé pour lui donner une tâche. Glissez pour tourner, molette pour zoomer. <span style="opacity:.5">· v8</span></div>
+<div class="hint" id="hint">Cliquez sur un employé pour lui donner une tâche. Glissez pour tourner, molette pour zoomer. <span style="opacity:.5">· v9</span></div>
 
 <aside id="panel" aria-hidden="true">
   <div class="p-head">
@@ -793,10 +793,14 @@ const NO_VOICE_MSG = "Aucune voix anglaise sur cet appareil, donc pas de lecture
 function pickVoice() {
   if (!synth) return;
   const all = synth.getVoices();
+  // Built-in (local) voices first: Chrome's network "Google" voices often fail
+  // silently. Edge's online "Natural" voices are reliable, so they rank well.
   const rank = v => {
     const l = v.lang.replace('_', '-').toLowerCase();
-    return (l === 'en-us' ? 0 : l === 'en-gb' ? 1 : 3)
-      - (/natural|online|neural|google/i.test(v.name) ? 2 : 0);
+    let r = l === 'en-us' ? 0 : l === 'en-gb' ? 1 : 3;
+    if (/natural/i.test(v.name)) r -= 2;
+    else if (!v.localService) r += 10;
+    return r;
   };
   enVoices = all.filter(v => /^en/i.test(v.lang)).sort((a, b) => rank(a) - rank(b));
   $('voiceNote').textContent = !synth ? 'Cet appareil ne sait pas lire à voix haute.'
@@ -846,15 +850,18 @@ let speak = function (text, slug) {
     const finish = () => { if (!done) { done = true; if (p) p.talking = false; resolve(); } };
     // safety net: some phones never fire "end" (e.g. speech cancelled by the OS)
     const guard = setTimeout(finish, 20000 + chunks.join(' ').length * 120);
+    let current = voice, retried = false, batch = 0;
     const go = () => {
+      const my = ++batch;                 // events of a cancelled attempt are ignored
       chunks.forEach(part => {
         const u = new SpeechSynthesisUtterance(part);
-        u.voice = voice;
-        u.lang = voice.lang;
+        u.voice = current;
+        u.lang = current.lang;
         u.rate = 1.0;
-        u.onstart = () => { started = true; if (p) p.talking = true; };
-        u.onend = () => { if (--left <= 0) { clearTimeout(guard); finish(); } };
+        u.onstart = () => { if (my !== batch) return; started = true; if (p) p.talking = true; };
+        u.onend = () => { if (my !== batch) return; if (--left <= 0) { clearTimeout(guard); finish(); } };
         u.onerror = ev => {
+          if (my !== batch) return;
           // Show WHY the voice failed (not-allowed, interrupted, synthesis-failed…)
           if (ev.error && ev.error !== 'interrupted' && ev.error !== 'canceled') {
             $('chatStatus').className = 'status-line err';
@@ -865,6 +872,15 @@ let speak = function (text, slug) {
         synth.speak(u);
       });
       if (synth.paused) synth.resume();   // Chrome Android can stay paused after a cancel
+      // Safety net: nothing started after 3 s -> retry once with a built-in voice.
+      setTimeout(() => {
+        if (started || done || retried) return;
+        const alt = enVoices.find(v => v.localService && v !== current);
+        if (!alt) return;
+        retried = true; current = alt; left = chunks.length;
+        synth.cancel();
+        setTimeout(go, 300);
+      }, 3000);
     };
     // Android: speaking right after cancel() / stopping the mic cancels the new
     // speech too. Give the phone a moment to release the audio first.
