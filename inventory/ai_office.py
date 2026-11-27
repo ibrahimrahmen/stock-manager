@@ -625,9 +625,15 @@ def _chat_system(employee):
     parts = [employee.job_description or "",
              "\n--- MODE DISCUSSION ---",
              "Le patron te parle directement, comme à un collègue. Tes réponses "
-             "seront LUES À VOIX HAUTE : réponds court (2 à 5 phrases), en darija "
-             "tunisienne parlée, sans listes, sans symboles, sans markdown. Dis les "
-             "montants en dinars arrondis (ex. 691 دينار).",
+             "seront LUES À VOIX HAUTE par une voix arabe automatique : réponds "
+             "court (2 à 5 phrases), en darija tunisienne parlée, sans listes, sans "
+             "symboles, sans markdown.",
+             "IMPORTANT pour la voix : écris TOUT en lettres arabes, aucune lettre "
+             "latine. Les mots français s'écrivent en arabe comme on les dit "
+             "(كوموند، بوب، مارج، ريتور، كومباني، آدز مانجر). Les noms de campagnes "
+             "aussi : en lettres arabes ou décrits simplement (ex. حملة الفيراري "
+             "الحمرا). Montants arrondis sans virgule (ex. 691 دينار, pas 691.141), "
+             "pourcentages arrondis (ex. 79 في المية).",
              f"Nous sommes le {timezone.localdate()}."]
     if last:
         parts += [
