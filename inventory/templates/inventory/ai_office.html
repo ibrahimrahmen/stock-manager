@@ -752,6 +752,8 @@ async function sendChat() {
   $('chatMsg').value = '';
   renderChat(chatMessages, p.data.name);
   p.chatBusy = true; p.meetUntil = performance.now() + 180000;
+  let spoke = false;
+  if (voiceOn && rec) { micMuted = true; try { rec.abort(); } catch (_) {} }   // no beeps while thinking
   if (p.mode !== 'meet' && p.then !== 'meet') goToDesk(p);
   try {
     const r = await fetch(API + 'employees/' + slug + '/chat/', {
@@ -761,11 +763,12 @@ async function sendChat() {
     if (d.messages) chatMessages = d.messages;
     if (selected === slug) renderChat(chatMessages);
     if (!r.ok) throw new Error(d.error || ('Erreur ' + r.status));
-    if (d.reply && $('speakOn').checked) speak(d.reply, slug);
+    if (d.reply && $('speakOn').checked) { spoke = true; speak(d.reply, slug); }
   } catch (err) {
     $('chatStatus').className = 'status-line err'; $('chatStatus').textContent = err.message;
   } finally {
     p.chatBusy = false; chatBusy = false; $('chatSend').disabled = false;
+    if (!spoke && voiceOn) { micMuted = false; setTimeout(startRec, 400); }
   }
 }
 $('chatSend').onclick = sendChat;
@@ -822,8 +825,10 @@ function stopVoice() {
   if (synth) synth.cancel();
   for (const p of people.values()) p.talking = false;
 }
+/* Returns a Promise that resolves when the whole answer has been spoken
+   (or immediately when nothing will be spoken). */
 let speak = function (text, slug) {
-  if (!synth) return;
+  if (!synth) return Promise.resolve();
   stopVoice();
   const clean = String(text).replace(/[*_#>`•\-]+/g, ' ');
   // Long answers are split into sentences: some browsers stop after ~15 s.
@@ -832,17 +837,26 @@ let speak = function (text, slug) {
   const voice = voiceFor(slug);
   if (!voice) {                       // no Arabic voice: say so, don't read garbage
     $('chatStatus').className = 'status-line err'; $('chatStatus').textContent = NO_VOICE_MSG;
-    return;
+    return Promise.resolve();
   }
-  parts.forEach((part, i) => {
-    if (!part.trim()) return;
-    const u = new SpeechSynthesisUtterance(part.trim());
-    u.voice = voice;
-    u.lang = voice.lang;
-    u.rate = 1.0;
-    if (i === 0) u.onstart = () => { if (p) p.talking = true; };
-    if (i === parts.length - 1) { u.onend = u.onerror = () => { if (p) p.talking = false; }; }
-    synth.speak(u);
+  const chunks = parts.map(x => x.trim()).filter(Boolean);
+  if (!chunks.length) return Promise.resolve();
+  return new Promise(resolve => {
+    let left = chunks.length, done = false;
+    const finish = () => { if (!done) { done = true; if (p) p.talking = false; resolve(); } };
+    // safety net: some phones never fire "end" (e.g. speech cancelled by the OS)
+    const guard = setTimeout(finish, 15000 + chunks.join(' ').length * 120);
+    chunks.forEach((part, i) => {
+      const u = new SpeechSynthesisUtterance(part);
+      u.voice = voice;
+      u.lang = voice.lang;
+      u.rate = 1.0;
+      u.onstart = () => { if (p) p.talking = true; };
+      u.onend = u.onerror = () => { if (--left <= 0) { clearTimeout(guard); finish(); } };
+      synth.speak(u);
+    });
+    // Chrome on Android sometimes stays paused after a cancel(): nudge it.
+    if (synth.paused) synth.resume();
   });
 };
 
@@ -939,16 +953,14 @@ $('voiceBtn').onclick = () => {
 // Pause the mic while an employee speaks, resume right after.
 const _speak = speak;
 speak = function (text, slug) {
+  // Mute the mic for the WHOLE answer: on Android, restarting the mic (the
+  // beep) takes the audio over and cuts the voice before it even starts.
   micMuted = true;
   if (voiceOn && rec) { try { rec.abort(); } catch (_) {} }
-  _speak(text, slug);
-  const startedAt = performance.now();
-  const resume = setInterval(() => {
-    // wait at least 1 s (speech may not have started yet), then until it ends
-    if (performance.now() - startedAt > 1000 && (!synth || !synth.speaking)) {
-      clearInterval(resume); micMuted = false; if (voiceOn) startRec();
-    }
-  }, 300);
+  return _speak(text, slug).then(() => {
+    micMuted = false;
+    if (voiceOn) setTimeout(startRec, 400);
+  });
 };
 
 $('saveJob').onclick = async () => {
