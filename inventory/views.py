@@ -7010,6 +7010,44 @@ def _barats_page_ids():
     return ids
 
 
+def _thread_msg_flag(m):
+    """Who/what sent a stored message (for the Conversations view). Recognises
+    canned bot/system templates by TEXT too, because Meta echoes our sent
+    messages back as plain page messages that lost their original flag — so a
+    flagless greeting echo must not be mislabelled as a human ('équipe')."""
+    if m.get("greeting"):
+        return "auto"
+    if m.get("faq"):
+        return "faq"
+    if m.get("bot"):
+        return "bot"
+    if m.get("carousel"):
+        return "carousel"
+    if m.get("phonefix"):
+        return "bot"
+    frm = m.get("from", "")
+    if frm == "system":
+        return "system"
+    if frm == "page":
+        txt = (m.get("text") or "").strip()
+        if not txt:
+            return "human"
+        # Our own canned templates, echoed back without their flag.
+        if txt == MESSENGER_GREETING_AR.strip():
+            return "auto"
+        if txt.startswith("وصلنا طلبك"):
+            return "auto"
+        # Meta's own automated lines (ad welcome / CRM notes), not a teammate.
+        if ("Dites-nous comment nous pouvons vous aider" in txt
+                or "répondu à une publicité" in txt
+                or "répondu à votre message" in txt
+                or "prospect" in txt.lower()
+                or "a transféré un message" in txt):
+            return "system"
+        return "human"
+    return ""
+
+
 @login_required(login_url="/login/")
 def conversations_live_page(request):
     """Dashboard page: live list of Barats conversations still ongoing, each with
@@ -7058,22 +7096,7 @@ def api_conversations_live(request):
         # Last few messages so each tile can show a live mini-thread.
         recent = []
         for _m in msgs[-8:]:
-            if _m.get("greeting"):
-                _fl = "auto"
-            elif _m.get("faq"):
-                _fl = "faq"
-            elif _m.get("bot"):
-                _fl = "bot"
-            elif _m.get("carousel"):
-                _fl = "carousel"
-            elif _m.get("phonefix"):
-                _fl = "bot"
-            elif _m.get("from") == "page":
-                _fl = "human"
-            elif _m.get("from") == "system":
-                _fl = "system"
-            else:
-                _fl = ""
+            _fl = _thread_msg_flag(_m)
             recent.append({
                 "from": _m.get("from", ""),
                 "text": (_m.get("text") or "")[:240],
@@ -7141,22 +7164,7 @@ def api_conversation_thread(request, pk):
     out = []
     for m in msgs:
         frm = m.get("from", "")
-        if m.get("greeting"):
-            flag = "auto"
-        elif m.get("faq"):
-            flag = "faq"
-        elif m.get("bot"):
-            flag = "bot"
-        elif m.get("carousel"):
-            flag = "carousel"
-        elif m.get("phonefix"):
-            flag = "bot"
-        elif frm == "page":
-            flag = "human"
-        elif frm == "system":
-            flag = "system"
-        else:
-            flag = ""
+        flag = _thread_msg_flag(m)
         out.append({
             "from": frm,
             "text": m.get("text", "") or "",
