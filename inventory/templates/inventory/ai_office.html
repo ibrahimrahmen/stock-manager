@@ -79,6 +79,16 @@
     .report{margin-top:12px;background:var(--surface2);border-radius:var(--radius);padding:16px;border:1px solid var(--border);
       direction:rtl;text-align:right;font:15px/1.9 'Noto Kufi Arabic','DM Sans',sans-serif;white-space:pre-wrap}
     .note{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5}
+    .camp{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:8px}
+    .camp .top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+    .camp .nm{font-weight:700;font-size:13px;word-break:break-word}
+    .camp .meta{font-size:12px;color:var(--muted);margin-top:4px;line-height:1.6}
+    .camp .why{font-size:12px;margin-top:4px}
+    .vd{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+    .vd.scale{background:rgba(61,186,138,.15);color:var(--green)}
+    .vd.watch{background:rgba(232,160,32,.15);color:var(--amber)}
+    .vd.stop{background:rgba(224,80,80,.15);color:var(--red)}
+    .vd.none{background:var(--surface);color:var(--muted)}
     .hist{list-style:none}
     .hist li{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer}
     .hist li:hover{color:var(--green)}
@@ -242,7 +252,7 @@ rug('#3a6bb3', -6, 4.5, 11, 5);     // marketing (future)
 rug('#c25a3c', 8.5, 3.5, 8, 9);     // lounge
 const zoneTag = (txt, x, z) => { const o = new THREE.Object3D(); o.position.set(x, 0, z); scene.add(o); label(txt, 'zone', o, .1); };
 zoneTag('Finance & Direction', -6, -0.9);
-zoneTag('Marketing — bientôt', -6, 6.8);
+zoneTag('Marketing', -6, 6.8);
 zoneTag('Espace détente', 8.5, 7.8);
 
 /* desks */
@@ -505,6 +515,11 @@ function fillPanel(e, first) {
   if (first) {
     $('eName').value = e.name; $('eTitle').value = e.title; $('eColor').value = e.color; $('eJob').value = e.job_description;
     $('result').innerHTML = ''; $('taskStatus').textContent = ''; showTab('task');
+    period = e.default_period || 'yesterday';
+    document.querySelectorAll('#periods button').forEach(x => x.classList.toggle('on', x.dataset.p === period));
+    $('question').placeholder = e.role === 'marketing'
+      ? 'مثلاً: اكتبلي نص إشهار للدودون'
+      : 'مثلاً: علاش الربح نقص هالشهر؟';
     const last = e.recent_tasks.find(t => t.status === 'done');
     if (last) loadTask(last.id, true);
   }
@@ -522,6 +537,7 @@ async function loadTask(id, quiet) {
 }
 function renderResult(t, quiet) {
   const d = t.result_data || {};
+  if (d.campaigns) return renderMarketing(t, d, quiet);
   if (!d.sales) {
     $('result').innerHTML = t.error ? `<div class="note" style="color:var(--red)">${esc(t.error)}</div>` : '';
     return;
@@ -548,12 +564,45 @@ function renderResult(t, quiet) {
     <div class="note">Les chiffres sont calculés par le logiciel. L'IA les explique seulement, elle ne les invente pas.</div>`;
 }
 
+
+const VERDICT = { scale: 'Augmenter', watch: 'Surveiller', stop: 'Arrêter' };
+function renderMarketing(t, d, quiet) {
+  const T = d.totals, prev = d.previous_period;
+  const camps = d.campaigns.map(c => `
+    <div class="camp">
+      <div class="top"><div class="nm">${esc(c.name)}${c.meta_status && c.meta_status !== 'ACTIVE' ? ` <small style="color:var(--muted)">(${esc(c.meta_status)})</small>` : ''}</div>
+        <span class="vd ${c.verdict || 'none'}">${c.verdict ? VERDICT[c.verdict] : 'Sans pub'}</span></div>
+      <div class="meta">Pub ${money(c.spend)} · ${c.leads} commandes reçues · ${c.confirmed} expédiées
+        (${c.delivered} livrées, ${c.pending} en route, ${c.returned} retours) · ${c.not_shipped} non expédiées<br>
+        Coût / commande expédiée : ${c.cost_per_confirmed == null ? '—' : money(c.cost_per_confirmed)}
+        · Retours : ${c.finished ? c.return_rate_pct + '%' : '—'}
+        · Bénéfice estimé : <b class="${c.est_profit < 0 ? 'neg' : 'pos'}">${money(c.est_profit)}</b></div>
+      ${c.reason ? `<div class="why">${esc(c.reason)}</div>` : ''}
+      ${c.low_stock_products && c.low_stock_products.length ? `<div class="why" style="color:var(--amber)">⚠ Stock bas : ${c.low_stock_products.map(p => esc(p.product) + ' (' + p.in_stock + ')').join(', ')}</div>` : ''}
+    </div>`).join('');
+  $('result').innerHTML = `
+    <div class="section-title">${esc(t.title)} · ${esc(d.period.from)} → ${esc(d.period.to)}${quiet ? ' (dernier rapport)' : ''}</div>
+    <div class="big"><div class="lbl">Bénéfice estimé des pubs</div>
+      <div class="val ${T.ad_est_profit < 0 ? 'neg' : 'pos'}">${money(T.ad_est_profit)}</div>
+      ${prev ? `<div class="lbl">Période précédente : ${money(prev.ad_est_profit)}</div>` : ''}</div>
+    <div class="grid">
+      <div class="cell"><div class="lbl">Dépense pub</div><div class="val">${d.ads_available ? money(T.ad_spend) : 'indisponible'}</div></div>
+      <div class="cell"><div class="lbl">Coût / commande expédiée</div><div class="val">${T.cost_per_confirmed == null ? '—' : money(T.cost_per_confirmed)}</div></div>
+      <div class="cell"><div class="lbl">À augmenter / surveiller</div><div class="val"><span class="pos">${T.scale}</span> / <span style="color:var(--amber)">${T.watch}</span></div></div>
+      <div class="cell"><div class="lbl">À arrêter</div><div class="val neg">${T.stop}</div></div>
+    </div>
+    ${t.result_text ? `<div class="report">${esc(t.result_text)}</div>` : ''}
+    ${t.error ? `<div class="note" style="color:var(--amber)">${esc(t.error)}</div>` : ''}
+    <div class="section-title">Campagnes</div>${camps}
+    <div class="note">Les chiffres et les verdicts sont calculés par le logiciel avec des règles fixes. Nour recommande seulement : c'est vous qui décidez dans Ads Manager. Les commandes « en route » peuvent encore revenir en retour.</div>`;
+}
+
 $('giveTask').onclick = async () => {
   if (!selected || busy) return;
   busy = true; $('giveTask').disabled = true;
   const p = people.get(selected);
   p.data = { ...p.data, state: 'working' }; ensurePerson(p.data); fillPanel(p.data);
-  $('taskStatus').className = 'status-line'; $('taskStatus').textContent = `${p.data.name} calcule et rédige le rapport… (≈ 20 s)`;
+  $('taskStatus').className = 'status-line'; $('taskStatus').textContent = `${p.data.name} calcule et rédige le rapport… (≈ 20-40 s)`;
   $('result').innerHTML = '';
   try {
     const r = await fetch(API + 'employees/' + selected + '/task/', {

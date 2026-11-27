@@ -2159,8 +2159,10 @@ class ProductTestVariant(models.Model):
 # ---------------------------------------------------------------------------
 class AIEmployee(models.Model):
     ROLE_FINANCE = "finance"
+    ROLE_MARKETING = "marketing"
     ROLE_CHOICES = [
         (ROLE_FINANCE, "Directeur financier"),
+        (ROLE_MARKETING, "Responsable marketing"),
     ]
 
     slug            = models.SlugField(max_length=40, unique=True)

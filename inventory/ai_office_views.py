@@ -49,7 +49,10 @@ def _task_json(t, full=False):
         "triggered_by": t.triggered_by,
         "created_at": t.created_at.isoformat(),
         "finished_at": t.finished_at.isoformat() if t.finished_at else None,
-        "net_profit": (t.result_data or {}).get("net_profit"),
+        # Headline figure for the history list: net profit (finance) or the
+        # ads' estimated profit (marketing).
+        "net_profit": (t.result_data or {}).get(
+            "net_profit", ((t.result_data or {}).get("totals") or {}).get("ad_est_profit")),
         "error": t.error,
     }
     if full:
@@ -66,6 +69,7 @@ def _employee_json(e):
         "role_label": e.get_role_display(), "title": e.title or e.get_role_display(),
         "job_description": e.job_description, "color": e.color,
         "desk_index": e.desk_index,
+        "default_period": ai_office.ROLE_DAILY_PERIOD.get(e.role, "yesterday"),
         "state": "working" if current else "idle",
         "current_task": _task_json(current) if current else None,
         "recent_tasks": [_task_json(t) for t in recent],
@@ -107,7 +111,7 @@ def api_give_task(request, slug):
     if emp.tasks.filter(status__in=[AITask.QUEUED, AITask.WORKING]).exists():
         return JsonResponse({"error": f"{emp.name} travaille déjà sur une tâche."}, status=409)
     d_from, d_to, label = ai_office.period_for(period)
-    task = ai_office.create_finance_task(
+    task = ai_office.create_task(
         emp, d_from, d_to, label, instruction=body.get("instruction", ""),
         user=request.user)
     ai_office.run_task(task)
@@ -141,15 +145,20 @@ def api_update_employee(request, slug):
 
 @csrf_exempt
 def cron_ai_office_daily(request):
-    """Railway cron, every morning: the finance employee reports on yesterday.
-    At most one automatic report per day, whoever calls this URL."""
-    emp = AIEmployee.objects.filter(role=AIEmployee.ROLE_FINANCE, is_active=True).first()
-    if not emp:
-        return JsonResponse({"status": "skipped", "reason": "no finance employee"})
+    """Railway cron, every morning: each active employee writes its report
+    (finance: yesterday, marketing: last 7 days). At most one automatic report
+    per employee per day, whoever calls this URL (caps the AI cost).
+    Each call runs ONE employee (the next one not done today) so a call stays
+    under the gunicorn timeout; railway.toml schedules a call per employee."""
     today = timezone.localdate()
-    if emp.tasks.filter(triggered_by="cron", created_at__date=today).exists():
-        return JsonResponse({"status": "skipped", "reason": "already done today"})
-    d_from, d_to, label = ai_office.period_for("yesterday", today)
-    task = ai_office.create_finance_task(emp, d_from, d_to, label, triggered_by="cron")
-    ai_office.run_task(task)
-    return JsonResponse({"status": task.status, "task": task.id})
+    for emp in AIEmployee.objects.filter(is_active=True):
+        period = ai_office.ROLE_DAILY_PERIOD.get(emp.role)
+        if period is None:
+            continue
+        if emp.tasks.filter(triggered_by="cron", created_at__date=today).exists():
+            continue
+        d_from, d_to, label = ai_office.period_for(period, today)
+        task = ai_office.create_task(emp, d_from, d_to, label, triggered_by="cron")
+        ai_office.run_task(task)
+        return JsonResponse({"status": task.status, "employee": emp.slug, "task": task.id})
+    return JsonResponse({"status": "skipped", "reason": "all employees already done today"})

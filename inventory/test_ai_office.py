@@ -200,13 +200,16 @@ class OfficeApiTests(TestCase):
                              content_type="application/json")
         self.assertEqual(r.status_code, 400)
 
-    def test_cron_runs_once_per_day(self, gen, _ads):
-        r1 = self.client.get("/cron/ai-office-daily/").json()
-        r2 = self.client.get("/cron/ai-office-daily/").json()
-        self.assertEqual(r1["status"], "done")
-        self.assertEqual(r2["status"], "skipped")
-        self.assertEqual(gen.call_count, 1)
-        self.assertEqual(AITask.objects.filter(triggered_by="cron").count(), 1)
+    def test_cron_one_employee_per_call_once_per_day(self, gen, _ads):
+        with patch("inventory.views._meta_fetch_spend_by_campaign", return_value={}):
+            r1 = self.client.get("/cron/ai-office-daily/").json()
+            r2 = self.client.get("/cron/ai-office-daily/").json()
+            r3 = self.client.get("/cron/ai-office-daily/").json()
+        self.assertEqual({r1["employee"], r2["employee"]}, {"finance", "marketing"})
+        self.assertEqual(r3["status"], "skipped")
+        self.assertEqual(gen.call_count, 2)
+        mk = AITask.objects.get(triggered_by="cron", employee__slug="marketing")
+        self.assertEqual((mk.period_to - mk.period_from).days, 6)   # last 7 days
 
 
 class ClaudeTemperatureTests(TestCase):
@@ -240,3 +243,72 @@ class ClaudeTemperatureTests(TestCase):
         sent = self._sent_body()
         self.assertEqual(sent["body"]["temperature"], 0.0)
         self.assertEqual(sent["timeout"], 15)
+
+
+
+from .models import Ad, AdOfferLink, Customer, MessengerConversation, Offer, OfferProduct, Order, OrderLine, OrderOffer, SalesPage
+
+
+class MarketingFiguresTests(TestCase):
+    """Per-campaign real profit + verdict rules."""
+
+    def setUp(self):
+        self.p = Product.objects.create(name="Doudoune", code="DOU", buy_price=Decimal("40"),
+                                        sell_price=Decimal("100"))
+        self.v = ProductVariant.objects.create(product=self.p, color_name="BLK", color_label="Noir")
+        self.cust = Customer.objects.create(phone="20000000", name="Test")
+        self.page = SalesPage.objects.create(name="Arrow")
+        self.offer = Offer.objects.create(name="Doudoune offre")
+        OfferProduct.objects.create(offer=self.offer, product=self.p)
+        self.good = Ad.objects.create(campaign_name="Good camp", campaign_id="C1", effective_status="ACTIVE")
+        self.bad = Ad.objects.create(campaign_name="Bad camp", campaign_id="C2", effective_status="ACTIVE")
+        AdOfferLink.objects.create(ad=self.good, offer=self.offer, sales_page=self.page)
+
+    def order(self, status, campaign=None, total="107"):
+        o = Order.objects.create(customer=self.cust, sales_page=self.page, status=status,
+                                 total=Decimal(total), delivery_fee=Decimal("7"))
+        Order.objects.filter(pk=o.pk).update(created_at=_at(DAY))
+        oo = OrderOffer.objects.create(order=o, offer=self.offer, offer_name="Doudoune offre",
+                                       bundle_price=Decimal("100"))
+        OrderLine.objects.create(order=o, product=self.p, variant=self.v, size="M",
+                                 quantity=1, unit_price=Decimal("100"), order_offer=oo)
+        if campaign:
+            MessengerConversation.objects.create(source_campaign_name=campaign, pending_order=o)
+        return o
+
+    def compute(self, spend):
+        m = {"C1": {"name": "Good camp", "spend": spend.get("C1", 0)},
+             "C2": {"name": "Bad camp", "spend": spend.get("C2", 0)}}
+        with patch("inventory.views._meta_fetch_spend_by_campaign", return_value=m):
+            return ai_office.compute_marketing(DAY, DAY, with_previous=False)
+
+    def test_attribution_profit_and_verdicts(self):
+        for _ in range(5):
+            self.order("livree", "Good camp")       # direct (conversation) attribution
+        self.order("en_cours")                       # via the offer link -> Good camp
+        self.order("annulee", "Good camp")
+        for _ in range(4):
+            self.order("returned", "Bad camp")
+        self.order("livree", "Bad camp")
+        self.order("livree")                         # no link: but offer link -> Good
+        d = self.compute({"C1": 100, "C2": 80})
+        rows = {r["name"]: r for r in d["campaigns"]}
+        g, b = rows["Good camp"], rows["Bad camp"]
+        self.assertEqual((g["leads"], g["confirmed"], g["not_shipped"]), (8, 7, 1))
+        # 7 shipped x (100 net - 40 cost) = 420 - 100 spend
+        self.assertEqual(g["est_profit"], 320.0)
+        self.assertEqual(g["verdict"], "scale")
+        # 1 kept x 60 - 80 spend - 4 returns
+        self.assertEqual(b["est_profit"], -24.0)
+        self.assertEqual(b["return_rate_pct"], 80.0)
+        self.assertEqual(b["verdict"], "stop")
+        self.assertEqual(d["totals"]["stop"], 1)
+        # low stock: the ad's product has 0 units in stock
+        self.assertEqual(g["low_stock_products"][0]["product"], "Doudoune")
+        json.dumps(d)
+
+    def test_too_early_is_watch(self):
+        self.order("en_cours", "Bad camp")
+        d = self.compute({"C2": 10})
+        b = {r["name"]: r for r in d["campaigns"]}["Bad camp"]
+        self.assertEqual(b["verdict"], "watch")

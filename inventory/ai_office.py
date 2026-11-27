@@ -17,8 +17,8 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from .models import (
-    AIEmployee, AITask, Expense, OrderItem, ProductUnit, ShippingOrder,
-    StockMovement,
+    Ad, AIEmployee, AITask, Expense, Order, OrderItem, ProductUnit,
+    ShippingOrder, StockMovement,
 )
 
 # Same per-return cost the revenue page uses, so both pages agree.
@@ -184,6 +184,236 @@ def compute_finance(date_from, date_to, with_ads=True, with_previous=True):
 
 
 # ---------------------------------------------------------------------------
+# Marketing figures: real profit per Meta campaign
+# ---------------------------------------------------------------------------
+# Order status buckets (v2 Order) for ad performance.
+NOT_SHIPPED = ("non_confirmee", "injoignable", "pas_serieux", "rappeler_plus_tard",
+               "annulee", "supprime_navex")
+PENDING = ("confirmee", "en_cours", "au_magasin")
+DELIVERED = ("livree", "payee")
+RETURNED = ("returning", "returned")
+
+# Verdict rules (computed by code, so the AI never decides on a whim).
+MIN_SPEND_TO_JUDGE = Decimal("30")    # below this, too early to judge
+MIN_ORDERS_TO_SCALE = 5
+STOP_RETURN_RATE = 50.0               # % of finished orders returned
+SCALE_MAX_RETURN_RATE = 30.0
+MIN_FINISHED_FOR_RATE = 4             # finished orders needed to trust a return rate
+
+
+def _verdict(c):
+    """scale / watch / stop + the reason, from the campaign figures."""
+    spend = Decimal(str(c["spend"]))
+    rr = c["return_rate_pct"]
+    rr_known = c["finished"] >= MIN_FINISHED_FOR_RATE
+    if spend < MIN_SPEND_TO_JUDGE and c["confirmed"] < 3:
+        return "watch", "trop tôt pour juger (peu de dépense et de commandes)"
+    if rr_known and rr >= STOP_RETURN_RATE:
+        return "stop", f"{rr:.0f}% des commandes terminées reviennent en retour"
+    if c["est_profit"] < 0 and spend >= MIN_SPEND_TO_JUDGE:
+        return "stop", "la pub coûte plus que la marge qu'elle rapporte"
+    if (c["est_profit"] > 0 and c["confirmed"] >= MIN_ORDERS_TO_SCALE
+            and (not rr_known or rr < SCALE_MAX_RETURN_RATE)):
+        return "scale", "rentable avec assez de commandes et peu de retours"
+    return "watch", "résultat moyen ou pas encore assez clair"
+
+
+def _in_stock_by_product(product_ids):
+    from django.db.models import Count
+    rows = (ProductUnit.objects.filter(variant__product_id__in=product_ids,
+                                       status=ProductUnit.IN_STOCK)
+            .values("variant__product_id").annotate(n=Count("id")))
+    return {r["variant__product_id"]: r["n"] for r in rows}
+
+
+def compute_marketing(date_from, date_to, with_previous=True):
+    """Per-campaign performance for orders CREATED in [date_from, date_to].
+
+    Each order is attributed to ONE campaign: the campaign the customer came
+    from (captured on the Messenger/Instagram conversation), else the ad linked
+    to an offer in the order (same rule as the Ads & offres page), else Barats.tn
+    carousel ads for orders on the Barats.tn page, else "organic".
+    est_profit = (net sales − purchase cost) of shipped orders not returned
+                 − ad spend − 1 TND per return.
+    Orders still on the way may yet be returned: the return rate is measured
+    only on finished orders (delivered or returned).
+    """
+    try:
+        from .views import _meta_fetch_spend_by_campaign
+        spend_map = _meta_fetch_spend_by_campaign(date_from, date_to) or {}
+        ads_ok = bool(spend_map)
+    except Exception:
+        spend_map, ads_ok = {}, False
+
+    ads = list(Ad.objects.prefetch_related("links__offer__products").all())
+    ad_by_cid = {a.campaign_id: a for a in ads if a.campaign_id}
+
+    camps = {}   # key -> row
+
+    def camp(key, name, status=""):
+        c = camps.get(key)
+        if c is None:
+            c = camps[key] = {
+                "name": name, "status": status, "spend": Decimal("0"),
+                "leads": 0, "not_shipped": 0, "pending": 0, "delivered": 0,
+                "returned": 0, "net_sales": Decimal("0"), "cost": Decimal("0"),
+                "product_ids": set(),
+            }
+        return c
+
+    barats_key = "barats_carousel"
+    for cid, v in spend_map.items():
+        a = ad_by_cid.get(cid)
+        if a is not None and a.attribution == Ad.ATTR_BARATS:
+            c = camp(barats_key, "Barats.tn (carrousel, toutes pubs)")
+        else:
+            c = camp(cid, v.get("name") or (a.campaign_name if a else cid),
+                     a.effective_status if a else "")
+        c["spend"] += Decimal(str(v.get("spend", 0) or 0))
+
+    # Attribution maps.
+    name_to_key, adid_to_key = {}, {}
+    offer_page_to_key, offer_any_to_key = {}, {}
+    for a in ads:
+        key = barats_key if a.attribution == Ad.ATTR_BARATS else (a.campaign_id or f"ad{a.id}")
+        adid_to_key[a.id] = key
+        if a.campaign_name:
+            name_to_key.setdefault(a.campaign_name.strip().lower(), key)
+        if a.attribution == Ad.ATTR_BARATS:
+            continue
+        for lk in a.links.all():
+            if lk.sales_page_id:
+                offer_page_to_key.setdefault((lk.offer_id, lk.sales_page_id), key)
+            else:
+                offer_any_to_key.setdefault(lk.offer_id, key)
+    for cid, v in spend_map.items():
+        if v.get("name"):
+            name_to_key.setdefault(v["name"].strip().lower(),
+                                   adid_to_key.get(getattr(ad_by_cid.get(cid), "id", None), cid))
+    key_names = {adid_to_key[a.id]: a.campaign_name for a in ads}
+    key_status = {adid_to_key[a.id]: a.effective_status for a in ads}
+    key_products = {}
+    for a in ads:
+        ps = key_products.setdefault(adid_to_key[a.id], set())
+        for lk in a.links.all():
+            ps.update(op.product_id for op in lk.offer.products.all())
+
+    orders = (Order.objects
+              .filter(created_at__date__gte=date_from, created_at__date__lte=date_to,
+                      exchange_of__isnull=True)
+              .select_related("sales_page")
+              .prefetch_related("order_offers", "lines__product",
+                                "messenger_conversations"))
+    organic = camp("organic", "Sans pub (organique / non attribué)")
+    for o in orders:
+        key = None
+        for cv in o.messenger_conversations.all():
+            for nm in (cv.source_campaign_name, cv.source_campaign):
+                nm = (nm or "").strip().lower()
+                if nm and nm in name_to_key:
+                    key = name_to_key[nm]
+                    break
+            if key is None and cv.matched_ad_id in adid_to_key:
+                key = adid_to_key[cv.matched_ad_id]
+            if key:
+                break
+        if key is None:
+            for oo in o.order_offers.all():
+                key = (offer_page_to_key.get((oo.offer_id, o.sales_page_id))
+                       or offer_any_to_key.get(oo.offer_id))
+                if key:
+                    break
+        if key is None and o.sales_page and o.sales_page.name.strip().lower() == "barats.tn" \
+                and barats_key in camps:
+            key = barats_key
+        c = camps.get(key) if key else organic
+        if c is None:   # attributed to an ad with no spend in the period
+            c = camp(key, key_names.get(key, key), key_status.get(key, ""))
+        c["leads"] += 1
+        if o.status in NOT_SHIPPED:
+            c["not_shipped"] += 1
+            continue
+        if o.status in RETURNED:
+            c["returned"] += 1
+            continue
+        c["delivered" if o.status in DELIVERED else "pending"] += 1
+        c["net_sales"] += (o.total or Decimal("0")) - (o.delivery_fee or Decimal("0"))
+        c["cost"] += sum((ln.product.buy_price * ln.quantity for ln in o.lines.all()),
+                         Decimal("0"))
+
+    all_pids = set().union(*key_products.values()) if key_products else set()
+    stock = _in_stock_by_product(all_pids) if all_pids else {}
+    from .models import Product
+    prod_info = {p.id: p for p in Product.objects.filter(id__in=all_pids)}
+
+    rows = []
+    for key, c in camps.items():
+        if c["spend"] <= 0 and c["leads"] == 0:
+            continue
+        confirmed = c["pending"] + c["delivered"] + c["returned"]
+        finished = c["delivered"] + c["returned"]
+        margin = c["net_sales"] - c["cost"]
+        est_profit = margin - c["spend"] - RETURN_FEE * c["returned"]
+        low_stock = []
+        for pid in sorted(key_products.get(key, ())):
+            p = prod_info.get(pid)
+            n = stock.get(pid, 0)
+            if p and not p.archived and n <= max(p.alert_threshold, 3):
+                low_stock.append({"product": p.name, "in_stock": n})
+        row = {
+            "name": c["name"], "meta_status": c["status"] or "",
+            "spend": _f(c["spend"]), "leads": c["leads"],
+            "not_shipped": c["not_shipped"], "confirmed": confirmed,
+            "pending": c["pending"], "delivered": c["delivered"],
+            "returned": c["returned"], "finished": finished,
+            "return_rate_pct": round(100 * c["returned"] / finished, 1) if finished else 0,
+            "confirm_rate_pct": round(100 * confirmed / c["leads"], 1) if c["leads"] else 0,
+            "cost_per_confirmed": _f(c["spend"] / confirmed) if confirmed else None,
+            "net_sales": _f(c["net_sales"]), "margin": _f(margin),
+            "est_profit": _f(est_profit), "low_stock_products": low_stock[:5],
+            "is_organic": key == "organic",
+        }
+        if key == "organic":
+            row["verdict"], row["reason"] = None, ""
+        else:
+            row["verdict"], row["reason"] = _verdict(row)
+        rows.append(row)
+    rows.sort(key=lambda r: (r["is_organic"], -r["spend"]))
+
+    paid = [r for r in rows if not r["is_organic"]]
+    tot_spend = sum(r["spend"] for r in paid)
+    tot_conf = sum(r["confirmed"] for r in paid)
+    data = {
+        "period": {"from": date_from.isoformat(), "to": date_to.isoformat(),
+                   "days": (date_to - date_from).days + 1},
+        "ads_available": ads_ok,
+        "totals": {
+            "ad_spend": round(tot_spend, 3),
+            "ad_orders_confirmed": tot_conf,
+            "cost_per_confirmed": round(tot_spend / tot_conf, 3) if tot_conf else None,
+            "ad_est_profit": round(sum(r["est_profit"] for r in paid), 3),
+            "campaigns": len(paid),
+            "scale": sum(1 for r in paid if r["verdict"] == "scale"),
+            "watch": sum(1 for r in paid if r["verdict"] == "watch"),
+            "stop": sum(1 for r in paid if r["verdict"] == "stop"),
+        },
+        "rules": {
+            "min_spend_to_judge": _f(MIN_SPEND_TO_JUDGE),
+            "stop_if_return_rate_pct_at_least": STOP_RETURN_RATE,
+            "scale_needs_orders": MIN_ORDERS_TO_SCALE,
+            "scale_max_return_rate_pct": SCALE_MAX_RETURN_RATE,
+        },
+        "campaigns": rows[:25],
+    }
+    if with_previous:
+        length = date_to - date_from
+        prev_to = date_from - timedelta(days=1)
+        prev = compute_marketing(prev_to - length, prev_to, with_previous=False)
+        data["previous_period"] = {"period": prev["period"], **prev["totals"]}
+    return data
+
+
+# ---------------------------------------------------------------------------
 # Running tasks
 # ---------------------------------------------------------------------------
 def period_for(key, today=None):
@@ -202,15 +432,46 @@ def period_for(key, today=None):
     raise ValueError(f"unknown period {key!r}")
 
 
-def create_finance_task(employee, date_from, date_to, label, instruction="",
-                        user=None, triggered_by="owner"):
+ROLE_TASK_TITLES = {
+    AIEmployee.ROLE_FINANCE: "Bénéfice / pertes",
+    AIEmployee.ROLE_MARKETING: "Pubs : garder / surveiller / arrêter",
+}
+# The period each employee reports on in the automatic morning run.
+ROLE_DAILY_PERIOD = {
+    AIEmployee.ROLE_FINANCE: "yesterday",
+    AIEmployee.ROLE_MARKETING: "last7",   # one day is too little to judge an ad
+}
+
+
+def create_task(employee, date_from, date_to, label, instruction="",
+                user=None, triggered_by="owner"):
+    title = ROLE_TASK_TITLES.get(employee.role, "Tâche")
     return AITask.objects.create(
         employee=employee,
-        title=f"Bénéfice / pertes — {label}",
+        title=f"{title} — {label}",
         instruction=(instruction or "")[:2000],
         period_from=date_from, period_to=date_to,
         triggered_by=triggered_by, requested_by=user,
     )
+
+
+# Back-compat name used by the first version.
+create_finance_task = create_task
+
+
+def _common_prompt_tail(task):
+    parts = []
+    if task.instruction:
+        parts.append("QUESTION DU PATRON : " + task.instruction)
+    parts.append(
+        f"La période analysée s'appelle « {task.title} » "
+        f"(du {task.period_from} au {task.period_to}) ; nous sommes le "
+        f"{timezone.localdate()}. Nomme-la correctement (ex. البارح pour hier, "
+        "ce n'est pas اليوم).")
+    parts.append(
+        "Langue : darija TUNISIENNE uniquement (برشة، شنوة، علاش، البارح، اليوم، "
+        "توة). Jamais de mots égyptiens (النهارده، إمبارح، دلوقتي، كده).")
+    return parts
 
 
 def _finance_prompt(task, data):
@@ -225,19 +486,38 @@ def _finance_prompt(task, data):
         "CHIFFRES (JSON):",
         json.dumps(data, ensure_ascii=False, indent=1),
     ]
-    if task.instruction:
-        parts.append("QUESTION DU PATRON : " + task.instruction)
-    parts.append(
-        f"La période analysée s'appelle « {task.title} » "
-        f"(du {task.period_from} au {task.period_to}) ; nous sommes le "
-        f"{timezone.localdate()}. Nomme-la correctement (ex. البارح pour hier, "
-        "ce n'est pas اليوم).")
-    parts.append(
-        "Langue : darija TUNISIENNE uniquement (برشة، شنوة، علاش، البارح، اليوم، "
-        "توة). Jamais de mots égyptiens (النهارده، إمبارح، دلوقتي، كده).")
+    parts += _common_prompt_tail(task)
     parts.append("Écris ton rapport maintenant (max ~200 mots) et termine-le "
                  "complètement, avec les actions de la semaine.")
     return "\n\n".join(parts)
+
+
+def _marketing_prompt(task, data):
+    parts = [
+        "Voici la performance de chaque campagne Meta, calculée par le logiciel "
+        "(montants en TND). Ce sont les seuls chiffres que tu as le droit d'utiliser.",
+        "Définitions : leads = commandes reçues ; confirmed = commandes expédiées "
+        "(en route + livrées + retournées) ; not_shipped = annulées / injoignables / "
+        "pas sérieux ; return_rate_pct = retours / commandes terminées (livrées + "
+        "retournées) ; est_profit = (ventes nettes − prix d'achat) des commandes "
+        "non retournées − pub − 1 DT par retour. Les commandes 'pending' peuvent "
+        "encore revenir en retour. verdict = décision calculée par des règles fixes "
+        "(scale = augmenter, watch = surveiller, stop = arrêter) avec sa raison : "
+        "explique-la, ne la change pas.",
+        "CHIFFRES (JSON):",
+        json.dumps(data, ensure_ascii=False, indent=1),
+    ]
+    parts += _common_prompt_tail(task)
+    parts.append("Écris ton rapport maintenant (max ~250 mots) et termine-le "
+                 "complètement. Tu RECOMMANDES seulement : le patron décide et "
+                 "agit lui-même dans Ads Manager.")
+    return "\n\n".join(parts)
+
+
+WORKERS = {
+    AIEmployee.ROLE_FINANCE: (compute_finance, _finance_prompt),
+    AIEmployee.ROLE_MARKETING: (compute_marketing, _marketing_prompt),
+}
 
 
 def run_task(task):
@@ -249,16 +529,18 @@ def run_task(task):
     task.error = ""
     task.save(update_fields=["status", "started_at", "error"])
     try:
-        if task.employee.role != AIEmployee.ROLE_FINANCE:
+        worker = WORKERS.get(task.employee.role)
+        if worker is None:
             raise ValueError(f"no worker for role {task.employee.role}")
-        data = compute_finance(task.period_from, task.period_to)
+        compute, build_prompt = worker
+        data = compute(task.period_from, task.period_to)
         task.result_data = data
         task.save(update_fields=["result_data"])
 
         errbox = []
         model = (_cfg("AI_OFFICE_MODEL", "") or DEFAULT_MODEL).strip()
         text = _claude_generate(
-            _finance_prompt(task, data), max_tokens=3000, temperature=None,
+            build_prompt(task, data), max_tokens=3000, temperature=None,
             system=task.employee.job_description or None, model=model,
             errbox=errbox, timeout=60,
         )

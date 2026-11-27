@@ -27,7 +27,12 @@ command = "curl https://web-production-1391c5.up.railway.app/cron/refresh-tokens
 schedule = "0 4 * * *"
 command = "curl https://web-production-1391c5.up.railway.app/cron/drive-sync/"
 
-# AI office: the finance employee writes yesterday's profit/loss report (daily, 8:00).
+# AI office: each call makes the next AI employee write its morning report
+# (one employee per call: 8:00 finance, 8:10 marketing; add a line per new hire).
 [[crons]]
 schedule = "0 8 * * *"
+command = "curl https://web-production-1391c5.up.railway.app/cron/ai-office-daily/"
+
+[[crons]]
+schedule = "10 8 * * *"
 command = "curl https://web-production-1391c5.up.railway.app/cron/ai-office-daily/"
