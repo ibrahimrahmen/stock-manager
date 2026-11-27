@@ -7048,6 +7048,70 @@ def _thread_msg_flag(m):
     return ""
 
 
+# Intent categories the router can recognise. Only some have an agent yet; the
+# rest are shown so the wall is a real triage board (and routed later).
+_INTENT_EXCHANGE = ("echange", "échange", "tbadel", "nbadel", "nabdel", "badel",
+                    "tbdel", "nbadl", "retour", "rodd", "radou", "nthebt",
+                    "thebt fi", "couleur la5er", "couleur akhor", "change couleur",
+                    "mabdltch", "n7el", "the7el")
+_INTENT_DELIVERY = ("wa9tech", "waktech", "w9tech", "wa2tech", "yousel", "yousil",
+                    "tousel", "touselni", "delai", "délai", "ghodwa", "wa9t el",
+                    "win wsel", "suivi", "tracking", "wa9tech yousel", "yousil")
+_INTENT_PRODUCT = ("model", "modèle", "modele", "jdod", "jdoud", "jdid", "nouveau",
+                   "nouveaux", "3andkom", "3andkoum", "andkom", "catalogue",
+                   "collection", "chnowa 3andkom", "gilet", "vest", "survet",
+                   "ensemble", "pull", "jacket", "doudoune", "kchabiya", "article",
+                   "produit", "chnia 3andkom", "chnowa famma")
+_INTENT_ORDER = ("taille", "pointure", "adresse", "3inwen", "3enwen", "noumrou",
+                 "numero", "numéro", "commande", "nchri", "n3addi", "naheb n3adi")
+_INTENT_GREET = ("slm", "salam", "aslema", "asslema", "3aslema", "3asslema",
+                 "bonjour", "bjr", "bnj", "sbah", "sbh", "cc", "coucou", "salut",
+                 "slem", "selem", "sbhkom")
+
+
+def _classify_intent(conv):
+    """FREE keyword router: classify the latest customer message into an action
+    intent. Returns (key, label). Only 'price' acts today; the rest are shown on
+    the wall and routed as their agents get built."""
+    import re as _re
+    text = ""
+    last_photo = False
+    for m in reversed(conv.messages or []):
+        if m.get("from") == "user":
+            _imgs = [u for u in (m.get("images") or []) if u and u != "local"]
+            if (m.get("text") or "").strip():
+                text = m["text"]
+                last_photo = bool(_imgs)
+                break
+            if _imgs:
+                last_photo = True
+                break
+    low = (text or "").lower()
+
+    def _has(kws):
+        return any(k in low for k in kws)
+
+    has_phone = bool(_re.search(r"\d{8}", low))
+
+    if _has(_INTENT_EXCHANGE):
+        return ("exchange", "🔁 échange")
+    if last_photo:
+        return ("price", "🏷️ prix")
+    if any(k in low for k in _PRICE_QUESTION_KWS):
+        return ("price", "🏷️ prix")
+    if any(k in low for k in _AVAIL_QUESTION_KWS):
+        return ("availability", "📦 dispo")
+    if _has(_INTENT_DELIVERY):
+        return ("delivery", "🚚 livraison")
+    if has_phone or _has(_INTENT_ORDER):
+        return ("order", "📝 commande")
+    if _has(_INTENT_PRODUCT):
+        return ("product", "🖼️ produit")
+    if _has(_INTENT_GREET) and len(low) <= 16:
+        return ("greeting", "👋 bonjour")
+    return ("other", "💬 autre")
+
+
 @login_required(login_url="/login/")
 def conversations_live_page(request):
     """Dashboard page: live list of Barats conversations still ongoing, each with
@@ -7104,6 +7168,7 @@ def api_conversations_live(request):
                            if u and u != "local"][:2],
                 "flag": _fl,
             })
+        intk, intlbl = _classify_intent(c)
         try:
             tr = _price_agent_trace(c, page, allow_vision=False,
                                     allow_photo_tiers=False)
@@ -7125,6 +7190,8 @@ def api_conversations_live(request):
             "suggest_by": tr.get("resolved_by", ""),
             "router": tr.get("router_note", ""),
             "is_price_q": bool(tr.get("is_price_question")),
+            "intent": intk,
+            "intent_label": intlbl,
         })
     return JsonResponse({"status": "ok", "count": len(rows), "rows": rows,
                          "hours": hours})

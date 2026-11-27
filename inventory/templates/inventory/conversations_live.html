@@ -30,6 +30,14 @@
   .dot{width:8px;height:8px;border-radius:50%;background:var(--red);flex:0 0 8px;}
   .badge{font-size:10px;padding:1px 7px;border-radius:999px;font-weight:600;}
   .b-ms{background:var(--bluebg);color:var(--blue);} .b-ig{background:var(--purplebg);color:var(--purple);}
+  .ib{font-size:10px;padding:1px 7px;border-radius:999px;font-weight:600;}
+  .i-price{background:var(--greenbg);color:var(--green);}
+  .i-availability{background:var(--bluebg);color:var(--blue);}
+  .i-product{background:var(--purplebg);color:var(--purple);}
+  .i-exchange{background:var(--amberbg);color:var(--amber);}
+  .i-delivery{background:#e6eff5;color:#2b6a86;}
+  .i-order{background:var(--graybg);color:var(--ink);}
+  .i-greeting,.i-other{background:var(--graybg);color:var(--muted);}
   .mins{margin-left:auto;font-size:11px;color:var(--muted);}
   .ad{font-size:11px;color:var(--muted);padding:0 12px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .cvm{flex:1;overflow:auto;padding:10px;display:flex;flex-direction:column;gap:5px;background:var(--bg);}
@@ -43,6 +51,7 @@
   .cvf .sg{border-radius:8px;padding:5px 8px;white-space:pre-wrap;}
   .s-ok{background:var(--greenbg);color:var(--green);} .s-ask{background:var(--graybg);color:var(--ink);}
   .s-need{background:var(--amberbg);color:var(--amber);} .s-no{background:transparent;color:var(--muted);font-style:italic;}
+  .s-rt{background:#eef1f6;color:#44557a;}
   .empty{grid-column:1/-1;text-align:center;color:var(--muted);padding:50px 0;}
 </style>
 </head>
@@ -74,15 +83,20 @@ function bubbles(msgs){
     return '<div class="b '+cls+'">'+lbl+esc(m.text)+imgs+'</div>';
   }).join('');
 }
+const ACTION={price:'🏷️ agent prix',availability:'📦 agent dispo',
+  exchange:'🔁 agent échange (bientôt)',delivery:'🚚 réponse délai (bientôt)',
+  order:'📝 capture commande',product:'🖼️ carrousel produits (bientôt)',
+  greeting:'👋 accueil',other:'💬 un humain'};
 function footer(r){
-  if(!r.is_price_q) return '<div class="sg s-no">🤖 pas une question de prix</div>';
-  return '<div class="sg '+suggClass(r.suggest_by)+'">🤖 '+esc(r.suggest)+'</div>';
+  if(r.is_price_q) return '<div class="sg '+suggClass(r.suggest_by)+'">🤖 '+esc(r.suggest)+'</div>';
+  return '<div class="sg s-rt">🧭 décide → '+esc(ACTION[r.intent]||ACTION.other)+'</div>';
 }
 function card(r){
   const pb=r.platform==='instagram'?'<span class="badge b-ig">IG</span>':'<span class="badge b-ms">Msg</span>';
+  const ib=r.intent_label?('<span class="ib i-'+esc(r.intent)+'">'+esc(r.intent_label)+'</span>'):'';
   const d=r.waiting?'<span class="dot"></span>':'';
   return '<div class="cv'+(r.waiting?' wait':'')+'" data-id="'+r.id+'">'
-    +'<div class="cvh">'+d+'<span class="nm">'+esc(r.name)+'</span>'+pb+'<span class="mins">'+ago(r.mins_ago)+'</span></div>'
+    +'<div class="cvh">'+d+'<span class="nm">'+esc(r.name)+'</span>'+pb+ib+'<span class="mins">'+ago(r.mins_ago)+'</span></div>'
     +(r.ad?('<div class="ad">📣 '+esc(r.ad)+'</div>'):'')
     +'<div class="cvm" data-id="'+r.id+'">'+bubbles(r.msgs)+'</div>'
     +'<div class="cvf">'+footer(r)+'</div></div>';
