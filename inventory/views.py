@@ -363,6 +363,28 @@ def _order_agent_line(conv):
     return "Bech t3adi commande ab3athelna taille, adresse w noumrouk 🤍"
 
 
+def _customer_burst_text(conv):
+    """The customer's most recent contiguous burst of messages (texts joined),
+    skipping our trailing replies. Customers split one question across bubbles,
+    so the agents classify/answer on the whole burst. Returns (text, had_photo)."""
+    parts = []
+    had_photo = False
+    seen_user = False
+    for m in reversed(conv.messages or []):
+        frm = m.get("from", "")
+        if frm == "user":
+            seen_user = True
+            if [u for u in (m.get("images") or []) if u and u != "local"]:
+                had_photo = True
+            if (m.get("text") or "").strip():
+                parts.append(m["text"])
+        elif frm == "page":
+            if seen_user:
+                break
+            continue
+    return (" ".join(reversed(parts)), had_photo)
+
+
 def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
     """PRICE AGENT (private test). Runs the 3-tier price cascade and returns a
     step-by-step trace. Sends NOTHING. Tier 1 = ad link (free), Tier 2 = photo
@@ -372,12 +394,9 @@ def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
     trace = {"steps": [], "reply": "", "resolved_by": None,
              "cost_est": "0 DT (gratuit)", "is_price_question": False,
              "router_note": "", "has_photo": False}
-    # The customer's latest text.
-    text = ""
-    for m in reversed(conv.messages or []):
-        if m.get("from") == "user" and (m.get("text") or "").strip():
-            text = m["text"]
-            break
+    # The customer's latest burst (joined), so a price asked across bubbles is
+    # still seen.
+    text, _bphoto = _customer_burst_text(conv)
     low = (text or "").lower()
     price_kw = next((k for k in _PRICE_QUESTION_KWS if k in low), None)
     avail_kw = next((k for k in _AVAIL_QUESTION_KWS if k in low), None)
@@ -7139,27 +7158,8 @@ def _classify_intent(conv):
     intent. Returns (key, label). Only 'price' acts today; the rest are shown on
     the wall and routed as their agents get built."""
     import re as _re
-    # Gather the customer's most recent BURST (contiguous run of their messages),
-    # skipping any trailing replies of ours — customers split one question across
-    # several bubbles ("9addeh som" then "Xl"), so classify them together.
-    parts = []
-    last_photo = False
-    seen_user = False
-    for m in reversed(conv.messages or []):
-        frm = m.get("from", "")
-        if frm == "user":
-            seen_user = True
-            _imgs = [u for u in (m.get("images") or []) if u and u != "local"]
-            if _imgs:
-                last_photo = True
-            if (m.get("text") or "").strip():
-                parts.append(m["text"])
-        elif frm == "page":
-            if seen_user:
-                break          # stop at the reply before the customer's burst
-            continue           # skip our trailing reply, keep looking back
-        # system notes: skip
-    text = " ".join(reversed(parts))
+    # Classify the customer's most recent burst (split across bubbles).
+    text, last_photo = _customer_burst_text(conv)
     low = (text or "").lower()
 
     def _has(kws):
