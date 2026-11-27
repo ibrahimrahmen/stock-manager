@@ -21751,11 +21751,17 @@ def api_messenger_webhook(request):
                 # timing, price-from-ad). If one fires, the bot must NOT also
                 # reply, or the customer gets two messages. This runs whether or
                 # not the bot is on.
+                # FAQ is now controlled by the DECIDER: it fires ONLY when the
+                # decider classifies this message as 'faq'. Price / delivery /
+                # everything else is paused for now (activated later, one agent
+                # at a time). _faq_answer(text, None) uses the FAQ-only path, so
+                # no price line can slip through.
                 _faq_fired = False
                 try:
                     if (not _external_agent and not is_echo and not _reply_dup
-                            and (text or "").strip()):
-                        _ans = _faq_answer(text, conv)
+                            and (text or "").strip()
+                            and _classify_intent(conv)[0] == "faq"):
+                        _ans = _faq_answer(text, None)
                         if _ans:
                             _already = any(m.get("faq") == _ans
                                            for m in (conv.messages or []))
