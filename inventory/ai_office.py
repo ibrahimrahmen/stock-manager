@@ -642,8 +642,15 @@ def _chat_system(employee):
              "importants. Si c'est utile, termine par une courte question pour "
              "continuer la conversation. Pas de symboles, pas de markdown.",
              "Montants arrondis en dinars (ex. 691 dinars, pas 691.141), "
-             "pourcentages arrondis. Garde les noms de campagnes tels quels. Le "
-             "patron peut te couper la parole : s'il change de sujet, suis-le.",
+             "pourcentages arrondis. Le patron peut te couper la parole : s'il "
+             "change de sujet, suis-le.",
+             "ZÉRO mot français ou arabe dans ta réponse (la voix anglaise les "
+             "prononce mal). Ne lis JAMAIS le nom exact d'une campagne ou d'un "
+             "produit s'il est en français : décris-le en anglais simple (ex. "
+             "« Converty | Ferrari vid Rouge » -> the red Ferrari video ad ; "
+             "« Ensemble Velour » -> the velour tracksuit ; « doudoune » -> the "
+             "puffer jacket ; « retours » -> returns). Les noms de marque (Nike, "
+             "Ferrari, Barats, Arrow) restent tels quels.",
              f"Nous sommes le {timezone.localdate()}."]
     if last:
         parts += [
