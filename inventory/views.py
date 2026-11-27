@@ -400,7 +400,8 @@ def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
     low = (text or "").lower()
     price_kw = next((k for k in _PRICE_QUESTION_KWS if k in low), None)
     avail_kw = next((k for k in _AVAIL_QUESTION_KWS if k in low), None)
-    is_price = bool(price_kw or avail_kw)
+    # A sent photo is itself a price/product inquiry, even with no price word.
+    is_price = bool(price_kw or avail_kw or _bphoto)
     trace["is_price_question"] = is_price
 
     # ROUTER
@@ -415,13 +416,17 @@ def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
                           "question de prix)")
         trace["resolved_by"] = "not_price"
         return trace
-    _kind = "disponibilité" if (avail_kw and not price_kw) else "prix"
-    trace["router_note"] = ("Question de %s détectée (mot: « %s »)"
-                            % (_kind, avail_kw or price_kw))
+    _hit = avail_kw or price_kw
+    if _hit:
+        _kind = "disponibilité" if (avail_kw and not price_kw) else "prix"
+        trace["router_note"] = ("Question de %s détectée (mot: « %s »)"
+                                % (_kind, _hit))
+        _why = "mot détecté: « %s »" % _hit
+    else:
+        trace["router_note"] = "Photo envoyée — demande de prix/produit"
+        _why = "photo envoyée"
     trace["steps"].append({"tier": 0, "name": "Routeur", "tried": True,
-                           "found": True,
-                           "why": "mot détecté: « %s »" % (price_kw or avail_kw),
-                           "cost": "0"})
+                           "found": True, "why": _why, "cost": "0"})
 
     # Customer photo(s)?
     try:
