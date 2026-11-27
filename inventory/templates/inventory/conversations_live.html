@@ -1,0 +1,155 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conversations en direct — Barats</title>
+<style>
+  :root{
+    --bg:#f5f4f0; --card:#fff; --ink:#1c1c1a; --muted:#6b6a64; --border:#e4e2db;
+    --green:#0f6e56; --greenbg:#e1f5ee; --amber:#ba7517; --amberbg:#faeeda;
+    --gray:#888780; --graybg:#f1efe8; --red:#c0392b; --redbg:#fbecea;
+    --blue:#185fa5; --bluebg:#e6f1fb; --purple:#534ab7; --purplebg:#eeedfe;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.5;padding:16px;}
+  .wrap{max-width:760px;margin:0 auto;}
+  .top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px;}
+  h1{font-size:20px;margin:0;font-weight:600;}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 14px;}
+  .bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;font-size:13px;color:var(--muted);}
+  .toggle{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;}
+  .count{background:var(--graybg);border-radius:999px;padding:4px 12px;font-weight:600;color:var(--ink);}
+  .conv{background:var(--card);border:0.5px solid var(--border);border-radius:14px;
+    padding:14px;margin-bottom:12px;}
+  .chd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .nm{font-weight:600;font-size:15px;}
+  .badge{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;}
+  .b-ms{background:var(--bluebg);color:var(--blue);}
+  .b-ig{background:var(--purplebg);color:var(--purple);}
+  .b-wait{background:var(--redbg);color:var(--red);}
+  .ago{margin-left:auto;font-size:12px;color:var(--muted);}
+  .ad{font-size:12px;color:var(--muted);margin-top:4px;}
+  .msg{margin-top:8px;background:var(--graybg);border-radius:10px 10px 10px 4px;
+    padding:9px 12px;font-size:14px;white-space:pre-wrap;}
+  .msg.page{background:#eef4f1;border-radius:10px 10px 4px 10px;}
+  .msg .who{font-size:11px;color:var(--muted);display:block;margin-bottom:2px;}
+  .agent{margin-top:10px;border-top:0.5px dashed var(--border);padding-top:10px;}
+  .arow{font-size:12px;color:var(--muted);margin-bottom:5px;}
+  .sugg{border-radius:10px;padding:9px 12px;font-size:14px;white-space:pre-wrap;}
+  .s-ok{background:var(--greenbg);color:var(--green);}
+  .s-ask{background:var(--graybg);color:var(--ink);}
+  .s-need{background:var(--amberbg);color:var(--amber);}
+  .s-no{background:var(--graybg);color:var(--muted);font-style:italic;}
+  .btn{margin-top:8px;padding:8px 14px;border:0.5px solid var(--amber);background:var(--amberbg);
+    color:var(--amber);border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;}
+  .trace{margin-top:8px;}
+  .step{display:flex;gap:8px;align-items:flex-start;padding:7px 10px;border-radius:9px;margin-bottom:6px;
+    border-left:4px solid var(--gray);background:var(--graybg);font-size:13px;}
+  .step.ok{border-left-color:var(--green);background:var(--greenbg);}
+  .step.paid{border-left-color:var(--amber);background:var(--amberbg);}
+  .step .n{font-weight:700;flex:0 0 18px;}
+  .empty{text-align:center;color:var(--muted);padding:40px 0;font-size:14px;}
+  .err{background:var(--redbg);color:var(--red);padding:10px 12px;border-radius:10px;font-size:14px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  {% csrf_token %}
+  <div class="top">
+    <h1>💬 Conversations en direct</h1>
+    <span class="count" id="count">…</span>
+  </div>
+  <p class="sub">Barats · chats encore en cours. L'agent prix te montre ce qu'il répondrait — rien n'est envoyé.</p>
+  <div class="bar">
+    <label class="toggle"><input type="checkbox" id="auto" checked> Rafraîchir auto (15s)</label>
+    <span id="updated"></span>
+    <button class="btn" id="refresh" style="margin-top:0;padding:6px 12px;">↻ Maintenant</button>
+  </div>
+  <div id="list"><div class="empty">Chargement…</div></div>
+</div>
+
+<script>
+const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+const list = document.getElementById('list');
+function esc(s){return (s||'').replace(/[&<>]/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[x]));}
+function ago(m){ if(m<1)return "à l'instant"; if(m<60)return "il y a "+m+" min"; const h=Math.floor(m/60); return "il y a "+h+" h"; }
+
+function suggClass(by){
+  if(by==='ad'||by==='fingerprint'||by==='vision') return 's-ok';
+  if(by==='need_analysis') return 's-need';
+  if(by==='not_price') return 's-no';
+  return 's-ask';
+}
+function byLabel(by){
+  return ({ad:'prix depuis la pub (gratuit)',fingerprint:'empreinte photo (gratuit)',
+    vision:'analyse IA (payant)',ask_photo:'demande une photo',
+    need_analysis:'photo à analyser',not_price:'pas une question de prix'}[by])||by||'';
+}
+
+function card(r){
+  const pb = r.platform==='instagram' ? '<span class="badge b-ig">Instagram</span>' : '<span class="badge b-ms">Messenger</span>';
+  const wait = r.waiting ? '<span class="badge b-wait">⏳ en attente</span>' : '';
+  const whoLast = r.last_from==='user' ? 'Client' : 'Nous';
+  let sugg = '';
+  if(r.is_price_q){
+    sugg = '<div class="agent"><div class="arow">🧭 '+esc(r.router)+'</div>'
+         + '<div class="sugg '+suggClass(r.suggest_by)+'">'+esc(r.suggest)+'</div>'
+         + '<div class="arow" style="margin-top:5px;">→ '+esc(byLabel(r.suggest_by))+'</div>';
+    if(r.suggest_by==='need_analysis'){
+      sugg += '<button class="btn" onclick="analyze('+r.id+',this)">🔍 Analyser la photo</button>';
+    }
+    sugg += '<div class="trace" id="tr-'+r.id+'"></div></div>';
+  } else {
+    sugg = '<div class="agent"><div class="sugg s-no">Agent prix : rien à faire (pas une question de prix)</div></div>';
+  }
+  return '<div class="conv"><div class="chd"><span class="nm">'+esc(r.name)+'</span>'
+    + pb + wait + '<span class="ago">'+ago(r.mins_ago)+'</span></div>'
+    + (r.ad?('<div class="ad">📣 pub : '+esc(r.ad)+'</div>'):'')
+    + '<div class="msg'+(r.last_from==='user'?'':' page')+'"><span class="who">'+whoLast+'</span>'+esc(r.last_text||'(—)')+'</div>'
+    + sugg + '</div>';
+}
+
+async function analyze(id, btn){
+  btn.textContent='⏳ analyse…'; btn.disabled=true;
+  try{
+    const r = await fetch('/api/price-agent-on-conv/'+id+'/',{method:'POST',credentials:'include',
+      headers:{'Content-Type':'application/json','X-CSRFToken':csrf},body:'{}'});
+    const j = await r.json();
+    const box = document.getElementById('tr-'+id);
+    if(j.status==='ok'){
+      const t=j.trace; let h='';
+      (t.steps||[]).forEach(s=>{
+        let cls=''; if(s.found){cls=(s.cost&&s.cost.indexOf('Vision')>-1)?'paid':'ok';}
+        h+='<div class="step '+cls+'"><span class="n">'+(s.tier===0?'🧭':s.tier)+'</span><span>'
+          +esc(s.name)+' — '+(s.found?('<b>'+esc(s.offer||'trouvé')+'</b>'):esc(s.why||'non'))+'</span></div>';
+      });
+      h+='<div class="sugg '+suggClass(t.resolved_by)+'" style="margin-top:4px;">'+esc(t.reply)+'</div>';
+      h+='<div class="arow" style="margin-top:4px;">Coût : <b>'+esc(t.cost_est)+'</b></div>';
+      box.innerHTML=h; btn.style.display='none';
+    } else { box.innerHTML='<div class="err">'+esc(j.message||'Erreur')+'</div>'; btn.disabled=false; btn.textContent='🔍 Réessayer'; }
+  }catch(e){ btn.disabled=false; btn.textContent='🔍 Réessayer'; }
+}
+
+async function load(){
+  try{
+    const r = await fetch('/api/conversations-live/',{credentials:'include'});
+    const j = await r.json();
+    if(j.status!=='ok'){ list.innerHTML='<div class="err">'+esc(j.message||'Erreur')+'</div>'; return; }
+    document.getElementById('count').textContent = j.count+' en cours';
+    document.getElementById('updated').textContent = 'maj '+new Date().toLocaleTimeString('fr-FR');
+    list.innerHTML = j.rows.length ? j.rows.map(card).join('') : '<div class="empty">Aucune conversation en cours 👋</div>';
+  }catch(e){ list.innerHTML='<div class="err">'+esc(String(e))+'</div>'; }
+}
+
+let timer=null;
+function schedule(){ if(timer)clearInterval(timer); if(document.getElementById('auto').checked){ timer=setInterval(load,15000);} }
+document.getElementById('auto').onchange=schedule;
+document.getElementById('refresh').onclick=load;
+load(); schedule();
+</script>
+</body>
+</html>

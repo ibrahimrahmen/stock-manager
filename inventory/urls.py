@@ -198,6 +198,10 @@ urlpatterns = [
     # Price agent test console (superuser): watch the 3-tier price cascade.
     path("price-agent-test/", views.price_agent_test_page, name="price_agent_test_page"),
     path("api/price-agent-test/", views.api_price_agent_test, name="api_price_agent_test"),
+    # Live conversations monitor (superuser): ongoing Barats chats + agent view.
+    path("conversations/", views.conversations_live_page, name="conversations_live_page"),
+    path("api/conversations-live/", views.api_conversations_live, name="api_conversations_live"),
+    path("api/price-agent-on-conv/<int:pk>/", views.api_price_agent_on_conv, name="api_price_agent_on_conv"),
     path("testing-production/", views.testing_production_page, name="testing_production_page"),
     path("testing-production/add/", views.product_test_add, name="product_test_add"),
     path("testing-production/<int:pk>/finish/", views.product_test_finish, name="product_test_finish"),

@@ -323,7 +323,7 @@ def _price_line_for_conv(conv):
         return ""
 
 
-def _price_agent_trace(conv, page):
+def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
     """PRICE AGENT (private test). Runs the 3-tier price cascade and returns a
     step-by-step trace. Sends NOTHING. Tier 1 = ad link (free), Tier 2 = photo
     fingerprint (free, local dHash), Tier 3 = photo AI analysis (Vision, paid);
@@ -390,8 +390,17 @@ def _price_agent_trace(conv, page):
         s1["why"] = (_note or "pas de nom de pub / pub non liée à un produit")
     trace["steps"].append(s1)
 
+    # Dashboard live view: skip the photo tiers (slow / possibly paid) and
+    # surface an on-click "Analyser" instead of auto-spending on Vision.
+    if not offer and not allow_photo_tiers:
+        trace["steps"].append({"tier": 2, "name": "Analyse photo",
+                               "tried": False, "found": False,
+                               "why": ("photo présente — clique « Analyser »"
+                                       if has_photo else "pas de photo du client"),
+                               "cost": "0"})
+
     # TIER 2 — PHOTO FINGERPRINT (free, local dHash)
-    if not offer:
+    if not offer and allow_photo_tiers:
         s2 = {"tier": 2, "name": "Empreinte photo", "cost": "0"}
         if has_photo:
             s2["tried"] = True
@@ -417,10 +426,10 @@ def _price_agent_trace(conv, page):
         trace["steps"].append(s2)
 
     # TIER 3 — PHOTO AI ANALYSIS (Vision, paid)
-    if not offer:
+    if not offer and allow_photo_tiers:
         s3 = {"tier": 3, "name": "Analyse IA de la photo",
               "cost": "~0,01–0,03 DT (Vision)"}
-        if has_photo and _bot_vision_enabled():
+        if has_photo and _bot_vision_enabled() and allow_vision:
             s3["tried"] = True
             try:
                 _res = _identify_offer_for_conv(conv, page)
@@ -460,6 +469,11 @@ def _price_agent_trace(conv, page):
         else:
             offer = None  # product found but no price -> ask for photo
 
+    if trace["resolved_by"] is None and (not allow_photo_tiers) and has_photo:
+        trace["reply"] = ("(photo présente — clique « Analyser » pour que "
+                          "l'agent lise la photo et donne le prix)")
+        trace["resolved_by"] = "need_analysis"
+        trace["cost_est"] = "0 DT (gratuit)"
     if trace["resolved_by"] is None:
         trace["reply"] = ("Aslema khouya 🤍 ab3athelna taswira mte3 el article "
                           "eli 7abbito bech na3tiwek el prix bel dhabt.")
@@ -6976,6 +6990,110 @@ def api_price_agent_test(request):
         conv.identified_offer = ""
         conv.identified_sig = ""
         trace = _price_agent_trace(conv, page)
+        return JsonResponse({"status": "ok", "trace": trace})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
+
+
+def _barats_page_ids():
+    """FB/IG page ids that belong to Barats (SalesPage 3)."""
+    ids = []
+    try:
+        for pid, sp in MESSENGER_PAGE_TO_SALESPAGE.items():
+            try:
+                if int(sp) == 3:
+                    ids.append(str(pid))
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return ids
+
+
+@login_required(login_url="/login/")
+def conversations_live_page(request):
+    """Dashboard page: live list of Barats conversations still ongoing, each with
+    what the price agent would reply + what it's doing. Superuser only."""
+    if not request.user.is_superuser:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Accès refusé.")
+    return render(request, "inventory/conversations_live.html", {})
+
+
+@login_required(login_url="/login/")
+def api_conversations_live(request):
+    """JSON feed for the live Conversations page: ongoing Barats chats +
+    a FREE agent suggestion (router + ad only; photo tiers run on click)."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import MessengerConversation, SalesPage
+    from django.utils import timezone as _tz
+    from datetime import timedelta as _td
+    page = SalesPage.objects.filter(pk=3).first()
+    pids = _barats_page_ids()
+    hours = 6
+    try:
+        hours = max(1, min(48, int(request.GET.get("hours") or 6)))
+    except Exception:
+        hours = 6
+    since = _tz.now() - _td(hours=hours)
+    qs = (MessengerConversation.objects
+          .filter(updated_at__gte=since)
+          .exclude(status=MessengerConversation.IGNORED))
+    if pids:
+        qs = qs.filter(page_id__in=pids)
+    qs = qs.order_by("-updated_at")[:30]
+    rows = []
+    now = _tz.now()
+    for c in qs:
+        msgs = c.messages or []
+        last = None
+        for m in reversed(msgs):
+            if (m.get("text") or "").strip():
+                last = m
+                break
+        last_from = (last or {}).get("from", "")
+        # "Waiting" = the customer spoke last and nobody (human or bot) answered.
+        waiting = (last_from == "user")
+        try:
+            tr = _price_agent_trace(c, page, allow_vision=False,
+                                    allow_photo_tiers=False)
+        except Exception:
+            tr = {}
+        mins = int((now - c.updated_at).total_seconds() // 60) if c.updated_at else 0
+        rows.append({
+            "id": c.id,
+            "name": (c.sender_name or c.sender_id or "?")[:40],
+            "platform": c.platform or "messenger",
+            "ad": (c.source_campaign_name or "")[:50],
+            "last_text": ((last or {}).get("text") or "")[:180],
+            "last_from": last_from,
+            "waiting": waiting,
+            "mins_ago": mins,
+            "has_photo": bool(tr.get("has_photo")),
+            "suggest": tr.get("reply", ""),
+            "suggest_by": tr.get("resolved_by", ""),
+            "router": tr.get("router_note", ""),
+            "is_price_q": bool(tr.get("is_price_question")),
+        })
+    return JsonResponse({"status": "ok", "count": len(rows), "rows": rows,
+                         "hours": hours})
+
+
+@login_required(login_url="/login/")
+def api_price_agent_on_conv(request, pk):
+    """Run the FULL price agent (incl. photo tiers / Vision) on one real
+    conversation, on demand. Superuser only. Nothing is sent."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import MessengerConversation, SalesPage
+    conv = MessengerConversation.objects.filter(pk=pk).first()
+    if not conv:
+        return JsonResponse({"status": "error", "message": "Conversation introuvable."}, status=404)
+    page = SalesPage.objects.filter(pk=3).first()
+    try:
+        trace = _price_agent_trace(conv, page, allow_vision=True,
+                                   allow_photo_tiers=True)
         return JsonResponse({"status": "ok", "trace": trace})
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
