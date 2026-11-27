@@ -778,17 +778,39 @@ $('newChat').onclick = async () => {
   if (r.ok) { chatMessages = []; renderChat([]); }
 };
 
-/* voice: the device's own text-to-speech (free). Darija is read with a
-   standard Arabic voice, so it can sound a little formal. */
+/* voice: the device's own text-to-speech (free). Never read Arabic with a
+   non-Arabic voice (it would skip the words and only say the numbers).
+   Microsoft Edge offers free natural Tunisian voices (ar-TN: Hedi, Reem). */
 const synth = window.speechSynthesis;
-let arVoice = null;
+let arVoices = [];
+const FEMALE_VOICE = /reem|hoda|salma|zariyah|amina|fatima|laila|layla|mouna|sana|iman|rana|noura|amal|mariam|hala|sarah|female|femme/i;
+const MALE_VOICE = /hedi|naayf|hamed|shakir|bassel|omar|taim|rami|moaz|jamal|ali\b|maged|majed|tarik|hamdan|fahed|saleh|mounir|male|homme/i;
+const FEMALE_NAMES = ['nour', 'amira', 'yasmine', 'sarra', 'mariem', 'ines', 'rania', 'layla', 'salma', 'nada', 'emna', 'asma'];
+const NO_VOICE_MSG = "Pas de voix arabe sur cet appareil, donc pas de lecture. Sur PC : ouvrez le Bureau IA dans Microsoft Edge (voix tunisiennes gratuites), ou ajoutez une voix arabe dans Windows (Paramètres › Heure et langue › Voix). Sur téléphone : ajoutez l'arabe dans la synthèse vocale.";
 function pickVoice() {
   if (!synth) return;
-  const vs = synth.getVoices().filter(v => /^ar/i.test(v.lang));
-  const pref = ['ar-TN', 'ar-MA', 'ar-DZ', 'ar-SA', 'ar-AE', 'ar-EG'];
-  arVoice = pref.map(l => vs.find(v => v.lang.replace('_', '-').toLowerCase() === l.toLowerCase())).find(Boolean) || vs[0] || null;
+  const all = synth.getVoices();
+  const pref = ['ar-tn', 'ar-ma', 'ar-dz', 'ar-ly', 'ar-sa', 'ar-ae', 'ar-eg'];
+  const rank = v => {
+    const l = v.lang.replace('_', '-').toLowerCase(), i = pref.indexOf(l);
+    return (i < 0 ? 50 : i * 2) - (/natural|online|neural/i.test(v.name) ? 1 : 0);
+  };
+  arVoices = all.filter(v => /^ar/i.test(v.lang)).sort((a, b) => rank(a) - rank(b));
   $('voiceNote').textContent = !synth ? 'Cet appareil ne sait pas lire à voix haute.'
-    : (synth.getVoices().length && !arVoice ? "Aucune voix arabe sur cet appareil : installez une voix arabe dans les réglages (synthèse vocale) pour entendre les réponses." : '');
+    : (all.length && !arVoices.length ? NO_VOICE_MSG : '');
+}
+function voiceFor(slug) {
+  if (!arVoices.length) pickVoice();
+  if (!arVoices.length) return null;
+  const p = people.get(slug), name = (p ? p.data.name : '').toLowerCase();
+  const wantFemale = FEMALE_NAMES.includes(name);
+  const best = arVoices[0];
+  const bestLang = best.lang.toLowerCase();
+  // same accent as the best voice, matching the employee's gender if possible
+  const sameLang = arVoices.filter(v => v.lang.toLowerCase() === bestLang);
+  return sameLang.find(v => (wantFemale ? FEMALE_VOICE : MALE_VOICE).test(v.name))
+    || arVoices.find(v => (wantFemale ? FEMALE_VOICE : MALE_VOICE).test(v.name) && v.lang.toLowerCase().startsWith('ar-tn'))
+    || best;
 }
 if (synth) { pickVoice(); synth.onvoiceschanged = pickVoice; }
 let voiceUnlocked = false;
@@ -807,11 +829,16 @@ let speak = function (text, slug) {
   // Long answers are split into sentences: some browsers stop after ~15 s.
   const parts = clean.match(/[^.!?؟\n]+[.!?؟]?/g) || [clean];
   const p = people.get(slug);
+  const voice = voiceFor(slug);
+  if (!voice) {                       // no Arabic voice: say so, don't read garbage
+    $('chatStatus').className = 'status-line err'; $('chatStatus').textContent = NO_VOICE_MSG;
+    return;
+  }
   parts.forEach((part, i) => {
     if (!part.trim()) return;
     const u = new SpeechSynthesisUtterance(part.trim());
-    if (arVoice) u.voice = arVoice;
-    u.lang = arVoice ? arVoice.lang : 'ar-SA';
+    u.voice = voice;
+    u.lang = voice.lang;
     u.rate = 1.0;
     if (i === 0) u.onstart = () => { if (p) p.talking = true; };
     if (i === parts.length - 1) { u.onend = u.onerror = () => { if (p) p.talking = false; }; }
