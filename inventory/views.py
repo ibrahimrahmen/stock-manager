@@ -7213,6 +7213,11 @@ def api_conversations_live(request):
         last_from = (last or {}).get("from", "")
         # "Waiting" = the customer spoke last and nobody (human or bot) answered.
         waiting = (last_from == "user")
+        mins = int((now - c.updated_at).total_seconds() // 60) if c.updated_at else 0
+        # Drop chats that are waiting on the CUSTOMER and have been quiet for
+        # 10+ min (the customer went silent) — keep the wall to what's live.
+        if (not waiting) and mins >= 10:
+            continue
         # Last few messages so each tile can show a live mini-thread.
         recent = []
         for _m in msgs[-8:]:
@@ -7241,7 +7246,6 @@ def api_conversations_live(request):
                                     allow_photo_tiers=False)
         except Exception:
             tr = {}
-        mins = int((now - c.updated_at).total_seconds() // 60) if c.updated_at else 0
         rows.append({
             "id": c.id,
             "name": (c.sender_name or c.sender_id or "?")[:40],
