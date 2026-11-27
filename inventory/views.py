@@ -1452,8 +1452,8 @@ _PRICE_QUESTION_KWS = (
     "bgadeh", "bgadech", "bgadach", "bgdh", "bgdach", "bgidach", "bgidech",
     "9added", "9added", "bech9adeh", "ch9adeh", "ch9adech",
     "prix", "price", "thaman", "combien", "chhal", "ch7al", "che7al",
-    "9addeh", "9addech", "som ", "somme", "s3er", "se3er", "s3ar", "sawm",
-    "thamen", "تمن", "سوم",
+    "9addeh", "9addech", "9adch", "9edch", "b9adch", "b9edch", "9adach",
+    "som ", "somme", "s3er", "se3er", "s3ar", "sawm", "thamen", "تمن", "سوم",
     "بقداش", "قداش", "بقداه", "قداه", "سعر", "الثمن", "بكم", "كم",
 )
 
