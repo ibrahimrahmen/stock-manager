@@ -41,6 +41,12 @@
     .zone{font:700 11px 'DM Sans';letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.75);
       background:rgba(0,0,0,.35);padding:3px 8px;border-radius:6px}
     @keyframes pulse{50%{opacity:.3}}
+    .voice-btn{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:999px;padding:7px 14px;font:600 13px 'DM Sans';cursor:pointer}
+    .voice-btn.on{background:var(--red);border-color:var(--red);color:#fff;animation:pulse 1.6s infinite}
+    #voiceCap{position:fixed;left:50%;transform:translateX(-50%);bottom:64px;z-index:6;max-width:calc(100% - 32px);
+      background:rgba(14,14,12,.9);border:1px solid var(--border);border-radius:14px;padding:10px 16px;font:15px/1.6 'Noto Kufi Arabic','DM Sans',sans-serif;
+      text-align:center;display:none}
+    #voiceCap small{display:block;color:var(--muted);font:12px 'DM Sans'}
 
     /* side panel */
     #panel{position:fixed;top:0;right:0;bottom:0;width:440px;max-width:100%;z-index:10;background:var(--surface);
@@ -124,12 +130,14 @@
 <header>
   <a class="back" href="{% url 'dashboard' %}">← Retour</a>
   <h1>Bureau IA</h1>
-  <div class="seg" role="tablist">
+  <button class="voice-btn" id="voiceBtn" title="Parler aux employés">🎤 Voix</button>
+  <div class="seg" role="tablist" style="margin-left:0">
     <button id="view3d" class="on">3D</button>
     <button id="viewPlan">Plan</button>
   </div>
 </header>
 
+<div id="voiceCap"></div>
 <div class="hint" id="hint">Cliquez sur un employé pour lui donner une tâche. Glissez pour tourner, molette pour zoomer.</div>
 
 <aside id="panel" aria-hidden="true">
@@ -283,6 +291,10 @@ const zoneTag = (txt, x, z) => { const o = new THREE.Object3D(); o.position.set(
 zoneTag('Finance & Direction', -6, -0.9);
 zoneTag('Marketing', -6, 6.8);
 zoneTag('Espace détente', 8.5, 7.8);
+// meeting spot: where employees come when the owner calls them
+const meetRug = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, .03, 40), M('#e8a020'));
+meetRug.position.set(2.3, .015, 3.6); meetRug.receiveShadow = true; scene.add(meetRug);
+zoneTag('Réunion', 2.3, 5.6);
 
 /* desks */
 const deskMat = M('#f2f0ea'), legMat = M('#555'), laptopMat = M('#c8c8cc', { metalness: .6, roughness: .3 });
@@ -421,6 +433,24 @@ function goToDesk(p) {
   const here = p.body.group.position;
   walkTo(p, [new THREE.Vector3(here.x, 0, AISLE_Z), new THREE.Vector3(p.desk.seat.x, 0, AISLE_Z), p.desk.seat], 'desk');
 }
+const MEET_SPOTS = [new THREE.Vector3(1.7, 0, 3.4), new THREE.Vector3(3.0, 0, 3.8)];
+function goToMeeting(p) {
+  if (p.mode === 'meet' || (p.mode === 'walk' && p.then === 'meet')) { p.meetUntil = performance.now() + 180000; return; }
+  const taken = new Set([...people.values()].filter(o => o !== p && (o.mode === 'meet' || o.then === 'meet')).map(o => o.meetSpot));
+  const idx = MEET_SPOTS.findIndex((_, i) => !taken.has(i));
+  p.meetSpot = idx < 0 ? 0 : idx;
+  const spot = MEET_SPOTS[p.meetSpot], here = p.body.group.position;
+  walkTo(p, [new THREE.Vector3(here.x, 0, AISLE_Z), new THREE.Vector3(spot.x, 0, AISLE_Z), spot], 'meet');
+  p.meetUntil = performance.now() + 180000;   // goes back after 3 min without talking
+  flyCamera(spot);
+}
+function sendBack(p) { p.then = null; if (p.mode !== 'desk') { p.mode = 'lounge'; goToDesk(p); } }
+/* smooth camera move towards a point of interest */
+let camTween = null;
+function flyCamera(pt) {
+  camTween = { t: 0, p0: camera.position.clone(), t0: controls.target.clone(),
+               p1: new THREE.Vector3(pt.x + 3.5, 5.5, pt.z + 7), t1: new THREE.Vector3(pt.x, 1.2, pt.z) };
+}
 function goToLounge(p) {
   const spot = LOUNGE_SPOTS[Math.floor(Math.random() * LOUNGE_SPOTS.length)];
   const s = p.desk.seat;
@@ -444,6 +474,7 @@ function animate() {
         pos.copy(target); p.path.shift();
         if (!p.path.length) {
           if (p.then === 'desk') { p.mode = 'desk'; seatPose(p); p.idleSince = now; }
+          else if (p.then === 'meet') { p.mode = 'meet'; standPose(p); }
           else { p.mode = 'lounge'; standPose(p); p.loungeUntil = now + 15000 + Math.random() * 15000; b.group.rotation.y = Math.PI * .8; }
         }
       } else {
@@ -474,11 +505,34 @@ function animate() {
         if (p.bubble.textContent === '…' || p.bubble.textContent === '💬') { p.bubble.textContent = ''; p.bubble.classList.add('off'); }
         if (now - p.idleSince > 25000 && Math.random() < .002) goToLounge(p);
       }
+    } else if (p.mode === 'meet') {        // standing in front of the owner
+      b.group.rotation.y = Math.atan2(camera.position.x - b.group.position.x, camera.position.z - b.group.position.z);
+      if (p.talking) {
+        b.head.rotation.x = Math.sin(p.t * 7) * .12;
+        b.arms[0].rotation.x = -.6 + Math.sin(p.t * 4) * .45;
+        b.arms[1].rotation.x = -.3 + Math.cos(p.t * 3) * .3;
+        if (p.bubble.textContent !== '💬' || p.bubble.classList.contains('off')) { p.bubble.textContent = '💬'; p.bubble.classList.remove('off'); }
+      } else if (p.chatBusy) {
+        b.head.rotation.x = -.15; b.arms[0].rotation.x = -1.6; b.arms[1].rotation.x = 0;   // hand on chin: thinking
+        if (p.bubble.textContent !== '…' || p.bubble.classList.contains('off')) { p.bubble.textContent = '…'; p.bubble.classList.remove('off'); }
+      } else {
+        b.arms[0].rotation.x = Math.sin(p.t * 1.2) * .05; b.arms[1].rotation.x = -Math.sin(p.t * 1.2) * .05;
+        b.head.rotation.x = 0; b.head.rotation.y = Math.sin(p.t * .6) * .15;
+        if (p.bubble.textContent === '…' || p.bubble.textContent === '💬') { p.bubble.textContent = ''; p.bubble.classList.add('off'); }
+      }
+      if (p.data.state === 'working' || now > p.meetUntil) goToDesk(p);
     } else if (p.mode === 'lounge') {
       b.arms[0].rotation.x = Math.sin(p.t * 3) * .4 - .3;
       b.head.rotation.y = Math.sin(p.t * .8) * .5;
       if (working || now > p.loungeUntil) goToDesk(p);
     }
+  }
+  if (camTween) {
+    camTween.t = Math.min(1, camTween.t + dt / 1.2);
+    const k = camTween.t * camTween.t * (3 - 2 * camTween.t);
+    camera.position.lerpVectors(camTween.p0, camTween.p1, k);
+    controls.target.lerpVectors(camTween.t0, camTween.t1, k);
+    if (camTween.t >= 1) camTween = null;
   }
   controls.update();
   renderer.render(scene, camera);
@@ -689,11 +743,16 @@ async function sendChat() {
   if (!text || !selected || chatBusy) return;
   unlockVoice();
   const slug = selected, p = people.get(slug);
+  const order = parseOrder(text, p);       // "إجا لهنا" / "ارجع لبلاصتك" typed or dictated
+  if (order.back) { sendBack(p); $('chatMsg').value = ''; return; }
+  if (order.come) goToMeeting(p);
+  if (!order.question) { $('chatMsg').value = ''; return; }
   chatBusy = true; $('chatSend').disabled = true; $('chatStatus').className = 'status-line'; $('chatStatus').textContent = '';
   chatMessages = [...chatMessages, { role: 'user', text }];
   $('chatMsg').value = '';
   renderChat(chatMessages, p.data.name);
-  p.chatBusy = true; goToDesk(p);
+  p.chatBusy = true; p.meetUntil = performance.now() + 180000;
+  if (p.mode !== 'meet' && p.then !== 'meet') goToDesk(p);
   try {
     const r = await fetch(API + 'employees/' + slug + '/chat/', {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
@@ -741,7 +800,7 @@ function stopVoice() {
   if (synth) synth.cancel();
   for (const p of people.values()) p.talking = false;
 }
-function speak(text, slug) {
+let speak = function (text, slug) {
   if (!synth) return;
   stopVoice();
   const clean = String(text).replace(/[*_#>`•\-]+/g, ' ');
@@ -758,7 +817,112 @@ function speak(text, slug) {
     if (i === parts.length - 1) { u.onend = u.onerror = () => { if (p) p.talking = false; }; }
     synth.speak(u);
   });
+};
+
+
+/* ------------------------------------------------------------ voice mode
+   The office listens (Chrome / Android speech recognition, free). Say a name
+   then an order or a question: "نور إجا لهنا", "سامي ارجع لبلاصتك",
+   "سامي علاش الربح نقص؟". The mic pauses while an employee speaks. */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, voiceOn = false, lastHeardAt = 0, micMuted = false;
+// Extra spoken forms of names / roles the recogniser may return.
+const NAME_ALIASES = {
+  finance: ['سامي', 'سامى', 'sami', 'sammy', 'المحاسب', 'الفينونس', 'الفينانس', 'finance'],
+  marketing: ['نور', 'nour', 'noor', 'الماركتينغ', 'الماركتنغ', 'marketing'],
+};
+const COME_WORDS = ['اجا', 'إجا', 'ايجا', 'إيجا', 'اجي', 'إجي', 'ايجي', 'ايجى', 'اجى', 'تعال', 'تعالي', 'لهنا', 'لهني', 'ija', 'iji', 'lenna', 'lehna', 'l hna', 'viens', 'venez'];
+const BACK_WORDS = ['ارجع', 'ارجعي', 'أرجع', 'روح', 'روحي', 'بلاصتك', 'مكتبك', 'برا اخدم', 'retourne', 'va travailler'];
+const norm = t => String(t).toLowerCase().replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/[،,.!?؟]/g, ' ').replace(/\s+/g, ' ').trim();
+function whoIn(text) {
+  const t = ' ' + norm(text) + ' ';
+  for (const p of people.values()) {
+    const names = [p.data.name, ...(NAME_ALIASES[p.data.role] || [])].map(norm).filter(Boolean);
+    if (names.some(n => t.includes(' ' + n + ' ') || t.includes(' ' + n) )) return p;
+  }
+  return null;
 }
+const hasAny = (text, words) => { const t = ' ' + norm(text) + ' '; return words.map(norm).some(w => t.includes(w)); };
+function caption(main, sub) {
+  const c = $('voiceCap');
+  c.style.display = voiceOn || main ? 'block' : 'none';
+  c.innerHTML = `${esc(main || '')}${sub ? `<small>${esc(sub)}</small>` : ''}`;
+}
+/* {come, back, question}: question = false when the sentence is only an order */
+function parseOrder(text, p) {
+  const back = hasAny(text, BACK_WORDS), come = !back && hasAny(text, COME_WORDS);
+  const skip = [...COME_WORDS, ...BACK_WORDS, p.data.name, ...(NAME_ALIASES[p.data.role] || [])].map(norm);
+  const rest = norm(text).split(' ').filter(w => w && !skip.some(k => k === w || k.split(' ').includes(w)));
+  return { come, back, question: !back && (!come || rest.length >= 2) };
+}
+function handleHeard(text) {
+  lastHeardAt = performance.now();
+  let p = whoIn(text) || (selected ? people.get(selected) : null);
+  if (!p) { caption(text, 'Dites le nom : « نور … » ou « سامي … »'); return; }
+  const o = parseOrder(text, p);
+  if (o.back) { sendBack(p); caption(text, `${p.data.name} retourne à son bureau`); return; }
+  if (o.come) goToMeeting(p);
+  if (selected !== p.data.slug) openPanel(p.data.slug);
+  // "Nour, come here" alone = just come. Anything longer is also a question.
+  if (!o.question) { caption(text, `${p.data.name} arrive…`); return; }
+  showTab('chat');
+  $('chatMsg').value = text;
+  caption(text, `Question envoyée à ${p.data.name}`);
+  sendChat();
+}
+function startRec() {
+  if (!rec || !voiceOn) return;
+  try { rec.start(); } catch (_) { /* already started */ }
+}
+function setupRec() {
+  rec = new SR();
+  rec.lang = 'ar-TN';
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.onresult = ev => {
+    if (micMuted || (synth && synth.speaking)) return;   // don't listen to ourselves
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const r = ev.results[i], txt = r[0].transcript.trim();
+      if (!txt) continue;
+      if (r.isFinal) handleHeard(txt); else caption(txt, 'J\'écoute…');
+    }
+  };
+  rec.onerror = ev => {
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+      voiceOn = false; $('voiceBtn').classList.remove('on');
+      caption('Micro refusé', 'Autorisez le micro pour ce site dans le navigateur, puis réessayez.');
+    }
+  };
+  rec.onend = () => { if (voiceOn && !micMuted) setTimeout(startRec, 250); };
+}
+$('voiceBtn').onclick = () => {
+  if (!SR) { caption('Reconnaissance vocale indisponible', 'Utilisez Chrome (ordinateur ou Android).'); setTimeout(() => caption(''), 5000); return; }
+  unlockVoice();
+  voiceOn = !voiceOn;
+  $('voiceBtn').classList.toggle('on', voiceOn);
+  if (voiceOn) {
+    if (!rec) setupRec();
+    startRec();
+    caption('🎤 Je vous écoute', 'Ex. : « نور إجا لهنا » · « سامي علاش الربح نقص؟ » · « ارجع لبلاصتك »');
+  } else {
+    try { rec.abort(); } catch (_) {}
+    caption('');
+  }
+};
+// Pause the mic while an employee speaks, resume right after.
+const _speak = speak;
+speak = function (text, slug) {
+  micMuted = true;
+  if (voiceOn && rec) { try { rec.abort(); } catch (_) {} }
+  _speak(text, slug);
+  const startedAt = performance.now();
+  const resume = setInterval(() => {
+    // wait at least 1 s (speech may not have started yet), then until it ends
+    if (performance.now() - startedAt > 1000 && (!synth || !synth.speaking)) {
+      clearInterval(resume); micMuted = false; if (voiceOn) startRec();
+    }
+  }, 300);
+};
 
 $('saveJob').onclick = async () => {
   if (!selected) return;
