@@ -7079,7 +7079,16 @@ def api_price_agent_test(request):
         conv.identified_offer = ""
         conv.identified_sig = ""
         trace = _price_agent_trace(conv, page)
-        return JsonResponse({"status": "ok", "trace": trace})
+        try:
+            _drep, _dagent = _decider_dispatch(conv, page)
+        except Exception:
+            _drep, _dagent = None, ""
+        _dintk, _dlbl = _classify_intent(conv)
+        return JsonResponse({"status": "ok", "trace": trace,
+                             "decider": {"intent": _dintk, "intent_label": _dlbl,
+                                         "reply": _drep or "",
+                                         "agent": _dagent,
+                                         "to_human": _drep is None}})
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
 
@@ -7244,6 +7253,72 @@ def _classify_intent(conv):
         if key2 != "other":
             return (key2, label2)
     return ("other", "💬 autre")
+
+
+def _decider_dispatch(conv, page=None):
+    """SINGLE BRAIN. The decider classifies the message, then ONLY the chosen
+    agent produces a reply. Returns (reply_or_None, agent_key). Nothing fires on
+    its own — an agent runs only if the decider routes to it. None = hand to a
+    human (exchange / product / unclear) or the agent chose to stay silent."""
+    from .models import SalesPage
+    if page is None:
+        sp_id = MESSENGER_PAGE_TO_SALESPAGE.get(
+            str(getattr(conv, "page_id", "") or ""), MESSENGER_DEFAULT_SALESPAGE)
+        page = SalesPage.objects.filter(pk=sp_id).first()
+    intk, _lbl = _classify_intent(conv)
+    ctext = ""
+    for m in reversed(conv.messages or []):
+        if m.get("from") == "user" and (m.get("text") or "").strip():
+            ctext = m["text"]
+            break
+
+    if intk == "greeting":
+        if not any(mm.get("greeting") for mm in (conv.messages or [])):
+            return (MESSENGER_GREETING_AR, "greeting")
+        return (None, "greeting")
+    if intk == "faq":
+        try:
+            ans = _faq_answer(ctext, conv) or ""
+        except Exception:
+            ans = ""
+        return (ans or None, "faq")
+    if intk in ("price", "availability"):
+        try:
+            tr = _price_agent_trace(conv, page, allow_vision=True,
+                                    allow_photo_tiers=True)
+        except Exception:
+            tr = {}
+        by = tr.get("resolved_by")
+        rep = tr.get("reply") or ""
+        if rep and by in ("ad", "ad_text", "fingerprint", "vision", "ask_photo"):
+            return (rep, "price")
+        return (None, "price")
+    if intk == "delivery":
+        try:
+            return (_delivery_promise_tn(), "delivery")
+        except Exception:
+            return (None, "delivery")
+    if intk == "order":
+        try:
+            return (_order_agent_line(conv), "order")
+        except Exception:
+            return (None, "order")
+    # exchange, product, other → no auto-reply (a human handles it).
+    return (None, intk)
+
+
+def _decider_enabled(sender_id):
+    """True if the unified decider should SEND replies for this sender. Driven by
+    the config whitelist DECIDER_REPLY_PSIDS (comma-separated PSIDs); empty means
+    nobody (live system unchanged). The sentinel 'ALL' enables everyone."""
+    try:
+        raw = _cfg("DECIDER_REPLY_PSIDS", "") or ""
+    except Exception:
+        raw = ""
+    ids = {s.strip() for s in raw.replace(";", ",").split(",") if s.strip()}
+    if not ids:
+        return False
+    return "ALL" in ids or str(sender_id or "") in ids
 
 
 @login_required(login_url="/login/")

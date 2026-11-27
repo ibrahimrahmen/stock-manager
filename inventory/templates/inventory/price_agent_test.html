@@ -123,7 +123,20 @@ function render(tr){
      + '<div class="reply'+askCls+'">'+esc(tr.reply)+'</div>'
      + '<div class="total"><span>Résolu par : <b>'+esc(tr.resolved_by||'—')+'</b></span>'
      + '<span>Coût : <b>'+esc(tr.cost_est||'0')+'</b></span></div></div>';
-  out.innerHTML = h;
+  return h;
+}
+
+function deciderHtml(d){
+  if(!d) return '';
+  const toHuman = d.to_human;
+  const body = toHuman
+    ? '<div class="reply ask">→ un humain (aucun agent ne répond : '+esc(d.agent||'autre')+')</div>'
+    : '<div class="reply">'+esc(d.reply)+'</div>';
+  return '<div class="card" style="border:1.5px solid #0f6e56;">'
+    + '<div class="router">🧭 Décideur → <b>'+esc(d.intent_label||d.intent)+'</b>'
+    + (toHuman?'':' · agent <b>'+esc(d.agent)+'</b>')+'</div>'
+    + '<div class="ttl" style="font-weight:600;margin:6px 0;">💬 Ce que le bot enverrait</div>'
+    + body + '</div>';
 }
 
 document.getElementById('run').onclick = async ()=>{
@@ -140,7 +153,11 @@ document.getElementById('run').onclick = async ()=>{
       })
     });
     const j = await r.json();
-    if(j.status==='ok'){ render(j.trace); }
+    if(j.status==='ok'){
+      out.innerHTML = deciderHtml(j.decider)
+        + '<div class="sub" style="margin:10px 0 4px;">Détail de l\'agent Prix :</div>'
+        + render(j.trace);
+    }
     else { out.innerHTML = '<div class="err">'+esc(j.message||'Erreur')+'</div>'; }
   }catch(e){ out.innerHTML = '<div class="err">'+esc(String(e))+'</div>'; }
 };
