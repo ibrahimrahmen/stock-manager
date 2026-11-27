@@ -7146,6 +7146,16 @@ _INTENT_EXCHANGE = ("echange", "échange", "tbadel", "nbadel", "nabdel", "badel"
 _INTENT_DELIVERY = ("wa9tech", "waktech", "w9tech", "wa2tech", "yousel", "yousil",
                     "tousel", "touselni", "delai", "délai", "ghodwa", "wa9t el",
                     "win wsel", "suivi", "tracking", "wa9tech yousel", "yousil")
+# Delivery-TIMING words that must win over price words: "9adech men youm bech
+# touselni" (how many DAYS to arrive) contains "9adech" but is a delivery
+# question, not a price one. Excludes "livraison" (that's usually the fee).
+_DELIVERY_TIMING_KWS = ("wa9tech", "waktech", "w9tech", "wa2tech", "touselni",
+                        "tousel", "tousil", "yousel", "yousil", "yousalni",
+                        "wsoul", "men youm", "men youmin", "9adech men",
+                        "9adeh men", "9added men", "9adech youm", "9adeh youm",
+                        "9addech men", "yo93od", "yo9od", "yoq3od", "9adeh yo93od",
+                        "combien de temps", "combien de jours", "delai", "délai",
+                        "dele7", "suivi", "tracking")
 _INTENT_PRODUCT = ("model", "modèle", "modele", "jdod", "jdoud", "jdid", "nouveau",
                    "nouveaux", "3andkom", "3andkoum", "andkom", "catalogue",
                    "collection", "chnowa 3andkom", "gilet", "vest", "survet",
@@ -7188,6 +7198,10 @@ def _intent_from_text(low, has_photo, conv, allow_greeting=True):
 
     if _has(_INTENT_EXCHANGE):
         return ("exchange", "🔁 échange")
+    # Delivery TIMING wins over price: "9adech men youm bech touselni" asks how
+    # many days to arrive, not the price.
+    if _has(_DELIVERY_TIMING_KWS):
+        return ("delivery", "🚚 livraison")
     if has_photo:
         return ("price", "🏷️ prix")
     if any(k in low for k in _PRICE_QUESTION_KWS):
