@@ -7278,9 +7278,12 @@ def api_conversations_live(request):
           .exclude(status=MessengerConversation.IGNORED))
     if pids:
         qs = qs.filter(page_id__in=pids)
-    qs = qs.order_by("-updated_at")[:30]
-    rows = []
+    qs = qs.order_by("-updated_at")[:150]
     now = _tz.now()
+    # Pass 1 (cheap): keep chats either WAITING on us, or answered in the last
+    # 10 min. Waiting customers are ALWAYS kept, so a busy page (lots of newer
+    # chats) can't push them off the wall. Then order waiting-first + recent.
+    kept = []
     for c in qs:
         msgs = c.messages or []
         last = None
@@ -7289,13 +7292,16 @@ def api_conversations_live(request):
                 last = m
                 break
         last_from = (last or {}).get("from", "")
-        # "Waiting" = the customer spoke last and nobody (human or bot) answered.
         waiting = (last_from == "user")
         mins = int((now - c.updated_at).total_seconds() // 60) if c.updated_at else 0
-        # Drop chats that are waiting on the CUSTOMER and have been quiet for
-        # 10+ min (the customer went silent) — keep the wall to what's live.
         if (not waiting) and mins >= 10:
             continue
+        kept.append((c, last, last_from, waiting, mins))
+    kept.sort(key=lambda x: (0 if x[3] else 1, x[4]))
+    kept = kept[:50]
+    rows = []
+    for c, last, last_from, waiting, mins in kept:
+        msgs = c.messages or []
         # Last few messages so each tile can show a live mini-thread.
         recent = []
         for _m in msgs[-8:]:
