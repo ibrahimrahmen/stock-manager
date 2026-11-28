@@ -8006,11 +8006,10 @@ def api_conversation_thread(request, pk):
     a FREE agent suggestion. Superuser only."""
     if not request.user.is_superuser:
         return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
-    from .models import MessengerConversation, SalesPage
+    from .models import MessengerConversation
     c = MessengerConversation.objects.filter(pk=pk).first()
     if not c:
         return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
-    page = SalesPage.objects.filter(pk=3).first()
     msgs = _clean_thread_for_display(c.messages or [])[-80:]
     out = []
     for m in msgs:
@@ -8023,10 +8022,9 @@ def api_conversation_thread(request, pk):
             "flag": flag,
             "ts": m.get("ts", "") or "",
         })
-    try:
-        tr = _price_agent_trace(c, page, allow_vision=False, allow_photo_tiers=False)
-    except Exception:
-        tr = {}
+    # NOTE: do NOT run _price_agent_trace here — it can now hit the Meta API
+    # (ad-caption fetch) and make this endpoint slow/hang. The full-history popup
+    # only needs the messages; price suggestions come from the wall / Analyser.
     return JsonResponse({
         "status": "ok",
         "id": c.id,
@@ -8034,13 +8032,6 @@ def api_conversation_thread(request, pk):
         "platform": c.platform or "messenger",
         "ad": c.source_campaign_name or "",
         "messages": out,
-        "agent": {
-            "router": tr.get("router_note", ""),
-            "suggest": tr.get("reply", ""),
-            "by": tr.get("resolved_by", ""),
-            "is_price_q": bool(tr.get("is_price_question")),
-            "has_photo": bool(tr.get("has_photo")),
-        },
     })
 
 
