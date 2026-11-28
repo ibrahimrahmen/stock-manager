@@ -8047,6 +8047,65 @@ def api_conversation_thread(request, pk):
 
 
 @login_required(login_url="/login/")
+def api_debug_conv(request):
+    """FULL raw dump of a conversation for debugging — found by ?name= (sender
+    name contains, most recent) or ?pk=. Superuser only. Read-only."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import MessengerConversation
+    pk = (request.GET.get("pk") or "").strip()
+    name = (request.GET.get("name") or "").strip()
+    c = None
+    if pk:
+        c = MessengerConversation.objects.filter(pk=pk).first()
+    elif name:
+        c = (MessengerConversation.objects.filter(sender_name__icontains=name)
+             .order_by("-updated_at").first()
+             or MessengerConversation.objects.filter(sender_id__icontains=name)
+             .order_by("-updated_at").first())
+    if not c:
+        return JsonResponse({"status": "error", "message": "introuvable"}, status=404)
+
+    def _g(obj, attr, default=None):
+        try:
+            return getattr(obj, attr, default)
+        except Exception:
+            return default
+
+    _po = _g(c, "pending_order", None)
+    po = None
+    if _po is not None:
+        po = {
+            "id": _g(_po, "id"), "phone": _g(_po, "phone", ""),
+            "name": _g(_po, "name", ""), "address": _g(_po, "address", ""),
+            "ville": _g(_po, "ville", ""), "region_id": _g(_po, "region_id"),
+            "status": _g(_po, "status", ""),
+        }
+    data = {
+        "id": c.id,
+        "sender_id": _g(c, "sender_id", ""),
+        "sender_name": _g(c, "sender_name", ""),
+        "page_id": _g(c, "page_id", ""),
+        "platform": _g(c, "platform", ""),
+        "status": _g(c, "status", ""),
+        "source_ad_id": _g(c, "source_ad_id", ""),
+        "source_campaign_name": _g(c, "source_campaign_name", ""),
+        "source_campaign": _g(c, "source_campaign", ""),
+        "source_ad_ref": _g(c, "source_ad_ref", ""),
+        "matched_ad_id": _g(c, "matched_ad_id"),
+        "auto_replied": _g(c, "auto_replied"),
+        "bot_on": _g(c, "bot_on"),
+        "created_at": str(_g(c, "created_at", "")),
+        "updated_at": str(_g(c, "updated_at", "")),
+        "extracted": _g(c, "extracted"),
+        "pending_order": po,
+        "messages": _g(c, "messages", []),
+    }
+    return JsonResponse({"status": "ok", "conv": data},
+                        json_dumps_params={"ensure_ascii": False, "indent": 2})
+
+
+@login_required(login_url="/login/")
 def api_debug_ai_health(request):
     """Tiny, isolated Claude health check — one trivial generation, NO catalog
     context, NO images — so it tells you cleanly whether your Anthropic key +

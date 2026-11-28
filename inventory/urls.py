@@ -206,6 +206,7 @@ urlpatterns = [
     path("conversations/", views.conversations_live_page, name="conversations_live_page"),
     path("api/conversations-live/", views.api_conversations_live, name="api_conversations_live"),
     path("api/conversation-thread/<int:pk>/", views.api_conversation_thread, name="api_conversation_thread"),
+    path("api/debug-conv/", views.api_debug_conv, name="api_debug_conv"),
     path("api/price-agent-on-conv/<int:pk>/", views.api_price_agent_on_conv, name="api_price_agent_on_conv"),
     path("api/ai-fallback-on-conv/<int:pk>/", views.api_ai_fallback_on_conv, name="api_ai_fallback_on_conv"),
     path("testing-production/", views.testing_production_page, name="testing_production_page"),
