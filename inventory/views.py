@@ -1578,14 +1578,10 @@ def _delivery_promise_tn(now=None):
     d1, d2 = _next_delivery(prep, 2)
     days = f"nhar {_TN_DAYS[d1.weekday()]} walla {_TN_DAYS[d2.weekday()]}"
 
-    if before_open:
-        call = "nkalmouk 3al confirmation baad el 10 mta3 sbe7 nchallah"
-    elif after_cutoff:
-        call = "ghodwa nkalmouk 3al confirmation"
-    else:
-        call = "chwaya w nkalmouk 3al confirmation"
-
-    return f"Okey khouya, {call} w nchallah touselek {days} 🤍"
+    # The order confirmation already tells the customer we'll call them, so the
+    # delai agent answers ONLY the delivery time (no "call for confirmation").
+    # after_cutoff still shifts the prep/delivery days above.
+    return f"Okey khouya, nchallah touselek {days} 🤍"
 
 
 # Sent once when a customer writes but hasn't given a phone number yet — invites
