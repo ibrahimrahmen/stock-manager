@@ -504,7 +504,22 @@ def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
             trace["steps"].append(s1b)
             return trace
         s1b["found"] = False
-        s1b["why"] = "pas de prix lisible dans la pub"
+        # Say WHY it failed so the operator knows the real blocker.
+        _adtxt = ""
+        try:
+            _adtxt = _ad_info_for_conv(conv) or ""
+        except Exception:
+            _adtxt = ""
+        _has_adid = bool((getattr(conv, "source_ad_id", "") or "").strip())
+        _has_token = bool(_cfg("META_ACCESS_TOKEN", "").strip())
+        if _adtxt:
+            s1b["why"] = "pub récupérée mais aucun prix lisible dans le texte"
+        elif not _has_adid:
+            s1b["why"] = "pas d'ID de pub capturé (seulement le nom) — impossible de lire la pub"
+        elif not _has_token:
+            s1b["why"] = "META_ACCESS_TOKEN manquant — impossible de lire le texte de la pub"
+        else:
+            s1b["why"] = "texte de la pub non récupéré (accès Meta ou pub sans texte)"
         trace["steps"].append(s1b)
 
     # Dashboard live view: skip the photo tiers (slow / possibly paid) and
