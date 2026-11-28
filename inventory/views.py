@@ -2685,14 +2685,54 @@ def _count_pieces_in_image(local_images, url_images):
         return 0
 
 
+def _linked_offer_for_conv(conv):
+    """The offer EXPLICITLY linked to the ad this conversation came from (the
+    link set by hand in the ads interface). Authoritative — no name-guessing.
+    Returns the Offer only when the ad is linked to exactly ONE active offer,
+    else None (so a multi-offer ad still goes through the single/ensemble logic).
+    """
+    try:
+        from .models import Ad
+    except Exception:
+        return None
+    camp = (getattr(conv, "source_campaign_name", "") or "").strip()
+    ad_id = (getattr(conv, "source_ad_id", "") or "").strip()
+    ad = None
+    try:
+        if camp:
+            ad = Ad.objects.filter(campaign_name__iexact=camp).first()
+        if not ad and ad_id:
+            ad = Ad.objects.filter(campaign_id=ad_id).first()
+    except Exception:
+        return None
+    if not ad or getattr(ad, "attribution", "") != getattr(ad, "ATTR_OFFER", "offer"):
+        return None
+    try:
+        offers = list({lk.offer for lk in ad.links.all()
+                       if lk.offer_id and lk.offer and lk.offer.is_active})
+    except Exception:
+        offers = []
+    if not offers and getattr(ad, "offer_id", None) and ad.offer and ad.offer.is_active:
+        offers = [ad.offer]  # legacy single-offer link
+    return offers[0] if len(offers) == 1 else None
+
+
 def _resolve_ad_line_offer(conv, page, local_images, url_images):
-    """The customer came from an ad (referral). Pick the offer from the AD'S OWN
-    product line — the campaign word keeps us on the right line (e.g. 'Vintage',
-    not a look-alike like 'Blueline') — and choose the single-piece vs ensemble
-    variant by how many pieces the image shows + the customer's wording + the
-    full ad text. Returns (offer_or_None, confident_bool, note_str)."""
+    """The customer came from an ad (referral). FIRST honour the explicit
+    ad->offer link (set in the ads interface); only if there's no single linked
+    offer, pick from the AD'S OWN product line by name — the campaign word keeps
+    us on the right line (e.g. 'Vintage', not a look-alike like 'Blueline') — and
+    choose the single-piece vs ensemble variant by how many pieces the image
+    shows + the customer's wording + the full ad text.
+    Returns (offer_or_None, confident_bool, note_str)."""
     import re as _re
     from .models import Offer
+    # AUTHORITATIVE: an ad linked to exactly one offer answers instantly, with no
+    # name-guessing (this is what fixes a descriptive ad name matching several
+    # offers and giving up).
+    _linked = _linked_offer_for_conv(conv)
+    if _linked:
+        return (_linked, True, "offre liée à la pub")
     camp = ((getattr(conv, "source_campaign_name", "") or "")
             or (getattr(conv, "source_campaign", "") or "")).lower()
     _generic = {"next", "generation", "traffic", "barats", "arrow", "handsome",
