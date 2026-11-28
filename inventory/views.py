@@ -335,18 +335,37 @@ def _ad_price_line(conv):
     if not txt:
         return ""
     low = txt.lower()
-    m = _re.search(r"(\d{2,4})\s*(?:dt|dinar|dinars|tnd|د\.?ت|دينار)", low)
-    if not m:
+    # Collect every "NN DT" style price in the copy. Many ads list SEVERAL prices
+    # (e.g. "Prix 1: 49 DT / Prix 2: 89 DT / 119 / 139") for different packs — we
+    # must NOT guess one, or we quote the wrong price. Only answer when the copy
+    # has a single, unambiguous price.
+    prices = []
+    for mm in _re.finditer(r"(\d{2,4})\s*(?:dt|dinar|dinars|tnd|د\.?ت|دينار)", low):
+        try:
+            v = int(mm.group(1))
+        except Exception:
+            continue
+        # Skip the DELIVERY fee, not a product price: the standard 7 DT, or any
+        # number right after "livraison / delivery / توصيل" (e.g. "Livraison: 7 DT").
+        _ctx = low[max(0, mm.start() - 18):mm.start()]
+        if (v == _LIVRAISON_FEE_DT or "livr" in _ctx or "deliver" in _ctx
+                or "توصيل" in _ctx):
+            continue
+        if 10 <= v <= 2000 and v not in prices:
+            prices.append(v)
+    if not prices:
         m = _re.search(r"prix[^\d]{0,14}(\d{2,4})", low)
-    if not m:
+        if m:
+            try:
+                v = int(m.group(1))
+                if 10 <= v <= 2000 and v != _LIVRAISON_FEE_DT:
+                    prices.append(v)
+            except Exception:
+                pass
+    if len(prices) != 1:
+        # 0 prices, or several different ones (ambiguous) -> don't guess.
         return ""
-    try:
-        val = int(m.group(1))
-    except Exception:
-        return ""
-    if val < 10 or val > 2000:  # sanity: a plausible clothing price in DT
-        return ""
-    return "%s Dt + %s dt livraison" % (val, _LIVRAISON_FEE_DT)
+    return "%s Dt + %s dt livraison" % (prices[0], _LIVRAISON_FEE_DT)
 
 
 def _order_is_complete(conv):
@@ -4069,7 +4088,7 @@ def _fetch_ad_text(ad_id):
         return _AD_TEXT_CACHE[ad_id]
     # The ad's creative holds the text. Pull common text-bearing fields.
     url = (f"https://graph.facebook.com/v21.0/{ad_id}"
-           f"?fields=creative{{body,title,object_story_spec,"
+           f"?fields=creative{{body,title,name,object_story_spec,"
            f"asset_feed_spec,effective_object_story_id}}"
            f"&access_token={token}")
     text = ""
@@ -4082,6 +4101,11 @@ def _fetch_ad_text(ad_id):
             parts.append(cr["body"])
         if cr.get("title"):
             parts.append(cr["title"])
+        # The 'name' field holds the POST CAPTION for boosted-post ads, where the
+        # price usually lives (body is often empty). This is where "Pull en laine
+        # 69 DT" sits, so it must be read too.
+        if cr.get("name"):
+            parts.append(cr["name"])
         # object_story_spec.link_data.message / description
         oss = cr.get("object_story_spec", {}) or {}
         ld = oss.get("link_data", {}) or {}
