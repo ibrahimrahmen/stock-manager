@@ -22250,6 +22250,7 @@ def api_messenger_webhook(request):
                 images = []
                 _shared_post_media = ""
                 _shared_caption = ""
+                _shared_raw = []
                 for att in (msg.get("attachments") or []):
                     _atype = att.get("type")
                     if _atype == "image":
@@ -22257,6 +22258,7 @@ def api_messenger_webhook(request):
                         if u:
                             images.append(u)
                     elif _atype in ("ig_post", "share", "story_mention"):
+                        _shared_raw.append(att)  # keep the raw share for debugging
                         # Customer SHARED one of our posts/reels or replied to a
                         # story. Resolve it to BOTH its image AND its CAPTION —
                         # the caption is the publication's description (product +
@@ -22327,6 +22329,19 @@ def api_messenger_webhook(request):
                             "media_id": _shared_post_media or "",
                         })
                         conv.messages = _m0
+                # Always keep the RAW share attachment (even when the caption fetch
+                # failed), so /api/debug-conv/ shows exactly what Meta sent and we
+                # can see why a caption didn't resolve.
+                if _shared_raw and not is_echo:
+                    _m1 = conv.messages or []
+                    if not any(m.get("kind") == "shared_attachment_raw" for m in _m1):
+                        _m1.append({
+                            "from": "system", "kind": "shared_attachment_raw",
+                            "text": "", "images": [],
+                            "ts": str(ev.get("timestamp") or ""), "mid": "",
+                            "raw": _shared_raw,
+                        })
+                        conv.messages = _m1
                 conv.save()
 
                 # Everything below (profile name, ad referral, auto-reply,
