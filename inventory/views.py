@@ -7254,6 +7254,11 @@ _INTENT_ORDER = ("taille", "pointure", "adresse", "3inwen", "3enwen", "noumrou",
 _INTENT_GREET = ("slm", "salam", "aslema", "asslema", "3aslema", "3asslema",
                  "bonjour", "bjr", "bnj", "sbah", "sbh", "cc", "coucou", "salut",
                  "slem", "selem", "sbhkom")
+# Match greeting tokens as WHOLE WORDS only — a substring match let short words
+# like "cc"/"slm" false-match inside others ("d'accord" -> "cc" -> greeting).
+import re as _greet_intent_re_mod
+_GREET_WORD_RE = _greet_intent_re_mod.compile(
+    r"\b(" + "|".join(_greet_intent_re_mod.escape(k) for k in _INTENT_GREET) + r")\b")
 
 
 def _recent_customer_text(conv, limit=6):
@@ -7309,7 +7314,7 @@ def _intent_from_text(low, has_photo, conv, allow_greeting=True):
         return ("order", "📝 commande")
     if _has(_INTENT_PRODUCT):
         return ("product", "🖼️ produit")
-    if allow_greeting and _has(_INTENT_GREET) and len(low) <= 16:
+    if allow_greeting and len(low) <= 16 and _GREET_WORD_RE.search(low):
         return ("greeting", "👋 bonjour")
     return ("other", "💬 autre")
 
