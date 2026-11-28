@@ -285,7 +285,8 @@ def _ad_info_for_conv(conv):
                       .exclude(campaign_id__isnull=True).first())
             if ad and ad.campaign_id:
                 return _clean_ad_text(
-                    _fetch_campaign_ad_text(ad.campaign_id, ad.account_id or ""))
+                    _fetch_campaign_ad_text(ad.campaign_id, ad.account_id or "",
+                                            name_hint=camp))
         return ""
     except Exception:
         return ""
@@ -4119,33 +4120,39 @@ def _meta_token_for_account(account_id):
 _CAMPAIGN_TEXT_CACHE = {}
 
 
-def _fetch_campaign_ad_text(campaign_id, account_id=""):
-    """Fetch an ad's caption/body for a CAMPAIGN id — used when the click gave us
-    only the campaign NAME (no ad id). Reads the campaign's ads' creatives
-    (name/body/title/object_story_spec/asset_feed_spec) and returns the joined
-    text. Cached per campaign. '' on failure. Best-effort, short timeout."""
+def _fetch_campaign_ad_text(campaign_id, account_id="", name_hint=""):
+    """Fetch ONE ad's caption for a CAMPAIGN id — used when the click gave us only
+    the campaign NAME (no ad id). A 'test' campaign can bundle SEVERAL different
+    products, so we don't just take the first ad: we pick the ad whose caption
+    best matches `name_hint` (the clicked campaign/ad name, e.g. 'pull laine
+    zippé'), so 'col zippé' wins over an unrelated product in the same campaign.
+    Cached per (campaign, hint). '' on failure. Best-effort, short timeout."""
+    import re as _re
     import urllib.request as _ureq
     import json as _json
     if not campaign_id:
         return ""
-    if campaign_id in _CAMPAIGN_TEXT_CACHE:
-        return _CAMPAIGN_TEXT_CACHE[campaign_id]
+    _ck = "%s|%s" % (campaign_id, (name_hint or "").lower().strip())
+    if _ck in _CAMPAIGN_TEXT_CACHE:
+        return _CAMPAIGN_TEXT_CACHE[_ck]
     token = _meta_token_for_account(account_id)
     if not token:
         return ""
     url = (f"https://graph.facebook.com/v21.0/{campaign_id}/ads"
            f"?fields=creative{{body,title,name,object_story_spec,asset_feed_spec}}"
-           f"&limit=5&access_token={token}")
+           f"&limit=10&access_token={token}")
+    _generic = {"test", "barats", "pull", "prix", "offre", "promo", "pub",
+                "publication", "story", "reel", "post", "laine"}
+    hint_words = [w for w in _re.split(r"[^a-z0-9]+", (name_hint or "").lower())
+                  if len(w) >= 4 and w not in _generic]
     text = ""
     try:
         with _ureq.urlopen(url, timeout=7) as resp:
             d = _json.loads(resp.read().decode("utf-8"))
 
         def _ad_caption(cr):
-            # The PRIMARY caption of ONE ad (where the single price lives). We do
-            # NOT merge asset_feed_spec body VARIATIONS here — those are A/B copy
-            # variants that can each carry a different price and make the whole
-            # thing look multi-price. Only fall back to them if nothing else.
+            # PRIMARY caption of ONE ad (where the single price lives). Not the
+            # asset_feed_spec body variations (those make it look multi-price).
             for k in ("body", "name", "title"):
                 if cr.get(k):
                     return cr[k]
@@ -4165,16 +4172,26 @@ def _fetch_campaign_ad_text(campaign_id, account_id=""):
                         return it["text"]
             return ""
 
-        # Read ONE ad's caption = one product = one price. The first ad that has
-        # a readable caption wins (a campaign's ads are the same product/offer).
+        caps = []
         for ad in (d.get("data") or []):
             cap = (_ad_caption(ad.get("creative", {}) or {}) or "").strip()
             if cap:
-                text = cap[:1500]
-                break
+                caps.append(cap)
+        if caps:
+            if hint_words and len(caps) > 1:
+                # Pick the caption that shares the most distinctive words with the
+                # clicked ad name (e.g. 'zippé'), so a mixed campaign resolves to
+                # the right product.
+                def _score(c):
+                    cl = c.lower()
+                    return sum(1 for w in hint_words if w in cl)
+                best = max(caps, key=_score)
+                text = (best if _score(best) > 0 else caps[0])[:1500]
+            else:
+                text = caps[0][:1500]
     except Exception:
         text = ""
-    _CAMPAIGN_TEXT_CACHE[campaign_id] = text
+    _CAMPAIGN_TEXT_CACHE[_ck] = text
     return text
 
 
