@@ -22174,31 +22174,14 @@ def api_messenger_webhook(request):
                                     or (getattr(_po, "ville", "") or "").strip()
                                     or getattr(_po, "region_id", None)))
                                 if _has_addr:
-                                    # Belt-and-braces: never send the confirmation
-                                    # twice (a worker / spawn race could slip past
-                                    # the auto_replied flag). Atomic DB-cache claim,
-                                    # one per conversation.
-                                    from django.core.cache import cache as _cc
-                                    try:
-                                        if not _cc.add("confirm_sent:%s" % cid, 1, 3600):
-                                            return
-                                    except Exception:
-                                        pass
-                                    # Order is complete -> order-received message.
-                                    sent = []
-                                    _conf = _order_confirm_tn()
-                                    if _messenger_send_text(pg, sn, _conf, plat):
-                                        sent.append(_conf)
-                                    if sent:
-                                        _c.refresh_from_db()
-                                        _c.auto_replied = True
-                                        _mm = _c.messages or []
-                                        for _txt in sent:
-                                            _mm.append({"from": "page", "text": _txt,
-                                                        "ts": "", "mid": "",
-                                                        "autoreply": True})
-                                        _c.messages = _mm
-                                        _c.save(update_fields=["messages", "auto_replied", "updated_at"])
+                                    # Order complete -> captured silently in our
+                                    # system. The "order received" confirmation is an
+                                    # ORDER-agent message and that agent is PAUSED, so
+                                    # we DON'T auto-reply (the team confirms). Just
+                                    # mark handled so nothing else auto-fires.
+                                    _c.refresh_from_db()
+                                    _c.auto_replied = True
+                                    _c.save(update_fields=["auto_replied", "updated_at"])
                                 else:
                                     # Address missing -> nudge once for it + size.
                                     _already = any(
@@ -22279,28 +22262,10 @@ def api_messenger_webhook(request):
                             or (getattr(_po2, "ville", "") or "").strip()
                             or getattr(_po2, "region_id", None)))
                         if _asked2 and _has_addr2 and not conv.auto_replied:
-                            # Same single, time-aware confirmation as the worker
-                            # path, sharing the dedup guard so the two paths can
-                            # never both send it.
-                            from django.core.cache import cache as _cc2
-                            try:
-                                _go2 = bool(_cc2.add("confirm_sent:%s" % conv.pk, 1, 3600))
-                            except Exception:
-                                _go2 = True
-                            if _go2:
-                                sent2 = []
-                                _conf2 = _order_confirm_tn()
-                                if _messenger_send_text(page_id, sender_id, _conf2, platform):
-                                    sent2.append(_conf2)
-                                if sent2:
-                                    conv.auto_replied = True
-                                    _mm2 = conv.messages or []
-                                    for _tx2 in sent2:
-                                        _mm2.append({"from": "page", "text": _tx2,
-                                                     "ts": "", "mid": "",
-                                                     "autoreply": True})
-                                    conv.messages = _mm2
-                                    conv.save(update_fields=["messages", "auto_replied", "updated_at"])
+                            # Order complete -> captured silently, NO auto
+                            # confirmation (order agent paused). Mark handled.
+                            conv.auto_replied = True
+                            conv.save(update_fields=["auto_replied", "updated_at"])
                 except Exception:
                     pass
     except Exception as e:
