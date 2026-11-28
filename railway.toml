@@ -27,12 +27,14 @@ command = "curl https://web-production-1391c5.up.railway.app/cron/refresh-tokens
 schedule = "0 4 * * *"
 command = "curl https://web-production-1391c5.up.railway.app/cron/drive-sync/"
 
-# AI office: each call makes the next AI employee write its morning report
-# (one employee per call: 8:00 finance, 8:10 marketing; add a line per new hire).
-[[crons]]
-schedule = "0 8 * * *"
-command = "curl https://web-production-1391c5.up.railway.app/cron/ai-office-daily/"
-
-[[crons]]
-schedule = "10 8 * * *"
-command = "curl https://web-production-1391c5.up.railway.app/cron/ai-office-daily/"
+# AI office daily reports DISABLED (2026-11-28) — the daily Claude runs for
+# Sami (finance) + Nour (marketing) were costing ~$10/day in API. The office
+# still works on demand (chat); it just no longer runs itself every morning.
+# To re-enable, restore the two [[crons]] below AND set the employees active again.
+# [[crons]]
+# schedule = "0 8 * * *"
+# command = "curl https://web-production-1391c5.up.railway.app/cron/ai-office-daily/"
+#
+# [[crons]]
+# schedule = "10 8 * * *"
+# command = "curl https://web-production-1391c5.up.railway.app/cron/ai-office-daily/"
