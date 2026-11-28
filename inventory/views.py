@@ -1400,8 +1400,8 @@ def _order_confirm_tn(now=None):
 # delivery address after a short wait — a single polite nudge for the missing
 # address (governorate + address) and size, so the order can be completed.
 MESSENGER_ASK_INFO_AR = (
-    "باش نكمّلو الكوموند و نوصّلوهالك 🤍 ابعثلنا العنوان الكامل "
-    "(الولاية + العنوان) و المقاس إلا مازال."
+    "Bech nkamlou el commande 🤍 ab3athelna el adresse w el taille "
+    "w el couleur"
 )
 
 # Seconds to wait before sending the confirmation, so we don't cut the customer
