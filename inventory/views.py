@@ -432,6 +432,8 @@ def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
     text, _bphoto = _customer_burst_text(conv)
     low = (text or "").lower()
     price_kw = next((k for k in _PRICE_QUESTION_KWS if k in low), None)
+    if not price_kw and _PRICE_WORD_RE.search(low):
+        price_kw = "كم"
     avail_kw = next((k for k in _AVAIL_QUESTION_KWS if k in low), None)
     # A sent photo is itself a price/product inquiry, even with no price word.
     is_price = bool(price_kw or avail_kw or _bphoto)
@@ -1552,7 +1554,11 @@ _PRICE_QUESTION_KWS = (
     "prix", "price", "thaman", "combien", "chhal", "ch7al", "che7al",
     "9addeh", "9addech", "9adch", "9edch", "b9adch", "b9edch", "9adach",
     "som ", "somme", "s3er", "se3er", "s3ar", "sawm", "thamen", "تمن", "سوم",
-    "بقداش", "قداش", "بقداه", "قداه", "سعر", "الثمن", "بكم", "كم",
+    "بقداش", "قداش", "بقداه", "قداه", "سعر", "الثمن",
+    # NOTE: "كم"/"بكم" ("how much") are NOT here — as a 2-letter substring "كم"
+    # matches inside unrelated words (e.g. "كمون" = cumin, "كملت" = I finished),
+    # which mis-routed real messages to the price agent. They are matched as a
+    # WHOLE WORD via _PRICE_WORD_RE below instead.
 )
 
 # Availability phrasing — "is it in stock / available?". Kept SEPARATE from the
@@ -1563,6 +1569,23 @@ _AVAIL_QUESTION_KWS = (
     "disponible", "dispo", "dispon", "famma", "fama", "famma", "stock",
     "available", "3andkom", "3andek", "andkom", "موجود", "متوفر",
 )
+
+# "كم" / "بكم" ("how much") only count as a price question when they stand as a
+# WHOLE WORD — not when they happen to be the opening letters of another word
+# like "كمون" (cumin) or "كملت" (I finished). Arabic letters are \w, so the
+# lookarounds reject a match that is glued to more letters. Punctuation/spaces
+# around the word are fine.
+import re as _price_re_mod
+_PRICE_WORD_RE = _price_re_mod.compile(r"(?<!\w)(?:بكم|كم)(?!\w)")
+
+
+def _has_price_kw(low):
+    """True if the text asks a price — substring keywords OR the whole-word-only
+    Arabic 'كم'/'بكم'. Centralised so the router and the price agent agree."""
+    low = low or ""
+    if any(k in low for k in _PRICE_QUESTION_KWS):
+        return True
+    return bool(_PRICE_WORD_RE.search(low))
 
 
 def _faq_answer(text, conv=None):
@@ -7356,7 +7379,7 @@ def _intent_from_text(low, has_photo, conv, allow_greeting=True):
         return ("delivery", "🚚 livraison")
     if has_photo:
         return ("price", "🏷️ prix")
-    if any(k in low for k in _PRICE_QUESTION_KWS):
+    if _has_price_kw(low):
         return ("price", "🏷️ prix")
     if any(k in low for k in _AVAIL_QUESTION_KWS):
         return ("availability", "📦 dispo")
