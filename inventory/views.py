@@ -256,9 +256,10 @@ def _clean_ad_text(text):
     return "\n".join(kept)[:500].strip()
 
 
-def _ad_info_for_conv(conv):
+def _ad_info_for_conv(conv, allow_fetch=True):
     """Cleaned price/size/delivery lines from the ad this conversation came
-    from, or "" when there's no ad or nothing useful in it.
+    from, or "" when there's no ad or nothing useful in it. allow_fetch=False =
+    cache-only (no Meta network call), used by the wall feed.
 
     Two ways to reach the ad's caption:
       1) the click gave us the ad id  -> fetch that ad's creative directly.
@@ -268,7 +269,7 @@ def _ad_info_for_conv(conv):
     try:
         ad_id = (getattr(conv, "source_ad_id", "") or "").strip()
         if ad_id:
-            t = _clean_ad_text(_fetch_ad_text(ad_id))
+            t = _clean_ad_text(_fetch_ad_text(ad_id, allow_fetch=allow_fetch))
             if t:
                 return t
         camp = (getattr(conv, "source_campaign_name", "")
@@ -286,7 +287,7 @@ def _ad_info_for_conv(conv):
             if ad and ad.campaign_id:
                 return _clean_ad_text(
                     _fetch_campaign_ad_text(ad.campaign_id, ad.account_id or "",
-                                            name_hint=camp))
+                                            name_hint=camp, allow_fetch=allow_fetch))
         return ""
     except Exception:
         return ""
@@ -378,13 +379,14 @@ def _extract_ad_prices(txt):
     return prices
 
 
-def _ad_price_line(conv):
+def _ad_price_line(conv, allow_fetch=True):
     """Price read straight from the AD COPY, even when the ad isn't linked to an
     offer. Returns 'NNN Dt + 7 dt livraison' or ''. This is how a human answers
     'prix' for an ad we haven't linked yet — the number is in the ad text. Only
-    answers when the copy has ONE unambiguous price."""
+    answers when the copy has ONE unambiguous price. allow_fetch=False =
+    cache-only (no Meta call), for the wall feed."""
     try:
-        txt = _ad_info_for_conv(conv) or ""
+        txt = _ad_info_for_conv(conv, allow_fetch=allow_fetch) or ""
     except Exception:
         txt = ""
     if not txt:
@@ -464,7 +466,8 @@ def _customer_burst_text(conv):
     return (" ".join(reversed(parts)), had_photo)
 
 
-def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
+def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True,
+                       allow_ad_fetch=True):
     """PRICE AGENT (private test). Runs the 3-tier price cascade and returns a
     step-by-step trace. Sends NOTHING. Tier 1 = ad link (free), Tier 2 = photo
     fingerprint (free, local dHash), Tier 3 = photo AI analysis (Vision, paid);
@@ -540,7 +543,7 @@ def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
     if not offer:
         s1b = {"tier": "1b", "name": "Prix dans la pub (texte)",
                "tried": True, "cost": "0"}
-        _adline = _ad_price_line(conv)
+        _adline = _ad_price_line(conv, allow_fetch=allow_ad_fetch)
         if _adline:
             trace["reply"] = _adline
             trace["resolved_by"] = "ad_text"
@@ -553,7 +556,7 @@ def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
         # Say WHY it failed so the operator knows the real blocker.
         _adtxt = ""
         try:
-            _adtxt = _ad_info_for_conv(conv) or ""
+            _adtxt = _ad_info_for_conv(conv, allow_fetch=allow_ad_fetch) or ""
         except Exception:
             _adtxt = ""
         _has_token = bool(_cfg("META_ACCESS_TOKEN", "").strip())
@@ -4120,13 +4123,15 @@ def _meta_token_for_account(account_id):
 _CAMPAIGN_TEXT_CACHE = {}
 
 
-def _fetch_campaign_ad_text(campaign_id, account_id="", name_hint=""):
+def _fetch_campaign_ad_text(campaign_id, account_id="", name_hint="", allow_fetch=True):
     """Fetch ONE ad's caption for a CAMPAIGN id — used when the click gave us only
     the campaign NAME (no ad id). A 'test' campaign can bundle SEVERAL different
     products, so we don't just take the first ad: we pick the ad whose caption
     best matches `name_hint` (the clicked campaign/ad name, e.g. 'pull laine
     zippé'), so 'col zippé' wins over an unrelated product in the same campaign.
-    Cached per (campaign, hint). '' on failure. Best-effort, short timeout."""
+    Cached per (campaign, hint). allow_fetch=False returns only a cached value
+    (NO network) — used by the wall feed so it never blocks on Meta per card.
+    '' on failure. Best-effort, short timeout."""
     import re as _re
     import urllib.request as _ureq
     import json as _json
@@ -4135,6 +4140,8 @@ def _fetch_campaign_ad_text(campaign_id, account_id="", name_hint=""):
     _ck = "%s|%s" % (campaign_id, (name_hint or "").lower().strip())
     if _ck in _CAMPAIGN_TEXT_CACHE:
         return _CAMPAIGN_TEXT_CACHE[_ck]
+    if not allow_fetch:
+        return ""   # wall feed: cache-only, never a live Meta call
     token = _meta_token_for_account(account_id)
     if not token:
         return ""
@@ -4205,17 +4212,16 @@ def _fetch_campaign_ad_text(campaign_id, account_id="", name_hint=""):
     return text
 
 
-def _fetch_ad_text(ad_id):
+def _fetch_ad_text(ad_id, allow_fetch=True):
     """Fetch the ad's creative text (the post/ad body the customer saw). This
     usually contains the product name and price, so the bot can answer price
     questions accurately when the customer came from a Click-to-Messenger ad.
+    allow_fetch=False returns only a cached value (NO network) — the wall feed
+    uses this so it never blocks on Meta per card.
     Returns the text or "" on failure. Best-effort, short timeout, cached."""
     import urllib.request as _ureq
     import json as _json
     if not ad_id:
-        return ""
-    token = _cfg("META_ACCESS_TOKEN", "").strip()
-    if not token:
         return ""
     # Simple in-process cache so we don't refetch the same ad every message.
     global _AD_TEXT_CACHE
@@ -4225,6 +4231,11 @@ def _fetch_ad_text(ad_id):
         _AD_TEXT_CACHE = {}
     if ad_id in _AD_TEXT_CACHE:
         return _AD_TEXT_CACHE[ad_id]
+    if not allow_fetch:
+        return ""   # wall feed: cache-only, never a live Meta call
+    token = _cfg("META_ACCESS_TOKEN", "").strip()
+    if not token:
+        return ""
     # The ad's creative holds the text. Pull common text-bearing fields.
     url = (f"https://graph.facebook.com/v21.0/{ad_id}"
            f"?fields=creative{{body,title,name,object_story_spec,"
@@ -7949,7 +7960,7 @@ def api_conversations_live(request):
                 delivery_reply = ""
         try:
             tr = _price_agent_trace(c, page, allow_vision=False,
-                                    allow_photo_tiers=False)
+                                    allow_photo_tiers=False, allow_ad_fetch=False)
         except Exception:
             tr = {}
         rows.append({
