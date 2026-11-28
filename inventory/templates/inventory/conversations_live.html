@@ -54,6 +54,17 @@
   .s-need{background:var(--amberbg);color:var(--amber);} .s-no{background:transparent;color:var(--muted);font-style:italic;}
   .s-rt{background:#eef1f6;color:#44557a;}
   .s-done{background:transparent;color:var(--muted);}
+  .anbtn{margin-top:6px;width:100%;border:0.5px solid var(--border);background:var(--bluebg);
+    color:var(--blue);border-radius:8px;padding:6px 8px;font-size:11.5px;font-weight:600;cursor:pointer;}
+  .anbtn:disabled{opacity:.6;cursor:default;}
+  .anbox{margin-top:6px;border:0.5px solid var(--border);border-radius:8px;padding:7px 8px;background:#fff;}
+  .anstep{font-size:11px;color:var(--muted);margin:2px 0;}
+  .anstep b{color:var(--ink);}
+  .anreply{border-radius:8px;padding:5px 8px;margin-top:5px;font-size:12px;white-space:pre-wrap;}
+  .anreply.ok{background:var(--greenbg);color:var(--green);}
+  .anreply.ask{background:var(--graybg);color:var(--ink);}
+  .anmeta{font-size:10px;color:var(--muted);margin-top:4px;}
+  .anmeta b{color:var(--ink);}
   .empty{grid-column:1/-1;text-align:center;color:var(--muted);padding:50px 0;}
 </style>
 </head>
@@ -86,6 +97,36 @@ function bubbles(msgs){
     return '<div class="b '+cls+'">'+lbl+esc(m.text)+imgs+'</div>';
   }).join('');
 }
+const analyzed={};  // id -> full trace, so a click survives the 10s refresh
+function methodLabel(by){ return ({ad:'🔗 lien de la pub',ad_text:'📣 prix écrit dans la pub',
+  fingerprint:'🧬 photo identique au catalogue',vision:'🤖 reconnu par IA (Vision)',
+  ask_photo:'🙈 pas sûr → demande une photo',need_analysis:'photo à analyser',
+  not_price:'pas une question de prix'}[by])||by||'—'; }
+function analysisHtml(tr){
+  let h='<div class="anbox">';
+  (tr.steps||[]).forEach(s=>{
+    if(s.tier===0) return;
+    const ic = s.found?'✅':(s.tried===false?'⚪':'❌');
+    const d = s.found?('<b>'+esc(s.offer||'')+'</b>'):esc(s.why||'');
+    h+='<div class="anstep">'+ic+' '+esc(s.name)+' — '+d+'</div>';
+  });
+  const ok = ['ad','ad_text','fingerprint','vision'].includes(tr.resolved_by);
+  h+='<div class="anreply '+(ok?'ok':'ask')+'">'+(ok?'✅ ':'📷 ')+esc(tr.reply)+'</div>';
+  h+='<div class="anmeta">Méthode : <b>'+esc(methodLabel(tr.resolved_by))
+     +'</b> · coût : '+esc(tr.cost_est||'0')+' · rien envoyé</div></div>';
+  return h;
+}
+wall.addEventListener('click', async (e)=>{
+  const btn=e.target.closest('.anbtn'); if(!btn) return;
+  const id=btn.dataset.id;
+  btn.disabled=true; btn.textContent='⏳ analyse en cours…';
+  try{
+    const r=await fetch('/api/price-agent-on-conv/'+id+'/',{credentials:'include'});
+    const j=await r.json();
+    if(j.status==='ok'){ analyzed[id]=j.trace; btn.outerHTML=analysisHtml(j.trace); }
+    else { btn.textContent='❌ '+(j.message||'erreur'); btn.disabled=false; }
+  }catch(err){ btn.textContent='❌ erreur réseau'; btn.disabled=false; }
+});
 const ACTION={price:'🏷️ agent prix',availability:'📦 agent dispo',
   exchange:'🔁 agent échange (bientôt)',delivery:'🚚 réponse délai',
   order:'📝 capture commande',product:'🖼️ carrousel produits (bientôt)',
@@ -98,7 +139,12 @@ function footer(r){
   if(r.intent==='faq' && r.faq_reply) return '<div class="sg s-ok">🤖 '+esc(r.faq_reply)+'</div>';
   if(r.intent==='delivery' && r.delivery_reply) return '<div class="sg s-ok">🤖 '+esc(r.delivery_reply)+'</div>';
   if(r.intent==='order' && r.order_reply) return '<div class="sg s-ok">🤖 '+esc(r.order_reply)+'</div>';
-  if((r.intent==='price'||r.intent==='availability') && r.is_price_q) return '<div class="sg '+suggClass(r.suggest_by)+'">🤖 '+esc(r.suggest)+'</div>';
+  if((r.intent==='price'||r.intent==='availability') && r.is_price_q){
+    let h='<div class="sg '+suggClass(r.suggest_by)+'">🤖 '+esc(r.suggest)+'</div>';
+    if(analyzed[r.id]) h+=analysisHtml(analyzed[r.id]);
+    else h+='<button class="anbtn" data-id="'+r.id+'">🔍 Analyser (photo + IA) — rien n\'est envoyé</button>';
+    return h;
+  }
   return '<div class="sg s-rt">🧭 décide → '+esc(ACTION[r.intent]||ACTION.other)+'</div>';
 }
 function card(r){
