@@ -346,22 +346,11 @@ def _price_line_for_conv(conv):
         return ""
 
 
-def _ad_price_line(conv):
-    """Price read straight from the AD COPY, even when the ad isn't linked to an
-    offer. Returns 'NNN Dt + 7 dt livraison' or ''. This is how a human answers
-    'prix' for an ad we haven't linked yet — the number is in the ad text."""
+def _extract_ad_prices(txt):
+    """Distinct PRODUCT prices (DT) found in ad copy, excluding the delivery fee.
+    Used by the price agent and the diagnostic so both agree."""
     import re as _re
-    try:
-        txt = _ad_info_for_conv(conv) or ""
-    except Exception:
-        txt = ""
-    if not txt:
-        return ""
-    low = txt.lower()
-    # Collect every "NN DT" style price in the copy. Many ads list SEVERAL prices
-    # (e.g. "Prix 1: 49 DT / Prix 2: 89 DT / 119 / 139") for different packs — we
-    # must NOT guess one, or we quote the wrong price. Only answer when the copy
-    # has a single, unambiguous price.
+    low = (txt or "").lower()
     prices = []
     for mm in _re.finditer(r"(\d{2,4})\s*(?:dt|dinar|dinars|tnd|د\.?ت|دينار)", low):
         try:
@@ -385,8 +374,22 @@ def _ad_price_line(conv):
                     prices.append(v)
             except Exception:
                 pass
+    return prices
+
+
+def _ad_price_line(conv):
+    """Price read straight from the AD COPY, even when the ad isn't linked to an
+    offer. Returns 'NNN Dt + 7 dt livraison' or ''. This is how a human answers
+    'prix' for an ad we haven't linked yet — the number is in the ad text. Only
+    answers when the copy has ONE unambiguous price."""
+    try:
+        txt = _ad_info_for_conv(conv) or ""
+    except Exception:
+        txt = ""
+    if not txt:
+        return ""
+    prices = _extract_ad_prices(txt)
     if len(prices) != 1:
-        # 0 prices, or several different ones (ambiguous) -> don't guess.
         return ""
     return "%s Dt + %s dt livraison" % (prices[0], _LIVRAISON_FEE_DT)
 
@@ -555,7 +558,13 @@ def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
         _has_token = bool(_cfg("META_ACCESS_TOKEN", "").strip())
         _camp = (getattr(conv, "source_campaign_name", "") or "").strip()
         if _adtxt:
-            s1b["why"] = "pub lue mais 0 ou plusieurs prix (ambigu) — on ne devine pas"
+            try:
+                _pr = _extract_ad_prices(_adtxt)
+            except Exception:
+                _pr = []
+            _snip = " ".join(_adtxt.split())[:140]
+            s1b["why"] = ("pub lue: « %s… » — prix trouvés: %s (0 ou plusieurs = "
+                          "on ne devine pas)" % (_snip, _pr or "aucun"))
         elif not _has_token:
             s1b["why"] = "META_ACCESS_TOKEN manquant — impossible de lire la pub"
         elif not _camp:
