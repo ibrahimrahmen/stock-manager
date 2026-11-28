@@ -7707,16 +7707,17 @@ def conversations_live_page(request):
     return render(request, "inventory/conversations_live.html", {})
 
 
-def _ai_fallback_brain(conv, page=None):
+def _ai_fallback_brain(conv, page=None, model=None):
     """SMART FALLBACK — the one genuinely 'AI' responder. Meant to run ONLY on
     messages the free keyword decider could not classify (other / exchange /
     product). It reads the recent conversation and returns:
-        {needs_human: bool, summary: str, reply: str}
+        {needs_human: bool, summary: str, reply: str, model: str}
       - needs_human False -> 'reply' is a safe answer we could send.
       - needs_human True  -> 'reply' is a SUGGESTION for the team; 'summary' says
         what the customer wants and why a human is needed.
     STRICT: never invents a price, a delivery date, or a policy — those belong to
-    the rule agents. Cheap model (Haiku by default), short context. Sends nothing.
+    the rule agents. `model` overrides the model (None = cheap default). Short
+    context. Sends nothing.
     """
     import json as _json
     lines = []
@@ -7742,17 +7743,21 @@ def _ai_fallback_brain(conv, page=None):
         "livraison précise, ni une promotion ou une politique. Si le client "
         "demande l'un de ces points, ou veut un échange / remboursement / une "
         "décision, mets needs_human=true et propose une réponse courte que "
-        "l'équipe pourra envoyer. Écris la réponse en arabe tunisien (arabizi ou "
-        "arabe), courte, polie, avec 🤍. Réponds UNIQUEMENT en JSON : "
+        "l'équipe pourra envoyer. STYLE DE LA RÉPONSE : arabe tunisien arabizi, "
+        "TRÈS COURTE — une seule ligne, style raccourci / SMS (~6 à 12 mots max), "
+        "directe, pas de phrases longues ni formelles, un seul 🤍 à la fin. "
+        "Réponds UNIQUEMENT en JSON : "
         '{"needs_human": true|false, "summary": "<ce que veut le client, 1 ligne, '
-        'en français>", "reply": "<réponse en tunisien>"}'
+        'en français>", "reply": "<réponse courte en tunisien arabizi>"}'
     )
     prompt = "Conversation:\n%s\n\nJSON:" % transcript
     errbox = []
     out = _claude_generate(prompt, max_tokens=400, temperature=0.0,
-                           system=system, timeout=20, errbox=errbox)
+                           system=system, timeout=25, errbox=errbox, model=model)
+    _used = (model or _cfg("ANTHROPIC_MODEL", "")
+             or os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001"))
     if not out:
-        return {"error": (errbox[0] if errbox else "pas de réponse IA")}
+        return {"error": (errbox[0] if errbox else "pas de réponse IA"), "model": _used}
     _t = out.strip()
     _i, _j = _t.find("{"), _t.rfind("}")
     if _i >= 0 and _j > _i:
@@ -7762,11 +7767,13 @@ def _ai_fallback_brain(conv, page=None):
     except Exception:
         # Model didn't return clean JSON — treat the raw text as a human
         # suggestion rather than losing it.
-        return {"needs_human": True, "summary": "", "reply": out.strip()[:600]}
+        return {"needs_human": True, "summary": "", "reply": out.strip()[:600],
+                "model": _used}
     return {
         "needs_human": bool(d.get("needs_human", True)),
         "summary": (d.get("summary") or "").strip()[:300],
         "reply": (d.get("reply") or "").strip()[:800],
+        "model": _used,
     }
 
 
@@ -7781,8 +7788,17 @@ def api_ai_fallback_on_conv(request, pk):
     if not conv:
         return JsonResponse({"status": "error", "message": "introuvable"}, status=404)
     page = SalesPage.objects.filter(pk=3).first()
+    # On-demand test defaults to a STRONGER model so the operator judges the best
+    # quality; ?model=haiku uses the cheap one (what live auto would use).
+    _m = (request.GET.get("model") or "").strip().lower()
+    if _m in ("", "strong", "fort", "better"):
+        model = _cfg("ANTHROPIC_FALLBACK_MODEL", "") or "claude-sonnet-5-5"
+    elif _m in ("cheap", "haiku", "fast"):
+        model = None
+    else:
+        model = request.GET.get("model")  # explicit model id
     try:
-        res = _ai_fallback_brain(conv, page)
+        res = _ai_fallback_brain(conv, page, model=model)
         return JsonResponse({"status": "ok", "ai": res or {}})
     except Exception as e:
         return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)

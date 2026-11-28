@@ -145,6 +145,7 @@ function aiHtml(res){
     +(human?'🧑 pour l\'équipe':'✅ répondre')+'</span>';
   if(res.summary) h+='<div class="aisum">'+esc(res.summary)+'</div>';
   if(res.reply) h+='<div class="airep">'+esc(res.reply)+'</div>';
+  if(res.model) h+='<div class="aisum" style="margin-top:4px;opacity:.75;">🧩 '+esc(res.model)+'</div>';
   h+='</div>';
   return h;
 }
