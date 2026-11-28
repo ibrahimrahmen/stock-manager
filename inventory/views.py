@@ -7905,6 +7905,11 @@ def api_conversations_live(request):
         msgs = c.messages or []
         last = None
         for m in reversed(msgs):
+            # SYSTEM notes (ad referral, shared-post caption, raw attachment) are
+            # NOT a reply — skip them, or an appended caption note makes the wall
+            # think WE spoke last and wrongly show "répondu".
+            if m.get("from") == "system":
+                continue
             # A PHOTO (image, no text) is a real message too — a customer whose
             # last action was sending a photo is WAITING on us. Looking only at
             # text made the wall fall back to our earlier reply and wrongly mark
