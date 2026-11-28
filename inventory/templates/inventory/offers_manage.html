@@ -182,6 +182,14 @@ input:focus,select:focus{outline:none;border-color:var(--green);}
         <div style="font-size:11px;color:var(--muted);margin-top:4px;">Une photo de l'ensemble complet par couleur (ex: Blanc, Noir). Unifunl montre CES photos au client, pas celles des produits séparés.</div>
       </div>
 
+      <div class="field" id="of-fp-field">
+        <label>🧬 Photos de reconnaissance — pour identifier le produit depuis la photo d'un client</label>
+        <div id="of-fp-wrap" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+        <div id="of-fp-drop" style="border:1px dashed var(--border);border-radius:8px;padding:12px;text-align:center;font-size:12px;color:var(--muted);cursor:pointer;margin-top:6px;">➕ Ajouter des photos — mets TOUTES les vraies photos du produit (pub, captures, chaque couleur)</div>
+        <input type="file" id="of-fp-input" accept="image/*" multiple style="display:none;">
+        <div id="of-fp-hint" style="font-size:11px;color:var(--muted);margin-top:4px;">Pas montrées aux clients. Elles servent à reconnaître gratuitement une photo <b>quasi identique</b> (une capture d'écran de ta pub). <span id="of-fp-savefirst" style="color:var(--amber);display:none;">Enregistre d'abord l'offre, puis rouvre-la pour ajouter des photos.</span></div>
+      </div>
+
       <div class="field">
         <label>Pages où cette offre apparaît (prix par page optionnel)</label>
         <div class="checkbox-list">
@@ -350,9 +358,60 @@ function openCreate() {
   productPicks = [];
   renderProductPicks();
   renderPhotoChoices();
+  renderFpImages([], null);
   document.getElementById('modal-err').style.display = 'none';
   document.getElementById('offer-modal').classList.add('show');
 }
+
+// --- Fingerprint photos (product recognition, uploaded straight away) ---
+function fpThumbHtml(f){
+  return '<div class="fp-thumb" data-fp="'+f.id+'" style="position:relative;width:60px;height:60px;border-radius:8px;overflow:hidden;border:0.5px solid var(--border);">'
+    +'<img src="'+f.url+'" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentNode.style.display=\'none\'">'
+    +'<button type="button" class="fp-del" data-fp="'+f.id+'" title="Supprimer" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;border:0;font-size:12px;line-height:1;cursor:pointer;">×</button>'
+    +'</div>';
+}
+function renderFpImages(list, offerId){
+  const wrap=document.getElementById('of-fp-wrap');
+  if(!wrap) return;
+  wrap.innerHTML=(list||[]).map(fpThumbHtml).join('');
+  const isNew=!offerId;
+  const sf=document.getElementById('of-fp-savefirst'); if(sf) sf.style.display=isNew?'inline':'none';
+  const drop=document.getElementById('of-fp-drop');
+  if(drop){ drop.style.opacity=isNew?'.5':'1'; drop.style.pointerEvents=isNew?'none':'auto'; }
+}
+async function fpUpload(files){
+  if(!editingOfferId || !files || !files.length) return;
+  const drop=document.getElementById('of-fp-drop'); const old=drop.textContent;
+  drop.textContent='⏳ envoi…'; drop.style.pointerEvents='none';
+  const fd=new FormData(); fd.append('offer_id', editingOfferId);
+  for(const f of files) fd.append('files', f);
+  try{
+    const r=await fetch('/api/fingerprint/upload/',{method:'POST',headers:{'X-CSRFToken':csrfToken()},body:fd});
+    const j=await r.json();
+    if(j.status==='ok'){ const wrap=document.getElementById('of-fp-wrap');
+      (j.added||[]).forEach(f=>wrap.insertAdjacentHTML('beforeend', fpThumbHtml(f))); }
+    else alert(j.message||'Erreur');
+  }catch(e){ alert('Réseau : '+e.message); }
+  drop.textContent=old; drop.style.pointerEvents='auto';
+}
+(function(){
+  const drop=document.getElementById('of-fp-drop');
+  const input=document.getElementById('of-fp-input');
+  const wrap=document.getElementById('of-fp-wrap');
+  if(!drop) return;
+  drop.addEventListener('click', ()=>{ if(editingOfferId) input.click(); });
+  input.addEventListener('change', e=>{ fpUpload(e.target.files); e.target.value=''; });
+  wrap.addEventListener('click', async e=>{
+    const del=e.target.closest('.fp-del'); if(!del) return;
+    if(!confirm('Supprimer cette photo ?')) return;
+    try{ const r=await fetch('/api/fingerprint/'+del.dataset.fp+'/delete/',{method:'POST',headers:{'X-CSRFToken':csrfToken()}});
+      const j=await r.json(); if(j.status==='ok'){ const t=del.closest('.fp-thumb'); if(t) t.remove(); } else alert(j.message||'Erreur'); }
+    catch(e){ alert('Réseau'); }
+  });
+  drop.addEventListener('dragover', e=>{ if(editingOfferId){ e.preventDefault(); drop.style.borderColor='var(--green,#0f6e56)'; }});
+  drop.addEventListener('dragleave', ()=>{ drop.style.borderColor='var(--border)'; });
+  drop.addEventListener('drop', e=>{ e.preventDefault(); drop.style.borderColor='var(--border)'; if(editingOfferId) fpUpload(e.dataTransfer.files); });
+})();
 
 function offerImgPreview(input){
   const f = input.files[0]; if(!f) return;
@@ -439,6 +498,7 @@ async function openEditFromButton(btn) {
       offer.category || '',
       offer.season || ''
     );
+    renderFpImages(offer.fingerprint_images || [], offer.id);
   } catch (e) {
     alert('Erreur lors du chargement de l\'offre : ' + e.message);
   } finally {

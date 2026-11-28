@@ -11390,7 +11390,7 @@ def api_offer_detail(request, offer_id):
         return JsonResponse({"status": "error"}, status=403)
     from .models import Offer
     try:
-        offer = Offer.objects.prefetch_related("images", "products__product__variants__units").get(pk=offer_id)
+        offer = Offer.objects.prefetch_related("images", "fingerprint_images", "products__product__variants__units").get(pk=offer_id)
     except Offer.DoesNotExist:
         return JsonResponse({"status": "error", "message": "Offre introuvable."}, status=404)
 
@@ -11479,6 +11479,10 @@ def api_offer_detail(request, offer_id):
                 "color_label": oi.color_label,
                 "url": (oi.image.url if oi.image else ""),
             } for oi in offer.images.all()],
+            "fingerprint_images": [{
+                "id": fp.id, "note": fp.note or "",
+                "url": (fp.image.url if fp.image else ""),
+            } for fp in offer.fingerprint_images.all()],
             "sales_page_ids": list(offer.sales_pages.values_list("id", flat=True)),
             "page_prices": {str(pp.sales_page_id): str(pp.price) for pp in offer.page_prices.all()},
             "products": products_data,
