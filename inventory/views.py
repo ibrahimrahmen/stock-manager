@@ -7384,7 +7384,9 @@ _INTENT_PRODUCT = ("model", "modèle", "modele", "jdod", "jdoud", "jdid", "nouve
                    "nouveaux", "3andkom", "3andkoum", "andkom", "catalogue",
                    "collection", "chnowa 3andkom", "gilet", "vest", "survet",
                    "ensemble", "pull", "jacket", "doudoune", "kchabiya", "article",
-                   "produit", "chnia 3andkom", "chnowa famma")
+                   "produit", "chnia 3andkom", "chnowa famma",
+                   "blouson", "blousons", "bloussons", "blazer", "manteau",
+                   "veste", "kabout", "kbout", "nchouf")
 _INTENT_ORDER = ("taille", "pointure", "adresse", "3inwen", "3enwen", "noumrou",
                  "numero", "numéro", "commande", "nchri", "n3addi", "naheb n3adi")
 _INTENT_GREET = ("slm", "salam", "aslema", "asslema", "3aslema", "3asslema",
