@@ -1462,7 +1462,8 @@ MESSENGER_FAQ_REPLIES = [
       "raby ykhalik", "rabi ykhalik", "3aychek", "aychek", "3aychkom",
       "merci", "chokran", "choukran", "shukran", "chukran", "yebarek",
       "raby yberek", "rabi yberek", "barak allah", "3aslema w chokran",
-      "thanks", "3aslama barcha"),
+      "thanks", "3aslama barcha", "3ychek", "3ychekk", "aychik", "3aychik",
+      "y3aychek", "ya3tik", "ya3tikom", "ya3tek"),
      "3aychek khouya, raby ykhalik 🤍"),
     # Customer wants to see the real quality / a real photo before buying.
     (("quality", "qualité", "qualite", "kalite", "9alite", "9uality",
@@ -7322,11 +7323,14 @@ def _classify_intent(conv):
     if key != "other":
         return (key, label)
     # Not understood yet → read earlier messages (the one before, then the one
-    # before that...) to build context before handing off to a human.
-    wtext, wphoto = _recent_customer_text(conv, 6)
+    # before that...) to build TEXT context before handing off to a human.
+    # NOTE: only pass last_photo (the CURRENT burst's photo), not an old photo
+    # from several messages back — otherwise a customer who sent a photo, then
+    # ordered and said thanks, gets wrongly re-classified as 'prix'.
+    wtext, _wphoto = _recent_customer_text(conv, 6)
     wlow = (wtext or "").lower()
     if wlow and wlow != (text or "").lower():
-        key2, label2 = _intent_from_text(wlow, (wphoto or last_photo), conv,
+        key2, label2 = _intent_from_text(wlow, last_photo, conv,
                                          allow_greeting=False)
         if key2 != "other":
             return (key2, label2)
