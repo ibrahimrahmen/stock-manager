@@ -285,9 +285,18 @@ def _ad_info_for_conv(conv, allow_fetch=True):
                 ad = (Ad.objects.filter(campaign_name__icontains=_key)
                       .exclude(campaign_id__isnull=True).first())
             if ad and ad.campaign_id:
-                return _clean_ad_text(
+                _t2 = _clean_ad_text(
                     _fetch_campaign_ad_text(ad.campaign_id, ad.account_id or "",
                                             name_hint=camp, allow_fetch=allow_fetch))
+                if _t2:
+                    return _t2
+        # SHARED POST/REEL: the customer shared one of our publications; its
+        # caption (stored by the webhook) holds the product + price. Free to read
+        # (already captured), so it works on the wall too.
+        for m in (getattr(conv, "messages", None) or []):
+            if (m.get("kind") == "shared_post_caption"
+                    and (m.get("text") or "").strip()):
+                return _clean_ad_text(m["text"])
         return ""
     except Exception:
         return ""
@@ -22240,6 +22249,7 @@ def api_messenger_webhook(request):
                 # send photos, so without this those messages looked empty.
                 images = []
                 _shared_post_media = ""
+                _shared_caption = ""
                 for att in (msg.get("attachments") or []):
                     _atype = att.get("type")
                     if _atype == "image":
@@ -22248,21 +22258,30 @@ def api_messenger_webhook(request):
                             images.append(u)
                     elif _atype in ("ig_post", "share", "story_mention"):
                         # Customer SHARED one of our posts/reels or replied to a
-                        # story. The webhook gives a media_id (or a url); resolve
-                        # it to an image so Vision can identify the product and
-                        # the bot can quote the price.
+                        # story. Resolve it to BOTH its image AND its CAPTION —
+                        # the caption is the publication's description (product +
+                        # price), so the bot can quote the price without Vision.
                         _pl = att.get("payload") or {}
                         _u = _pl.get("url")
                         if _u:
                             images.append(_u)
-                        else:
-                            _pmid = (_pl.get("ig_post_media_id")
-                                     or _pl.get("id") or "")
-                            if _pmid:
-                                _pm = _fetch_ig_post_media(page_id, _pmid)
-                                if _pm and _pm.get("media_url"):
+                        _pmid = (_pl.get("ig_post_media_id")
+                                 or _pl.get("id") or "")
+                        if not _pmid and _u:
+                            # The media id is usually the asset_id in the CDN url.
+                            import re as _re_aid
+                            _am = _re_aid.search(r"asset_id=(\d+)", _u)
+                            if _am:
+                                _pmid = _am.group(1)
+                        if _pmid:
+                            _pm = _fetch_ig_post_media(page_id, _pmid)
+                            if _pm:
+                                if _pm.get("media_url") and not _u:
                                     images.append(_pm["media_url"])
-                                    _shared_post_media = _pmid
+                                _shared_post_media = _pmid
+                                _cap = (_pm.get("caption") or "").strip()
+                                if _cap and not _shared_caption:
+                                    _shared_caption = _cap
                 if text or images:
                     msgs = conv.messages or []
                     already = mid and any(m.get("mid") == mid for m in msgs)
@@ -22294,6 +22313,20 @@ def api_messenger_webhook(request):
                             "mid": mid,
                         })
                         conv.messages = msgs
+                # Store the SHARED POST's caption (product + price) once, as a
+                # hidden system note, so the price agent can read it like an ad
+                # caption — a customer sharing our reel then asking "Prix" gets
+                # answered from the publication's own description.
+                if _shared_caption and not is_echo:
+                    _m0 = conv.messages or []
+                    if not any(m.get("kind") == "shared_post_caption" for m in _m0):
+                        _m0.append({
+                            "from": "system", "kind": "shared_post_caption",
+                            "text": _shared_caption, "images": [],
+                            "ts": str(ev.get("timestamp") or ""), "mid": "",
+                            "media_id": _shared_post_media or "",
+                        })
+                        conv.messages = _m0
                 conv.save()
 
                 # Everything below (profile name, ad referral, auto-reply,
