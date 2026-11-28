@@ -210,8 +210,8 @@ async function testPhoto(file){
     if(j.status!=='ok'){ tRes.innerHTML='<span style="color:var(--red)">'+esc(j.message||'erreur')+'</span>'; return; }
     const m=j.match;
     if(m && m.confident){ tRes.innerHTML='<div style="background:var(--greenbg);color:var(--green);border-radius:8px;padding:8px 10px;font-size:13px;font-weight:600;">✅ '+esc(m.name)+' <span style="font-weight:400;">(distance '+m.distance+' — match sûr)</span></div>'; }
-    else if(m){ tRes.innerHTML='<div style="background:var(--amberbg);color:var(--amber);border-radius:8px;padding:8px 10px;font-size:12.5px;">🤔 proche : '+esc(m.name)+' (distance '+m.distance+') — pas assez sûr. Ajoute CETTE image au produit puis reconstruis.</div>'; }
-    else { tRes.innerHTML='<div style="background:var(--graybg);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:12.5px;">❌ aucun match. Ajoute cette image au bon produit puis reconstruis.</div>'; }
+    else if(m && m.distance<=13){ tRes.innerHTML='<div style="background:var(--amberbg);color:var(--amber);border-radius:8px;padding:8px 10px;font-size:12.5px;">🤔 limite : '+esc(m.name)+' (distance '+m.distance+') — presque. Ajoute CETTE image exacte au produit puis reconstruis.</div>'; }
+    else { tRes.innerHTML='<div style="background:var(--graybg);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:12.5px;">❌ Aucun match'+(m?(' (le plus proche : '+esc(m.name)+' à distance '+m.distance+', trop loin — ça ne compte pas)'):'')+'. Cette image n\'est pas encore dans la banque.</div>'; }
   }catch(e){ tRes.innerHTML='<span style="color:var(--red)">erreur réseau</span>'; }
 }
 tDrop.addEventListener('click', ()=>tInput.click());
