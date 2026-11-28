@@ -18632,11 +18632,23 @@ def _download_image_bytes(url):
         return b""
 
 
-def _offer_all_photos(offer, cap=8):
-    """Every local photo path for an offer: per-colour OfferImages + main image
-    + each product variant's image. Used to fingerprint the offer from ALL its
-    colourways (so any colour screenshot matches)."""
+def _offer_all_photos(offer, cap=16):
+    """Every local photo path for an offer, used to fingerprint it. Order of
+    priority: the DEDICATED fingerprint bank (OfferFingerprintImage — the real
+    ad/post images customers screenshot) FIRST, then the per-colour OfferImages +
+    main image + each product variant's image. More images = more free matches."""
     paths = []
+    # Dedicated fingerprint bank first — these are the images that actually
+    # circulate (ad creatives, screenshots), so they catch the most customers.
+    try:
+        for fp in offer.fingerprint_images.all():
+            if fp.image:
+                try:
+                    paths.append(fp.image.path)
+                except Exception:
+                    pass
+    except Exception:
+        pass
     try:
         for oi in offer.images.all():
             if oi.image:
@@ -18819,6 +18831,96 @@ def api_debug_fingerprint(request, pk):
     return JsonResponse({"status": "ok", "conv": pk,
                          "customer_images": {"urls": len(urls), "local": len(local)},
                          "match": m or None})
+
+
+@login_required(login_url="/login/")
+def fingerprint_bank_page(request):
+    """Dedicated page to fill each offer's FINGERPRINT photo bank (the images used
+    to recognise a product from a customer's picture). Superuser only."""
+    if not request.user.is_superuser:
+        from django.http import HttpResponseForbidden
+        return HttpResponseForbidden("Accès refusé.")
+    from .models import Offer, SalesPage
+    import json as _json
+    page_filter = request.GET.get("page", "barats")
+    qs = (Offer.objects.filter(is_active=True)
+          .prefetch_related("fingerprint_images").distinct())
+    if page_filter == "barats":
+        qs = qs.filter(sales_pages__name__iexact="Barats.tn")
+    elif page_filter not in ("all", ""):
+        try:
+            qs = qs.filter(sales_pages__id=int(page_filter))
+        except ValueError:
+            pass
+    offers = []
+    for o in qs.order_by("name"):
+        fps = []
+        for fp in o.fingerprint_images.all():
+            try:
+                fps.append({"id": fp.id, "url": fp.image.url, "note": fp.note or ""})
+            except Exception:
+                pass
+        try:
+            main = o.image.url if o.image else ""
+        except Exception:
+            main = ""
+        offers.append({"id": o.id, "name": o.name, "main": main, "fps": fps})
+    return render(request, "inventory/fingerprint_bank.html", {
+        "offers_json": _json.dumps(offers),
+        "page_filter": page_filter,
+        "sales_pages": SalesPage.objects.filter(is_active=True),
+    })
+
+
+@login_required(login_url="/login/")
+def api_fingerprint_upload(request):
+    """Add one or more photos to an offer's fingerprint bank. Superuser.
+    multipart/form-data: offer_id + files (repeatable)."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    if request.method != "POST":
+        return JsonResponse({"status": "error", "message": "POST requis."}, status=405)
+    from .models import Offer, OfferFingerprintImage
+    try:
+        oid = int(request.POST.get("offer_id") or 0)
+    except (TypeError, ValueError):
+        oid = 0
+    offer = Offer.objects.filter(pk=oid).first()
+    if not offer:
+        return JsonResponse({"status": "error", "message": "Offre introuvable."}, status=404)
+    files = request.FILES.getlist("files") or request.FILES.getlist("files[]")
+    if not files:
+        return JsonResponse({"status": "error", "message": "Aucune photo reçue."}, status=400)
+    added = []
+    base = offer.fingerprint_images.count()
+    for i, f in enumerate(files[:40]):  # cap a single upload batch
+        try:
+            fp = OfferFingerprintImage.objects.create(
+                offer=offer, image=f, sort=base + i)
+            added.append({"id": fp.id, "url": fp.image.url, "note": fp.note or ""})
+        except Exception:
+            continue
+    return JsonResponse({"status": "ok", "added": added,
+                         "count": offer.fingerprint_images.count()})
+
+
+@login_required(login_url="/login/")
+def api_fingerprint_delete(request, pk):
+    """Delete one fingerprint photo (and its file). Superuser."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    if request.method != "POST":
+        return JsonResponse({"status": "error", "message": "POST requis."}, status=405)
+    from .models import OfferFingerprintImage
+    fp = OfferFingerprintImage.objects.filter(pk=pk).first()
+    if not fp:
+        return JsonResponse({"status": "error", "message": "introuvable"}, status=404)
+    try:
+        fp.image.delete(save=False)
+    except Exception:
+        pass
+    fp.delete()
+    return JsonResponse({"status": "ok"})
 
 
 @login_required(login_url="/login/")

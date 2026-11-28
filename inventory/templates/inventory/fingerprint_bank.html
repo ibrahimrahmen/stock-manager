@@ -1,0 +1,198 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Banque d'empreintes — reconnaissance photo</title>
+<style>
+  :root{
+    --bg:#f5f4f0; --card:#fff; --ink:#1c1c1a; --muted:#6b6a64; --border:#e4e2db;
+    --green:#0f6e56; --greenbg:#dff3ec; --amber:#ba7517; --amberbg:#faeeda;
+    --red:#c0392b; --redbg:#fbecea; --blue:#185fa5; --bluebg:#e6f1fb;
+    --purple:#534ab7; --purplebg:#eeedfe;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.45;padding:16px;}
+  .wrap{max-width:1100px;margin:0 auto;}
+  h1{font-size:20px;margin:0 0 2px;font-weight:600;}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 12px;}
+  .intro{background:var(--purplebg);color:#3a338f;border-radius:10px;padding:10px 12px;font-size:12.5px;margin-bottom:14px;}
+  .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+  .seg{display:flex;gap:6px;flex-wrap:wrap;}
+  .seg a{font-size:12.5px;text-decoration:none;color:var(--ink);background:var(--card);
+    border:0.5px solid var(--border);border-radius:999px;padding:5px 12px;}
+  .seg a.on{background:var(--ink);color:#fff;border-color:var(--ink);}
+  #search{flex:1;min-width:160px;padding:9px 12px;border:0.5px solid var(--border);border-radius:10px;font-size:14px;background:#fff;color:var(--ink);}
+  .rebuild{margin-left:auto;display:flex;align-items:center;gap:10px;}
+  .btn{border:0;border-radius:10px;padding:9px 14px;font-size:13.5px;font-weight:600;cursor:pointer;}
+  .btn-dark{background:var(--ink);color:#fff;} .btn-dark:disabled{opacity:.6;cursor:default;}
+  #rbstatus{font-size:12px;color:var(--muted);}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
+  .oc{background:var(--card);border:0.5px solid var(--border);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px;}
+  .oh{display:flex;align-items:center;gap:10px;}
+  .oh img{width:44px;height:44px;border-radius:9px;object-fit:cover;border:0.5px solid var(--border);flex:0 0 auto;}
+  .oh .nm{font-weight:600;font-size:14px;line-height:1.2;}
+  .oh .ct{font-size:11px;color:var(--muted);}
+  .fps{display:flex;flex-wrap:wrap;gap:7px;}
+  .fp{position:relative;width:62px;height:62px;border-radius:8px;overflow:hidden;border:0.5px solid var(--border);}
+  .fp img{width:100%;height:100%;object-fit:cover;display:block;}
+  .fp .del{position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;
+    background:rgba(0,0,0,.6);color:#fff;border:0;font-size:12px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+  .empty-fp{font-size:11.5px;color:var(--muted);padding:6px 0;}
+  .drop{border:1px dashed var(--border);border-radius:10px;padding:10px;text-align:center;font-size:12.5px;color:var(--muted);cursor:pointer;background:var(--bg);}
+  .drop.drag{border-color:var(--purple);background:var(--purplebg);color:var(--purple);}
+  .drop.busy{opacity:.6;pointer-events:none;}
+  .nores{text-align:center;color:var(--muted);padding:40px 0;}
+  .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;
+    padding:9px 16px;border-radius:999px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9;}
+  .toast.show{opacity:1;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  {% csrf_token %}
+  <h1>🧬 Banque d'empreintes</h1>
+  <p class="sub">Les photos que le bot utilise pour <b>reconnaître un produit à partir de la photo d'un client</b> — gratuit, sans IA.</p>
+  <div class="intro">
+    💡 Mets ici les <b>vraies images qui circulent</b> : la photo de la pub, les captures des stories/posts, chaque couleur.
+    La reconnaissance marche quand le client envoie une photo <b>quasi identique</b> à l'une d'elles (une capture d'écran de ta pub).
+    Ces photos <b>ne sont pas montrées aux clients</b>. Après avoir ajouté des photos, clique <b>« Reconstruire »</b>.
+  </div>
+
+  <div class="top">
+    <div class="seg">
+      <a href="?page=barats" class="{% if page_filter == 'barats' %}on{% endif %}">Barats</a>
+      <a href="?page=all" class="{% if page_filter == 'all' %}on{% endif %}">Toutes</a>
+    </div>
+    <input id="search" type="text" placeholder="🔎 chercher une offre…">
+    <div class="rebuild">
+      <span id="rbstatus"></span>
+      <button class="btn btn-dark" id="rebuild">♻️ Reconstruire les empreintes</button>
+    </div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const OFFERS = {{ offers_json|safe }};
+const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+const grid = document.getElementById('grid');
+const toastEl = document.getElementById('toast');
+let toastT=null;
+function toast(msg){ toastEl.textContent=msg; toastEl.classList.add('show');
+  clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('show'),1800); }
+function esc(s){return (s||'').replace(/[&<>"]/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[x]));}
+
+function fpHtml(f){
+  return '<div class="fp" data-fp="'+f.id+'"><img src="'+esc(f.url)+'" onerror="this.parentNode.style.display=\'none\'">'
+    +'<button class="del" title="Supprimer" data-del="'+f.id+'">×</button></div>';
+}
+function cardHtml(o){
+  const main = o.main ? '<img src="'+esc(o.main)+'" onerror="this.style.display=\'none\'">' : '';
+  const fps = (o.fps||[]).map(fpHtml).join('');
+  return '<div class="oc" data-oid="'+o.id+'" data-name="'+esc((o.name||'').toLowerCase())+'">'
+    +'<div class="oh">'+main+'<div><div class="nm">'+esc(o.name)+'</div>'
+    +'<div class="ct"><span class="cnt">'+(o.fps||[]).length+'</span> photo(s) d\'empreinte</div></div></div>'
+    +'<div class="fps">'+(fps||'<span class="empty-fp">Aucune photo encore.</span>')+'</div>'
+    +'<div class="drop" data-drop="'+o.id+'">➕ Ajouter des photos (clique ou glisse ici)</div>'
+    +'<input type="file" accept="image/*" multiple hidden data-input="'+o.id+'">'
+    +'</div>';
+}
+function render(){
+  grid.innerHTML = OFFERS.length ? OFFERS.map(cardHtml).join('')
+    : '<div class="nores">Aucune offre.</div>';
+}
+render();
+
+// search filter
+document.getElementById('search').addEventListener('input', e=>{
+  const q=(e.target.value||'').toLowerCase().trim();
+  let shown=0;
+  grid.querySelectorAll('.oc').forEach(c=>{
+    const hit = !q || (c.dataset.name||'').includes(q);
+    c.style.display = hit?'':'none'; if(hit) shown++;
+  });
+});
+
+async function uploadFiles(oid, files){
+  if(!files || !files.length) return;
+  const card = grid.querySelector('.oc[data-oid="'+oid+'"]');
+  const drop = card.querySelector('.drop');
+  drop.classList.add('busy'); const old=drop.textContent; drop.textContent='⏳ envoi…';
+  const fd = new FormData();
+  fd.append('offer_id', oid);
+  for(const f of files) fd.append('files', f);
+  try{
+    const r = await fetch('/api/fingerprint/upload/', {method:'POST', headers:{'X-CSRFToken':csrf}, body:fd, credentials:'include'});
+    const j = await r.json();
+    if(j.status==='ok'){
+      const wrap = card.querySelector('.fps');
+      const emptyHint = wrap.querySelector('.empty-fp'); if(emptyHint) emptyHint.remove();
+      (j.added||[]).forEach(f=>wrap.insertAdjacentHTML('beforeend', fpHtml(f)));
+      card.querySelector('.cnt').textContent = j.count;
+      toast((j.added||[]).length+' photo(s) ajoutée(s) — pense à Reconstruire');
+    } else { toast(j.message||'Erreur'); }
+  }catch(e){ toast('Erreur réseau'); }
+  drop.classList.remove('busy'); drop.textContent=old;
+}
+
+// click drop -> open file picker ; file picked -> upload
+grid.addEventListener('click', async (e)=>{
+  const drop = e.target.closest('.drop');
+  if(drop){ const oid=drop.dataset.drop; grid.querySelector('input[data-input="'+oid+'"]').click(); return; }
+  const del = e.target.closest('.del');
+  if(del){
+    const id=del.dataset.del;
+    if(!confirm('Supprimer cette photo ?')) return;
+    try{
+      const r=await fetch('/api/fingerprint/'+id+'/delete/',{method:'POST',headers:{'X-CSRFToken':csrf},credentials:'include'});
+      const j=await r.json();
+      if(j.status==='ok'){ const el=del.closest('.fp'); const card=el.closest('.oc');
+        el.remove(); const cnt=card.querySelector('.cnt'); cnt.textContent=Math.max(0,(parseInt(cnt.textContent)||1)-1);
+        toast('Supprimée — pense à Reconstruire'); }
+      else toast(j.message||'Erreur');
+    }catch(e){ toast('Erreur réseau'); }
+  }
+});
+grid.addEventListener('change', (e)=>{
+  const inp = e.target.closest('input[data-input]'); if(!inp) return;
+  uploadFiles(inp.dataset.input, inp.files); inp.value='';
+});
+// drag & drop
+grid.addEventListener('dragover', e=>{ const d=e.target.closest('.drop'); if(d){ e.preventDefault(); d.classList.add('drag'); }});
+grid.addEventListener('dragleave', e=>{ const d=e.target.closest('.drop'); if(d) d.classList.remove('drag'); });
+grid.addEventListener('drop', e=>{ const d=e.target.closest('.drop'); if(!d) return; e.preventDefault(); d.classList.remove('drag');
+  uploadFiles(d.dataset.drop, e.dataTransfer.files); });
+
+// rebuild
+const rbBtn=document.getElementById('rebuild'), rbStatus=document.getElementById('rbstatus');
+let rbPoll=null;
+async function pollRebuild(){
+  try{
+    const r=await fetch('/api/offers/rebuild-hashes/',{credentials:'include'});
+    const j=await r.json();
+    const p=j.progress||{};
+    if(p.running){ rbStatus.textContent='⏳ '+(p.done||0)+'/'+(p.total||'?')+' offres…'; }
+    else{
+      clearInterval(rbPoll); rbPoll=null; rbBtn.disabled=false;
+      rbStatus.textContent='✅ '+(j.offers_in_store||0)+' offres reconnaissables';
+      toast('Empreintes reconstruites');
+    }
+  }catch(e){}
+}
+rbBtn.addEventListener('click', async ()=>{
+  rbBtn.disabled=true; rbStatus.textContent='⏳ démarrage…';
+  try{
+    await fetch('/api/offers/rebuild-hashes/{% if page_filter == 'barats' %}?sales_page=3{% endif %}',{method:'POST',headers:{'X-CSRFToken':csrf},credentials:'include'});
+    if(rbPoll) clearInterval(rbPoll); rbPoll=setInterval(pollRebuild,1500); pollRebuild();
+  }catch(e){ rbBtn.disabled=false; rbStatus.textContent='Erreur'; }
+});
+// show current store size on load
+pollRebuild();
+</script>
+</body>
+</html>

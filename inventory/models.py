@@ -1254,6 +1254,37 @@ class OfferImage(models.Model):
                 pass
 
 
+class OfferFingerprintImage(models.Model):
+    """A photo kept ONLY to recognise this product from a customer's picture
+    (perceptual-hash fingerprint). SEPARATE from OfferImage: these are NOT shown
+    to customers — they are the bank of the real images that circulate online
+    (ad creatives, post screenshots, every colour and angle), so that a customer
+    who screenshots one of them is matched for FREE, with no Vision call. Fill it
+    generously; more real images = more free matches. Rebuild the hashes after
+    adding (Configuration / the fingerprint-bank page) to apply changes."""
+    offer = models.ForeignKey(Offer, on_delete=models.CASCADE,
+                              related_name="fingerprint_images")
+    image = models.ImageField(upload_to="offer_fp/")
+    note = models.CharField(max_length=80, blank=True, default="",
+                            help_text="Optionnel : d'où vient la photo (ex: pub, story).")
+    sort = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["sort", "id"]
+
+    def __str__(self):
+        return f"Empreinte {self.offer_id} — {self.note or self.id}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.image:
+            try:
+                _resize_image_in_place(self.image.path, max_size=1200, quality=80)
+            except Exception:
+                pass
+
+
 # ---------------------------------------------------------------------------
 # ADS — Meta/Facebook ad campaigns synced from the Google Sheet (n8n fills it).
 # Each ad links to ONE offer; an offer can have MANY ads. Spend is synced from

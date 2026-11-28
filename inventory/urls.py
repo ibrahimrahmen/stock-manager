@@ -141,6 +141,9 @@ urlpatterns = [
     path("api/debug/self-match/", views.api_debug_self_match, name="api_debug_self_match"),
     path("api/offers/regen-descriptions/", views.api_regen_offer_descriptions, name="api_regen_offer_descriptions"),
     path("api/offers/rebuild-hashes/", views.api_rebuild_offer_hashes, name="api_rebuild_offer_hashes"),
+    path("fingerprint-bank/", views.fingerprint_bank_page, name="fingerprint_bank_page"),
+    path("api/fingerprint/upload/", views.api_fingerprint_upload, name="api_fingerprint_upload"),
+    path("api/fingerprint/<int:pk>/delete/", views.api_fingerprint_delete, name="api_fingerprint_delete"),
     path("api/conversations/<int:pk>/fingerprint/", views.api_debug_fingerprint, name="api_debug_fingerprint"),
     # Ads & offers: Meta spend per campaign linked to offers, cross-source revenue
     path("ads-offers/", views.ads_offers_dashboard, name="ads_offers_dashboard"),
