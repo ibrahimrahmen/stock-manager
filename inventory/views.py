@@ -2759,6 +2759,20 @@ def _resolve_ad_line_offer(conv, page, local_images, url_images):
     if len(cands) == 1:
         return (cands[0], True, "")
 
+    # Prefer the candidate whose NAME overlaps the ad name the MOST. A
+    # descriptive campaign ("Bombers Double Face TNF") should resolve to the
+    # offer that shares the most words ("Bombers Double Face" = 2-3 words), not
+    # give up because a few unrelated offers each share one word ("double").
+    # Only a UNIQUE strong winner (>=2 shared words, strictly ahead of the next)
+    # is trusted; otherwise fall through to the single/ensemble logic below.
+    def _overlap(o):
+        nm = (o.name or "").lower()
+        return sum(1 for w in words if w in nm)
+    _ranked = sorted(cands, key=_overlap, reverse=True)
+    if (len(_ranked) >= 2 and _overlap(_ranked[0]) >= 2
+            and _overlap(_ranked[0]) > _overlap(_ranked[1])):
+        return (_ranked[0], True, "meilleur match du nom de la pub")
+
     # Several offers in this line (e.g. "Pull Vintage" + "Ensemble Vintage").
     def _is_ensemble(o):
         nm = (o.name or "").lower()
