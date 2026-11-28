@@ -1403,6 +1403,25 @@ def _order_confirm_tn(now=None):
     return ("Wselna talabek khouya 🤍 fari9na bech ykalmek %s bech "
             "nconfirmiw el commande" % when)
 
+
+def _order_has_size(conv, po):
+    """True if the order has a SIZE — from its order lines, or a size token in
+    the customer's messages (XL/XXL, 'taille/pointure', Arabic مقاس, shoe 34-46)."""
+    import re as _re
+    try:
+        if po is not None and po.lines.exclude(size="").exists():
+            return True
+    except Exception:
+        pass
+    try:
+        txt = " ".join((m.get("text") or "") for m in (conv.messages or [])
+                       if m.get("from") == "user").lower()
+    except Exception:
+        txt = ""
+    return bool(_re.search(
+        r"\b(xxxl|xxl|xl|2xl|3xl|xs)\b|\btaille\b|\bpointure\b|\bmesure\b|"
+        r"قياس|مقاس|\b(3[4-9]|4[0-6])\b", txt))
+
 # Sent (once) when the customer gave their phone but the order still has NO
 # delivery address after a short wait — a single polite nudge for the missing
 # address (governorate + address) and size, so the order can be completed.
@@ -22173,15 +22192,28 @@ def api_messenger_webhook(request):
                                     (getattr(_po, "address", "") or "").strip()
                                     or (getattr(_po, "ville", "") or "").strip()
                                     or getattr(_po, "region_id", None)))
-                                if _has_addr:
-                                    # Order complete -> captured silently in our
-                                    # system. The "order received" confirmation is an
-                                    # ORDER-agent message and that agent is PAUSED, so
-                                    # we DON'T auto-reply (the team confirms). Just
-                                    # mark handled so nothing else auto-fires.
+                                if _has_addr and _order_has_size(_c, _po):
+                                    # Order COMPLETE (number + address + size) ->
+                                    # send ONLY the "wselna talabek" confirmation,
+                                    # once (atomic guard). No delai here (the delai
+                                    # fires only when the customer asks when it
+                                    # arrives).
+                                    from django.core.cache import cache as _cc
+                                    try:
+                                        if not _cc.add("confirm_sent:%s" % cid, 1, 3600):
+                                            return
+                                    except Exception:
+                                        pass
                                     _c.refresh_from_db()
-                                    _c.auto_replied = True
-                                    _c.save(update_fields=["auto_replied", "updated_at"])
+                                    _conf = _order_confirm_tn()
+                                    if _messenger_send_text(pg, sn, _conf, plat):
+                                        _c.auto_replied = True
+                                        _mm = _c.messages or []
+                                        _mm.append({"from": "page", "text": _conf,
+                                                    "ts": "", "mid": "",
+                                                    "autoreply": True})
+                                        _c.messages = _mm
+                                        _c.save(update_fields=["messages", "auto_replied", "updated_at"])
                                 else:
                                     # Address missing -> nudge once for it + size.
                                     _already = any(
@@ -22261,11 +22293,25 @@ def api_messenger_webhook(request):
                             (getattr(_po2, "address", "") or "").strip()
                             or (getattr(_po2, "ville", "") or "").strip()
                             or getattr(_po2, "region_id", None)))
-                        if _asked2 and _has_addr2 and not conv.auto_replied:
-                            # Order complete -> captured silently, NO auto
-                            # confirmation (order agent paused). Mark handled.
-                            conv.auto_replied = True
-                            conv.save(update_fields=["auto_replied", "updated_at"])
+                        if (_asked2 and _has_addr2 and _order_has_size(conv, _po2)
+                                and not conv.auto_replied):
+                            # Order COMPLETE -> send ONLY the confirmation, once
+                            # (shared dedup guard with the worker path). No delai.
+                            from django.core.cache import cache as _cc2
+                            try:
+                                _go2 = bool(_cc2.add("confirm_sent:%s" % conv.pk, 1, 3600))
+                            except Exception:
+                                _go2 = True
+                            if _go2:
+                                _conf2 = _order_confirm_tn()
+                                if _messenger_send_text(page_id, sender_id, _conf2, platform):
+                                    conv.auto_replied = True
+                                    _mm2 = conv.messages or []
+                                    _mm2.append({"from": "page", "text": _conf2,
+                                                 "ts": "", "mid": "",
+                                                 "autoreply": True})
+                                    conv.messages = _mm2
+                                    conv.save(update_fields=["messages", "auto_replied", "updated_at"])
                 except Exception:
                     pass
     except Exception as e:
