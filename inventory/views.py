@@ -1375,8 +1375,8 @@ def oauth_instagram_callback(request):
 # Sent after the customer's phone number arrives. No "ahla bik" here (the
 # greeting already welcomed them) — just an order-received confirmation.
 MESSENGER_AUTOREPLY_AR = (
-    "وصلنا طلبك 🤍 فريقنا باش يتواصل معاك في أقرب وقت لتأكيد الكوموند. "
-    "يرجى التثبت من رقم الهاتف، العنوان، المقاس واللون. شكرا لثقتك في Barats 🛍️"
+    "Wselna tolbek khouya 🤍 fri9na bech ykalmek 9rib bech y2akedlek "
+    "el commande 🛍️"
 )
 
 # Sent (once) when the customer gave their phone but the order still has NO
@@ -22168,9 +22168,6 @@ def api_messenger_webhook(request):
                                     sent = []
                                     if _messenger_send_text(pg, sn, MESSENGER_AUTOREPLY_AR, plat):
                                         sent.append(MESSENGER_AUTOREPLY_AR)
-                                        _promise = _delivery_promise_tn()
-                                        if _messenger_send_text(pg, sn, _promise, plat):
-                                            sent.append(_promise)
                                     if sent:
                                         _c.refresh_from_db()
                                         _c.auto_replied = True
