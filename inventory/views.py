@@ -22272,21 +22272,28 @@ def api_messenger_webhook(request):
                             or (getattr(_po2, "ville", "") or "").strip()
                             or getattr(_po2, "region_id", None)))
                         if _asked2 and _has_addr2 and not conv.auto_replied:
-                            sent2 = []
-                            if _messenger_send_text(page_id, sender_id, MESSENGER_AUTOREPLY_AR, platform):
-                                sent2.append(MESSENGER_AUTOREPLY_AR)
-                                _pr2 = _delivery_promise_tn()
-                                if _messenger_send_text(page_id, sender_id, _pr2, platform):
-                                    sent2.append(_pr2)
-                            if sent2:
-                                conv.auto_replied = True
-                                _mm2 = conv.messages or []
-                                for _tx2 in sent2:
-                                    _mm2.append({"from": "page", "text": _tx2,
-                                                 "ts": "", "mid": "",
-                                                 "autoreply": True})
-                                conv.messages = _mm2
-                                conv.save(update_fields=["messages", "auto_replied", "updated_at"])
+                            # Same single, time-aware confirmation as the worker
+                            # path, sharing the dedup guard so the two paths can
+                            # never both send it.
+                            from django.core.cache import cache as _cc2
+                            try:
+                                _go2 = bool(_cc2.add("confirm_sent:%s" % conv.pk, 1, 3600))
+                            except Exception:
+                                _go2 = True
+                            if _go2:
+                                sent2 = []
+                                _conf2 = _order_confirm_tn()
+                                if _messenger_send_text(page_id, sender_id, _conf2, platform):
+                                    sent2.append(_conf2)
+                                if sent2:
+                                    conv.auto_replied = True
+                                    _mm2 = conv.messages or []
+                                    for _tx2 in sent2:
+                                        _mm2.append({"from": "page", "text": _tx2,
+                                                     "ts": "", "mid": "",
+                                                     "autoreply": True})
+                                    conv.messages = _mm2
+                                    conv.save(update_fields=["messages", "auto_replied", "updated_at"])
                 except Exception:
                     pass
     except Exception as e:
