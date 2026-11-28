@@ -1495,8 +1495,17 @@ MESSENGER_AUTOREPLY_DELAY = int(os.environ.get("MESSENGER_AUTOREPLY_DELAY", "10"
 # and is handled in _faq_answer below.
 MESSENGER_FAQ_REPLIES = [
     (("n7el", "nhel", "the7el", "thel", "n7all", "ouvrir", "7ell", "hell",
-      "n7ell", "nfata7", "fata7"),
-     "Bettabi3a khouya, tnajem the7el colis mte3ek 9bal ma tkhalles 🤍"),
+      "n7ell", "nfata7", "fata7",
+      # "Can I SEE / CHECK the product BEFORE I pay?" — same reassurance as
+      # opening the parcel. Many write "nchouf ... 9bal mankhalas" (see before
+      # paying) rather than "n7el" (open), so match the before-paying phrasings.
+      "9bal mankalas", "9bal man5alas", "mankalas", "man5alas",
+      "9bal ma nkhalas", "9bal ma nkhalles", "9bal ma nkhaless",
+      "9bal ma n5alas", "9bal ma n5alles", "9bal nkhalas", "9bal n5alas",
+      "9bal el khlas", "9bal el khalas", "9bal el 5las", "9bal nkhalles",
+      "nchouf 9bal", "nchoufou 9bal", "chouf 9bal", "nchouf el produit",
+      "nchouf el article", "avant de payer", "avant payer", "9bal el daf3"),
+     "Bettabi3a khouya, tnajem the7el w tchouf colis mte3ek 9bal ma tkhalles 🤍"),
     # Delivery timing question -> answered with the dynamic delivery promise.
     (("wa9tech", "wa2tech", "waktech", "w9tech", "wkteh", "quand", "chwaya",
       "touselni", "toussalni", "tousalni", "yousalni", "yousel", "yusel",
@@ -7386,7 +7395,7 @@ _INTENT_PRODUCT = ("model", "modèle", "modele", "jdod", "jdoud", "jdid", "nouve
                    "ensemble", "pull", "jacket", "doudoune", "kchabiya", "article",
                    "produit", "chnia 3andkom", "chnowa famma",
                    "blouson", "blousons", "bloussons", "blazer", "manteau",
-                   "veste", "kabout", "kbout", "nchouf")
+                   "veste", "kabout", "kbout")
 _INTENT_ORDER = ("taille", "pointure", "adresse", "3inwen", "3enwen", "noumrou",
                  "numero", "numéro", "commande", "nchri", "n3addi", "naheb n3adi")
 _INTENT_GREET = ("slm", "salam", "aslema", "asslema", "3aslema", "3asslema",
