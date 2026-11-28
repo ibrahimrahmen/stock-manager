@@ -143,6 +143,7 @@ urlpatterns = [
     path("api/offers/rebuild-hashes/", views.api_rebuild_offer_hashes, name="api_rebuild_offer_hashes"),
     path("fingerprint-bank/", views.fingerprint_bank_page, name="fingerprint_bank_page"),
     path("api/fingerprint/upload/", views.api_fingerprint_upload, name="api_fingerprint_upload"),
+    path("api/fingerprint/test/", views.api_fingerprint_test, name="api_fingerprint_test"),
     path("api/fingerprint/<int:pk>/delete/", views.api_fingerprint_delete, name="api_fingerprint_delete"),
     path("api/conversations/<int:pk>/fingerprint/", views.api_debug_fingerprint, name="api_debug_fingerprint"),
     # Ads & offers: Meta spend per campaign linked to offers, cross-source revenue

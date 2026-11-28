@@ -73,6 +73,13 @@
     </div>
   </div>
 
+  <div style="background:var(--card);border:0.5px solid var(--border);border-radius:12px;padding:12px;margin-bottom:14px;">
+    <div style="font-weight:600;font-size:13.5px;margin-bottom:6px;">🔎 Tester une photo</div>
+    <div id="fp-test-drop" style="border:1px dashed var(--border);border-radius:8px;padding:12px;text-align:center;font-size:12.5px;color:var(--muted);cursor:pointer;">Dépose ou clique — une capture de la pub, comme un client l'enverrait (reconstruis d'abord)</div>
+    <input id="fp-test-input" type="file" accept="image/*" style="display:none;">
+    <div id="fp-test-res" style="margin-top:8px;"></div>
+  </div>
+
   <div class="grid" id="grid"></div>
 </div>
 <div class="toast" id="toast"></div>
@@ -191,6 +198,28 @@ rbBtn.addEventListener('click', async ()=>{
     if(rbPoll) clearInterval(rbPoll); rbPoll=setInterval(pollRebuild,1500); pollRebuild();
   }catch(e){ rbBtn.disabled=false; rbStatus.textContent='Erreur'; }
 });
+// --- Test a photo against the bank ---
+const tDrop=document.getElementById('fp-test-drop'), tInput=document.getElementById('fp-test-input'), tRes=document.getElementById('fp-test-res');
+async function testPhoto(file){
+  if(!file) return;
+  tRes.innerHTML='<span style="color:var(--muted);font-size:12px;">⏳ analyse…</span>';
+  const fd=new FormData(); fd.append('file', file);
+  try{
+    const r=await fetch('/api/fingerprint/test/',{method:'POST',headers:{'X-CSRFToken':csrf},body:fd,credentials:'include'});
+    const j=await r.json();
+    if(j.status!=='ok'){ tRes.innerHTML='<span style="color:var(--red)">'+esc(j.message||'erreur')+'</span>'; return; }
+    const m=j.match;
+    if(m && m.confident){ tRes.innerHTML='<div style="background:var(--greenbg);color:var(--green);border-radius:8px;padding:8px 10px;font-size:13px;font-weight:600;">✅ '+esc(m.name)+' <span style="font-weight:400;">(distance '+m.distance+' — match sûr)</span></div>'; }
+    else if(m){ tRes.innerHTML='<div style="background:var(--amberbg);color:var(--amber);border-radius:8px;padding:8px 10px;font-size:12.5px;">🤔 proche : '+esc(m.name)+' (distance '+m.distance+') — pas assez sûr. Ajoute CETTE image au produit puis reconstruis.</div>'; }
+    else { tRes.innerHTML='<div style="background:var(--graybg);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:12.5px;">❌ aucun match. Ajoute cette image au bon produit puis reconstruis.</div>'; }
+  }catch(e){ tRes.innerHTML='<span style="color:var(--red)">erreur réseau</span>'; }
+}
+tDrop.addEventListener('click', ()=>tInput.click());
+tInput.addEventListener('change', e=>{ testPhoto(e.target.files[0]); e.target.value=''; });
+tDrop.addEventListener('dragover', e=>{ e.preventDefault(); tDrop.style.borderColor='var(--purple)'; });
+tDrop.addEventListener('dragleave', ()=>{ tDrop.style.borderColor='var(--border)'; });
+tDrop.addEventListener('drop', e=>{ e.preventDefault(); tDrop.style.borderColor='var(--border)'; testPhoto(e.dataTransfer.files[0]); });
+
 // show current store size on load
 pollRebuild();
 </script>

@@ -18939,6 +18939,27 @@ def api_fingerprint_delete(request, pk):
 
 
 @login_required(login_url="/login/")
+def api_fingerprint_test(request):
+    """Upload ANY photo and see which offer the fingerprint store matches, with
+    the bit-distance. Superuser. Lets the operator verify the bank by dropping a
+    screenshot of the ad — exactly what a customer would send. Needs a rebuild
+    first (the store is read from config). Nothing is saved."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    if request.method != "POST":
+        return JsonResponse({"status": "error", "message": "POST requis."}, status=405)
+    f = request.FILES.get("file")
+    if not f:
+        return JsonResponse({"status": "error", "message": "Aucune photo."}, status=400)
+    try:
+        data = f.read()
+        m = _fingerprint_match([data], [])
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:160]}, status=500)
+    return JsonResponse({"status": "ok", "match": m or None})
+
+
+@login_required(login_url="/login/")
 def order_view(request, pk):
     if not _orders_role_check(request):
         return redirect("home")
