@@ -7406,6 +7406,12 @@ def api_conversations_live(request):
                 order_reply = _order_agent_line(c)
             except Exception:
                 order_reply = ""
+        delivery_reply = ""
+        if intk == "delivery":
+            try:
+                delivery_reply = _delivery_promise_tn()
+            except Exception:
+                delivery_reply = ""
         try:
             tr = _price_agent_trace(c, page, allow_vision=False,
                                     allow_photo_tiers=False)
@@ -7430,6 +7436,7 @@ def api_conversations_live(request):
             "intent_label": intlbl,
             "faq_reply": faq_reply,
             "order_reply": order_reply,
+            "delivery_reply": delivery_reply,
         })
     return JsonResponse({"status": "ok", "count": len(rows), "rows": rows,
                          "hours": hours})
@@ -21751,17 +21758,23 @@ def api_messenger_webhook(request):
                 # timing, price-from-ad). If one fires, the bot must NOT also
                 # reply, or the customer gets two messages. This runs whether or
                 # not the bot is on.
-                # FAQ is now controlled by the DECIDER: it fires ONLY when the
-                # decider classifies this message as 'faq'. Price / delivery /
-                # everything else is paused for now (activated later, one agent
-                # at a time). _faq_answer(text, None) uses the FAQ-only path, so
-                # no price line can slip through.
+                # FAQ is now controlled by the DECIDER. It fires only when the
+                # decider classifies this message as 'faq' OR 'delivery' — the
+                # delivery-time answer belongs to the FAQ family (it's one of the
+                # canned FAQ replies), so it's activated together with the FAQ.
+                # Price / order / everything else stays paused for now.
+                # _faq_answer(text, None) uses the FAQ-only path, so no price
+                # line can slip through.
                 _faq_fired = False
                 try:
                     if (not _external_agent and not is_echo and not _reply_dup
-                            and (text or "").strip()
-                            and _classify_intent(conv)[0] == "faq"):
-                        _ans = _faq_answer(text, None)
+                            and (text or "").strip()):
+                        _dint = _classify_intent(conv)[0]
+                        _ans = ""
+                        if _dint == "faq":
+                            _ans = _faq_answer(text, None) or ""
+                        elif _dint == "delivery":
+                            _ans = _delivery_promise_tn() or ""
                         if _ans:
                             _already = any(m.get("faq") == _ans
                                            for m in (conv.messages or []))
