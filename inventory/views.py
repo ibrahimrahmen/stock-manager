@@ -349,17 +349,50 @@ def _ad_price_line(conv):
     return "%s Dt + %s dt livraison" % (val, _LIVRAISON_FEE_DT)
 
 
+def _order_is_complete(conv):
+    """True when the WHOLE conversation already carries a full order: an 8-digit
+    Tunisian phone anywhere in the thread, a delivery address (on the pending
+    order), AND a size. This is the same "complete" test the live confirmation
+    worker uses — centralised here so no agent ever re-asks for details that were
+    already given. Reads the whole thread, never a single message."""
+    try:
+        _all = " ".join((m.get("text") or "") for m in (conv.messages or [])
+                        if m.get("from") == "user")
+    except Exception:
+        _all = ""
+    if not _extract_tn_phone(_all):
+        return False
+    po = getattr(conv, "pending_order", None)
+    has_addr = bool(po and (
+        (getattr(po, "address", "") or "").strip()
+        or (getattr(po, "ville", "") or "").strip()
+        or getattr(po, "region_id", None)))
+    if not has_addr:
+        return False
+    try:
+        return bool(_order_has_size(conv, po))
+    except Exception:
+        return False
+
+
 def _order_agent_line(conv):
-    """Reply when the customer signals they want to order. If they already sent
-    a phone number, confirm receipt; otherwise ask for the order details."""
-    import re as _re
-    text = ""
-    for m in reversed(conv.messages or []):
-        if m.get("from") == "user" and (m.get("text") or "").strip():
-            text = m["text"]
-            break
-    if _re.search(r"\d{8}", (text or "")):
-        return "Wselna tolbek khouya 🤍 el equipe bech tkalmek 3al confirmation."
+    """What to say on an 'order' intent — judged from the WHOLE conversation, not
+    the last word (which is very often just 'Ok'):
+      - order already COMPLETE (phone + address + size) -> '' (nothing to ask; the
+        confirmation worker already handled it).
+      - a phone was given but details are missing -> ask for the missing details.
+      - nothing given yet -> ask for size + address + number.
+    """
+    if _order_is_complete(conv):
+        return ""
+    try:
+        _all = " ".join((m.get("text") or "") for m in (conv.messages or [])
+                        if m.get("from") == "user")
+    except Exception:
+        _all = ""
+    if _extract_tn_phone(_all):
+        # Number given, but address / size still missing -> nudge for those.
+        return MESSENGER_ASK_INFO_AR
     return "Bech t3adi commande ab3athelna taille, adresse w noumrouk 🤍"
 
 
@@ -7527,7 +7560,12 @@ def api_conversations_live(request):
             except Exception:
                 faq_reply = ""
         order_reply = ""
+        order_done = False
         if intk == "order":
+            try:
+                order_done = _order_is_complete(c)
+            except Exception:
+                order_done = False
             try:
                 order_reply = _order_agent_line(c)
             except Exception:
@@ -7562,6 +7600,7 @@ def api_conversations_live(request):
             "intent_label": intlbl,
             "faq_reply": faq_reply,
             "order_reply": order_reply,
+            "order_done": order_done,
             "delivery_reply": delivery_reply,
         })
     return JsonResponse({"status": "ok", "count": len(rows), "rows": rows,

@@ -138,7 +138,10 @@ function footer(r){
   if(!r.waiting) return '<div class="sg s-done">✅ répondu — en attente du client</div>';
   if(r.intent==='faq' && r.faq_reply) return '<div class="sg s-ok">🤖 '+esc(r.faq_reply)+'</div>';
   if(r.intent==='delivery' && r.delivery_reply) return '<div class="sg s-ok">🤖 '+esc(r.delivery_reply)+'</div>';
-  if(r.intent==='order' && r.order_reply) return '<div class="sg s-ok">🤖 '+esc(r.order_reply)+'</div>';
+  if(r.intent==='order'){
+    if(r.order_done) return '<div class="sg s-done">✅ commande complète (numéro + adresse + taille) — rien à envoyer</div>';
+    if(r.order_reply) return '<div class="sg s-ok">🤖 '+esc(r.order_reply)+'</div>';
+  }
   if((r.intent==='price'||r.intent==='availability') && r.is_price_q){
     let h='<div class="sg '+suggClass(r.suggest_by)+'">🤖 '+esc(r.suggest)+'</div>';
     if(analyzed[r.id]) h+=analysisHtml(analyzed[r.id]);
