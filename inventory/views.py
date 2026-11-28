@@ -18764,11 +18764,13 @@ def _rebuild_offer_hashes(sales_page_id=None):
         _stat(st)
 
 
-def _fingerprint_match(local_images, url_images, threshold=10):
+def _fingerprint_match(local_images, url_images, threshold=5):
     """Match a customer image to a catalogue offer by dHash near-duplicate.
     Returns {name, distance, confident} — confident when the nearest offer photo
-    is within `threshold` bits (a screenshot of that product). {} if no store or
-    no image or nothing close."""
+    is within `threshold` bits. threshold=5 is STRICT (essentially a re-share of
+    our exact image), chosen so the FREE tier never quotes a wrong price on a
+    look-alike; anything it rejects falls through to Vision, which is accurate.
+    {} if no store or no image or nothing close."""
     import json as _json
     try:
         store = _json.loads(_cfg("offer_photo_hashes", "") or "{}")
