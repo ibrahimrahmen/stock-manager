@@ -1381,9 +1381,11 @@ MESSENGER_AUTOREPLY_AR = (
 
 
 def _order_confirm_tn(now=None):
-    """Short arabizi order-received confirmation, time-aware: during work hours
-    the team calls 'chwaya ekher' (a bit later); after 17h30 (closed) 'ghodwa'
-    (tomorrow). Tunisia time."""
+    """Short arabizi order-received confirmation, time-aware (Tunisia time):
+      - after 17h       -> 'ghodwa' (team calls tomorrow)
+      - 00:00 - 10:00   -> 'ba3ed el 10' (team opens at 10)
+      - 10:00 - 17:00   -> 'chwaya ekher' (a bit later today)
+    """
     import datetime as _dt
     try:
         import zoneinfo as _zi
@@ -1392,7 +1394,12 @@ def _order_confirm_tn(now=None):
         tz = None
     now = now or (_dt.datetime.now(tz) if tz else _dt.datetime.now())
     minutes = now.hour * 60 + now.minute
-    when = "ghodwa" if minutes >= (17 * 60 + 30) else "chwaya ekher"
+    if minutes >= 17 * 60:
+        when = "ghodwa"
+    elif minutes < 10 * 60:
+        when = "ba3ed el 10"
+    else:
+        when = "chwaya ekher"
     return ("Wselna talabek khouya 🤍 fari9na bech ykalmek %s bech "
             "nconfirmiw el commande" % when)
 
