@@ -4150,31 +4150,41 @@ def _fetch_campaign_ad_text(campaign_id, account_id="", name_hint=""):
         with _ureq.urlopen(url, timeout=7) as resp:
             d = _json.loads(resp.read().decode("utf-8"))
 
-        def _ad_caption(cr):
-            # PRIMARY caption of ONE ad (where the single price lives). Not the
-            # asset_feed_spec body variations (those make it look multi-price).
+        def _ad_full_text(cr):
+            # The FULL text of ONE ad (all of its caption fields joined), so the
+            # price is never missed by reading only a partial field. We read one
+            # AD's fields together (the price variations within a single ad share
+            # the price); we do NOT merge DIFFERENT ads (that's the multi-price
+            # trap, handled by reading one ad / best-match below).
+            parts = []
             for k in ("body", "name", "title"):
                 if cr.get(k):
-                    return cr[k]
+                    parts.append(cr[k])
             oss = cr.get("object_story_spec", {}) or {}
             ld = oss.get("link_data", {}) or {}
             for k in ("message", "description", "caption", "name"):
                 if ld.get(k):
-                    return ld[k]
+                    parts.append(ld[k])
             vd = oss.get("video_data", {}) or {}
             for k in ("message", "title"):
                 if vd.get(k):
-                    return vd[k]
+                    parts.append(vd[k])
             afs = cr.get("asset_feed_spec", {}) or {}
             for arr in ("bodies", "titles", "descriptions"):
                 for it in (afs.get(arr, []) or []):
                     if it.get("text"):
-                        return it["text"]
-            return ""
+                        parts.append(it["text"])
+            seen, uniq = set(), []
+            for p in parts:
+                p = (p or "").strip()
+                if p and p not in seen:
+                    seen.add(p)
+                    uniq.append(p)
+            return "\n".join(uniq)
 
         caps = []
         for ad in (d.get("data") or []):
-            cap = (_ad_caption(ad.get("creative", {}) or {}) or "").strip()
+            cap = (_ad_full_text(ad.get("creative", {}) or {}) or "").strip()
             if cap:
                 caps.append(cap)
         if caps:
