@@ -22128,6 +22128,10 @@ def api_messenger_webhook(request):
                                 "ts": str(ev.get("timestamp") or ""),
                                 "mid": "",
                                 "ad_id": conv.source_ad_id or "",
+                                # Capture the FULL raw referral Meta sent, so we can
+                                # see EXACTLY which fields (caption, post_id, etc.)
+                                # are available — nothing dropped.
+                                "raw": referral,
                             })
                             conv.messages = _msgs
                     except Exception:
