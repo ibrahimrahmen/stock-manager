@@ -21884,13 +21884,15 @@ def api_messenger_webhook(request):
                 # timing, price-from-ad). If one fires, the bot must NOT also
                 # reply, or the customer gets two messages. This runs whether or
                 # not the bot is on.
-                # FAQ is now controlled by the DECIDER. It fires only when the
-                # decider classifies this message as 'faq' OR 'delivery' — the
-                # delivery-time answer belongs to the FAQ family (it's one of the
-                # canned FAQ replies), so it's activated together with the FAQ.
-                # Price / order / everything else stays paused for now.
-                # _faq_answer(text, None) uses the FAQ-only path, so no price
-                # line can slip through.
+                # Controlled by the DECIDER. It fires when the decider classifies
+                # this message as 'faq', 'delivery', or 'price'.
+                #  - faq      -> _faq_answer(text, None)  (FAQ-only path)
+                #  - delivery -> _delivery_promise_tn()
+                #  - price    -> price agent tiers 1 & 1b ONLY (ad link + ad copy;
+                #                free). Photo fingerprint + Vision stay OFF until
+                #                verified, so an unresolved price = SILENCE, never
+                #                a guess. Barats only (_price_only_on).
+                # Order / product / everything else stays paused for now.
                 _faq_fired = False
                 try:
                     if (not _external_agent and not is_echo and not _reply_dup
@@ -21901,6 +21903,22 @@ def api_messenger_webhook(request):
                             _ans = _faq_answer(text, None) or ""
                         elif _dint == "delivery":
                             _ans = _delivery_promise_tn() or ""
+                        elif _dint == "price" and _price_only_on:
+                            # PRICE AGENT — tiers 1 & 1b ONLY (free, ad-based):
+                            # the price from the linked ad's offer, or the price
+                            # written in the ad copy. Photo fingerprint + Vision
+                            # stay OFF until verified, so if the ad gives no
+                            # price we stay SILENT (never guess). Barats only.
+                            try:
+                                from .models import SalesPage as _SP
+                                _pg = _SP.objects.filter(pk=_sp_here).first()
+                                _tr = _price_agent_trace(
+                                    conv, _pg, allow_vision=False,
+                                    allow_photo_tiers=False)
+                                if _tr.get("resolved_by") in ("ad", "ad_text"):
+                                    _ans = _tr.get("reply") or ""
+                            except Exception:
+                                _ans = ""
                         if _ans:
                             _already = any(m.get("faq") == _ans
                                            for m in (conv.messages or []))
