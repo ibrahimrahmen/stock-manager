@@ -7185,6 +7185,29 @@ def _thread_msg_flag(m):
     return ""
 
 
+def _clean_thread_for_display(msgs):
+    """Tidy a stored thread for the wall: drop Meta's own system notes
+    ('répondu à une publicité', 'Bonjour X…') and empty filler, and collapse our
+    sent messages with Meta's LATER echo of the same text — Meta re-delivers our
+    greeting/confirmation out of order, which made the thread look duplicated and
+    jumbled. Keeps the first (flagged) copy, drops the echo."""
+    seen_page = set()
+    out = []
+    for m in (msgs or []):
+        if _thread_msg_flag(m) == "system":
+            continue
+        txt = (m.get("text") or "").strip()
+        imgs = [u for u in (m.get("images") or []) if u and u != "local"]
+        if not txt and not imgs:
+            continue
+        if m.get("from") == "page" and txt:
+            if txt in seen_page:
+                continue
+            seen_page.add(txt)
+        out.append(m)
+    return out
+
+
 # Intent categories the router can recognise. Only some have an agent yet; the
 # rest are shown so the wall is a real triage board (and routed later).
 _INTENT_EXCHANGE = ("echange", "échange", "tbadel", "nbadel", "nabdel", "badel",
@@ -7422,7 +7445,7 @@ def api_conversations_live(request):
         msgs = c.messages or []
         # Last few messages so each tile can show a live mini-thread.
         recent = []
-        for _m in msgs[-8:]:
+        for _m in _clean_thread_for_display(msgs)[-8:]:
             _fl = _thread_msg_flag(_m)
             recent.append({
                 "from": _m.get("from", ""),
@@ -7515,7 +7538,7 @@ def api_conversation_thread(request, pk):
     if not c:
         return JsonResponse({"status": "error", "message": "Introuvable."}, status=404)
     page = SalesPage.objects.filter(pk=3).first()
-    msgs = (c.messages or [])[-80:]
+    msgs = _clean_thread_for_display(c.messages or [])[-80:]
     out = []
     for m in msgs:
         frm = m.get("from", "")
