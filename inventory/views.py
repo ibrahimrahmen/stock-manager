@@ -1405,12 +1405,33 @@ def _order_confirm_tn(now=None):
 
 
 def _order_has_size(conv, po):
-    """True if the order has a SIZE — from its order lines, or a size token in
-    the customer's messages (XL/XXL, 'taille/pointure', Arabic مقاس, shoe 34-46)."""
+    """True if the order has a SIZE — from its order lines, the AI-extracted
+    items (most reliable: the AI already parsed e.g. size 'L'), or a size token
+    in the customer's messages (XL/XXL, 'taille/pointure', Arabic مقاس, shoe
+    34-46, or a message that is JUST a letter size S/M/L/X)."""
     import re as _re
     try:
         if po is not None and po.lines.exclude(size="").exists():
             return True
+    except Exception:
+        pass
+    # The extraction already captured a size (e.g. 'L') even when no product
+    # line was created — trust it.
+    try:
+        ex = getattr(conv, "extracted", None) or {}
+        for it in (ex.get("items") or []):
+            if (it.get("size") or "").strip():
+                return True
+    except Exception:
+        pass
+    # A message that is JUST a letter size ("L", "m", "xl") — unambiguous.
+    try:
+        for m in (conv.messages or []):
+            if m.get("from") == "user":
+                _w = (m.get("text") or "").strip().lower()
+                if _w in ("s", "m", "l", "x", "xs", "xl", "xxl", "xxxl",
+                          "2xl", "3xl"):
+                    return True
     except Exception:
         pass
     try:
