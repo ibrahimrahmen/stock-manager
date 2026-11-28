@@ -7386,6 +7386,7 @@ def api_conversations_live(request):
         hours = max(1, min(48, int(request.GET.get("hours") or 6)))
     except Exception:
         hours = 6
+    _show_all = str(request.GET.get("all") or "") in ("1", "true", "yes")
     since = _tz.now() - _td(hours=hours)
     qs = (MessengerConversation.objects
           .filter(updated_at__gte=since)
@@ -7408,7 +7409,10 @@ def api_conversations_live(request):
         last_from = (last or {}).get("from", "")
         waiting = (last_from == "user")
         mins = int((now - c.updated_at).total_seconds() // 60) if c.updated_at else 0
-        if (not waiting) and mins >= 10:
+        # Default "En attente" view hides chats we answered that went quiet 10+
+        # min ago. "Tout" view (?all=1) keeps them so completed/answered chats
+        # (e.g. a placed order) stay visible.
+        if (not waiting) and mins >= 10 and not _show_all:
             continue
         kept.append((c, last, last_from, waiting, mins))
     kept.sort(key=lambda x: (0 if x[3] else 1, x[4]))

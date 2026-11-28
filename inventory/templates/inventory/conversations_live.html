@@ -62,6 +62,7 @@
     <h1>💬 Conversations</h1>
     <span class="count" id="count">…</span>
     <div class="bar">
+      <label class="toggle"><input type="checkbox" id="showall"> Tout afficher</label>
       <label class="toggle"><input type="checkbox" id="auto" checked> live</label>
       <span id="updated"></span>
     </div>
@@ -113,9 +114,10 @@ function card(r){
 
 async function load(){
   try{
-    const r=await fetch('/api/conversations-live/',{credentials:'include'});
+    const _all=document.getElementById('showall').checked?'?all=1':'';
+    const r=await fetch('/api/conversations-live/'+_all,{credentials:'include'});
     const j=await r.json(); if(j.status!=='ok') return;
-    document.getElementById('count').textContent=j.count+' en cours';
+    document.getElementById('count').textContent=j.count+(document.getElementById('showall').checked?' au total':' en attente');
     document.getElementById('updated').textContent='maj '+new Date().toLocaleTimeString('fr-FR');
     // remember scroll positions of open threads
     const pos={};
@@ -134,6 +136,7 @@ async function load(){
 let timer=null;
 function schedule(){ if(timer)clearInterval(timer); if(document.getElementById('auto').checked){ timer=setInterval(load,10000);} }
 document.getElementById('auto').onchange=schedule;
+document.getElementById('showall').onchange=load;
 load(); schedule();
 </script>
 </body>
