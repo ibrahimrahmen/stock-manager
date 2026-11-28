@@ -258,12 +258,35 @@ def _clean_ad_text(text):
 
 def _ad_info_for_conv(conv):
     """Cleaned price/size/delivery lines from the ad this conversation came
-    from, or "" when there's no ad or nothing useful in it."""
+    from, or "" when there's no ad or nothing useful in it.
+
+    Two ways to reach the ad's caption:
+      1) the click gave us the ad id  -> fetch that ad's creative directly.
+      2) the click gave only the NAME -> resolve the campaign via our own Ad
+         table (campaign_id + account_id) and read its creative. This is what
+         makes 'the chat knows the ad name, so read its price' actually work."""
     try:
         ad_id = (getattr(conv, "source_ad_id", "") or "").strip()
-        if not ad_id:
-            return ""
-        return _clean_ad_text(_fetch_ad_text(ad_id))
+        if ad_id:
+            t = _clean_ad_text(_fetch_ad_text(ad_id))
+            if t:
+                return t
+        camp = (getattr(conv, "source_campaign_name", "")
+                or getattr(conv, "source_campaign", "") or "").strip()
+        if camp:
+            from .models import Ad
+            ad = (Ad.objects.filter(campaign_name__iexact=camp)
+                  .exclude(campaign_id__isnull=True).first())
+            if not ad:
+                # Referral names sometimes differ slightly from the Ads-Manager
+                # name; try a loose contains both ways on the salient part.
+                _key = camp.split("|")[-1].strip()[:40] or camp[:40]
+                ad = (Ad.objects.filter(campaign_name__icontains=_key)
+                      .exclude(campaign_id__isnull=True).first())
+            if ad and ad.campaign_id:
+                return _clean_ad_text(
+                    _fetch_campaign_ad_text(ad.campaign_id, ad.account_id or ""))
+        return ""
     except Exception:
         return ""
 
@@ -529,16 +552,18 @@ def _price_agent_trace(conv, page, allow_vision=True, allow_photo_tiers=True):
             _adtxt = _ad_info_for_conv(conv) or ""
         except Exception:
             _adtxt = ""
-        _has_adid = bool((getattr(conv, "source_ad_id", "") or "").strip())
         _has_token = bool(_cfg("META_ACCESS_TOKEN", "").strip())
+        _camp = (getattr(conv, "source_campaign_name", "") or "").strip()
         if _adtxt:
-            s1b["why"] = "pub récupérée mais aucun prix lisible dans le texte"
-        elif not _has_adid:
-            s1b["why"] = "pas d'ID de pub capturé (seulement le nom) — impossible de lire la pub"
+            s1b["why"] = "pub lue mais 0 ou plusieurs prix (ambigu) — on ne devine pas"
         elif not _has_token:
-            s1b["why"] = "META_ACCESS_TOKEN manquant — impossible de lire le texte de la pub"
+            s1b["why"] = "META_ACCESS_TOKEN manquant — impossible de lire la pub"
+        elif not _camp:
+            s1b["why"] = "aucune pub/campagne associée à cette conversation"
         else:
-            s1b["why"] = "texte de la pub non récupéré (accès Meta ou pub sans texte)"
+            s1b["why"] = ("pub non lisible : pas d'ID + campagne « %s » introuvable "
+                          "dans nos pubs synchronisées (ou compte Meta illisible)"
+                          % _camp[:40])
         trace["steps"].append(s1b)
 
     # Dashboard live view: skip the photo tiers (slow / possibly paid) and
@@ -4064,6 +4089,79 @@ def _resolve_ad_campaign_name(ad_id):
         return (d.get("campaign", {}) or {}).get("name", "") or ""
     except Exception:
         return ""
+
+
+def _meta_token_for_account(account_id):
+    """The Meta access token to use for a given ad account. Per-account tokens
+    (META_AD_ACCOUNT_TOKENS = 'acc:tok,...') win; otherwise the global
+    META_ACCESS_TOKEN. Mirrors the spend-sync token logic so ad-caption reads
+    reach the same accounts (e.g. the EUR account the laine ads run from)."""
+    token = _cfg("META_ACCESS_TOKEN", "").strip()
+    per_account = {}
+    for pair in _cfg("META_AD_ACCOUNT_TOKENS", "").split(","):
+        pair = pair.strip()
+        if pair and ":" in pair:
+            aid, _, tok = pair.partition(":")
+            per_account[aid.strip().replace("act_", "")] = tok.strip()
+    bare = (account_id or "").replace("act_", "").strip()
+    return per_account.get(bare, token)
+
+
+_CAMPAIGN_TEXT_CACHE = {}
+
+
+def _fetch_campaign_ad_text(campaign_id, account_id=""):
+    """Fetch an ad's caption/body for a CAMPAIGN id — used when the click gave us
+    only the campaign NAME (no ad id). Reads the campaign's ads' creatives
+    (name/body/title/object_story_spec/asset_feed_spec) and returns the joined
+    text. Cached per campaign. '' on failure. Best-effort, short timeout."""
+    import urllib.request as _ureq
+    import json as _json
+    if not campaign_id:
+        return ""
+    if campaign_id in _CAMPAIGN_TEXT_CACHE:
+        return _CAMPAIGN_TEXT_CACHE[campaign_id]
+    token = _meta_token_for_account(account_id)
+    if not token:
+        return ""
+    url = (f"https://graph.facebook.com/v21.0/{campaign_id}/ads"
+           f"?fields=creative{{body,title,name,object_story_spec,asset_feed_spec}}"
+           f"&limit=5&access_token={token}")
+    text = ""
+    try:
+        with _ureq.urlopen(url, timeout=7) as resp:
+            d = _json.loads(resp.read().decode("utf-8"))
+        parts = []
+        for ad in (d.get("data") or []):
+            cr = ad.get("creative", {}) or {}
+            for k in ("body", "title", "name"):
+                if cr.get(k):
+                    parts.append(cr[k])
+            oss = cr.get("object_story_spec", {}) or {}
+            ld = oss.get("link_data", {}) or {}
+            for k in ("message", "description", "name", "caption"):
+                if ld.get(k):
+                    parts.append(ld[k])
+            vd = oss.get("video_data", {}) or {}
+            for k in ("message", "title"):
+                if vd.get(k):
+                    parts.append(vd[k])
+            afs = cr.get("asset_feed_spec", {}) or {}
+            for arr in ("bodies", "titles", "descriptions"):
+                for it in (afs.get(arr, []) or []):
+                    if it.get("text"):
+                        parts.append(it["text"])
+        seen, uniq = set(), []
+        for pt in parts:
+            pt = (pt or "").strip()
+            if pt and pt not in seen:
+                seen.add(pt)
+                uniq.append(pt)
+        text = "\n".join(uniq)[:1500]
+    except Exception:
+        text = ""
+    _CAMPAIGN_TEXT_CACHE[campaign_id] = text
+    return text
 
 
 def _fetch_ad_text(ad_id):
