@@ -65,6 +65,14 @@
   .anreply.ask{background:var(--graybg);color:var(--ink);}
   .anmeta{font-size:10px;color:var(--muted);margin-top:4px;}
   .anmeta b{color:var(--ink);}
+  .aibtn{margin-top:6px;width:100%;border:0.5px solid var(--purple);background:var(--purplebg);
+    color:var(--purple);border-radius:8px;padding:6px 8px;font-size:11.5px;font-weight:600;cursor:pointer;}
+  .aibtn:disabled{opacity:.6;cursor:default;}
+  .aibox{margin-top:6px;border:0.5px solid var(--border);border-radius:8px;padding:7px 8px;background:#fff;}
+  .aibadge{font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;}
+  .ai-send{background:var(--greenbg);color:var(--green);} .ai-human{background:var(--amberbg);color:var(--amber);}
+  .aisum{font-size:11px;color:var(--muted);margin:4px 0 5px;}
+  .airep{border-radius:8px;padding:5px 8px;font-size:12.5px;white-space:pre-wrap;background:var(--bg);border:0.5px solid var(--border);}
   .empty{grid-column:1/-1;text-align:center;color:var(--muted);padding:50px 0;}
 </style>
 </head>
@@ -127,6 +135,30 @@ wall.addEventListener('click', async (e)=>{
     else { btn.textContent='❌ '+(j.message||'erreur'); btn.disabled=false; }
   }catch(err){ btn.textContent='❌ erreur réseau'; btn.disabled=false; }
 });
+// SMART FALLBACK brain (on-demand, sends nothing)
+const aiAnswers={};
+function aiHtml(res){
+  if(res.error) return '<div class="aibox"><div class="aisum">❌ '+esc(res.error)+'</div></div>';
+  const human=!!res.needs_human;
+  let h='<div class="aibox">';
+  h+='<span class="aibadge '+(human?'ai-human':'ai-send')+'">'
+    +(human?'🧑 pour l\'équipe':'✅ répondre')+'</span>';
+  if(res.summary) h+='<div class="aisum">'+esc(res.summary)+'</div>';
+  if(res.reply) h+='<div class="airep">'+esc(res.reply)+'</div>';
+  h+='</div>';
+  return h;
+}
+wall.addEventListener('click', async (e)=>{
+  const btn=e.target.closest('.aibtn'); if(!btn) return;
+  const id=btn.dataset.aid;
+  btn.disabled=true; btn.textContent='⏳ l\'IA réfléchit…';
+  try{
+    const r=await fetch('/api/ai-fallback-on-conv/'+id+'/',{credentials:'include'});
+    const j=await r.json();
+    if(j.status==='ok'){ aiAnswers[id]=j.ai; btn.outerHTML=aiHtml(j.ai); }
+    else { btn.textContent='❌ '+(j.message||'erreur'); btn.disabled=false; }
+  }catch(err){ btn.textContent='❌ erreur réseau'; btn.disabled=false; }
+});
 const ACTION={price:'🏷️ agent prix',availability:'📦 agent dispo',
   exchange:'🔁 agent échange (bientôt)',delivery:'🚚 réponse délai',
   order:'📝 capture commande',product:'🖼️ carrousel produits (bientôt)',
@@ -148,7 +180,14 @@ function footer(r){
     else h+='<button class="anbtn" data-id="'+r.id+'">🔍 Analyser (photo + IA) — rien n\'est envoyé</button>';
     return h;
   }
-  return '<div class="sg s-rt">🧭 décide → '+esc(ACTION[r.intent]||ACTION.other)+'</div>';
+  // Keyword decider couldn't give a canned answer (exchange / product / unclear)
+  // -> offer the SMART FALLBACK brain on demand (sends nothing).
+  let h='<div class="sg s-rt">🧭 décide → '+esc(ACTION[r.intent]||ACTION.other)+'</div>';
+  if(['other','exchange','product'].includes(r.intent)){
+    if(aiAnswers[r.id]) h+=aiHtml(aiAnswers[r.id]);
+    else h+='<button class="aibtn" data-aid="'+r.id+'">🧠 Réponse IA — rien n\'est envoyé</button>';
+  }
+  return h;
 }
 function card(r){
   const pb=r.platform==='instagram'?'<span class="badge b-ig">IG</span>':'<span class="badge b-ms">Msg</span>';

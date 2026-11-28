@@ -7500,6 +7500,87 @@ def conversations_live_page(request):
     return render(request, "inventory/conversations_live.html", {})
 
 
+def _ai_fallback_brain(conv, page=None):
+    """SMART FALLBACK — the one genuinely 'AI' responder. Meant to run ONLY on
+    messages the free keyword decider could not classify (other / exchange /
+    product). It reads the recent conversation and returns:
+        {needs_human: bool, summary: str, reply: str}
+      - needs_human False -> 'reply' is a safe answer we could send.
+      - needs_human True  -> 'reply' is a SUGGESTION for the team; 'summary' says
+        what the customer wants and why a human is needed.
+    STRICT: never invents a price, a delivery date, or a policy — those belong to
+    the rule agents. Cheap model (Haiku by default), short context. Sends nothing.
+    """
+    import json as _json
+    lines = []
+    for m in (conv.messages or [])[-14:]:
+        frm = m.get("from", "")
+        txt = (m.get("text") or "").strip()
+        if not txt:
+            if [u for u in (m.get("images") or []) if u and u != "local"]:
+                txt = "[photo]"
+            else:
+                continue
+        who = "CLIENT" if frm == "user" else "NOUS"
+        lines.append("%s: %s" % (who, txt[:400]))
+    transcript = "\n".join(lines[-14:])
+    if not transcript:
+        return {}
+    system = (
+        "Tu es l'assistant d'une boutique tunisienne de vêtements en ligne "
+        "(paiement à la livraison partout en Tunisie, livraison 7 DT, le client "
+        "peut ouvrir et vérifier le colis avant de payer). Tu interviens "
+        "SEULEMENT sur les messages que les règles automatiques n'ont pas "
+        "compris. RÈGLES STRICTES : n'invente JAMAIS un prix, une date de "
+        "livraison précise, ni une promotion ou une politique. Si le client "
+        "demande l'un de ces points, ou veut un échange / remboursement / une "
+        "décision, mets needs_human=true et propose une réponse courte que "
+        "l'équipe pourra envoyer. Écris la réponse en arabe tunisien (arabizi ou "
+        "arabe), courte, polie, avec 🤍. Réponds UNIQUEMENT en JSON : "
+        '{"needs_human": true|false, "summary": "<ce que veut le client, 1 ligne, '
+        'en français>", "reply": "<réponse en tunisien>"}'
+    )
+    prompt = "Conversation:\n%s\n\nJSON:" % transcript
+    errbox = []
+    out = _claude_generate(prompt, max_tokens=400, temperature=0.0,
+                           system=system, timeout=20, errbox=errbox)
+    if not out:
+        return {"error": (errbox[0] if errbox else "pas de réponse IA")}
+    _t = out.strip()
+    _i, _j = _t.find("{"), _t.rfind("}")
+    if _i >= 0 and _j > _i:
+        _t = _t[_i:_j + 1]
+    try:
+        d = _json.loads(_t)
+    except Exception:
+        # Model didn't return clean JSON — treat the raw text as a human
+        # suggestion rather than losing it.
+        return {"needs_human": True, "summary": "", "reply": out.strip()[:600]}
+    return {
+        "needs_human": bool(d.get("needs_human", True)),
+        "summary": (d.get("summary") or "").strip()[:300],
+        "reply": (d.get("reply") or "").strip()[:800],
+    }
+
+
+@login_required(login_url="/login/")
+def api_ai_fallback_on_conv(request, pk):
+    """Run the SMART FALLBACK brain on one real conversation, on demand.
+    Superuser only. Sends NOTHING — returns the AI's summary + suggested reply."""
+    if not request.user.is_superuser:
+        return JsonResponse({"status": "error", "message": "Accès refusé."}, status=403)
+    from .models import MessengerConversation, SalesPage
+    conv = MessengerConversation.objects.filter(pk=pk).first()
+    if not conv:
+        return JsonResponse({"status": "error", "message": "introuvable"}, status=404)
+    page = SalesPage.objects.filter(pk=3).first()
+    try:
+        res = _ai_fallback_brain(conv, page)
+        return JsonResponse({"status": "ok", "ai": res or {}})
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)[:200]}, status=500)
+
+
 @login_required(login_url="/login/")
 def api_conversations_live(request):
     """JSON feed for the live Conversations page: ongoing Barats chats +
