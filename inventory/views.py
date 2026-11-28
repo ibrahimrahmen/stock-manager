@@ -7184,6 +7184,8 @@ def _thread_msg_flag(m):
         return "carousel"
     if m.get("phonefix"):
         return "bot"
+    if m.get("autoreply") or m.get("addr_followup"):
+        return "auto"  # order confirmation / address nudge
     frm = m.get("from", "")
     if frm == "system":
         return "system"
@@ -7194,7 +7196,10 @@ def _thread_msg_flag(m):
         # Our own canned templates, echoed back without their flag.
         if txt == MESSENGER_GREETING_AR.strip():
             return "auto"
-        if txt.startswith("وصلنا طلبك"):
+        if txt == MESSENGER_ASK_INFO_AR.strip():
+            return "auto"
+        if (txt.startswith("وصلنا طلبك") or txt.startswith("Wselna talabek")
+                or txt.startswith("Wselna tolbek")):
             return "auto"
         # Meta's own automated lines (ad welcome / CRM notes), not a teammate.
         if ("Dites-nous comment nous pouvons vous aider" in txt
