@@ -1578,10 +1578,10 @@ def _delivery_promise_tn(now=None):
     d1, d2 = _next_delivery(prep, 2)
     days = f"nhar {_TN_DAYS[d1.weekday()]} walla {_TN_DAYS[d2.weekday()]}"
 
-    # The order confirmation already tells the customer we'll call them, so the
-    # delai agent answers ONLY the delivery time (no "call for confirmation").
+    # A delivery-time question just needs the answer — no "Okey khouya" prefix.
+    # The order confirmation already handles the "we'll call you" part, and
     # after_cutoff still shifts the prep/delivery days above.
-    return f"Okey khouya, nchallah touselek {days} 🤍"
+    return f"Touselek nchallah {days} 🤍"
 
 
 # Sent once when a customer writes but hasn't given a phone number yet — invites
