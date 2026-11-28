@@ -4131,33 +4131,38 @@ def _fetch_campaign_ad_text(campaign_id, account_id=""):
     try:
         with _ureq.urlopen(url, timeout=7) as resp:
             d = _json.loads(resp.read().decode("utf-8"))
-        parts = []
-        for ad in (d.get("data") or []):
-            cr = ad.get("creative", {}) or {}
-            for k in ("body", "title", "name"):
+
+        def _ad_caption(cr):
+            # The PRIMARY caption of ONE ad (where the single price lives). We do
+            # NOT merge asset_feed_spec body VARIATIONS here — those are A/B copy
+            # variants that can each carry a different price and make the whole
+            # thing look multi-price. Only fall back to them if nothing else.
+            for k in ("body", "name", "title"):
                 if cr.get(k):
-                    parts.append(cr[k])
+                    return cr[k]
             oss = cr.get("object_story_spec", {}) or {}
             ld = oss.get("link_data", {}) or {}
-            for k in ("message", "description", "name", "caption"):
+            for k in ("message", "description", "caption", "name"):
                 if ld.get(k):
-                    parts.append(ld[k])
+                    return ld[k]
             vd = oss.get("video_data", {}) or {}
             for k in ("message", "title"):
                 if vd.get(k):
-                    parts.append(vd[k])
+                    return vd[k]
             afs = cr.get("asset_feed_spec", {}) or {}
             for arr in ("bodies", "titles", "descriptions"):
                 for it in (afs.get(arr, []) or []):
                     if it.get("text"):
-                        parts.append(it["text"])
-        seen, uniq = set(), []
-        for pt in parts:
-            pt = (pt or "").strip()
-            if pt and pt not in seen:
-                seen.add(pt)
-                uniq.append(pt)
-        text = "\n".join(uniq)[:1500]
+                        return it["text"]
+            return ""
+
+        # Read ONE ad's caption = one product = one price. The first ad that has
+        # a readable caption wins (a campaign's ads are the same product/offer).
+        for ad in (d.get("data") or []):
+            cap = (_ad_caption(ad.get("creative", {}) or {}) or "").strip()
+            if cap:
+                text = cap[:1500]
+                break
     except Exception:
         text = ""
     _CAMPAIGN_TEXT_CACHE[campaign_id] = text
