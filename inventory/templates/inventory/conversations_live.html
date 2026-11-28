@@ -73,6 +73,13 @@
   .ai-send{background:var(--greenbg);color:var(--green);} .ai-human{background:var(--amberbg);color:var(--amber);}
   .aisum{font-size:11px;color:var(--muted);margin:4px 0 5px;}
   .airep{border-radius:8px;padding:5px 8px;font-size:12.5px;white-space:pre-wrap;background:var(--bg);border:0.5px solid var(--border);}
+  .cvh{cursor:pointer;}
+  .tmodal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:20;padding:16px;}
+  .tmbox{background:var(--card);border-radius:16px;max-width:560px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;border:0.5px solid var(--border);}
+  .tmh{padding:12px 14px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:8px;}
+  .tmh .nm{font-weight:600;font-size:15px;}
+  .tmh .x{margin-left:auto;border:0;background:var(--graybg);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px;}
+  .tmbody{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:6px;background:var(--bg);}
   .empty{grid-column:1/-1;text-align:center;color:var(--muted);padding:50px 0;}
 </style>
 </head>
@@ -87,6 +94,12 @@
     </div>
   </div>
   <div id="wall"><div class="empty">Chargement…</div></div>
+  <div id="threadModal" class="tmodal" hidden>
+    <div class="tmbox">
+      <div class="tmh"><span class="nm" id="tmName">…</span><button class="x" onclick="closeThread()">×</button></div>
+      <div class="tmbody" id="tmBody"></div>
+    </div>
+  </div>
 
 <script>
 const wall=document.getElementById('wall');
@@ -221,6 +234,33 @@ async function load(){
     });
   }catch(e){}
 }
+
+// Click a card header -> open the FULL conversation history.
+async function openThread(id, name){
+  const modal=document.getElementById('threadModal'), body=document.getElementById('tmBody');
+  document.getElementById('tmName').textContent=name||'Conversation';
+  body.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px;">⏳ chargement…</div>';
+  modal.hidden=false;
+  try{
+    const r=await fetch('/api/conversation-thread/'+id+'/',{credentials:'include'});
+    const j=await r.json();
+    if(j.status==='ok'){
+      let h='';
+      if(j.ad) h+='<div style="font-size:11px;color:var(--muted);text-align:center;margin-bottom:6px;">📣 '+esc(j.ad)+'</div>';
+      h+=bubbles(j.messages||[]);
+      body.innerHTML=h||'<div style="color:var(--muted);text-align:center;">(vide)</div>';
+      body.scrollTop=body.scrollHeight;
+    } else body.innerHTML='<div style="color:var(--red);text-align:center;">'+esc(j.message||'erreur')+'</div>';
+  }catch(e){ body.innerHTML='<div style="color:var(--red);text-align:center;">erreur réseau</div>'; }
+}
+function closeThread(){ document.getElementById('threadModal').hidden=true; }
+document.getElementById('threadModal').addEventListener('click', e=>{ if(e.target.id==='threadModal') closeThread(); });
+wall.addEventListener('click', e=>{
+  const hd=e.target.closest('.cvh'); if(!hd) return;
+  const card=hd.closest('.cv'); if(!card) return;
+  const nm=(card.querySelector('.nm')||{}).textContent||'';
+  openThread(card.dataset.id, nm);
+});
 
 let timer=null;
 function schedule(){ if(timer)clearInterval(timer); if(document.getElementById('auto').checked){ timer=setInterval(load,10000);} }
