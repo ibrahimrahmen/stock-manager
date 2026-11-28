@@ -1379,6 +1379,23 @@ MESSENGER_AUTOREPLY_AR = (
     "el commande 🛍️"
 )
 
+
+def _order_confirm_tn(now=None):
+    """Short arabizi order-received confirmation, time-aware: during work hours
+    the team calls 'soon' (9rib); after 17h30 (closed) they call 'tomorrow'
+    (ghodwa). Tunisia time."""
+    import datetime as _dt
+    try:
+        import zoneinfo as _zi
+        tz = _zi.ZoneInfo("Africa/Tunis")
+    except Exception:
+        tz = None
+    now = now or (_dt.datetime.now(tz) if tz else _dt.datetime.now())
+    minutes = now.hour * 60 + now.minute
+    when = "ghodwa" if minutes >= (17 * 60 + 30) else "9rib"
+    return ("Wselna tolbek khouya 🤍 fri9na bech ykalmek %s bech y2akedlek "
+            "el commande 🛍️" % when)
+
 # Sent (once) when the customer gave their phone but the order still has NO
 # delivery address after a short wait — a single polite nudge for the missing
 # address (governorate + address) and size, so the order can be completed.
@@ -22166,8 +22183,9 @@ def api_messenger_webhook(request):
                                         pass
                                     # Order is complete -> order-received message.
                                     sent = []
-                                    if _messenger_send_text(pg, sn, MESSENGER_AUTOREPLY_AR, plat):
-                                        sent.append(MESSENGER_AUTOREPLY_AR)
+                                    _conf = _order_confirm_tn()
+                                    if _messenger_send_text(pg, sn, _conf, plat):
+                                        sent.append(_conf)
                                     if sent:
                                         _c.refresh_from_db()
                                         _c.auto_replied = True
