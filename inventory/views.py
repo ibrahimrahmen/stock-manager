@@ -290,13 +290,20 @@ def _ad_info_for_conv(conv, allow_fetch=True):
                                             name_hint=camp, allow_fetch=allow_fetch))
                 if _t2:
                     return _t2
-        # SHARED POST/REEL: the customer shared one of our publications; its
-        # caption (stored by the webhook) holds the product + price. Free to read
-        # (already captured), so it works on the wall too.
+        # SHARED POST/REEL (attachment path): the webhook stored the caption as a
+        # hidden note. Free to read (already captured), so it works on the wall.
         for m in (getattr(conv, "messages", None) or []):
             if (m.get("kind") == "shared_post_caption"
                     and (m.get("text") or "").strip()):
                 return _clean_ad_text(m["text"])
+        # SHARED REEL via the 'share:<url>' path (no attachment): resolve the
+        # reel link to its caption (cached). This is the m_a_l_e_k case.
+        _ref = (getattr(conv, "source_ad_ref", "") or "").strip()
+        if _ref.startswith("share:"):
+            _sc = _fetch_share_caption(getattr(conv, "page_id", "") or "",
+                                       _ref, allow_fetch=allow_fetch)
+            if _sc:
+                return _clean_ad_text(_sc)
         return ""
     except Exception:
         return ""
@@ -465,6 +472,9 @@ def _customer_burst_text(conv):
         if frm == "user":
             seen_user = True
             if [u for u in (m.get("images") or []) if u and u != "local"]:
+                had_photo = True
+            # A shared reel/post is a product inquiry even with no image/text.
+            if m.get("kind") == "shared_reel":
                 had_photo = True
             if (m.get("text") or "").strip():
                 parts.append(m["text"])
@@ -708,13 +718,14 @@ def _fetch_ig_post_media(page_id, media_id):
 _SHARE_CAPTION_CACHE = {}
 
 
-def _fetch_share_caption(page_id, source_ad_ref):
+def _fetch_share_caption(page_id, source_ad_ref, allow_fetch=True):
     """A customer who SHARED one of our IG reels/posts arrives with
     source_ad_ref = 'share:https://www.instagram.com/reel/<shortcode>/'. The
     webhook gives only the link, not the caption — but the caption usually NAMES
     the product ('Available now balaclava hoodie'), so it's a strong identity
     signal we were throwing away. Resolve the shortcode to its caption by
-    scanning the account's OWN media (permalink match). Cached. Best-effort;
+    scanning the account's OWN media (permalink match). Cached. allow_fetch=False
+    returns only a cached value (NO network), for the wall feed. Best-effort;
     returns '' if not found."""
     import re as _re
     import json as _json
@@ -726,6 +737,8 @@ def _fetch_share_caption(page_id, source_ad_ref):
     shortcode = m.group(1)
     if shortcode in _SHARE_CAPTION_CACHE:
         return _SHARE_CAPTION_CACHE[shortcode]
+    if not allow_fetch:
+        return ""   # wall feed: cache-only, never a live Meta call
     cap = ""
     token = _messenger_page_token(page_id)
     if token:
@@ -22214,9 +22227,25 @@ def api_messenger_webhook(request):
                                                 _c.source_campaign_name = _res["name"]
                                         except Exception:
                                             pass
-                                    _c.save(update_fields=["source_ad_ref",
-                                                           "source_campaign",
-                                                           "source_campaign_name"])
+                                    # Record the share as a CUSTOMER message so it
+                                    # shows on the wall and the decider treats it as
+                                    # a product/price inquiry (has_photo), not 'autre'.
+                                    _upd = ["source_ad_ref", "source_campaign",
+                                            "source_campaign_name"]
+                                    try:
+                                        _mm = _c.messages or []
+                                        if not any(x.get("kind") == "shared_reel"
+                                                   for x in _mm):
+                                            _mm.append({
+                                                "from": "user", "kind": "shared_reel",
+                                                "text": "",
+                                                "images": [_img] if _img else [],
+                                                "ts": "", "mid": ""})
+                                            _c.messages = _mm
+                                            _upd.append("messages")
+                                    except Exception:
+                                        pass
+                                    _c.save(update_fields=_upd)
                                 elif _info.get("kind") == "media" and _info.get("media_url"):
                                     _c.source_ad_ref = "media:shared"
                                     _c.source_campaign = "Partage Instagram"
