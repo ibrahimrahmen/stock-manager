@@ -1375,15 +1375,15 @@ def oauth_instagram_callback(request):
 # Sent after the customer's phone number arrives. No "ahla bik" here (the
 # greeting already welcomed them) — just an order-received confirmation.
 MESSENGER_AUTOREPLY_AR = (
-    "Wselna tolbek khouya 🤍 fri9na bech ykalmek 9rib bech y2akedlek "
-    "el commande 🛍️"
+    "Wselna talabek khouya 🤍 fari9na bech ykalmek chwaya ekher bech "
+    "nconfirmiw el commande"
 )
 
 
 def _order_confirm_tn(now=None):
     """Short arabizi order-received confirmation, time-aware: during work hours
-    the team calls 'soon' (9rib); after 17h30 (closed) they call 'tomorrow'
-    (ghodwa). Tunisia time."""
+    the team calls 'chwaya ekher' (a bit later); after 17h30 (closed) 'ghodwa'
+    (tomorrow). Tunisia time."""
     import datetime as _dt
     try:
         import zoneinfo as _zi
@@ -1392,9 +1392,9 @@ def _order_confirm_tn(now=None):
         tz = None
     now = now or (_dt.datetime.now(tz) if tz else _dt.datetime.now())
     minutes = now.hour * 60 + now.minute
-    when = "ghodwa" if minutes >= (17 * 60 + 30) else "9rib"
-    return ("Wselna tolbek khouya 🤍 fri9na bech ykalmek %s bech y2akedlek "
-            "el commande 🛍️" % when)
+    when = "ghodwa" if minutes >= (17 * 60 + 30) else "chwaya ekher"
+    return ("Wselna talabek khouya 🤍 fari9na bech ykalmek %s bech "
+            "nconfirmiw el commande" % when)
 
 # Sent (once) when the customer gave their phone but the order still has NO
 # delivery address after a short wait — a single polite nudge for the missing
