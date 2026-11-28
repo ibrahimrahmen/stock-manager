@@ -4233,30 +4233,31 @@ def _fetch_ad_text(ad_id, allow_fetch=True):
         return _AD_TEXT_CACHE[ad_id]
     if not allow_fetch:
         return ""   # wall feed: cache-only, never a live Meta call
-    token = _cfg("META_ACCESS_TOKEN", "").strip()
-    if not token:
+    # Try EVERY available token: the global one, then each per-account token. The
+    # ad may live in an account (e.g. the EUR account) that only a per-account
+    # token can read, so we can't assume the global token has access.
+    tokens = []
+    _g = _cfg("META_ACCESS_TOKEN", "").strip()
+    if _g:
+        tokens.append(_g)
+    for pair in _cfg("META_AD_ACCOUNT_TOKENS", "").split(","):
+        pair = pair.strip()
+        if pair and ":" in pair:
+            _, _, tok = pair.partition(":")
+            tok = tok.strip()
+            if tok and tok not in tokens:
+                tokens.append(tok)
+    if not tokens:
         return ""
-    # The ad's creative holds the text. Pull common text-bearing fields.
-    url = (f"https://graph.facebook.com/v21.0/{ad_id}"
-           f"?fields=creative{{body,title,name,object_story_spec,"
-           f"asset_feed_spec,effective_object_story_id}}"
-           f"&access_token={token}")
-    text = ""
-    try:
-        with _ureq.urlopen(url, timeout=6) as resp:
-            d = _json.loads(resp.read().decode("utf-8"))
-        cr = d.get("creative", {}) or {}
+
+    def _parse_creative(cr):
         parts = []
         if cr.get("body"):
             parts.append(cr["body"])
         if cr.get("title"):
             parts.append(cr["title"])
-        # The 'name' field holds the POST CAPTION for boosted-post ads, where the
-        # price usually lives (body is often empty). This is where "Pull en laine
-        # 69 DT" sits, so it must be read too.
         if cr.get("name"):
             parts.append(cr["name"])
-        # object_story_spec.link_data.message / description
         oss = cr.get("object_story_spec", {}) or {}
         ld = oss.get("link_data", {}) or {}
         for k in ("message", "description", "name", "caption"):
@@ -4266,23 +4267,34 @@ def _fetch_ad_text(ad_id, allow_fetch=True):
         for k in ("message", "title"):
             if vd.get(k):
                 parts.append(vd[k])
-        # asset_feed_spec.bodies[].text / titles[].text (dynamic creatives)
         afs = cr.get("asset_feed_spec", {}) or {}
         for arr_key in ("bodies", "titles", "descriptions"):
             for item in (afs.get(arr_key, []) or []):
                 if item.get("text"):
                     parts.append(item["text"])
-        # Dedup preserving order, cap length.
-        seen = set()
-        uniq = []
+        seen, uniq = set(), []
         for pt in parts:
             pt = (pt or "").strip()
             if pt and pt not in seen:
                 seen.add(pt)
                 uniq.append(pt)
-        text = "\n".join(uniq)[:1500]
-    except Exception:
-        text = ""
+        return "\n".join(uniq)[:1500]
+
+    text = ""
+    for token in tokens:
+        url = (f"https://graph.facebook.com/v21.0/{ad_id}"
+               f"?fields=creative{{body,title,name,object_story_spec,"
+               f"asset_feed_spec,effective_object_story_id}}"
+               f"&access_token={token}")
+        try:
+            with _ureq.urlopen(url, timeout=6) as resp:
+                d = _json.loads(resp.read().decode("utf-8"))
+            cr = d.get("creative", {}) or {}
+            text = _parse_creative(cr)
+            if text:
+                break   # this token could read the ad
+        except Exception:
+            continue    # token can't read it (or error) -> try the next
     _AD_TEXT_CACHE[ad_id] = text
     return text
 
