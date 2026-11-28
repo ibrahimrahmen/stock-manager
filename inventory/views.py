@@ -18647,7 +18647,7 @@ def _download_image_bytes(url):
         return b""
 
 
-def _offer_all_photos(offer, cap=16):
+def _offer_all_photos(offer, cap=40):
     """Every local photo path for an offer, used to fingerprint it. Order of
     priority: the DEDICATED fingerprint bank (OfferFingerprintImage — the real
     ad/post images customers screenshot) FIRST, then the per-colour OfferImages +
