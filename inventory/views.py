@@ -7185,29 +7185,17 @@ def _thread_msg_flag(m):
     return ""
 
 
-def _parse_msg_ts(ts):
-    """A stored message ts -> epoch seconds. Handles epoch ms, epoch seconds and
-    ISO strings ('2026-11-27T18:32:03+0000'). 0 if unknown/empty."""
-    if not ts:
-        return 0.0
-    s = str(ts).strip()
-    if s.isdigit():
-        v = int(s)
-        return v / 1000.0 if v > 1e12 else float(v)
-    try:
-        import datetime as _dt
-        return _dt.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
-    except Exception:
-        return 0.0
-
-
 def _last_msg_epoch(msgs):
     """Epoch seconds of the most recent message that carries a usable timestamp.
     Used for the wall's 'age' instead of updated_at, which a background poll /
-    Meta echo re-delivery keeps bumping (so answered chats never aged off)."""
+    Meta echo re-delivery keeps bumping (so answered chats never aged off).
+    Uses the module's _parse_msg_ts (which returns None when unparseable, so we
+    coerce to 0)."""
     best = 0.0
     for m in (msgs or []):
-        e = _parse_msg_ts(m.get("ts"))
+        if not isinstance(m, dict):
+            continue
+        e = _parse_msg_ts(m.get("ts")) or 0.0
         if e > best:
             best = e
     return best
