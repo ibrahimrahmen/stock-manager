@@ -7185,6 +7185,34 @@ def _thread_msg_flag(m):
     return ""
 
 
+def _parse_msg_ts(ts):
+    """A stored message ts -> epoch seconds. Handles epoch ms, epoch seconds and
+    ISO strings ('2026-11-27T18:32:03+0000'). 0 if unknown/empty."""
+    if not ts:
+        return 0.0
+    s = str(ts).strip()
+    if s.isdigit():
+        v = int(s)
+        return v / 1000.0 if v > 1e12 else float(v)
+    try:
+        import datetime as _dt
+        return _dt.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0.0
+
+
+def _last_msg_epoch(msgs):
+    """Epoch seconds of the most recent message that carries a usable timestamp.
+    Used for the wall's 'age' instead of updated_at, which a background poll /
+    Meta echo re-delivery keeps bumping (so answered chats never aged off)."""
+    best = 0.0
+    for m in (msgs or []):
+        e = _parse_msg_ts(m.get("ts"))
+        if e > best:
+            best = e
+    return best
+
+
 def _clean_thread_for_display(msgs):
     """Tidy a stored thread for the wall: drop Meta's own system notes
     ('répondu à une publicité', 'Bonjour X…') and empty filler, and collapse our
@@ -7431,7 +7459,16 @@ def api_conversations_live(request):
                 break
         last_from = (last or {}).get("from", "")
         waiting = (last_from == "user")
-        mins = int((now - c.updated_at).total_seconds() // 60) if c.updated_at else 0
+        # Age from the LAST ACTUAL MESSAGE, not updated_at — a background poll /
+        # Meta echo keeps bumping updated_at, which kept answered chats on the
+        # wall forever. Fall back to updated_at only if no message carries a ts.
+        _le = _last_msg_epoch(msgs)
+        if _le:
+            mins = int((now.timestamp() - _le) // 60)
+        else:
+            mins = int((now - c.updated_at).total_seconds() // 60) if c.updated_at else 0
+        if mins < 0:
+            mins = 0
         # Default "En attente" view hides chats we answered that went quiet 10+
         # min ago. "Tout" view (?all=1) keeps them so completed/answered chats
         # (e.g. a placed order) stay visible.
