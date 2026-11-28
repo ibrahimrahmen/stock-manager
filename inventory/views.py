@@ -22267,6 +22267,12 @@ def api_messenger_webhook(request):
                         _u = _pl.get("url")
                         if _u:
                             images.append(_u)
+                        # Meta usually sends the publication's CAPTION directly in
+                        # payload.title — use it as-is (free, no API call, no token
+                        # needed). This is where "Bomber Double Face — 119 DT" is.
+                        _ptitle = (_pl.get("title") or "").strip()
+                        if _ptitle and not _shared_caption:
+                            _shared_caption = _ptitle
                         _pmid = (_pl.get("ig_post_media_id")
                                  or _pl.get("id") or "")
                         if not _pmid and _u:
@@ -22275,7 +22281,9 @@ def api_messenger_webhook(request):
                             _am = _re_aid.search(r"asset_id=(\d+)", _u)
                             if _am:
                                 _pmid = _am.group(1)
-                        if _pmid:
+                        _shared_post_media = _shared_post_media or _pmid
+                        # Only hit the API if the caption didn't come in the title.
+                        if _pmid and not _shared_caption:
                             _pm = _fetch_ig_post_media(page_id, _pmid)
                             if _pm:
                                 if _pm.get("media_url") and not _u:
