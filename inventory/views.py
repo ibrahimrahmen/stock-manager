@@ -22154,6 +22154,16 @@ def api_messenger_webhook(request):
                                     or (getattr(_po, "ville", "") or "").strip()
                                     or getattr(_po, "region_id", None)))
                                 if _has_addr:
+                                    # Belt-and-braces: never send the confirmation
+                                    # twice (a worker / spawn race could slip past
+                                    # the auto_replied flag). Atomic DB-cache claim,
+                                    # one per conversation.
+                                    from django.core.cache import cache as _cc
+                                    try:
+                                        if not _cc.add("confirm_sent:%s" % cid, 1, 3600):
+                                            return
+                                    except Exception:
+                                        pass
                                     # Order is complete -> order-received message.
                                     sent = []
                                     if _messenger_send_text(pg, sn, MESSENGER_AUTOREPLY_AR, plat):
