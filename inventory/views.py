@@ -7614,7 +7614,15 @@ def api_conversations_live(request):
         msgs = c.messages or []
         last = None
         for m in reversed(msgs):
-            if (m.get("text") or "").strip():
+            # A PHOTO (image, no text) is a real message too — a customer whose
+            # last action was sending a photo is WAITING on us. Looking only at
+            # text made the wall fall back to our earlier reply and wrongly mark
+            # the chat "answered", hiding a customer who sent a photo and got no
+            # response.
+            _has_txt = bool((m.get("text") or "").strip())
+            _has_img = bool([u for u in (m.get("images") or [])
+                             if u and u != "local"])
+            if _has_txt or _has_img:
                 last = m
                 break
         last_from = (last or {}).get("from", "")
@@ -7690,7 +7698,10 @@ def api_conversations_live(request):
             "name": (c.sender_name or c.sender_id or "?")[:40],
             "platform": c.platform or "messenger",
             "ad": (c.source_campaign_name or "")[:50],
-            "last_text": ((last or {}).get("text") or "")[:180],
+            "last_text": (((last or {}).get("text") or "").strip()
+                          or ("📷 photo" if (last and [u for u in
+                               (last.get("images") or []) if u and u != "local"])
+                              else ""))[:180],
             "last_from": last_from,
             "waiting": waiting,
             "mins_ago": mins,
